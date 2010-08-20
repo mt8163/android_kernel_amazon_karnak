@@ -205,6 +205,19 @@ out:
 	return nr_pages - 1;
 }
 
+/* Is the vma a continuation of the stack vma above it? */
+static inline int vma_stack_continue(struct vm_area_struct *vma, unsigned long addr)
+{
+	return vma && (vma->vm_end == addr) && (vma->vm_flags & VM_GROWSDOWN);
+}
+
+static inline int stack_guard_page(struct vm_area_struct *vma, unsigned long addr)
+{
+	return (vma->vm_flags & VM_GROWSDOWN) &&
+		(vma->vm_start == addr) &&
+		!vma_stack_continue(vma->vm_prev, addr);
+}
+
 /**
  * __mlock_vma_pages_range() -  mlock a range of pages in the vma.
  * @vma:   target vma
@@ -228,6 +241,7 @@ long __mlock_vma_pages_range(struct vm_area_struct *vma,
 		unsigned long start, unsigned long end, int *nonblocking)
 {
 	struct mm_struct *mm = vma->vm_mm;
+	unsigned long addr = start;
 	unsigned long nr_pages = (end - start) / PAGE_SIZE;
 	int gup_flags;
 
@@ -245,6 +259,12 @@ long __mlock_vma_pages_range(struct vm_area_struct *vma,
 	 */
 	if ((vma->vm_flags & (VM_WRITE | VM_SHARED)) == VM_WRITE)
 		gup_flags |= FOLL_WRITE;
+
+ 	/* We don't try to access the guard page of a stack vma */
+	if (stack_guard_page(vma, start)) {
+		addr += PAGE_SIZE;
+		nr_pages--;
+	}
 
 	/*
 	 * We want mlock to succeed for regions that have any permissions
