@@ -1257,6 +1257,12 @@ int get_cmdline(struct task_struct *task, char *buffer, int buflen);
 
 int vma_is_stack_for_task(struct vm_area_struct *vma, struct task_struct *t);
 
+/* Is the vma a continuation of the stack vma above it? */
+static inline int vma_stack_continue(struct vm_area_struct *vma, unsigned long addr)
+{
+	return vma && (vma->vm_end == addr) && (vma->vm_flags & VM_GROWSDOWN);
+}
+
 extern unsigned long move_page_tables(struct vm_area_struct *vma,
 		unsigned long old_addr, struct vm_area_struct *new_vma,
 		unsigned long new_addr, unsigned long len,
