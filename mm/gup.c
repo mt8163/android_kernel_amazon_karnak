@@ -483,10 +483,9 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 				return i ? : -EFAULT;
 
 		/*
-		 * If we don't actually want the page itself,
-		 * and it's the stack guard page, just skip it.
+		 * For mlock, just skip the stack guard page.
 		 */
-		if (!pages && stack_guard_page(vma, start))
+		if ((gup_flags & FOLL_MLOCK) && stack_guard_page(vma, start))
 			goto next_page;
 
 			if (is_vm_hugetlb_page(vma)) {
