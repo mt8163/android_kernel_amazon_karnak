@@ -597,7 +597,7 @@ void smp_send_all_cpu_backtrace(void)
 	}
 
 	clear_bit(0, &backtrace_flag);
-	smp_mb__after_atomic();
+	smp_mb__after_clear_bit();
 }
 
 /*
@@ -721,6 +721,7 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 		break;
 
 	case IPI_CPU_BACKTRACE:
+<<<<<<< HEAD
 #ifdef CONFIG_MTPROF
 		mt_trace_ISR_start(ipinr);
 #endif
@@ -728,6 +729,9 @@ void handle_IPI(int ipinr, struct pt_regs *regs)
 #ifdef CONFIG_MTPROF
 		mt_trace_ISR_end(ipinr);
 #endif
+=======
+		ipi_cpu_backtrace(cpu, regs);
+>>>>>>> d4dcc857a55b... ARM: smp: implement arch_trigger_all_cpus_backtrace using IPI
 		break;
 
 	default:
