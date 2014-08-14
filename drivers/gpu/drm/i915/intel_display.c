@@ -4002,10 +4002,6 @@ static void intel_crtc_enable_planes(struct drm_crtc *crtc)
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	int pipe = intel_crtc->pipe;
 
-	assert_vblank_disabled(crtc);
-
-	drm_vblank_on(dev, pipe);
-
 	intel_enable_primary_hw_plane(crtc->primary, crtc);
 	intel_enable_planes(crtc);
 	intel_crtc_update_cursor(crtc, true);
@@ -4051,10 +4047,6 @@ static void intel_crtc_disable_planes(struct drm_crtc *crtc)
 	 * consider this a flip to a NULL plane.
 	 */
 	intel_frontbuffer_flip(dev, INTEL_FRONTBUFFER_ALL_MASK(pipe));
-
-	drm_vblank_off(dev, pipe);
-
-	assert_vblank_disabled(crtc);
 }
 
 static void ironlake_crtc_enable(struct drm_crtc *crtc)
@@ -4123,6 +4115,9 @@ static void ironlake_crtc_enable(struct drm_crtc *crtc)
 
 	if (HAS_PCH_CPT(dev))
 		cpt_verify_modeset(dev, intel_crtc->pipe);
+
+	assert_vblank_disabled(crtc);
+	drm_crtc_vblank_on(crtc);
 
 	intel_crtc_enable_planes(crtc);
 }
@@ -4236,6 +4231,9 @@ static void haswell_crtc_enable(struct drm_crtc *crtc)
 		intel_opregion_notify_encoder(encoder, true);
 	}
 
+	assert_vblank_disabled(crtc);
+	drm_crtc_vblank_on(crtc);
+
 	/* If we change the relative order between pipe/planes enabling, we need
 	 * to change the workaround. */
 	haswell_mode_set_planes_workaround(intel_crtc);
@@ -4270,6 +4268,9 @@ static void ironlake_crtc_disable(struct drm_crtc *crtc)
 		return;
 
 	intel_crtc_disable_planes(crtc);
+
+	drm_crtc_vblank_off(crtc);
+	assert_vblank_disabled(crtc);
 
 	for_each_encoder_on_crtc(dev, crtc, encoder)
 		encoder->disable(encoder);
@@ -4331,6 +4332,9 @@ static void haswell_crtc_disable(struct drm_crtc *crtc)
 		return;
 
 	intel_crtc_disable_planes(crtc);
+
+	drm_crtc_vblank_off(crtc);
+	assert_vblank_disabled(crtc);
 
 	for_each_encoder_on_crtc(dev, crtc, encoder) {
 		intel_opregion_notify_encoder(encoder, false);
@@ -4797,6 +4801,9 @@ static void valleyview_crtc_enable(struct drm_crtc *crtc)
 	for_each_encoder_on_crtc(dev, crtc, encoder)
 		encoder->enable(encoder);
 
+	assert_vblank_disabled(crtc);
+	drm_crtc_vblank_on(crtc);
+
 	intel_crtc_enable_planes(crtc);
 
 	/* Underruns don't raise interrupts, so check manually. */
@@ -4853,6 +4860,9 @@ static void i9xx_crtc_enable(struct drm_crtc *crtc)
 
 	for_each_encoder_on_crtc(dev, crtc, encoder)
 		encoder->enable(encoder);
+
+	assert_vblank_disabled(crtc);
+	drm_crtc_vblank_on(crtc);
 
 	intel_crtc_enable_planes(crtc);
 
@@ -4917,9 +4927,6 @@ static void i9xx_crtc_disable(struct drm_crtc *crtc)
 	intel_set_memory_cxsr(dev_priv, false);
 	intel_crtc_disable_planes(crtc);
 
-	for_each_encoder_on_crtc(dev, crtc, encoder)
-		encoder->disable(encoder);
-
 	/*
 	 * On gen2 planes are double buffered but the pipe isn't, so we must
 	 * wait for planes to fully turn off before disabling the pipe.
@@ -4927,6 +4934,12 @@ static void i9xx_crtc_disable(struct drm_crtc *crtc)
 	 * self-refresh mode constraint explained above.
 	 */
 	intel_wait_for_vblank(dev, pipe);
+
+	drm_crtc_vblank_off(crtc);
+	assert_vblank_disabled(crtc);
+
+	for_each_encoder_on_crtc(dev, crtc, encoder)
+		encoder->disable(encoder);
 
 	intel_disable_pipe(intel_crtc);
 
