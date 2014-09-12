@@ -1765,7 +1765,6 @@ static int setup_scratch_page(struct drm_device *dev)
 	page = alloc_page(GFP_KERNEL | GFP_DMA32 | __GFP_ZERO);
 	if (page == NULL)
 		return -ENOMEM;
-	get_page(page);
 	set_pages_uc(page, 1);
 
 #ifdef CONFIG_INTEL_IOMMU
@@ -1790,7 +1789,6 @@ static void teardown_scratch_page(struct drm_device *dev)
 	set_pages_wb(page, 1);
 	pci_unmap_page(dev->pdev, dev_priv->gtt.base.scratch.addr,
 		       PAGE_SIZE, PCI_DMA_BIDIRECTIONAL);
-	put_page(page);
 	__free_page(page);
 }
 
