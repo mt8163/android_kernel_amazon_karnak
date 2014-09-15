@@ -7609,7 +7609,6 @@ static void hsw_disable_lcpll(struct drm_i915_private *dev_priv,
 static void hsw_restore_lcpll(struct drm_i915_private *dev_priv)
 {
 	uint32_t val;
-	unsigned long irqflags;
 
 	val = I915_READ(LCPLL_CTL);
 
@@ -7629,10 +7628,10 @@ static void hsw_restore_lcpll(struct drm_i915_private *dev_priv)
 	 * to call special forcewake code that doesn't touch runtime PM and
 	 * doesn't enable the forcewake delayed work.
 	 */
-	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+	spin_lock_irq(&dev_priv->uncore.lock);
 	if (dev_priv->uncore.forcewake_count++ == 0)
 		dev_priv->uncore.funcs.force_wake_get(dev_priv, FORCEWAKE_ALL);
-	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+	spin_unlock_irq(&dev_priv->uncore.lock);
 
 	if (val & LCPLL_POWER_DOWN_ALLOW) {
 		val &= ~LCPLL_POWER_DOWN_ALLOW;
@@ -7663,10 +7662,10 @@ static void hsw_restore_lcpll(struct drm_i915_private *dev_priv)
 	}
 
 	/* See the big comment above. */
-	spin_lock_irqsave(&dev_priv->uncore.lock, irqflags);
+	spin_lock_irq(&dev_priv->uncore.lock);
 	if (--dev_priv->uncore.forcewake_count == 0)
 		dev_priv->uncore.funcs.force_wake_put(dev_priv, FORCEWAKE_ALL);
-	spin_unlock_irqrestore(&dev_priv->uncore.lock, irqflags);
+	spin_unlock_irq(&dev_priv->uncore.lock);
 }
 
 /*
