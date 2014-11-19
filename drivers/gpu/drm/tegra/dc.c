@@ -142,7 +142,7 @@ static int tegra_dc_setup_window(struct tegra_dc *dc, unsigned int index,
 				 const struct tegra_dc_window *window)
 {
 	unsigned h_offset, v_offset, h_size, v_size, h_dda, v_dda, bpp;
-	unsigned long value;
+	unsigned long value, flags;
 	bool yuv, planar;
 
 	/*
@@ -154,6 +154,8 @@ static int tegra_dc_setup_window(struct tegra_dc *dc, unsigned int index,
 		bpp = window->bits_per_pixel / 8;
 	else
 		bpp = planar ? 1 : 2;
+
+	spin_lock_irqsave(&dc->lock, flags);
 
 	value = WINDOW_A_SELECT << index;
 	tegra_dc_writel(dc, value, DC_CMD_DISPLAY_WINDOW_HEADER);
@@ -247,6 +249,7 @@ static int tegra_dc_setup_window(struct tegra_dc *dc, unsigned int index,
 
 		case TEGRA_BO_TILING_MODE_BLOCK:
 			DRM_ERROR("hardware doesn't support block linear mode\n");
+			spin_unlock_irqrestore(&dc->lock, flags);
 			return -EINVAL;
 		}
 
@@ -305,6 +308,8 @@ static int tegra_dc_setup_window(struct tegra_dc *dc, unsigned int index,
 
 	tegra_dc_writel(dc, WIN_A_UPDATE << index, DC_CMD_STATE_CONTROL);
 	tegra_dc_writel(dc, WIN_A_ACT_REQ << index, DC_CMD_STATE_CONTROL);
+
+	spin_unlock_irqrestore(&dc->lock, flags);
 
 	return 0;
 }
@@ -438,13 +443,15 @@ static int tegra_dc_set_base(struct tegra_dc *dc, int x, int y,
 	struct tegra_bo *bo = tegra_fb_get_plane(fb, 0);
 	unsigned int h_offset = 0, v_offset = 0;
 	struct tegra_bo_tiling tiling;
+	unsigned long value, flags;
 	unsigned int format, swap;
-	unsigned long value;
 	int err;
 
 	err = tegra_fb_get_tiling(fb, &tiling);
 	if (err < 0)
 		return err;
+
+	spin_lock_irqsave(&dc->lock, flags);
 
 	tegra_dc_writel(dc, WINDOW_A_SELECT, DC_CMD_DISPLAY_WINDOW_HEADER);
 
@@ -491,6 +498,7 @@ static int tegra_dc_set_base(struct tegra_dc *dc, int x, int y,
 
 		case TEGRA_BO_TILING_MODE_BLOCK:
 			DRM_ERROR("hardware doesn't support block linear mode\n");
+			spin_unlock_irqrestore(&dc->lock, flags);
 			return -EINVAL;
 		}
 
@@ -518,6 +526,8 @@ static int tegra_dc_set_base(struct tegra_dc *dc, int x, int y,
 
 	value = GENERAL_ACT_REQ | WIN_A_ACT_REQ;
 	tegra_dc_writel(dc, value, DC_CMD_STATE_CONTROL);
+
+	spin_unlock_irqrestore(&dc->lock, flags);
 
 	return 0;
 }
@@ -667,10 +677,15 @@ static void tegra_dc_finish_page_flip(struct tegra_dc *dc)
 
 	bo = tegra_fb_get_plane(crtc->primary->fb, 0);
 
+	spin_lock_irqsave(&dc->lock, flags);
+
 	/* check if new start address has been latched */
+	tegra_dc_writel(dc, WINDOW_A_SELECT, DC_CMD_DISPLAY_WINDOW_HEADER);
 	tegra_dc_writel(dc, READ_MUX, DC_CMD_STATE_ACCESS);
 	base = tegra_dc_readl(dc, DC_WINBUF_START_ADDR);
 	tegra_dc_writel(dc, 0, DC_CMD_STATE_ACCESS);
+
+	spin_unlock_irqrestore(&dc->lock, flags);
 
 	if (base == bo->paddr + crtc->primary->fb->offsets[0]) {
 		drm_crtc_send_vblank_event(crtc, dc->event);
