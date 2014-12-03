@@ -31,6 +31,24 @@ MODULE_DESCRIPTION("virtio-pci");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1");
 
+struct virtio_pci_vq_info
+{
+	/* the actual virtqueue */
+	struct virtqueue *vq;
+
+	/* the number of entries in the queue */
+	int num;
+
+	/* the virtual address of the ring queue */
+	void *queue;
+
+	/* the list node for the virtqueues list */
+	struct list_head node;
+
+	/* MSI-X vector (or none) */
+	unsigned msix_vector;
+};
+
 /* Our device structure */
 struct virtio_pci_device
 {
@@ -43,6 +61,9 @@ struct virtio_pci_device
 	/* a list of queues so we can dispatch IRQs */
 	spinlock_t lock;
 	struct list_head virtqueues;
+
+	/* array of all queues for house-keeping */
+	struct virtio_pci_vq_info **vqs;
 
 	/* MSI-X support */
 	int msix_enabled;
@@ -67,24 +88,6 @@ struct virtio_pci_device
 enum {
 	VP_MSIX_CONFIG_VECTOR = 0,
 	VP_MSIX_VQ_VECTOR = 1,
-};
-
-struct virtio_pci_vq_info
-{
-	/* the actual virtqueue */
-	struct virtqueue *vq;
-
-	/* the number of entries in the queue */
-	int num;
-
-	/* the virtual address of the ring queue */
-	void *queue;
-
-	/* the list node for the virtqueues list */
-	struct list_head node;
-
-	/* MSI-X vector (or none) */
-	unsigned msix_vector;
 };
 
 /* Qumranet donated their vendor ID for devices 0x1000 thru 0x10FF. */
@@ -429,7 +432,6 @@ static struct virtqueue *setup_vq(struct virtio_device *vdev, unsigned index,
 		goto out_activate_queue;
 	}
 
-	vq->priv = info;
 	info->vq = vq;
 
 	if (msix_vec != VIRTIO_MSI_NO_VECTOR) {
@@ -449,6 +451,7 @@ static struct virtqueue *setup_vq(struct virtio_device *vdev, unsigned index,
 		INIT_LIST_HEAD(&info->node);
 	}
 
+	vp_dev->vqs[index] = info;
 	return vq;
 
 out_assign:
@@ -464,7 +467,7 @@ out_info:
 static void vp_del_vq(struct virtqueue *vq)
 {
 	struct virtio_pci_device *vp_dev = to_vp_device(vq->vdev);
-	struct virtio_pci_vq_info *info = vq->priv;
+	struct virtio_pci_vq_info *info = vp_dev->vqs[vq->index];
 	unsigned long flags, size;
 
 	spin_lock_irqsave(&vp_dev->lock, flags);
@@ -498,7 +501,7 @@ static void vp_del_vqs(struct virtio_device *vdev)
 	struct virtio_pci_vq_info *info;
 
 	list_for_each_entry_safe(vq, n, &vdev->vqs, list) {
-		info = vq->priv;
+		info = vp_dev->vqs[vq->index];
 		if (vp_dev->per_vq_vectors &&
 			info->msix_vector != VIRTIO_MSI_NO_VECTOR)
 			free_irq(vp_dev->msix_entries[info->msix_vector].vector,
@@ -508,6 +511,7 @@ static void vp_del_vqs(struct virtio_device *vdev)
 	vp_dev->per_vq_vectors = false;
 
 	vp_free_vectors(vdev);
+	kfree(vp_dev->vqs);
 }
 
 static int vp_try_to_find_vqs(struct virtio_device *vdev, unsigned nvqs,
@@ -521,11 +525,15 @@ static int vp_try_to_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 	u16 msix_vec;
 	int i, err, nvectors, allocated_vectors;
 
+	vp_dev->vqs = kmalloc(nvqs * sizeof *vp_dev->vqs, GFP_KERNEL);
+	if (!vp_dev->vqs)
+		return -ENOMEM;
+
 	if (!use_msix) {
 		/* Old style: one normal interrupt for change and all vqs. */
 		err = vp_request_intx(vdev);
 		if (err)
-			goto error_request;
+			goto error_find;
 	} else {
 		if (per_vq_vectors) {
 			/* Best option: one for change interrupt, one per vq. */
@@ -540,7 +548,7 @@ static int vp_try_to_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 
 		err = vp_request_msix_vectors(vdev, nvectors, per_vq_vectors);
 		if (err)
-			goto error_request;
+			goto error_find;
 	}
 
 	vp_dev->per_vq_vectors = per_vq_vectors;
@@ -582,8 +590,6 @@ static int vp_try_to_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 
 error_find:
 	vp_del_vqs(vdev);
-
-error_request:
 	return err;
 }
 
@@ -625,7 +631,7 @@ static int vp_set_vq_affinity(struct virtqueue *vq, int cpu)
 {
 	struct virtio_device *vdev = vq->vdev;
 	struct virtio_pci_device *vp_dev = to_vp_device(vdev);
-	struct virtio_pci_vq_info *info = vq->priv;
+	struct virtio_pci_vq_info *info = vp_dev->vqs[vq->index];
 	struct cpumask *mask;
 	unsigned int irq;
 
