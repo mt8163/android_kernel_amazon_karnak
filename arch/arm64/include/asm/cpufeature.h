@@ -26,7 +26,7 @@
 #define ARM64_WORKAROUND_845719			2
 #define ARM64_HAS_SYSREG_GIC_CPUIF		3
 
-#define NCAPS					4
+#define ARM64_NCAPS					4
 
 #ifndef __ASSEMBLY__
 
@@ -48,7 +48,7 @@ struct arm64_cpu_capabilities {
 	};
 };
 
-extern DECLARE_BITMAP(cpu_hwcaps, NCAPS);
+extern DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
 
 static inline bool cpu_have_feature(unsigned int num)
 {
@@ -60,16 +60,16 @@ bool system_supports_mixed_endian_el0(void);
 
 static inline bool cpus_have_cap(unsigned int num)
 {
-	if (num >= NCAPS)
+	if (num >= ARM64_NCAPS)
 		return false;
 	return test_bit(num, cpu_hwcaps);
 }
 
 static inline void cpus_set_cap(unsigned int num)
 {
-	if (num >= NCAPS)
+	if (num >= ARM64_NCAPS)
 		printk(KERN_WARNING"Attempt to set an illegal CPU capability (%d >= %d)\n",
-			num, NCAPS);
+			num, ARM64_NCAPS);
 	else
 		__set_bit(num, cpu_hwcaps);
 }
