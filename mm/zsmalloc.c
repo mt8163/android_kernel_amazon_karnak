@@ -155,8 +155,6 @@
  *  (reason above)
  */
 #define ZS_SIZE_CLASS_DELTA	(PAGE_SIZE >> 8)
-#define ZS_SIZE_CLASSES		((ZS_MAX_ALLOC_SIZE - ZS_MIN_ALLOC_SIZE) / \
-					ZS_SIZE_CLASS_DELTA + 1)
 
 /*
  * We do not maintain any list for completely empty or full pages
@@ -966,6 +964,7 @@ struct zs_pool *zs_create_pool(gfp_t flags)
 {
 	int i, ovhd_size;
 	struct zs_pool *pool;
+	struct size_class *prev_class = NULL;
 
 	ovhd_size = roundup(sizeof(*pool), PAGE_SIZE);
 	pool = kzalloc(ovhd_size, GFP_KERNEL);
@@ -990,13 +989,35 @@ struct zs_pool *zs_create_pool(gfp_t flags)
 		size = ZS_MIN_ALLOC_SIZE + i * ZS_SIZE_CLASS_DELTA;
 		if (size > ZS_MAX_ALLOC_SIZE)
 			size = ZS_MAX_ALLOC_SIZE;
+		pages_per_zspage = get_pages_per_zspage(size);
+
+		/*
+		 * size_class is used for normal zsmalloc operation such
+		 * as alloc/free for that size. Although it is natural that we
+		 * have one size_class for each size, there is a chance that we
+		 * can get more memory utilization if we use one size_class for
+		 * many different sizes whose size_class have same
+		 * characteristics. So, we makes size_class point to
+		 * previous size_class if possible.
+		 */
+		if (prev_class) {
+			if (can_merge(prev_class, size, pages_per_zspage)) {
+				pool->size_class[i] = prev_class;
+				continue;
+			}
+		}
+
+		class = kzalloc(sizeof(struct size_class), GFP_KERNEL);
+		if (!class)
+			goto err;
 
 		class = &pool->size_class[i];
 		class->size = size;
 		class->index = i;
 		spin_lock_init(&class->lock);
-		class->pages_per_zspage = get_pages_per_zspage(size);
+		pool->size_class[i] = class;
 
+		prev_class = class;
 	}
 
 	pool->flags = flags;
