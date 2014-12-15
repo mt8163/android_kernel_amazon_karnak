@@ -5184,6 +5184,20 @@ void intel_cleanup_gt_powersave(struct drm_device *dev)
 		valleyview_cleanup_gt_powersave(dev);
 }
 
+static void gen6_suspend_rps(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	flush_delayed_work(&dev_priv->rps.delayed_resume_work);
+
+	/*
+	 * TODO: disable RPS interrupts on GEN9+ too once RPS support
+	 * is added for it.
+	 */
+	if (INTEL_INFO(dev)->gen < 9)
+		gen6_disable_rps_interrupts(dev);
+}
+
 /**
  * intel_suspend_gt_powersave - suspend PM work and helper threads
  * @dev: drm device
@@ -5291,8 +5305,11 @@ void intel_reset_gt_powersave(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
+	if (INTEL_INFO(dev)->gen < 6)
+		return;
+
+	gen6_suspend_rps(dev);
 	dev_priv->rps.enabled = false;
-	intel_enable_gt_powersave(dev);
 }
 
 static void ibx_init_clock_gating(struct drm_device *dev)
@@ -6022,11 +6039,19 @@ static void i830_init_clock_gating(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
+<<<<<<< HEAD
 	I915_WRITE(DSPCLK_GATE_D, OVRUNIT_CLOCK_GATE_DISABLE);
 
 	I915_WRITE(MEM_MODE,
 		   _MASKED_BIT_ENABLE(MEM_DISPLAY_A_TRICKLE_FEED_DISABLE) |
 		   _MASKED_BIT_ENABLE(MEM_DISPLAY_B_TRICKLE_FEED_DISABLE));
+=======
+	if (INTEL_INFO(dev)->gen < 6)
+		return;
+
+	gen6_suspend_rps(dev);
+	dev_priv->rps.enabled = false;
+>>>>>>> dbea3cea6950... drm/i915: sanitize RPS resetting during GPU reset
 }
 
 void intel_init_clock_gating(struct drm_device *dev)
