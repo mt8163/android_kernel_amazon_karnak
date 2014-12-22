@@ -876,8 +876,8 @@ static int netlink_realloc_groups(struct sock *sk)
 	return err;
 }
 
-static void netlink_unbind(int group, long unsigned int groups,
-			   struct netlink_sock *nlk)
+static void netlink_undo_bind(int group, long unsigned int groups,
+			      struct netlink_sock *nlk)
 {
 	int undo;
 
@@ -927,7 +927,7 @@ static int netlink_bind(struct socket *sock, struct sockaddr *addr,
 			err = nlk->netlink_bind(group);
 			if (!err)
 				continue;
-			netlink_unbind(group, groups, nlk);
+			netlink_undo_bind(group, groups, nlk);
 			return err;
 		}
 	}
@@ -937,7 +937,7 @@ static int netlink_bind(struct socket *sock, struct sockaddr *addr,
 			netlink_insert(sk, net, nladdr->nl_pid) :
 			netlink_autobind(sock);
 		if (err) {
-			netlink_unbind(nlk->ngroups, groups, nlk);
+			netlink_undo_bind(nlk->ngroups, groups, nlk);
 			return err;
 		}
 	}
