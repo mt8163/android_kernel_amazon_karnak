@@ -440,11 +440,10 @@ ep_write (struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 	/* FIXME writebehind for O_NONBLOCK and poll(), qlen = 1 */
 
 	value = -ENOMEM;
-	kbuf = kmalloc (len, GFP_KERNEL);
-	if (!kbuf)
-		goto free1;
-	if (copy_from_user (kbuf, buf, len)) {
-		value = -EFAULT;
+	kbuf = memdup_user(buf, len);
+	if (IS_ERR(kbuf)) {
+		value = PTR_ERR(kbuf);
+		kbuf = NULL;
 		goto free1;
 	}
 
