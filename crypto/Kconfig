@@ -858,6 +858,16 @@ config CRYPTO_AES_ARM32_CE
 	  accelerate encryption/decryption.
 	  Such as AES, AES_CBC.
 
+	
+config CRYPTO_AES_ARM_CE
+	tristate "Accelerated AES using ARMv8 Crypto Extensions"
+	depends on ARM && KERNEL_MODE_NEON
+	select CRYPTO_ALGAPI
+	select CRYPTO_ABLK_HELPER
+	help
+	  Use an implementation of AES in CBC, CTR and XTS modes that uses
+	  ARMv8 Crypto Extensions
+
 config CRYPTO_ANUBIS
 	tristate "Anubis cipher algorithm"
 	select CRYPTO_ALGAPI
