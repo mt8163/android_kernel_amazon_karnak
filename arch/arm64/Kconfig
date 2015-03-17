@@ -1004,16 +1004,21 @@ source "drivers/cpuidle/Kconfig"
 
 source "drivers/cpufreq/Kconfig"
 
-config ARCH_HAS_CRASH_NOTES
-	bool
-
-config CRASH_NOTES
-	bool "Support storing crash notes at panic"
-	depends on !KEXEC
+config ARM64_ERRATUM_843419
+	bool "Cortex-A53: 843419: A load or store might access an incorrect address"
+	depends on MODULES
+	default y
 	help
-	  Generate kdump style crash notes at the time of a panic and fill it
-	  with the crashed context to support analysis of the memory dump with
-	  tools like Redhat CRASH.
+	  This option builds kernel modules using the large memory model in
+	  order to avoid the use of the ADRP instruction, which can cause
+	  a subsequent memory access to use an incorrect address on Cortex-A53
+	  parts up to r0p4.
+
+	  Note that the kernel itself must be linked with a version of ld
+	  which fixes potentially affected ADRP instructions through the
+	  use of veneers.
+
+	  If unsure, say Y.
 
 endmenu
 
