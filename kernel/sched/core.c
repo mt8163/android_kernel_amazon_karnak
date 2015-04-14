@@ -2574,9 +2574,9 @@ unsigned long nr_iowait_cpu(int cpu)
 
 void get_iowait_load(unsigned long *nr_waiters, unsigned long *load)
 {
-	struct rq *this = this_rq();
-	*nr_waiters = atomic_read(&this->nr_iowait);
-	*load = this->cpu_load[0];
+	struct rq *rq = this_rq();
+	*nr_waiters = atomic_read(&rq->nr_iowait);
+	*load = rq->load.weight;
 }
 
 unsigned long get_cpu_load(int cpu)
@@ -2682,6 +2682,7 @@ void scheduler_tick(void)
 	update_rq_clock(rq);
 	curr->sched_class->task_tick(rq, curr, 0);
 	update_cpu_load_active(rq);
+	calc_global_load_tick(rq);
 	raw_spin_unlock(&rq->lock);
 
 	perf_event_task_tick();
