@@ -161,6 +161,7 @@ struct dentry_operations {
 	struct vfsmount *(*d_automount)(struct path *);
 	int (*d_manage)(struct dentry *, bool);
 	void (*d_canonical_path)(const struct path *, struct path *);
+	struct inode *(*d_select_inode)(struct dentry *, unsigned);
 } ____cacheline_aligned;
 
 /*
@@ -223,6 +224,7 @@ struct dentry_operations {
 #define DCACHE_FILE_TYPE		0x00400000 /* Other file type */
 
 #define DCACHE_MAY_FREE			0x00800000
+#define DCACHE_OP_SELECT_INODE		0x02000000 /* Unioned entry: dcache op selects inode */
 
 extern seqlock_t rename_lock;
 
