@@ -1373,9 +1373,10 @@ static int task_get_unused_fd_flags(struct binder_proc *proc, int flags)
 	rlim_cur = task_rlimit(proc->tsk, RLIMIT_NOFILE);
 	unlock_task_sighand(proc->tsk, &irqs);
 
+	preempt_enable_no_resched();
 	ret = __alloc_fd(files, 0, rlim_cur, flags);
-err:
-	put_files_struct(files);
+	preempt_disable();
+
 	return ret;
 }
 
@@ -1384,11 +1385,10 @@ err:
  */
 static void task_fd_install(struct binder_proc *proc, unsigned int fd, struct file *file)
 {
-	struct files_struct *files = binder_get_files_struct(proc);
-
-	if (files) {
-		__fd_install(files, fd, file);
-		put_files_struct(files);
+	if (proc->files) {
+		preempt_enable_no_resched();
+		__fd_install(proc->files, fd, file);
+		preempt_disable();
 	}
 }
 
