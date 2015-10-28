@@ -801,6 +801,7 @@ int do_write_data_page(struct page *page, struct f2fs_io_info *fio)
 	 */
 	if (unlikely(old_blkaddr != NEW_ADDR &&
 			!is_cold_data(page) &&
+			!IS_ATOMIC_WRITTEN_PAGE(page) &&
 			need_inplace_update(inode))) {
 		rewrite_data_page(page, old_blkaddr, fio);
 		set_inode_flag(F2FS_I(inode), FI_UPDATE_WRITE);
