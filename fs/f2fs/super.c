@@ -1227,11 +1227,19 @@ static int __init init_f2fs_fs(void)
 	}
 	err = register_filesystem(&f2fs_fs_type);
 	if (err)
-		goto free_kset;
-	f2fs_create_root_stats();
+		goto free_shrinker;
+	err = f2fs_create_root_stats();
+	if (err)
+		goto free_filesystem;
 	f2fs_proc_root = proc_mkdir("fs/f2fs", NULL);
 	return 0;
 
+free_filesystem:
+	unregister_filesystem(&f2fs_fs_type);
+free_shrinker:
+	unregister_shrinker(&f2fs_shrinker_info);
+free_crypto:
+	f2fs_exit_crypto();
 free_kset:
 	kset_unregister(f2fs_kset);
 free_checkpoint_caches:
