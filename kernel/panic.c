@@ -23,6 +23,7 @@
 #include <linux/sysrq.h>
 #include <linux/init.h>
 #include <linux/nmi.h>
+#include <linux/console.h>
 #include <linux/crash_notes.h>
 #ifdef CONFIG_MTK_RTC
 #include "../drivers/misc/mediatek/include/mt-plat/mtk_rtc.h"
@@ -162,6 +163,15 @@ void panic(const char *fmt, ...)
 	crash_kexec(NULL);
 
 	bust_spinlocks(0);
+
+	/*
+	 * We may have ended up stopping the CPU holding the lock (in
+	 * smp_send_stop()) while still having some valuable data in the console
+	 * buffer.  Try to acquire the lock then release it regardless of the
+	 * result.  The release will also print the buffers out.
+	 */
+	console_trylock();
+	console_unlock();
 
 	if (!panic_blink)
 		panic_blink = no_blink;
