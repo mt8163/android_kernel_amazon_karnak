@@ -197,12 +197,25 @@ void commit_inmem_pages(struct inode *inode, bool abort)
 	mutex_lock(&fi->inmem_lock);
 	list_for_each_entry_safe(cur, tmp, &fi->inmem_pages, list) {
 		lock_page(cur->page);
-		if (!abort && cur->page->mapping == inode->i_mapping) {
-			f2fs_wait_on_page_writeback(cur->page, DATA);
-			if (clear_page_dirty_for_io(cur->page))
-				inode_dec_dirty_pages(inode);
-			do_write_data_page(cur->page, &fio);
-			submit_bio = true;
+		if (!abort) {
+			if (cur->page->mapping == inode->i_mapping) {
+				set_page_dirty(cur->page);
+				f2fs_wait_on_page_writeback(cur->page, DATA);
+				if (clear_page_dirty_for_io(cur->page))
+					inode_dec_dirty_pages(inode);
+				trace_f2fs_commit_inmem_page(cur->page, INMEM);
+				fio.page = cur->page;
+				err = do_write_data_page(&fio);
+				if (err) {
+					unlock_page(cur->page);
+					break;
+				}
+				clear_cold_data(cur->page);
+				submit_bio = true;
+			}
+		} else {
+			ClearPageUptodate(cur->page);
+			trace_f2fs_commit_inmem_page(cur->page, INMEM_DROP);
 		}
 		f2fs_put_page(cur->page, 1);
 		list_del(&cur->list);
