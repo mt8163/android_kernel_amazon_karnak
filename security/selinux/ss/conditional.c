@@ -638,7 +638,7 @@ void cond_compute_av(struct avtab *ctab, struct avtab_key *key,
 {
 	struct avtab_node *node;
 
-	if (!ctab || !key || !avd || !xperms)
+	if (!ctab || !key || !avd)
 		return;
 
 	for (node = avtab_search_node(ctab, key); node;
