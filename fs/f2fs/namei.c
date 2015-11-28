@@ -233,6 +233,28 @@ fail:
 	return err;
 }
 
+static void *f2fs_follow_link(struct dentry *dentry, struct nameidata *nd)
+{
+	struct page *page;
+	char *link;
+
+	page = page_follow_link_light(dentry, nd);
+	if (IS_ERR(page))
+		return page;
+
+	link = nd_get_link(nd);
+	if (IS_ERR(link))
+		return link;
+
+	/* this is broken symlink case */
+	if (*link == 0) {
+		kunmap(page);
+		page_cache_release(page);
+		return ERR_PTR(-ENOENT);
+	}
+	return page;
+}
+
 static int f2fs_symlink(struct inode *dir, struct dentry *dentry,
 					const char *symname)
 {
