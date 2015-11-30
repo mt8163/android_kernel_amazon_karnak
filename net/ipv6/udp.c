@@ -1238,7 +1238,7 @@ do_udp_sendmsg:
 			opt = NULL;
 		connected = 0;
 	}
-	if (opt == NULL) {
+	if (!opt) {
 		opt = txopt_get(np);
 		opt_to_free = opt;
 	}

@@ -842,7 +842,7 @@ static int rawv6_sendmsg(struct kiocb *iocb, struct sock *sk,
 		if (!(opt->opt_nflen|opt->opt_flen))
 			opt = NULL;
 	}
-	if (opt == NULL) {
+	if (!opt) {
 		opt = txopt_get(np);
 		opt_to_free = opt;
 	}
