@@ -707,17 +707,15 @@ static int f2fs_readdir(struct file *file, struct dir_context *ctx)
 					le32_to_cpu(de->ino), d_type))
 				goto stop;
 
-			bit_pos += GET_DENTRY_SLOTS(le16_to_cpu(de->name_len));
-			ctx->pos = n * NR_DENTRY_IN_BLOCK + bit_pos;
+		make_dentry_ptr(inode, &d, (void *)dentry_blk, 1);
+
+		if (f2fs_fill_dentries(ctx, &d, n * NR_DENTRY_IN_BLOCK, &fstr)) {
+			kunmap(dentry_page);
+			f2fs_put_page(dentry_page, 1);
+			break;
 		}
-		bit_pos = 0;
+
 		ctx->pos = (n + 1) * NR_DENTRY_IN_BLOCK;
-		kunmap(dentry_page);
-		f2fs_put_page(dentry_page, 1);
-		dentry_page = NULL;
-	}
-stop:
-	if (dentry_page && !IS_ERR(dentry_page)) {
 		kunmap(dentry_page);
 		f2fs_put_page(dentry_page, 1);
 	}
