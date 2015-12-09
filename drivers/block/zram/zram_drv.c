@@ -1355,12 +1355,16 @@ static int __init zram_init(void)
 			goto out_error;
 	}
 
+<<<<<<< HEAD
 #ifdef CONFIG_PROC_FS
 	proc_create("zraminfo", 0, NULL, &zraminfo_proc_fops);
 #endif
 
 	pr_info("Created %u device(s)\n", num_devices);
 
+=======
+	pr_info("Created %u device(s)\n", num_devices);
+>>>>>>> bd3552084167... Merge branch 'android-3.18-zram' into android-3.18
 	return 0;
 
 out_error:
