@@ -1,22 +1,22 @@
 /*
- *	PF_INET6 socket protocol family
- *	Linux INET6 implementation
- *
- *	Authors:
- *	Pedro Roque		<roque@di.fc.ul.pt>
- *
- *	Adapted from linux/net/ipv4/af_inet.c
- *
- *	Fixes:
- *	piggy, Karl Knutson	:	Socket protocol table
- *	Hideaki YOSHIFUJI	:	sin6_scope_id support
- *	Arnaldo Melo		:	check proc_net_create return, cleanups
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version
- *	2 of the License, or (at your option) any later version.
- */
+*	PF_INET6 socket protocol family
+*	Linux INET6 implementation
+*
+*	Authors:
+*	Pedro Roque		<roque@di.fc.ul.pt>
+*
+*	Adapted from linux/net/ipv4/af_inet.c
+*
+*	Fixes:
+*	piggy, Karl Knutson	:	Socket protocol table
+*	Hideaki YOSHIFUJI	:	sin6_scope_id support
+*	Arnaldo Melo		:	check proc_net_create return, cleanups
+*
+*	This program is free software; you can redistribute it and/or
+*	modify it under the terms of the GNU General Public License
+*	as published by the Free Software Foundation; either version
+*	2 of the License, or (at your option) any later version.
+*/
 
 #define pr_fmt(fmt) "IPv6: " fmt
 
@@ -69,12 +69,12 @@
 
 static inline int current_has_network(void)
 {
-	return in_egroup_p(AID_INET) || capable(CAP_NET_RAW);
+return in_egroup_p(AID_INET) || capable(CAP_NET_RAW);
 }
 #else
 static inline int current_has_network(void)
 {
-	return 1;
+return 1;
 }
 #endif
 
@@ -83,14 +83,14 @@ MODULE_DESCRIPTION("IPv6 protocol stack for Linux");
 MODULE_LICENSE("GPL");
 
 /* The inetsw6 table contains everything that inet6_create needs to
- * build a new socket.
- */
+* build a new socket.
+*/
 static struct list_head inetsw6[SOCK_MAX];
 static DEFINE_SPINLOCK(inetsw6_lock);
 
 struct ipv6_params ipv6_defaults = {
-	.disable_ipv6 = 0,
-	.autoconf = 1,
+.disable_ipv6 = 0,
+.autoconf = 1,
 };
 
 static int disable_ipv6_mod;
@@ -106,25 +106,28 @@ MODULE_PARM_DESC(autoconf, "Enable IPv6 address autoconfiguration on all interfa
 
 static __inline__ struct ipv6_pinfo *inet6_sk_generic(struct sock *sk)
 {
-	const int offset = sk->sk_prot->obj_size - sizeof(struct ipv6_pinfo);
+const int offset = sk->sk_prot->obj_size - sizeof(struct ipv6_pinfo);
 
-	return (struct ipv6_pinfo *)(((u8 *)sk) + offset);
+return (struct ipv6_pinfo *)(((u8 *)sk) + offset);
 }
 
 static int inet6_create(struct net *net, struct socket *sock, int protocol,
-			int kern)
+    int kern)
 {
-	struct inet_sock *inet;
-	struct ipv6_pinfo *np;
-	struct sock *sk;
-	struct inet_protosw *answer;
-	struct proto *answer_prot;
-	unsigned char answer_flags;
-	int try_loading_module = 0;
-	int err;
+struct inet_sock *inet;
+struct ipv6_pinfo *np;
+struct sock *sk;
+struct inet_protosw *answer;
+struct proto *answer_prot;
+unsigned char answer_flags;
+int try_loading_module = 0;
+int err;
 
 	if (!current_has_network())
 		return -EACCES;
+
+	if (protocol < 0 || protocol >= IPPROTO_MAX)
+		return -EINVAL;
 
 	/* Look for the requested type/protocol pair. */
 lookup_protocol:
