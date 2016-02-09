@@ -506,9 +506,13 @@ static int snd_timer_stop1(struct snd_timer_instance *timeri, bool stop)
 		result = -EBUSY;
 		goto unlock;
 	}
+	if (timeri->timer)
+		spin_lock(&timeri->timer->lock);
 	list_del_init(&timeri->ack_list);
 	list_del_init(&timeri->active_list);
 	if (timer->card && timer->card->shutdown)
+    if (timeri->timer)
+      spin_unlock(&timeri->timer->lock);
 		goto unlock;
 	if (stop) {
 		timeri->cticks = timeri->ticks;
@@ -527,6 +531,8 @@ static int snd_timer_stop1(struct snd_timer_instance *timeri, bool stop)
 		}
 	}
 	timeri->flags &= ~(SNDRV_TIMER_IFLG_RUNNING | SNDRV_TIMER_IFLG_START);
+	if (timeri->timer)
+		spin_unlock(&timeri->timer->lock);
 	snd_timer_notify1(timeri, stop ? SNDRV_TIMER_EVENT_STOP :
 			  SNDRV_TIMER_EVENT_CONTINUE);
  unlock:
