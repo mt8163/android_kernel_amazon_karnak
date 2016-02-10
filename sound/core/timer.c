@@ -424,12 +424,12 @@ static void snd_timer_notify1(struct snd_timer_instance *ti, int event)
 		return;
 	list_for_each_entry(ts, &ti->slave_active_head, active_list)
 		if (ts->ccallback)
-			ts->ccallback(ti, event + 100, &tstamp, resolution);
+			ts->ccallback(ts, event + 100, &tstamp, resolution);
 }
 
 /* start/continue a master timer */
 static int snd_timer_start1(struct snd_timer_instance *timeri,
-			   bool start, unsigned long ticks)
+			    bool start, unsigned long ticks)
 {
 	struct snd_timer *timer;
 	int result;
@@ -481,7 +481,11 @@ static int snd_timer_start1(struct snd_timer_instance *timeri,
 
 /* start/continue a slave timer */
 static int snd_timer_start_slave(struct snd_timer_instance *timeri,
+<<<<<<< HEAD
 				bool start)
+=======
+				 bool start)
+>>>>>>> 1174014a57ed... ALSA: timer: Call notifier in the same spinlock
 {
 	unsigned long flags;
 
