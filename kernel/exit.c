@@ -57,6 +57,7 @@
 #include "mt_cputime.h"
 #endif
 #include <linux/cpufreq.h>
+#include <linux/kcov.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -684,6 +685,8 @@ void do_exit(long code)
 	end_mtproc_info(tsk);
 #endif
 #endif
+	kcov_task_exit(tsk);
+
 	WARN_ON(blk_needs_flush_plug(tsk));
 
 	if (unlikely(in_interrupt()))
