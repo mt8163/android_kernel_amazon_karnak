@@ -1239,6 +1239,16 @@ static struct configfs_subsystem gadget_subsys = {
 	.su_mutex = __MUTEX_INITIALIZER(gadget_subsys.su_mutex),
 };
 
+void unregister_gadget_item(struct config_item *item)
+{
+	struct gadget_info *gi = to_gadget_info(item);
+
+	mutex_lock(&gi->lock);
+	unregister_gadget(gi);
+	mutex_unlock(&gi->lock);
+}
+EXPORT_SYMBOL_GPL(unregister_gadget_item);
+
 static int __init gadget_cfs_init(void)
 {
 	int ret;
