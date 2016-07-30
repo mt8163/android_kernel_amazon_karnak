@@ -69,3 +69,4 @@ obj-$(CONFIG_AMZ_PRIV)          += amz_priv.o
 obj-$(CONFIG_SILENT_OTA)	+= silent-ota.o
 obj-$(CONFIG_MEDIATEK_SOLUTION)	+= mediatek/
 obj-$(CONFIG_IDME) += idme.o
+obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
