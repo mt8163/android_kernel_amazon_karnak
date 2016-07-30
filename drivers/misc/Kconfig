@@ -639,6 +639,11 @@ config SILENT_OTA
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called.
+config MEMORY_STATE_TIME
+	tristate "Memory freq/bandwidth time statistics"
+	depends on PROFILING
+	help
+	  Memory time statistics exported to /sys/kernel/memory_state_time
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
