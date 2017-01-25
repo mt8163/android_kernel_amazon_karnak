@@ -1,4 +1,3 @@
-/*
  * fs/sdcardfs/packagelist.c
  *
  * Copyright (c) 2013 Samsung Electronics Co. Ltd
@@ -21,6 +20,7 @@
 #include "sdcardfs.h"
 #include <linux/hashtable.h>
 #include <linux/delay.h>
+#include <linux/radix-tree.h>
 
 
 #include <linux/init.h>
@@ -36,6 +36,9 @@ struct hashtable_entry {
 };
 
 static DEFINE_HASHTABLE(package_to_appid, 8);
+static DEFINE_HASHTABLE(package_to_userid, 8);
+static DEFINE_HASHTABLE(ext_to_groupid, 8);
+
 
 static struct kmem_cache *hashtable_entry_cachep;
 
@@ -51,15 +54,33 @@ static unsigned int str_hash(const char *key) {
 	return h;
 }
 
-appid_t get_appid(const char *app_name)
+appid_t get_appid(const char *key)
 {
 	struct hashtable_entry *hash_cur;
-	unsigned int hash = str_hash(app_name);
+	unsigned int hash = str_hash(key);
 	appid_t ret_id;
 
 	rcu_read_lock();
 	hash_for_each_possible_rcu(package_to_appid, hash_cur, hlist, hash) {
-		if (!strcasecmp(app_name, hash_cur->key)) {
+		if (!strcasecmp(key, hash_cur->key)) {
+			ret_id = atomic_read(&hash_cur->value);
+			rcu_read_unlock();
+			return ret_id;
+		}
+	}
+	rcu_read_unlock();
+	return 0;
+}
+
+appid_t get_ext_gid(const char *key)
+{
+	struct hashtable_entry *hash_cur;
+	unsigned int hash = str_hash(key);
+	appid_t ret_id;
+
+	rcu_read_lock();
+	hash_for_each_possible_rcu(ext_to_groupid, hash_cur, hlist, hash) {
+		if (!strcasecmp(key, hash_cur->key)) {
 			ret_id = atomic_read(&hash_cur->value);
 			rcu_read_unlock();
 			return ret_id;
@@ -106,7 +127,7 @@ int open_flags_to_access_mode(int open_flags) {
 	}
 }
 
-static struct hashtable_entry *alloc_packagelist_entry(const char *key,
+static struct hashtable_entry *alloc_hashtable_entry(const char *key,
 		appid_t value)
 {
 	struct hashtable_entry *ret = kmem_cache_alloc(hashtable_entry_cachep,
@@ -136,16 +157,60 @@ static int insert_packagelist_entry_locked(const char *key, appid_t value)
 			return 0;
 		}
 	}
-	new_entry = alloc_packagelist_entry(key, value);
+	new_entry = alloc_hashtable_entry(key, value);
 	if (!new_entry)
 		return -ENOMEM;
 	hash_add_rcu(package_to_appid, &new_entry->hlist, hash);
 	return 0;
 }
 
-static void fixup_perms(struct super_block *sb, const char *key) {
-	if (sb && sb->s_magic == SDCARDFS_SUPER_MAGIC) {
-		fixup_perms_recursive(sb->s_root, key, strlen(key));
+static int insert_ext_gid_entry_locked(const char *key, appid_t value)
+{
+	struct hashtable_entry *hash_cur;
+	struct hashtable_entry *new_entry;
+	unsigned int hash = str_hash(key);
+
+	/* An extension can only belong to one gid */
+	hash_for_each_possible_rcu(ext_to_groupid, hash_cur, hlist, hash) {
+		if (!strcasecmp(key, hash_cur->key))
+			return -EINVAL;
+	}
+	new_entry = alloc_hashtable_entry(key, value);
+	if (!new_entry)
+		return -ENOMEM;
+	hash_add_rcu(ext_to_groupid, &new_entry->hlist, hash);
+	return 0;
+}
+
+static int insert_userid_exclude_entry_locked(const char *key, userid_t value)
+{
+	struct hashtable_entry *hash_cur;
+	struct hashtable_entry *new_entry;
+	unsigned int hash = str_hash(key);
+
+	/* Only insert if not already present */
+	hash_for_each_possible_rcu(package_to_userid, hash_cur, hlist, hash) {
+		if (atomic_read(&hash_cur->value) == value && !strcasecmp(key, hash_cur->key))
+			return 0;
+	}
+	new_entry = alloc_hashtable_entry(key, value);
+	if (!new_entry)
+		return -ENOMEM;
+	hash_add_rcu(package_to_userid, &new_entry->hlist, hash);
+	return 0;
+}
+
+static void fixup_all_perms_name(const char *key)
+{
+	struct sdcardfs_sb_info *sbinfo;
+	struct limit_search limit = {
+		.flags = BY_NAME,
+		.name = key,
+		.length = strlen(key),
+	};
+	list_for_each_entry(sbinfo, &sdcardfs_super_list, list) {
+		if (sbinfo_has_sdcard_magic(sbinfo))
+			fixup_perms_recursive(sbinfo->sb->s_root, &limit);
 	}
 }
 
@@ -164,13 +229,37 @@ static int insert_packagelist_entry(const char *key, appid_t value)
 	mutex_lock(&sdcardfs_super_list_lock);
 	err = insert_packagelist_entry_locked(key, value);
 	if (!err)
-		fixup_all_perms(key);
+		fixup_all_perms_name(key);
 	mutex_unlock(&sdcardfs_super_list_lock);
 
 	return err;
 }
 
-static void free_packagelist_entry(struct hashtable_entry *entry)
+static int insert_ext_gid_entry(const char *key, appid_t value)
+{
+	int err;
+
+	mutex_lock(&sdcardfs_super_list_lock);
+	err = insert_ext_gid_entry_locked(key, value);
+	mutex_unlock(&sdcardfs_super_list_lock);
+
+	return err;
+}
+
+static int insert_userid_exclude_entry(const char *key, userid_t value)
+{
+	int err;
+
+	mutex_lock(&sdcardfs_super_list_lock);
+	err = insert_userid_exclude_entry_locked(key, value);
+	if (!err)
+		fixup_all_perms_name_userid(key, value);
+	mutex_unlock(&sdcardfs_super_list_lock);
+
+	return err;
+}
+
+static void free_hashtable_entry(struct hashtable_entry *entry)
 {
 	kfree(entry->key);
 	hash_del_rcu(&entry->hlist);
@@ -185,9 +274,86 @@ static void remove_packagelist_entry_locked(const char *key)
 	hash_for_each_possible_rcu(package_to_appid, hash_cur, hlist, hash) {
 		if (!strcasecmp(key, hash_cur->key)) {
 			hash_del_rcu(&hash_cur->hlist);
+			hlist_add_head(&hash_cur->dlist, &free_list);
+			break;
+		}
+	}
+	synchronize_rcu();
+	hlist_for_each_entry_safe(hash_cur, h_t, &free_list, dlist)
+		free_hashtable_entry(hash_cur);
+}
+
+static void remove_packagelist_entry(const char *key)
+{
+	mutex_lock(&sdcardfs_super_list_lock);
+	remove_packagelist_entry_locked(key);
+	fixup_all_perms_name(key);
+	mutex_unlock(&sdcardfs_super_list_lock);
+	return;
+}
+
+static void remove_ext_gid_entry_locked(const char *key, gid_t group)
+{
+	struct hashtable_entry *hash_cur;
+	unsigned int hash = str_hash(key);
+
+	hash_for_each_possible_rcu(ext_to_groupid, hash_cur, hlist, hash) {
+		if (!strcasecmp(key, hash_cur->key) && atomic_read(&hash_cur->value) == group) {
+			hash_del_rcu(&hash_cur->hlist);
 			synchronize_rcu();
-			free_packagelist_entry(hash_cur);
-			return;
+			free_hashtable_entry(hash_cur);
+			break;
+		}
+	}
+}
+
+static void remove_ext_gid_entry(const char *key, gid_t group)
+{
+	mutex_lock(&sdcardfs_super_list_lock);
+	remove_ext_gid_entry_locked(key, group);
+	mutex_unlock(&sdcardfs_super_list_lock);
+	return;
+}
+
+static void remove_userid_all_entry_locked(userid_t userid)
+{
+	struct hashtable_entry *hash_cur;
+	struct hlist_node *h_t;
+	HLIST_HEAD(free_list);
+	int i;
+
+	hash_for_each_rcu(package_to_userid, i, hash_cur, hlist) {
+		if (atomic_read(&hash_cur->value) == userid) {
+			hash_del_rcu(&hash_cur->hlist);
+			hlist_add_head(&hash_cur->dlist, &free_list);
+		}
+	}
+	synchronize_rcu();
+	hlist_for_each_entry_safe(hash_cur, h_t, &free_list, dlist) {
+		free_hashtable_entry(hash_cur);
+	}
+}
+
+static void remove_userid_all_entry(userid_t userid)
+{
+	mutex_lock(&sdcardfs_super_list_lock);
+	remove_userid_all_entry_locked(userid);
+	fixup_all_perms_userid(userid);
+	mutex_unlock(&sdcardfs_super_list_lock);
+	return;
+}
+
+static void remove_userid_exclude_entry_locked(const char *key, userid_t userid)
+{
+	struct hashtable_entry *hash_cur;
+	unsigned int hash = str_hash(key);
+
+	hash_for_each_possible_rcu(package_to_userid, hash_cur, hlist, hash) {
+		if (!strcasecmp(key, hash_cur->key) && atomic_read(&hash_cur->value) == userid) {
+			hash_del_rcu(&hash_cur->hlist);
+			synchronize_rcu();
+			free_hashtable_entry(hash_cur);
+			break;
 		}
 	}
 }
@@ -214,8 +380,8 @@ static void packagelist_destroy(void)
 
 	}
 	synchronize_rcu();
-	hlist_for_each_entry_safe(hash_cur, h_t, &free_list, hlist)
-		free_packagelist_entry(hash_cur);
+	hlist_for_each_entry_safe(hash_cur, h_t, &free_list, dlist)
+		free_hashtable_entry(hash_cur);
 	mutex_unlock(&sdcardfs_super_list_lock);
 	printk(KERN_INFO "sdcardfs: destroyed packagelist pkgld\n");
 }
@@ -233,6 +399,7 @@ static inline struct package_details *to_package_details(struct config_item *ite
 CONFIGFS_ATTR_STRUCT(package_details);
 #define PACKAGE_DETAILS_ATTR(_name, _mode, _show, _store)	\
 struct package_details_attribute package_details_attr_##_name = __CONFIGFS_ATTR(_name, _mode, _show, _store)
+#define PACKAGE_DETAILS_ATTRIBUTE(name) &package_details_attr_##name.attr
 
 static ssize_t package_details_appid_show(struct package_details *package_details,
 				      char *page)
@@ -270,7 +437,9 @@ static void package_details_release(struct config_item *item)
 PACKAGE_DETAILS_ATTR(appid, S_IRUGO | S_IWUGO, package_details_appid_show, package_details_appid_store);
 
 static struct configfs_attribute *package_details_attrs[] = {
-	&package_details_attr_appid.attr,
+	PACKAGE_DETAILS_ATTRIBUTE(appid),
+	PACKAGE_DETAILS_ATTRIBUTE(excluded_userids),
+	PACKAGE_DETAILS_ATTRIBUTE(clear_userid),
 	NULL,
 };
 
@@ -285,6 +454,127 @@ static struct config_item_type package_appid_type = {
 	.ct_item_ops	= &package_details_item_ops,
 	.ct_attrs	= package_details_attrs,
 	.ct_owner	= THIS_MODULE,
+};
+
+struct extensions_value {
+	struct config_group group;
+	unsigned int num;
+};
+
+struct extension_details {
+	struct config_item item;
+	const char* name;
+	unsigned int num;
+};
+
+static inline struct extensions_value *to_extensions_value(struct config_item *item)
+{
+	return item ? container_of(to_config_group(item), struct extensions_value, group) : NULL;
+}
+
+static inline struct extension_details *to_extension_details(struct config_item *item)
+{
+	return item ? container_of(item, struct extension_details, item) : NULL;
+}
+
+static void extension_details_release(struct config_item *item)
+{
+	struct extension_details *extension_details = to_extension_details(item);
+
+	printk(KERN_INFO "sdcardfs: No longer mapping %s files to gid %d\n",
+			extension_details->name, extension_details->num);
+	remove_ext_gid_entry(extension_details->name, extension_details->num);
+	kfree(extension_details->name);
+	kfree(extension_details);
+}
+
+static struct configfs_item_operations extension_details_item_ops = {
+	.release = extension_details_release,
+};
+
+static struct config_item_type extension_details_type = {
+	.ct_item_ops = &extension_details_item_ops,
+	.ct_owner = THIS_MODULE,
+};
+
+static struct config_item *extension_details_make_item(struct config_group *group, const char *name)
+{
+	struct extensions_value *extensions_value = to_extensions_value(&group->cg_item);
+	struct extension_details *extension_details = kzalloc(sizeof(struct extension_details), GFP_KERNEL);
+	int ret;
+	if (!extension_details)
+		return ERR_PTR(-ENOMEM);
+
+	extension_details->name = kstrdup(name, GFP_KERNEL);
+	if (!extension_details->name) {
+		kfree(extension_details);
+		return ERR_PTR(-ENOMEM);
+	}
+	extension_details->num = extensions_value->num;
+	ret = insert_ext_gid_entry(name, extensions_value->num);
+
+	if (ret) {
+		kfree(extension_details->name);
+		kfree(extension_details);
+		return ERR_PTR(ret);
+	}
+	config_item_init_type_name(&extension_details->item, name, &extension_details_type);
+
+	return &extension_details->item;
+}
+
+static struct configfs_group_operations extensions_value_group_ops = {
+	.make_item = extension_details_make_item,
+};
+
+static struct config_item_type extensions_name_type = {
+	.ct_group_ops	= &extensions_value_group_ops,
+	.ct_owner	= THIS_MODULE,
+};
+
+static struct config_group *extensions_make_group(struct config_group *group, const char *name)
+{
+	struct extensions_value *extensions_value;
+	unsigned int tmp;
+	int ret;
+
+	extensions_value = kzalloc(sizeof(struct extensions_value), GFP_KERNEL);
+	if (!extensions_value)
+		return ERR_PTR(-ENOMEM);
+	ret = kstrtouint(name, 10, &tmp);
+	if (ret) {
+		kfree(extensions_value);
+		return ERR_PTR(ret);
+	}
+
+	extensions_value->num = tmp;
+	config_group_init_type_name(&extensions_value->group, name,
+						&extensions_name_type);
+	return &extensions_value->group;
+}
+
+static void extensions_drop_group(struct config_group *group, struct config_item *item)
+{
+	struct extensions_value *value = to_extensions_value(item);
+	printk(KERN_INFO "sdcardfs: No longer mapping any files to gid %d\n", value->num);
+	kfree(value);
+}
+
+static struct configfs_group_operations extensions_group_ops = {
+	.make_group	= extensions_make_group,
+	.drop_item	= extensions_drop_group,
+};
+
+static struct config_item_type extensions_type = {
+	.ct_group_ops	= &extensions_group_ops,
+	.ct_owner	= THIS_MODULE,
+};
+
+struct config_group extension_group = {
+	.cg_item = {
+		.ci_namebuf = "extensions",
+		.ci_type = &extensions_type,
+	},
 };
 
 struct packages {
@@ -343,6 +633,7 @@ static ssize_t packages_list_show(struct packages *packages,
 }
 
 struct packages_attribute packages_attr_packages_gid_list = __CONFIGFS_ATTR_RO(packages_gid.list, packages_list_show);
+PACKAGES_ATTR(remove_userid, S_IWUGO, NULL, packages_remove_userid_store);
 
 static struct configfs_attribute *packages_attrs[] = {
 	&packages_attr_packages_gid_list.attr,
@@ -370,6 +661,11 @@ static struct config_item_type packages_type = {
 	.ct_owner	= THIS_MODULE,
 };
 
+struct config_group *sd_default_groups[] = {
+	&extension_group,
+	NULL,
+};
+
 static struct packages sdcardfs_packages = {
 	.subsystem = {
 		.su_group = {
@@ -377,15 +673,18 @@ static struct packages sdcardfs_packages = {
 				.ci_namebuf = "sdcardfs",
 				.ci_type = &packages_type,
 			},
+			.default_groups = sd_default_groups,
 		},
 	},
 };
 
 static int configfs_sdcardfs_init(void)
 {
-	int ret;
+	int ret, i;
 	struct configfs_subsystem *subsys = &sdcardfs_packages.subsystem;
-
+	for (i = 0; sd_default_groups[i]; i++) {
+		config_group_init(sd_default_groups[i]);
+	}
 	config_group_init(&subsys->su_group);
 	mutex_init(&subsys->su_mutex);
 	ret = configfs_register_subsystem(subsys);
