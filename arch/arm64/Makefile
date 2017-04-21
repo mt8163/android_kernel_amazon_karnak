@@ -42,6 +42,11 @@ TEXT_OFFSET := $(shell awk 'BEGIN {srand(); printf "0x%03x000\n", int(512 * rand
 else
 TEXT_OFFSET := 0x00080000
 endif
+
+ifeq ($(cc-name),clang)
+KBUILD_CFLAGS += $(call cc-disable-warning, asm-operand-widths)
+endif
+
 export	TEXT_OFFSET GZFLAGS
 
 core-y		+= arch/arm64/kernel/ arch/arm64/mm/
