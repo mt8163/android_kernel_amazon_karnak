@@ -91,6 +91,9 @@ ENTRY(sha2_ce_transform)
 	cbz		x3, 0f
 	ld1		{v16.4s-v19.4s}, [x3]
 	b		1f
+	/* load sha256_ce_state::finalize */
+	ldr_l		w4, sha256_ce_offsetof_finalize, x4
+	ldr		w4, [x0, x4]
 
 	/* load input */
 0:	ld1		{v16.4s-v19.4s}, [x1], #64
@@ -140,6 +143,8 @@ CPU_LE(	rev32		v19.16b, v19.16b	)
 	 * handled by the C code.
 	 */
 	cbz		x4, 3f
+	ldr_l		w4, sha256_ce_offsetof_count, x4
+	ldr		x4, [x0, x4]
 	movi		v17.2d, #0
 	mov		x8, #0x80000000
 	movi		v18.2d, #0

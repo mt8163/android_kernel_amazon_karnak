@@ -36,7 +36,13 @@ static int sha224_init(struct shash_desc *desc)
 	return 0;
 }
 
-static int sha256_init(struct shash_desc *desc)
+const u32 sha256_ce_offsetof_count = offsetof(struct sha256_ce_state,
+					      sst.count);
+const u32 sha256_ce_offsetof_finalize = offsetof(struct sha256_ce_state,
+						 finalize);
+
+static int sha256_ce_update(struct shash_desc *desc, const u8 *data,
+			    unsigned int len)
 {
 	struct sha256_state *sctx = shash_desc_ctx(desc);
 
@@ -102,42 +108,6 @@ static int sha224_final(struct shash_desc *desc, u8 *out)
 	struct sha256_state *sctx = shash_desc_ctx(desc);
 	__be32 *dst = (__be32 *)out;
 	int i;
-
-	sha2_final(desc);
-
-	for (i = 0; i < SHA224_DIGEST_SIZE / sizeof(__be32); i++)
-		put_unaligned_be32(sctx->state[i], dst++);
-
-	*sctx = (struct sha256_state){};
-	return 0;
-}
-
-static int sha256_final(struct shash_desc *desc, u8 *out)
-{
-	struct sha256_state *sctx = shash_desc_ctx(desc);
-	__be32 *dst = (__be32 *)out;
-	int i;
-
-	sha2_final(desc);
-
-	for (i = 0; i < SHA256_DIGEST_SIZE / sizeof(__be32); i++)
-		put_unaligned_be32(sctx->state[i], dst++);
-
-	*sctx = (struct sha256_state){};
-	return 0;
-}
-
-static void sha2_finup(struct shash_desc *desc, const u8 *data,
-		       unsigned int len)
-{
-	struct sha256_state *sctx = shash_desc_ctx(desc);
-	int blocks;
-
-	if (sctx->count || !len || (len % SHA256_BLOCK_SIZE)) {
-		sha2_update(desc, data, len);
-		sha2_final(desc);
-		return;
-	}
 
 	/*
 	 * Use a fast path if the input is a multiple of 64 bytes. In
