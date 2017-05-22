@@ -103,6 +103,21 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		spin_unlock(&dentry->d_lock);
 		spin_unlock(&lower_dentry->d_lock);
 	}
+	if (!err)
+		goto out;
+
+	/* If our top's inode is gone, we may be out of date */
+	inode = igrab(dentry->d_inode);
+	if (inode) {
+		data = top_data_get(SDCARDFS_I(inode));
+		if (!data || data->abandoned) {
+			d_drop(dentry);
+			err = 0;
+		}
+		if (data)
+			data_put(data);
+		iput(inode);
+	}
 
 out:
 	dput(parent_dentry);
