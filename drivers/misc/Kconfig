@@ -562,6 +562,13 @@ config UID_SYS_STATS
 	  Per UID based cpu time statistics exported to /proc/uid_cputime
 	  Per UID based io statistics exported to /proc/uid_io
 
+config UID_SYS_STATS_DEBUG
+	bool "Per-TASK statistics"
+	depends on UID_SYS_STATS
+	default n
+	help
+	  Per TASK based io statistics exported to /proc/uid_io
+
 config SND_HEADSET_TS3A225E
 	tristate "TI TS3A225E OMTP/CTIA Headset Switch"
 	depends on I2C
@@ -640,6 +647,7 @@ config SILENT_OTA
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called.
+	
 config MEMORY_STATE_TIME
 	tristate "Memory freq/bandwidth time statistics"
 	depends on PROFILING
