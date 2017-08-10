@@ -184,12 +184,6 @@ static long ged_dispatch(struct file *pFile, GED_BRIDGE_PACKAGE *psBridgePackage
 			case GED_BRIDGE_COMMAND_GE_ALLOC:
 				SET_FUNC_AND_CHECK(ged_bridge_ge_alloc, GE_ALLOC);
 				break;
-			case GED_BRIDGE_COMMAND_GE_RETAIN:
-				SET_FUNC_AND_CHECK(ged_bridge_ge_retain, GE_RETAIN);
-				break;
-			case GED_BRIDGE_COMMAND_GE_RELEASE:
-				SET_FUNC_AND_CHECK(ged_bridge_ge_release, GE_RELEASE);
-				break;
 			case GED_BRIDGE_COMMAND_GE_GET:
 				SET_FUNC_AND_CHECK(ged_bridge_ge_get, GE_GET);
 				break;
@@ -204,40 +198,6 @@ static long ged_dispatch(struct file *pFile, GED_BRIDGE_PACKAGE *psBridgePackage
 		if (pFunc)
 		{
 			ret = pFunc(pvInt, pvOut);
-		}
-
-		switch (GED_GET_BRIDGE_ID(psBridgePackageKM->ui32FunctionID)) {
-		case GED_BRIDGE_COMMAND_GE_ALLOC:
-			{
-				GED_BRIDGE_OUT_GE_ALLOC *out = (GED_BRIDGE_OUT_GE_ALLOC *)pvOut;
-
-				if (out->eError == GED_OK) {
-					ged_ge_init_context(&pFile->private_data);
-					ged_ge_context_ref(pFile->private_data, out->ge_hnd);
-				}
-			}
-			break;
-		case GED_BRIDGE_COMMAND_GE_RETAIN:
-			{
-				GED_BRIDGE_IN_GE_RETAIN *in = (GED_BRIDGE_IN_GE_RETAIN *)pvInt;
-				GED_BRIDGE_OUT_GE_RETAIN *out = (GED_BRIDGE_OUT_GE_RETAIN *)pvOut;
-
-				if (out->eError == GED_OK) {
-					ged_ge_init_context(&pFile->private_data);
-					ged_ge_context_ref(pFile->private_data, in->ge_hnd);
-				}
-			}
-			break;
-		case GED_BRIDGE_COMMAND_GE_RELEASE:
-			{
-				GED_BRIDGE_IN_GE_RELEASE *in = (GED_BRIDGE_IN_GE_RELEASE *)pvInt;
-				GED_BRIDGE_OUT_GE_RELEASE *out = (GED_BRIDGE_OUT_GE_RELEASE *)pvOut;
-
-				if (out->eError == GED_OK)
-					ged_ge_context_deref(pFile->private_data, in->ge_hnd);
-
-			}
-			break;
 		}
 
 		if (psBridgePackageKM->i32OutBufferSize > 0)
