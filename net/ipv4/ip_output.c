@@ -889,11 +889,11 @@ static int __ip_append_data(struct sock *sk,
 
 	cork->length += length;
 	if ((skb && skb_is_gso(skb)) ||
-		(((length + (skb ? skb->len : fragheaderlen)) > mtu) &&
-		(skb_queue_len(queue) <= 1) &&
-		(sk->sk_protocol == IPPROTO_UDP) &&
-		(rt->dst.dev->features & NETIF_F_UFO) && !dst_xfrm(&rt->dst) &&
-		(sk->sk_type == SOCK_DGRAM) && !sk->sk_no_check_tx)) {
+	    ((length > mtu) &&
+	    (skb_queue_len(queue) <= 1) &&
+	    (sk->sk_protocol == IPPROTO_UDP) &&
+	    (rt->dst.dev->features & NETIF_F_UFO) && !rt->dst.header_len &&
+	    (sk->sk_type == SOCK_DGRAM))) {
 		err = ip_ufo_append_data(sk, queue, getfrag, from, length,
 					 hh_len, fragheaderlen, transhdrlen,
 					 maxfraglen, flags);
