@@ -42,7 +42,9 @@ void *ion_heap_map_kernel(struct ion_heap *heap,
 		IONMSG("%s vmalloc failed pages is null.\n", __func__);
 		return NULL;
 	}
-
+	if (!pages)
+		return ERR_PTR(-ENOMEM);
+ 
 	if (buffer->flags & ION_FLAG_CACHED)
 		pgprot = PAGE_KERNEL;
 	else
