@@ -14,14 +14,9 @@
 GED_TOP = $(srctree)/drivers/misc/mediatek/gpu/ged
 MTK_TOP = $(srctree)/drivers/misc/mediatek/
 
-VER:=eng
 
-ifneq ($(strip $(TARGET_BUILD_VARIANT)),)
-#ifneq ($(strip $(TARGET_BUILD_VARIANT)),eng)
 VER:=user
 ccflags-y += -DGED_LOG_SIZE_LIMITED
-#endif
-endif
 
 ccflags-y += \
 	-I$(srctree)/include/ \
