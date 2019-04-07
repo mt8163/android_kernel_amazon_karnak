@@ -370,6 +370,8 @@ config ARCH_MT8163
 	select MTK_SYS_CIRQ
 	select MTK_GIC_EXT
 	select MTK_SYSTRACKER
+	select HAVE_ARCH_MMAP_RND_BITS
+	select HAVE_ARCH_MMAP_RND_COMPAT_BITS
 	help
 	  This enable support for MediaTek MT8163. If you need support
 	  for MediaTek MT8163, say Y here.
@@ -380,6 +382,10 @@ config ARCH_MT8173
 	bool "MediaTek MT8173"
 	select ARCH_MEDIATEK
 	select MTK_BASE_POWER
+	select MTK_SYS_CIRQ
+	select MTK_GIC_EXT
+	select HAVE_ARCH_MMAP_RND_BITS
+	select HAVE_ARCH_MMAP_RND_COMPAT_BITS
 	help
 	  This enable support for MediaTek MT8173. If you need support
 	  for MediaTek MT8173, say Y here.

@@ -495,12 +495,18 @@ config HAVE_ARCH_MMAP_RND_BITS
 
 config ARCH_MMAP_RND_BITS_MIN
 	int
+	default 8 if ARCH_MT8173
+	default 8 if ARCH_MT8163
 
 config ARCH_MMAP_RND_BITS_MAX
 	int
+	default 24 if ARCH_MT8173
+	default 24 if ARCH_MT8163
 
 config ARCH_MMAP_RND_BITS_DEFAULT
 	int
+	default 24 if ARCH_MT8173
+	default 24 if ARCH_MT8163
 
 config ARCH_MMAP_RND_BITS
 	int "Number of bits to use for ASLR of mmap base address" if EXPERT
@@ -529,12 +535,18 @@ config HAVE_ARCH_MMAP_RND_COMPAT_BITS
 
 config ARCH_MMAP_RND_COMPAT_BITS_MIN
 	int
+	default 8 if ARCH_MT8173
+	default 8 if ARCH_MT8163
 
 config ARCH_MMAP_RND_COMPAT_BITS_MAX
 	int
+	default 16 if ARCH_MT8173
+	default 16 if ARCH_MT8163
 
 config ARCH_MMAP_RND_COMPAT_BITS_DEFAULT
 	int
+	default 16 if ARCH_MT8173
+	default 16 if ARCH_MT8163
 
 config ARCH_MMAP_RND_COMPAT_BITS
 	int "Number of bits to use for ASLR of mmap base address for compatible applications" if EXPERT
