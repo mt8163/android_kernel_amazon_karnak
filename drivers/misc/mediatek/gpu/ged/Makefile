@@ -17,10 +17,10 @@ MTK_TOP = $(srctree)/drivers/misc/mediatek/
 VER:=eng
 
 ifneq ($(strip $(TARGET_BUILD_VARIANT)),)
-ifneq ($(strip $(TARGET_BUILD_VARIANT)),eng)
+#ifneq ($(strip $(TARGET_BUILD_VARIANT)),eng)
 VER:=user
 ccflags-y += -DGED_LOG_SIZE_LIMITED
-endif
+#endif
 endif
 
 ccflags-y += \
