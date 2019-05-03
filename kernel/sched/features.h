@@ -3,7 +3,7 @@
  * them to run sooner, but does not allow tons of sleepers to
  * rip the spread apart.
  */
-SCHED_FEAT(GENTLE_FAIR_SLEEPERS, true)
+SCHED_FEAT(GENTLE_FAIR_SLEEPERS, false)
 
 /*
  * Place new tasks ahead so that they do not starve already running
@@ -41,8 +41,8 @@ SCHED_FEAT(WAKEUP_PREEMPTION, true)
  */
 SCHED_FEAT(ARCH_CAPACITY, true)
 
-SCHED_FEAT(HRTICK, false)
-SCHED_FEAT(DOUBLE_TICK, false)
+SCHED_FEAT(HRTICK, true)
+SCHED_FEAT(DOUBLE_TICK, true)
 SCHED_FEAT(LB_BIAS, true)
 
 /*
