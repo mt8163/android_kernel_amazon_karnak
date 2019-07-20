@@ -53,7 +53,7 @@ static unsigned long virtual_sensor_temp = 25000;
 #define DRIVER_NAME "virtual_sensor-thermal"
 #define THERMAL_NAME "virtual_sensor"
 #define BUF_SIZE 128
-#define DMF 1000
+#define DMF 2000
 #define MASK (0x0FFF)
 #define VIRTUAL_SENSOR_NUM_MAX 2
 
