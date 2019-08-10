@@ -1,0 +1,51 @@
+ign_of_life driver
+
+1. Overview:
+
+  sign_of_life driver provides the "life cycle reason" of Amazon device to
+userland application via /proc/life_cycle_reason. "life of reason" means why
+device got powered off or rebooted or booted. For example, device may
+get shutdown by thermal service due to an overheated CPU. During next booting,
+the sign_of_life driver will find out the thermal shutdown reason and provides
+the reason to the /proc interface. Then userland application will read
+the /proc/life_cycle_reason and reports this abnormal event to device health
+servers.
+
+2. Interfaces for kernel:
+
+Following four kernel APIs are exported for other kernel components:
+
+int life_cycle_set_boot_reason(life_cycle_reason_t boot_reason);
+-This function will set the boot reason which causing device booting,
+ such as: kernel panics, normal reboot, power key turn on device etc.
+-Return 0 on success, -1 on failure.
+
+int life_cycle_set_shutdown_reason(life_cycle_reason_t shutdown_reason);
+-This function will set the shutdown reason which causing device shutdown.
+ such as: normal software shutdown, sudden power loss off and long press
+ powerkey off etc.
+-Return 0 on success, -1 on failure.
+
+
+int life_cycle_set_thermal_shutdown_reason(life_cycle_reason_t thermal_shutdown_reason);
+-This function will set the Thermal Shutdown reason which causing device
+ shutdown, such as: overheated cpus, overheated wifi, overheated PCB, overheated
+ PMIC etc.
+-Return 0 on success, -1 on failure.
+
+
+int life_cycle_set_special_mode(life_cycle_reason_t life_cycle_special_mode);
+-This function will set the special mode which causing device life cycle change,
+ such as: OTA mode, factory reset mode, low battery mode etc.
+-Return 0 on success, -1 on failure.
+
+3. Interfaces for userspace:
+A /proc/life_of_reason will be added. It will provides driver version, life cycle
+reason and life cycle type(normal or abnormal). For example, if device was rebooted
+due to a kernel panic, the output from /proc interface will be as following:
+
+cat /proc/life_cycle_reason
+lc_version:2.0
+lc_reason:Warm Boot By Kernel Panic
+lc_type:LCR_abnormal
+

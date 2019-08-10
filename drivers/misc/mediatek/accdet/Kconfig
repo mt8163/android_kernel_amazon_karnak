@@ -1,0 +1,121 @@
+config MTK_ACCDET
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  ACCDET driver support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET driver,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config MTK_AMZN_ACCDET
+	tristate "sbc123/Biscuit ACCDET driver"
+	---help---
+
+	  ACCDET driver support for Biscuit and sbc123 with MTK SOC
+
+	  If you want to use Biscuit and sbc123 ACCDET driver,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_EINT
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  ACCDET EINT support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET EINT from PMIC ACCDET itself,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_EINT_IRQ
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  ACCDET EINT support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET EINT from AP GPIO,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_PIN_SWAP
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  ACCDET_PIN_SWAP support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET PIN SWAP,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_PIN_RECOGNIZATION
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  ACCDET_PIN_RECOGNIZATION support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET PIN RECOGNIZATION,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config FOUR_KEY_HEADSET
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  FOUR_KEY_HEADSET support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET four key headset,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config TS3A225E_ACCDET
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  TS3A225E support for MediaTek SOC
+
+	  If you want to use TS3A225E
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_OMTP_CTIA_SWITCH
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  Switch IC - FSA8049 - support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET PIN SWAP,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_OMTP_CTIA_SWITCH_MANUAL
+	tristate "MediaTek ACCDET driver"
+	---help---
+
+	  Switch IC - SD80 or FSA3157 - support for MediaTek SOC
+
+	  If you want to use MediaTek ACCDET PIN SWAP,
+	  say Y or M here.
+
+	  If unsure, say N.
+
+config ACCDET_USE_VCAMAF_POWER
+         tristate "MediaTek ACCDET driver"
+         ---help---
+
+           Use VCAMAF POWER FOR MICBIAS
+
+           If you want to use MediaTek ACCDET VCAMAF POWER,
+           say Y or M here.
+
+           If unsure, say N.
+

@@ -1,0 +1,8 @@
+config MTK_MC3416
+	bool "MC3416 for MediaTek package"
+	default n
+	help
+	  It support different accelerometer sensor.
+          If this option is set,
+	  it will support
+          MC3416 Accelerometer.

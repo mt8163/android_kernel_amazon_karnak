@@ -1,0 +1,992 @@
+/*
+ * Copyright (c) 2014-2015 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/dts-v1/;
+
+#include "mt8163.dtsi"
+#include "drno_bat_setting.dtsi"
+
+/ {
+	memory@00000000 {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x20000000>;
+	};
+
+	/* chosen */
+	chosen {
+		bootargs = "console=ttyS0,921600n1 root=/dev/ram initrd=0x44000200,0x200000";
+	};
+
+	mtcpufreq {
+		compatible = "mediatek,mt8163-cpufreq";
+		reg-ext-vproc-supply = <&vproc>;
+	};
+};
+
+&accdet {
+	interrupt-parent = <&pio>;
+	interrupts = <16 IRQ_TYPE_LEVEL_HIGH>;
+	eint-debounce = <256>;
+	accdet-gpio = <&pio 48 0>;
+	accdet-mic-vol = <7>;
+	headset-mode-setting = <0x500 0x200 1 0x1f0 0x800 0x800 0x20>;
+	accdet-plugout-debounce = <20>;
+	/*1:ACC mode, 2:low cost without in bias, 6:low cost with in bias*/
+	accdet-mic-mode = <1>;
+	/*0--MD_MAX--UP_MAX--DW_MAX*/
+	headset-three-key-threshold = <0 80 220 500>;
+	/*0--MD_MAX--VOICE_MAX--UP_MAX--DW_MAX*/
+	headset-four-key-threshold = <0 58 121 192 450>;
+	pinctrl-names = "default", "state_eint_as_int";
+	pinctrl-0 = <&accdet_pins_default>;
+	pinctrl-1 = <&accdet_pins_eint_as_int>;
+	status = "okay";
+};
+
+&audgpio {
+	pinctrl-names = "default",
+			"audpmicclk-mode0",
+			"audpmicclk-mode1",
+			"audi2s1-mode0",
+			"audi2s1-mode1",
+			"extamp-pullhigh",
+			"extamp-pulllow",
+			"extamp-gain0",
+			"extamp-gain1",
+			"extamp-gain2",
+			"extamp-gain3",
+			"hpspk-pullhigh",
+			"hpspk-pulllow";
+	pinctrl-0 = <&aud_pins_default>;
+	pinctrl-1 = <&aud_pins_pmicclk_mode0>;
+	pinctrl-2 = <&aud_pins_pmicclk_mode1>;
+	pinctrl-3 = <&aud_pins_i2s1_mode0>;
+	pinctrl-4 = <&aud_pins_i2s1_mode1>;
+	pinctrl-5 = <&aud_pins_extamp_high>;
+	pinctrl-6 = <&aud_pins_extamp_low>;
+	pinctrl-7 = <&aud_pins_extamp_gain0>;
+	pinctrl-8 = <&aud_pins_extamp_gain1>;
+	pinctrl-9 = <&aud_pins_extamp_gain2>;
+	pinctrl-10 = <&aud_pins_extamp_gain3>;
+	pinctrl-11 = <&aud_pins_hpspk_high>;
+	pinctrl-12 = <&aud_pins_hpspk_low>;
+	status = "okay";
+};
+
+&auxadc {
+	status = "okay";
+};
+
+&consys {
+	pinctrl-names = "default", "gps_lna_state_init", "gps_lna_state_oh", "gps_lna_state_ol";
+	pinctrl-0 = <&consys_pins_default>;
+	pinctrl-1 = <&gpslna_pins_init>;
+	pinctrl-2 = <&gpslna_pins_oh>;
+	pinctrl-3 = <&gpslna_pins_ol>;
+	vcn18-supply = <&mt6323_vcn18_reg>;
+	vcn28-supply = <&mt6323_vcn28_reg>;
+	vcn33_bt-supply = <&mt6323_vcn33_bt_reg>;
+	vcn33_wifi-supply = <&mt6323_vcn33_wifi_reg>;
+	status = "okay";
+};
+
+&i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_a>;
+	status = "okay";
+
+	lp855x_led@2c {
+		compatible = "ti,lp855x-led";
+		reg = <0x2c>;
+	};
+
+	/* in cust_i2c_projXXX.dtsi ? */
+	kd_camera_hw1@36 { /* Fix me to right reg val */
+		compatible = "mediatek,camera_main";
+		reg = <0x36>;
+	};
+};
+
+&i2c1 {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins_a>;
+	status = "okay";
+
+	vproc: sym827@60 {
+		compatible = "silergy,sym827-regulator";
+		reg = <0x60>;
+		regulator-name = "vproc";
+		regulator-min-microvolt = <600000>;
+		regulator-max-microvolt = <1387500>;
+		regulator-enable-ramp-delay = <400>;
+		regulator-ramp-delay = <8333>;
+		regulator-always-on;
+		vsel-gpio = <&pio 34 0>;
+	};
+};
+
+&i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2_pins_a>;
+	status = "okay";
+
+	/* in cust_i2c_projXXX.dtsi ? */
+	kd_camera_hw2@30 { /* Fix me to right reg val */
+		compatible = "mediatek,camera_sub";
+		reg = <0x30>;
+	};
+
+	bq24297@6b {
+		compatible = "ti,bq24297";
+		reg = <0x6b>;
+		pinctrl-names = "bq24297_chg_en";
+		pinctrl-0 = <&bq24297_chg_en_pin>;
+	};
+};
+
+/* Main Cam */
+&kd_camera_hw1 {
+	reg-vcama-supply = <&mt6323_vcama_reg>;		/* AVDD */
+	reg-vcamd-supply = <&mt6323_vcamd_reg>;		/* DVDD */
+	reg-vcamio-supply = <&mt6323_vcamio_reg>;	/* DOVDD */
+	reg-vcamaf-supply = <&mt6323_vcamaf_reg>;	/* AFVDD */
+
+	pinctrl-names = "default", "cam0_rst0", "cam0_rst1", "cam0_pnd0", "cam0_pnd1",
+			"cam1_rst0", "cam1_rst1", "cam1_pnd0", "cam1_pnd1","cam_ldo0_0", "cam_ldo0_1";
+	pinctrl-0 = <&camera_pins_default>;
+	pinctrl-1 = <&camera_pins_cam0_rst0>;
+	pinctrl-2 = <&camera_pins_cam0_rst1>;
+	pinctrl-3 = <&camera_pins_cam0_pnd0>;
+	pinctrl-4 = <&camera_pins_cam0_pnd1>;
+	pinctrl-5 = <&camera_pins_cam1_rst0>;
+	pinctrl-6 = <&camera_pins_cam1_rst1>;
+	pinctrl-7 = <&camera_pins_cam1_pnd0>;
+	pinctrl-8 = <&camera_pins_cam1_pnd1>;
+/*
+	pinctrl-9 = <&camera_pins_cam_ldo0_0>;
+	pinctrl-10 = <&camera_pins_cam_ldo0_1>;
+*/
+	status = "okay";
+
+};
+
+/* Sub Cam */
+/* FIX ME: same power pins as Main ? */
+&kd_camera_hw2{
+	reg-vcama-supply = <&mt6323_vcama_reg>;		/* AVDD */
+	reg-vcamd-supply = <&mt6323_vcamd_reg>;		/* DVDD */
+	reg-vcamio-supply = <&mt6323_vcamio_reg>;	/* DOVDD */
+	reg-vcamaf-supply = <&mt6323_vcamaf_reg>;	/* AFVDD */
+};
+
+&keypad {
+	mediatek,kpd-key-debounce = <1024>;
+	mediatek,kpd-sw-pwrkey = <116>;
+	mediatek,kpd-hw-pwrkey = <8>;
+	mediatek,kpd-sw-rstkey  = <114>;
+	mediatek,kpd-hw-rstkey = <17>;
+	mediatek,kpd-use-extend-type = <0>;
+	/*HW Keycode [0~71] -> Linux Keycode*/
+	mediatek,kpd-hw-map-num = <72>;
+	mediatek,kpd-hw-init-map = <115 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+			0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+			0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 >;
+	mediatek,kpd-pwrkey-eint-gpio = <0>;
+	mediatek,kpd-pwkey-gpio-din  = <0>;
+	mediatek,kpd-hw-dl-key0 = <0>;
+	mediatek,kpd-hw-dl-key1 = <17>;
+	mediatek,kpd-hw-dl-key2 = <8>;
+	mediatek,kpd-hw-recovery-key = <0>;
+	mediatek,kpd-hw-factory-key  = <17>;
+};
+
+&lcm {
+	pinctrl-names = "default", "lcm_pwr_high", "lcm_pwr_low", "lcm_rst_high", "lcm_rst_low";
+	pinctrl-0 = <&lcm_default>;
+	pinctrl-1 = <&lcm_power_high>;
+	pinctrl-2 = <&lcm_power_low>;
+	pinctrl-3 = <&lcm_rst_high>;
+	pinctrl-4 = <&lcm_rst_low>;
+	reg-lcm-supply = <&mt6323_vgp1_reg>;
+};
+
+&md32 {
+	status = "okay";
+};
+
+&mmc0 {
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc0_pins_default>;
+	pinctrl-1 = <&mmc0_pins_uhs>;
+	status = "okay";
+	bus-width = <8>;
+	max-frequency = <50000000>;
+	cap-mmc-highspeed;
+	vmmc-supply = <&mt6323_vemc3v3_reg>;
+	vqmmc-supply = <&mt6323_vio18_reg>;
+	non-removable;
+};
+
+&mmc1 {
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc1_pins_default>;
+	pinctrl-1 = <&mmc1_pins_uhs>;
+	status = "okay";
+	bus-width = <4>;
+	max-frequency = <50000000>;
+	cap-sd-highspeed;
+	sd-uhs-sdr25;
+	cd-gpios = <&pio 49 0>;
+	vmmc-supply = <&mt6323_vmch_reg>;
+	vqmmc-supply = <&mt6323_vmc_reg>;
+};
+
+&pio {
+	pinctrl-names = "default";
+	pinctrl-0 = <&state_default>;
+
+	state_default:pinconf_default {
+	};
+
+	accdet_pins_default: eint16default {
+	};
+
+	accdet_pins_eint_as_int: eint16 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_48_EINT16__FUNC_GPIO48>;
+			bias-disable;
+		};
+	};
+
+	bq24297_int_pin: bq24297_int_pin {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_23_EINT1__FUNC_GPIO23>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+
+	bq24297_chg_en_pin: bq24297_chg_en_pin {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_22_EINT0__FUNC_GPIO22>;
+			slew-rate = <1>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	aud_pins_default: audiodefault {
+	};
+
+	aud_pins_extamp_gain0: audexampgain0 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_28_EINT6__FUNC_GPIO28>;
+			slew-rate = <1>;
+			output-low;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_29_EINT7__FUNC_GPIO29>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	aud_pins_extamp_gain1: audexampgain1 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_28_EINT6__FUNC_GPIO28>;
+			slew-rate = <1>;
+			output-high;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_29_EINT7__FUNC_GPIO29>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	aud_pins_extamp_gain2: audexampgain2 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_28_EINT6__FUNC_GPIO28>;
+			slew-rate = <1>;
+			output-low;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_29_EINT7__FUNC_GPIO29>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	aud_pins_extamp_gain3: audexampgain3 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_28_EINT6__FUNC_GPIO28>;
+			slew-rate = <1>;
+			output-high;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_29_EINT7__FUNC_GPIO29>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	aud_pins_extamp_high: audexamphigh {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_142_EINT21__FUNC_GPIO142>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	aud_pins_extamp_low: audexamplow {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_142_EINT21__FUNC_GPIO142>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	aud_pins_hpspk_high: audhpspkhigh {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_44_EINT12__FUNC_GPIO44>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	aud_pins_hpspk_low: audhpspklow {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_44_EINT12__FUNC_GPIO44>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	aud_pins_i2s1_mode0: audi2s1mode0 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_46_EINT14__FUNC_GPIO46>;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_47_EINT15__FUNC_GPIO47>;
+		};
+		pins_cmd2_dat {
+			pins = <MT8163_PIN_48_EINT16__FUNC_GPIO48>;
+		};
+	};
+
+	aud_pins_i2s1_mode1: audi2s1mode1 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_46_EINT14__FUNC_I2S1_DO>;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_47_EINT15__FUNC_I2S1_LRCK>;
+		};
+		pins_cmd2_dat {
+			pins = <MT8163_PIN_48_EINT16__FUNC_I2S1_BCK>;
+		};
+	};
+
+	aud_pins_pmicclk_mode0: pmicclkmode0 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_7_AUD_CLK_MOSI__FUNC_GPIO7>;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_8_AUD_DAT_MISO__FUNC_GPIO8>;
+		};
+		pins_cmd2_dat {
+			pins = <MT8163_PIN_9_AUD_DAT_MOSI__FUNC_GPIO9>;
+		};
+	};
+
+	aud_pins_pmicclk_mode1: pmicclkmode1 {
+		pins_cmd0_dat {
+			pins = <MT8163_PIN_7_AUD_CLK_MOSI__FUNC_AUD_CLK_MOSI>;
+		};
+		pins_cmd1_dat {
+			pins = <MT8163_PIN_8_AUD_DAT_MISO__FUNC_AUD_DAT_MISO>;
+		};
+		pins_cmd2_dat {
+			pins = <MT8163_PIN_9_AUD_DAT_MOSI__FUNC_AUD_DAT_MOSI>;
+		};
+	};
+
+	/* CAMERA GPIO standardization */
+	/* Project Dependency : tb8163m1 */
+	camera_pins_cam0_rst0: cam0@0 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_53_SPI_CS__FUNC_GPIO53>;/*GPIO_CAMERA_CMRST_PIN*/
+			slew-rate = <1>; /*direction 0:in, 1:out*/
+			output-low;/*direction out used only. output_low or high*/
+		};
+	};
+	camera_pins_cam0_rst1: cam0@1 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_53_SPI_CS__FUNC_GPIO53>;/*GPIO_CAMERA_CMRST_PIN*/
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	camera_pins_cam0_pnd0: cam0@2 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_58_SCL1__FUNC_GPIO58>;/*GPIO_CAMERA_CMPDN_PIN*/
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	camera_pins_cam0_pnd1: cam0@3 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_58_SCL1__FUNC_GPIO58>;/*GPIO_CAMERA_CMPDN_PIN*/
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	camera_pins_cam1_rst0: cam1@0 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_55_SPI_MI__FUNC_GPIO55>;/*GPIO_CAMERA_CMRST1_PIN*/
+			slew-rate = <1>; /*direction 0:in, 1:out*/
+			output-low;/*direction out used only. output_low or high*/
+		};
+	};
+	camera_pins_cam1_rst1: cam1@1 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_55_SPI_MI__FUNC_GPIO55>;/*GPIO_CAMERA_CMRST1_PIN*/
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+	camera_pins_cam1_pnd0: cam1@2 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_54_SPI_CK__FUNC_GPIO54>;/*GPIO_CAMERA_CMPDN1_PIN*/
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	camera_pins_cam1_pnd1: cam1@3 {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_54_SPI_CK__FUNC_GPIO54>;/*GPIO_CAMERA_CMPDN1_PIN*/
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+/*
+	camera_pins_cam_ldo0_0: cam@0 {
+		pins_cmd_dat {
+			pins = <PINMUX_GPIO68__FUNC_GPIO68>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	camera_pins_cam_ldo0_1: cam@1 {
+		pins_cmd_dat {
+			pins = <PINMUX_GPIO68__FUNC_GPIO68>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+*/
+
+	/* Set MCLK Pin default mode */
+	camera_pins_default: camdefault {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_119_CMMCLK__FUNC_CMMCLK>;	/*MCLK*/
+		};
+	};
+
+	/* CONSYS GPIO Settings - Start */
+	consys_pins_default: default {
+
+	};
+	/* CONSYS GPIO Settings - End */
+
+/* USB GPIO start */
+	gpio38_mode2_iddig: iddig_irq_init {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_38_KPCOL2__FUNC_IDDIG>;
+			slew-rate = <0>;
+			bias-pull-up = <00>;
+		};
+	};
+
+	gpio35_mode2_drvvbus: drvvbus_init {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_35_KPROW2__FUNC_USB_DRVVBUS>;
+			slew-rate = <1>;
+			bias-pull-up = <00>;
+		};
+	};
+
+	gpio35_mode2_drvvbus_low: drvvbus_low {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_35_KPROW2__FUNC_USB_DRVVBUS>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	gpio35_mode2_drvvbus_high: drvvbus_high {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_35_KPROW2__FUNC_USB_DRVVBUS>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+/* USB GPIO end */
+
+	/* CONSYS GPIO Settings - Start */
+	gpslna_pins_init: gpslna@0 {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_6_PWRAP_SPI0_CSN2__FUNC_GPIO6>;
+			slew-rate = <0>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	gpslna_pins_oh: gpslna@1 {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_6_PWRAP_SPI0_CSN2__FUNC_GPIO6>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	gpslna_pins_ol: gpslna@2 {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_6_PWRAP_SPI0_CSN2__FUNC_GPIO6>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+	/* CONSYS GPIO Settings - End */
+
+	i2c0_pins_a: i2c0@0 {
+		pins1 {
+			pinmux = <MT8163_PIN_75_SDA0__FUNC_SDA0_0>,
+				 <MT8163_PIN_76_SCL0__FUNC_SCL0_0>;
+			bias-disable;
+		};
+	};
+
+	i2c1_pins_a: i2c1@0 {
+		pins1 {
+			pinmux = <MT8163_PIN_57_SDA1__FUNC_SDA1_0>,
+				 <MT8163_PIN_58_SCL1__FUNC_SCL1_0>;
+			bias-disable;
+		};
+	};
+
+	i2c2_pins_a: i2c2@0 {
+		pins1 {
+			pinmux = <MT8163_PIN_77_SDA2__FUNC_SDA2_0>,
+				 <MT8163_PIN_78_SCL2__FUNC_SCL2_0>;
+			bias-disable;
+		};
+	};
+
+	lcm_default: default {
+	};
+
+	lcm_power_high: lcm_gpio@84_high {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_84_DSI_TE__FUNC_GPIO84>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	lcm_power_low: lcm_gpio@84_low {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_84_DSI_TE__FUNC_GPIO84>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	lcm_rst_high: lcm_gpio@83_high {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_83_LCM_RST__FUNC_GPIO83>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	lcm_rst_low: lcm_gpio@83_low {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_83_LCM_RST__FUNC_GPIO83>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+
+	mmc0_pins_default: mmc0default {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
+				<MT8163_PIN_136_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
+				<MT8163_PIN_135_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
+				<MT8163_PIN_134_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
+				<MT8163_PIN_130_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
+				<MT8163_PIN_129_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
+				<MT8163_PIN_128_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
+				<MT8163_PIN_127_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
+				<MT8163_PIN_132_MSDC0_CMD__FUNC_MSDC0_CMD>;
+			input-enable;
+			bias-pull-up;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_133_MSDC0_CLK__FUNC_MSDC0_CLK>;
+			bias-pull-down;
+		};
+
+		pins_rst {
+			pinmux = <MT8163_PIN_131_MSDC0_RSTB__FUNC_MSDC0_RSTB>;
+			bias-pull-up;
+		};
+	};
+
+	mmc0_pins_uhs: mmc0@0{
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_137_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
+				<MT8163_PIN_136_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
+				<MT8163_PIN_135_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
+				<MT8163_PIN_134_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
+				<MT8163_PIN_130_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
+				<MT8163_PIN_129_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
+				<MT8163_PIN_128_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
+				<MT8163_PIN_127_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
+				<MT8163_PIN_132_MSDC0_CMD__FUNC_MSDC0_CMD>;
+			input-enable;
+			drive-strength = <MTK_DRIVE_2mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_133_MSDC0_CLK__FUNC_MSDC0_CLK>;
+			drive-strength = <MTK_DRIVE_2mA>;
+			bias-pull-down = <MTK_PUPD_SET_R1R0_01>;
+		};
+
+		pins_rst {
+			pinmux = <MT8163_PIN_131_MSDC0_RSTB__FUNC_MSDC0_RSTB>;
+			bias-pull-up;
+		};
+	};
+
+	mmc1_pins_default: mmc1default {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_123_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
+				<MT8163_PIN_124_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
+				<MT8163_PIN_125_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
+				<MT8163_PIN_126_MSDC1_DAT3__FUNC_MSDC1_DAT3>,
+				<MT8163_PIN_121_MSDC1_CMD__FUNC_MSDC1_CMD>;
+			input-enable;
+			drive-strength = <MTK_DRIVE_4mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_122_MSDC1_CLK__FUNC_MSDC1_CLK>;
+			bias-pull-down;
+			drive-strength = <MTK_DRIVE_4mA>;
+		};
+
+		pins_insert {
+			pinmux = <MT8163_PIN_49_EINT17__FUNC_GPIO49>;
+			bias-pull-up;
+		};
+	};
+
+	mmc1_pins_uhs: mmc1@0 {
+		pins_cmd_dat {
+			pinmux = <MT8163_PIN_123_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
+				<MT8163_PIN_124_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
+				<MT8163_PIN_125_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
+				<MT8163_PIN_126_MSDC1_DAT3__FUNC_MSDC1_DAT3>,
+				<MT8163_PIN_121_MSDC1_CMD__FUNC_MSDC1_CMD>;
+			input-enable;
+			drive-strength = <MTK_DRIVE_4mA>;
+			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
+		};
+
+		pins_clk {
+			pinmux = <MT8163_PIN_122_MSDC1_CLK__FUNC_MSDC1_CLK>;
+			drive-strength = <MTK_DRIVE_4mA>;
+			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
+		};
+	};
+};
+
+&pwrap {
+	pmic: mt6323 {
+		compatible = "mediatek,mt6323";
+
+		pmicmt6323: pmicmt6323 {
+			compatible = "mediatek,mt6323-pmic";
+			interrupt-parent = <&pio>;
+			interrupts = <24 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		regulators {
+
+			compatible = "mediatek,mt6323-regulator";
+
+			mt6323_vproc_reg: buck_vproc {
+				regulator-name = "vproc";
+				regulator-min-microvolt = < 700000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <12500>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vsys_reg: buck_vsys {
+				regulator-name = "vsys";
+				regulator-min-microvolt = <1400000>;
+				regulator-max-microvolt = <2987500>;
+				regulator-ramp-delay = <25000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vpa_reg: buck_vpa {
+				regulator-name = "vpa";
+				regulator-min-microvolt = < 500000>;
+				regulator-max-microvolt = <3650000>;
+			};
+
+			mt6323_vtcxo_reg: ldo_vtcxo {
+				regulator-name = "vtcxo";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-enable-ramp-delay = <90>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vcn28_reg: ldo_vcn28 {
+				regulator-name = "vcn28";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-enable-ramp-delay = <185>;
+			};
+
+			mt6323_vcn33_bt_reg: ldo_vcn33_bt {
+				regulator-name = "vcn33_bt";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3600000>;
+				regulator-enable-ramp-delay = <185>;
+			};
+
+			mt6323_vcn33_wifi_reg: ldo_vcn33_wifi {
+				regulator-name = "vcn33_wifi";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3600000>;
+				regulator-enable-ramp-delay = <185>;
+			};
+
+			mt6323_va_reg: ldo_va {
+				regulator-name = "va";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vcama_reg: ldo_vcama {
+				regulator-name = "vcama";
+				regulator-min-microvolt = <1500000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vio28_reg: ldo_vio28 {
+				regulator-name = "vio28";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vusb_reg: ldo_vusb {
+				regulator-name = "vusb";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-boot-on;
+			};
+
+			mt6323_vmc_reg: ldo_vmc {
+				regulator-name = "vmc";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-enable-ramp-delay = <36>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vmch_reg: ldo_vmch {
+				regulator-name = "vmch";
+				regulator-min-microvolt = <3000000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-enable-ramp-delay = <36>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vemc3v3_reg: ldo_vemc3v3 {
+				regulator-name = "vemc3v3";
+				regulator-min-microvolt = <3000000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-enable-ramp-delay = <36>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vgp1_reg: ldo_vgp1 {
+				regulator-name = "vgp1";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vgp2_reg: ldo_vgp2 {
+				regulator-name = "vgp2";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1200000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vgp3_reg: ldo_vgp3 {
+				regulator-name = "vgp3";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vcn18_reg: ldo_vcn18 {
+				regulator-name = "vcn18";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vsim1_reg: ldo_vsim1 {
+				regulator-name = "vsim1";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3000000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vsim2_reg: ldo_vsim2 {
+				regulator-name = "vsim2";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3000000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vrtc_reg: ldo_vrtc {
+				regulator-name = "vrtc";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vcamaf_reg: ldo_vcamaf {
+				regulator-name = "vcamaf";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vibr_reg: ldo_vibr {
+				regulator-name = "vibr";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-enable-ramp-delay = <36>;
+			};
+
+			mt6323_vrf18_reg: ldo_vrf18 {
+				regulator-name = "vrf18";
+				regulator-min-microvolt = <1825000>;
+				regulator-max-microvolt = <1825000>;
+				regulator-enable-ramp-delay = <187>;
+			};
+
+			mt6323_vm_reg: ldo_vm {
+				regulator-name = "vm";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vio18_reg: ldo_vio18 {
+				regulator-name = "vio18";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+				regulator-always-on;
+				regulator-boot-on;
+			};
+
+			mt6323_vcamd_reg: ldo_vcamd {
+				regulator-name = "vcamd";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+
+			mt6323_vcamio_reg: ldo_vcamio {
+				regulator-name = "vcamio";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-enable-ramp-delay = <216>;
+			};
+		};
+	};
+};
+
+&spi {
+	status = "okay";
+	spidev0: spi@0 {
+		compatible = "linux,spidev";
+		reg = <0>;
+		spi-max-frequency = <100000000>;
+	};
+};
+
+&uart0 {
+	status="okay";
+};
+
+&usb0 {
+	vusb-supply = <&mt6323_vusb_reg>;
+	pinctrl-names = "iddig_irq_init", "drvvbus_init", "drvvbus_low", "drvvbus_high";
+	pinctrl-0 = <&gpio38_mode2_iddig>;
+	pinctrl-1 = <&gpio35_mode2_drvvbus>;
+	pinctrl-2 = <&gpio35_mode2_drvvbus_low>;
+	pinctrl-3 = <&gpio35_mode2_drvvbus_high>;
+	iddig_gpio = <&pio 38 0>;
+	drvvbus_gpio = <&pio 35 0>;
+	status = "okay";
+};

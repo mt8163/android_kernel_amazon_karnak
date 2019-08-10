@@ -1,0 +1,59 @@
+config MTK_THERMAL_PA_VIA_ATCMD
+	bool "MTK_THERMAL_PA_VIA_ATCMD"
+	help
+	  Internal switch for thermal management to query modem RF
+	  temperature via AT command.
+
+config THERMAL_BISCUIT
+	bool "THERMAL_BISCUIT"
+
+config THERMAL_roc123
+	bool "Thermal support for roc123"
+	default n
+	help
+	  For roc123 specific thermal configurations.
+
+config THERMAL_abc123
+	bool "Thermal support for abc123"
+	default n
+	help
+	  For abc123 specific configurations for thermal related.
+
+config THERMAL_DOUGLAS
+	bool "THERMAL_DOUGLAS"
+
+config THERMAL_KARNAK
+	bool "THERMAL_KARNAK"
+	default n
+	help
+	  For KARNAK specific configurations for thermal related.
+
+config THERMAL_abc123
+	bool "THERMAL_abc123"
+	default n
+	help
+	  For abc123 specific configurations for thermal related.
+
+config THERMAL_WIFI_COOLER
+	bool "Wifi cooler"
+	default n
+	help
+	  Thermal cooler to support WiFi throttling. Enable this to
+	  add the driver and device for WiFi cooler.
+
+config VS_BACKLIGHT_COOLER
+	bool "Virtual Sensor backlight cooler"
+	default n
+
+config VS_BCCT_COOLER
+	bool "Virtual Sensor battery current cooler"
+	default n
+
+config THERMAL_ALT_CPU_ZONE
+	bool "Alternate CPU thermal zone"
+	default n
+	help
+	  Alternative thermal zone to track CPU temperature.
+	  Enable this flag to load the driver and device for
+	  CPU alternative thermal zone.
+

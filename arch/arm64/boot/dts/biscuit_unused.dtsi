@@ -1,0 +1,263 @@
+/*********************************/
+/** Disable unused device nodes **/
+/*********************************/
+&mfg {
+	status = "disabled";
+};
+
+&mali {
+	status = "disabled";
+};
+
+&mmsys {
+	status = "disabled";
+};
+
+&mdp_rdma {
+	status = "disabled";
+};
+
+&mdp_rsz0 {
+	status = "disabled";
+};
+
+&mdp_rsz1 {
+	status = "disabled";
+};
+
+&mdp_wdma {
+	status = "disabled";
+};
+
+&mdp_wrot {
+	status = "disabled";
+};
+
+&mdp_tdshp {
+	status = "disabled";
+};
+
+
+&disp_wdma0 {
+	status = "disabled";
+};
+
+&disp_color {
+	status = "disabled";
+};
+
+&disp_ccorr {
+	status = "disabled";
+};
+
+&disp_aal {
+	status = "disabled";
+};
+
+&disp_gamma {
+	status = "disabled";
+};
+
+&disp_dither {
+	status = "disabled";
+};
+
+&disp_ufoe {
+	status = "disabled";
+};
+
+&disp_dsi0 {
+	status = "disabled";
+};
+
+&disp_dpi0 {
+	status = "disabled";
+};
+
+&disp_dpi1 {
+	status = "disabled";
+};
+
+&disp_pwm0 {
+	status = "disabled";
+};
+
+&disp_wdma1 {
+	status = "disabled";
+};
+
+&disp_config2 {
+	status = "disabled";
+};
+
+&disp_config3 {
+	status = "disabled";
+};
+
+&disp_mipi {
+	status = "disabled";
+};
+
+&disp_io_driving {
+	status = "disabled";
+};
+
+&disp_tvdpll_cfg6 {
+	status = "disabled";
+};
+
+&disp_tvdpll_con0 {
+	status = "disabled";
+};
+
+&disp_tvdpll_con1 {
+	status = "disabled";
+};
+
+&disp_lvds_ana {
+	status = "disabled";
+};
+
+&disp_lvds_tx {
+	status = "disabled";
+};
+
+&hdmi0 {
+	status = "disabled";
+};
+
+&imgsys {
+	status = "disabled";
+};
+
+&isp_display {
+	status = "disabled";
+};
+
+&kd_camera_hw2 {
+	status = "disabled";
+};
+
+&vdecsys {
+	status = "disabled";
+};
+
+&vdec_gcon {
+	status = "disabled";
+};
+
+&vdec {
+	status = "disabled";
+};
+
+&vencsys {
+	status = "disabled";
+};
+
+&venc {
+	status = "disabled";
+};
+
+&jpgenc {
+	status = "disabled";
+};
+
+&touch {
+	status = "disabled";
+};
+
+&hwmsensor {
+	status = "disabled";
+};
+
+&gsensor {
+	status = "disabled";
+};
+
+&alsps {
+	status = "disabled";
+};
+
+&batchsensor {
+	status = "disabled";
+};
+
+&gyro {
+	status = "disabled";
+};
+
+&barometer {
+	status = "disabled";
+};
+
+&msensor {
+	status = "disabled";
+};
+
+&orientation {
+	status = "disabled";
+};
+
+&flashlight {
+	status = "disabled";
+};
+
+&led0 {
+	status = "disabled";
+};
+
+&led1 {
+	status = "disabled";
+};
+
+&led2 {
+	status = "disabled";
+};
+
+&led3 {
+	status = "disabled";
+};
+
+&led4 {
+	status = "disabled";
+};
+
+&led5 {
+	status = "disabled";
+};
+
+&led6 {
+	status = "disabled";
+};
+
+&mtkfb {
+	status = "disabled";
+};
+
+&ice {
+	status = "disabled";
+};
+
+&bat_meter {
+	status = "disabled";
+};
+
+&bat_notify {
+	status = "disabled";
+};
+
+&bat_comm {
+	status = "disabled";
+};
+
+&isp_pipemgr {
+	status = "disabled";
+};
+
+&isp_sysram {
+	status = "disabled";
+};
+
+&lcm {
+	status = "disabled";
+};

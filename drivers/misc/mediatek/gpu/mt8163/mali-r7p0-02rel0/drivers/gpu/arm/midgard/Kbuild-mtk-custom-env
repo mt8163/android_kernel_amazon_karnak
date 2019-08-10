@@ -1,0 +1,62 @@
+#
+# Copyright (C) 2016 MediaTek Inc.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+#
+
+
+$(info mali MTK evironment)
+
+#build support for a ARM Mali Midgard GPU
+CONFIG_MALI_MIDGARD := y
+
+#use mtk platform
+CONFIG_MALI_PLATFORM_THIRDPARTY := y
+CONFIG_MALI_PLATFORM_THIRDPARTY_NAME := $(CONFIG_MTK_PLATFORM)
+
+CONFIG_MALI_PLATFORM_FAKE := y
+
+CONFIG_MALI_DEBUG := y
+
+ccflags-y += -DCONFIG_MALI_PLATFORM_FAKE
+ccflags-y += -DCONFIG_MALI_MIDGARD_DVFS
+
+#Add include path for kernel 3.10
+ccflags-y += -I-I$(srctree)/include
+
+#Add include path for linux sync.h
+ccflags-y += -I$(srctree)/drivers/staging/android
+
+#include clock manager for clock use
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/mach/$(CONFIG_MTK_PLATFORM)/include
+#new path
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/$(CONFIG_MTK_PLATFORM)
+
+#include path for pmic
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/power/$(CONFIG_MTK_PLATFORM)
+
+#common 
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/gpu/mt8163/mediatek/include
+
+ccflags-y += -DCONFIG_DEBUG_FS
+ccflags-y += -DCONFIG_PROC_FS
+
+VER := $(if $(filter eng,$(TARGET_BUILD_VARIANT)),eng,user)
+
+ifeq ($(VER),eng)
+ccflags-y += -DCONFIG_MALI_DEBUG
+else
+ccflags-y += -UCONFIG_MALI_DEBUG
+endif
+
+ifneq ($(TARGET_BUILD_VARIANT), user)
+CONFIG_MALI_GATOR_SUPPORT := y
+ccflags-y += -DCONFIG_MALI_GATOR_SUPPORT
+endif

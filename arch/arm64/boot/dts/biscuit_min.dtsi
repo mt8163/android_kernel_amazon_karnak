@@ -1,0 +1,30 @@
+#include "biscuit.dtsi"
+
+/ {
+};
+
+/delete-node/ &consys;
+/delete-node/ &usb0;
+/delete-node/ &accdet;
+/delete-node/ &cpu1;
+/delete-node/ &cpu2;
+/delete-node/ &cpu3;
+/delete-node/ &md32;
+
+/* Set eMMC to HS50*/
+&mmc0 {
+	/delete-property/ latch-ck;
+	max-frequency = <50000000>;
+	/delete-property/ mmc-hs200-1_8v;
+	/delete-property/ cap-mmc-hw-reset;
+};
+
+&i2c0 {
+	is31fl3236@3F {
+		/delete-property/ play-boot-animation;
+	};
+};
+
+&cpu0 {
+	clock-frequency = <600000000>;
+};

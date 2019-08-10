@@ -1,0 +1,39 @@
+Amazon logger driver unit test steps:
+
+1  Create a Android.mk, then copy following
+   to it.
+
+Android.mk
+---------------------------------------
+LOCAL_PATH:= $(call my-dir)
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES := logger_test.c
+LOCAL_MODULE := logger_test
+include $(BUILD_EXECUTABLE)
+--------------------------------------
+
+2. do "mm" in this directory to build the userspace
+   logger_test
+
+3. adb push logger_test /data/
+
+4. If kernel doesn't have any metrics/vital producer,
+   please enable the CONFIG_AMAZON_METRICS_LOG_TEST to
+   build in the amazon_logger_test.c, which is kernel
+   module to produce the metrics/vitals logs.
+   Or you can build it as a kernel module, then
+   insmod amazon_logger_test.ko
+
+   If the kernel already has other codes to produce
+   metrics/vitals logs, then this step can be skipped.
+
+5. logger_test /dev/metrics   (test metrics channel)
+   logger_test /dev/vitals    (test vitals channel)
+
+
+6. Example of test result:
+
+    ---------------------------------------------------
+    amazon logger test finished:
+       total log_read_count = 50
+       total error_count= 0

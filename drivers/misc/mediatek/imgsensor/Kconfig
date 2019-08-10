@@ -1,0 +1,14 @@
+config MTK_IMGSENSOR
+  bool CONFIG_MTK_IMGSENSOR
+  default n
+  help
+    CONFIG_MTK_IMGSENSOR
+
+config MTK_FRONT_CAMERA_ROT
+  bool "Support rotated front camera (GC0312)"
+  default n
+  help
+    The front camera on some product is rotated, which will cause the captured image
+    in reverse mode. To make the captured image look normal, we have to rotate it back
+    by setting the "Flip & Mirror" bits in GC0312 image sensor register 0x17. This is an
+    unusual setting which is specific to platform.

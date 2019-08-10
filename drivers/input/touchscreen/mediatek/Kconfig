@@ -1,0 +1,55 @@
+#
+# Touchscreen driver configuration
+#
+menuconfig INPUT_TOUCHSCREEN
+	bool "Touchscreens"
+	help
+	  Say Y here, and a list of supported touchscreens will be displayed.
+	  This option doesn't affect the kernel.
+
+	  If unsure, say Y.
+
+if INPUT_TOUCHSCREEN
+
+config TOUCHSCREEN_MTK
+	bool "MediaTek Touch Panel Driver"
+	help
+	Say Y here if you have MediaTek touch panel.
+
+	If unsure, say N.
+
+	To compile this dirver as a module, choose M here: the
+	module will be called.
+
+config TOUCHSCREEN_MTK_FT5X0X
+	bool "FT5X0X for Mediatek package"
+	default n
+	help
+	  Say Y here if you have FT5X0X touch panel.
+
+	  If unsure, say N.
+
+	  To compile this dirver as a module, choose M here: the
+	  module will be called.
+
+source "drivers/input/touchscreen/mediatek/ft5x0x/Kconfig"
+
+config TOUCHSCREEN_MTK_GT5668
+	bool "GT5668 for Mediatek package"
+	default n
+	help
+	Say Y here if you have GT5668 touch panel.
+
+	If unsure, say N.
+
+config TOUCHSCREEN_SET_INTERRUPT_TO_INPUT
+	bool "Set Interrupt pin to input manually"
+	depends on roc123
+	default n
+	help
+	Set to ensure interrupt pin on touch panel is set
+	to input mode using gpio subsystem.
+
+source "drivers/input/touchscreen/mediatek/GT5668/Kconfig"
+
+endif

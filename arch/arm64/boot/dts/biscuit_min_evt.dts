@@ -1,0 +1,78 @@
+/*
+ * Copyright (c) 2014-2015 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/dts-v1/;
+
+#include "biscuit_min.dtsi"
+
+/ {
+	version = "min_evt";
+};
+
+&audgpio {
+	pinctrl-names = "default",
+			"audpmicclk-mode0",
+			"audpmicclk-mode1",
+			"audi2s1-mode0",
+			"audi2s1-mode1",
+			"extamp-pullhigh",
+			"extamp-pulllow",
+			"cmmclk-mclk",
+			"extamp-dacmux-pullhigh",
+			"extamp-dacmux-pulllow";
+	pinctrl-0 = <&aud_pins_default>;
+	pinctrl-1 = <&aud_pins_pmicclk_mode0>;
+	pinctrl-2 = <&aud_pins_pmicclk_mode1>;
+	pinctrl-3 = <&aud_pins_i2s1_mode0>;
+	pinctrl-4 = <&aud_pins_i2s1_mode1>;
+	pinctrl-5 = <&aud_pins_extamp_high>;
+	pinctrl-6 = <&aud_pins_extamp_low>;
+	pinctrl-7 = <&camera_pins_default>;
+	pinctrl-8 = <&aud_pins_extamp_dacmux_high>;
+	pinctrl-9 = <&aud_pins_extamp_dacmux_low>;
+	status = "okay";
+};
+
+&pio {
+	aud_pins_extamp_high: audexamphigh {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_122_MSDC1_CLK__FUNC_GPIO122>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	aud_pins_extamp_low: audexamplow {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_122_MSDC1_CLK__FUNC_GPIO122>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+
+	aud_pins_extamp_dacmux_high: audexampdacmuxhigh {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_124_MSDC1_DAT1__FUNC_GPIO124>;
+			slew-rate = <1>;
+			output-high;
+		};
+	};
+
+	aud_pins_extamp_dacmux_low: audexampdacmuxlow {
+		pins_cmd_dat {
+			pins = <MT8163_PIN_124_MSDC1_DAT1__FUNC_GPIO124>;
+			slew-rate = <1>;
+			output-low;
+		};
+	};
+};
+

@@ -1,0 +1,9 @@
+config MTK_USBFSH
+	bool "MTK_USBFSH"
+	default n
+
+config MTK_USB_RESET_WIFI_DONGLE
+	bool "Mediatek USB host reset WIFI dongle suport"
+	default n
+	help
+	  Say Y here if your system needs use reset USB WIFI dongle by USB host driver.

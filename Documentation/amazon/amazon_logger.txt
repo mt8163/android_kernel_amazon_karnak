@@ -1,0 +1,113 @@
+	Amazon Logger driver
+
+1. Overview:
+
+	This driver is metrics logging driver for Amazon device. Metrics are
+the "events" log recorded by device software. It includes user space metrics logging
+and kernel space metrics logging. This driver supports kernel space's logging only.
+It is based on Linux trace ring_buffer to takes following benefits:
+	-let ring_buffer to manage the buffer.
+	-ring_buffer allows multiple producers writing at same time on different cpus.
+
+Metrics logs will be collected by userland applications (logd) and sent to data
+servers. Amazon KDM will pull data from data servers and provide reports of Amazon device
+health status. A brief high level diagram is as follows:
+
+			_________________		_______________		 _______
+			|		|		|  data server |	|KDM	|
+			|	logd	|-------------->|______________|------->|_______|
+			|_______________|
+		 _______________|________
+		|			|
+	---------------------------------------------------------------------------------
+		|			|
+		|			|
+	 _______|______		________|_____
+	| ring_buffer  |	| ring_buffer |
+	|______________|	|_____________|
+	| /dev/metrics |	| /dev/vitals |
+	|______________|	|_____________|
+
+
+2. Interfaces for kernel:
+
+Following three kernel API are exported for other kernel components:
+
+1)int log_to_metrics(enum android_log_priority priority,
+	const char *domain, char *logmsg);
+
+2)int log_counter_to_vitals(enum android_log_priority priority,
+	const char *domain, const char *program,
+	const char *source, const char *key,
+	long counter_value, const char *unit,
+	const char *metadata, vitals_type type);
+
+3)int log_timer_to_vitals(enum android_log_priority priority,
+	const char *domain, const char *program,
+	const char *source, const char *key,
+	long timer_value, const char *unit, vitals_type type);
+
+General arguments description:
+	program: Vital record category name
+	source: Vital name
+	discrete_value, dv: a discrete value, typically used as key
+	counter_value, cv: counter value
+	timer_value, tv: timer value
+	unit: unit for the vital
+	type: type of vitals, currently 3 types are supported:
+		a. VITALS_NORMAL: regular vitals with no special processing
+		b. VITALS_FGTRACKING: vitals for which foreground tracking is required.
+		These vitals will be tracked in 2 separate buckets: total occurrence
+		and occurrence in foreground.
+		c. VITALS_TIME_BUCKET: vitals for state transition which needs to be broken
+		down to different time buckets. This simplifies client side processing
+		as only info required is new_state, transition time (in time since boot),
+		and initial state (client should report during boot/initialization), and client
+		side does not need to keep timers to track time spent in buckets.
+Return value:
+	0 on success, error code for failure.
+
+Example code:
+
+#include<linux/metricslog.h>
+#include<linux/string.h>
+
+#define METRICS_STR_LEN 128
+int amazon_log_example(void)
+{
+	char metrics_log[METRICS_STR_LEN];
+	int ret = -1;
+	struct timespec now;
+
+	memset(metrics_log, 0, METRICS_STR_LEN);
+	snprintf(metrics_log, METRICS_STR_LEN, "TEST:METRIC:VALUE_A=%d;CT;1,VALUE_B=%d;CT;1:NR",
+			1, 0);
+	ret = log_to_metrics(ANDROID_LOG_INFO, "metric_test", metrics_log);
+	if (ret)
+		pr_err("fails in log_to_metrics %d", ret);
+
+	now = current_kernel_time();
+	memset(metrics_log, 0, METRICS_STR_LEN);
+
+	snprintf(metrics_log, METRICS_STR_LEN, "Kerenl:TEST:VALUE_A=%d;CT;1,VALUE_B=%d;CT;1:NR",
+	ret = log_timer_to_vitals(ANDROID_LOG_INFO, "Kernel timer", "TEST",
+					"time_in_test", "Test", now.tv_sec, "s", VITALS_TIME_BUCKET);
+	if (ret)
+		pr_err("fails in log_timer_to_vitals %d", ret);
+
+	ret = log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel vitals", "TEST",
+					"VITALS", "test_value", (u32)1, "count", "s", VITALS_NORMAL);
+	if (ret)
+		pr_err("fails in log_counter_to_vitals %d", ret);
+
+	return ret;
+}
+
+3. Interfaces for userspace:
+
+	Two device nodes /dev/metrics and /dev/vitals will be created. Both of them support
+open(),poll()/select() and read() system calls. Currently they are read-only mode,
+therefore they do not support write(). For read(), it supports blocking and nonblocking mode.
+In blocking mode, the read() will be blocked until a new log is available.
+In nonblocking(O_NONBLOCK) mode, the read() will return immediately if no data is available.
+For each read(), only one log entry is consumed and returned to user land.

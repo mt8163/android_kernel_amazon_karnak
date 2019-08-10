@@ -1,0 +1,197 @@
+/*
+ * Copyright (c) 2014-2015 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/*************************
+ * Customized Battery Setting dtsi file
+*************************/
+&bat_comm {
+	/* cust_charging.h */
+	/* Linear Charging Threshold */
+	v_pre2cc_thres = <3400>;   /* unit: mV */
+	v_cc2topoff_thres = <4050>;
+	recharging_voltage = <4110>;
+	charging_full_current = <150>; /* unit: mA */
+
+	/* Charging Current Setting */
+	usb_charger_current = <50000>;	/* Unit: 0.01 mA */
+	ac_charger_input_current = <100000>;	/* Unit: 0.01 mA */
+	ac_charger_current = <120000>;	/* Unit: 0.01 mA */
+	non_std_ac_charger_input_current = <100000>;	/* Unit: 0.01 mA */
+	non_std_ac_charger_current = <120000>;	/* Unit: 0.01 mA */
+	charging_host_charger_current = <100000>;	/* Unit: 0.01 mA */
+	apple_0_5a_charger_current = <50000>;	/* Unit: 0.01 mA */
+	apple_1_0a_charger_current = <100000>;	/* Unit: 0.01 mA */
+	apple_2_1a_charger_current = <210000>;	/* Unit: 0.01 mA */
+
+	/* SW AICL parameters */
+	aicl_enable;
+	aicl_charging_current_max = <180000>;		/* Unit: 0.01 mA */
+	aicl_step_current = <10000>;			/* Unit: 0.01 mA */
+	aicl_step_interval = <100>;			/* Unit: ms */
+	aicl_vbus_valid = <4600>;			/* Unit: mV */
+	aicl_vbus_state_phase = <10>;			/* Unit: ms */
+
+	/* AP15: SW AICL parameters for non-dock mode */
+	ap15_charger_input_current_max = <180000>;	/* Unit: 0.01 mA */
+	ap15_charger_input_current_min = <160000>;	/* Unit: 0.01 mA */
+
+	/* AP15: SW AICL parameters for dock mode */
+	ap15_dock_input_current_max = <180000>;		/* Unit: 0.01 mA */
+	ap15_dock_input_current_min = <140000>;		/* Unit: 0.01 mA */
+
+	/* Battery Temperature Protection */
+	mtk_temperature_recharge_support = <1>;
+	max_charge_temperature = <60>;
+	max_charge_temperature_minus_x_degree = <60>;
+	min_charge_temperature = <0>;
+	min_charge_temperature_plus_x_degree = <6>;
+
+	max_charging_time = <72000>; /* 20*60*60 */
+
+	/* charger error check */
+	bat_low_temp_protect_enable = <0>;
+	v_charger_enable = <0>;	/* 1:on , 0:off */
+	v_charger_max = <6500>;	/* unit: mV */
+	v_charger_min = <4400>;
+
+	/*  Tracking TIME */
+	onehundred_percent_tracking_time = <10>;	/* Unit: second */
+	npercent_tracking_time = <20>;	/* Unit: second */
+	sync_to_real_tracking_time = <60>;	/* Unit: second */
+	v_0percent_tracking = <3400>;	/* Unit: mV */
+
+	/* High battery support */
+	high_battery_voltage_support = <0>;
+
+	/* JEITA related setting */
+	mtk_jeita_standard_support=<1>;
+	cust_soc_jeita_sync_time = <30>; /* Unit: second */
+	jeita_recharge_voltage = <4110>; /* Unit: mV */
+	jeita_temp_above_pos_60_cv_voltage = <4100000>; /* Unit: 0.001mV */
+	jeita_temp_pos_45_to_pos_60_cv_voltage = <4100000>; /* Unit: 0.001mV */
+	jeita_temp_pos_10_to_pos_45_cv_voltage = <4200000>; /* Unit: 0.001mV */
+	jeita_temp_pos_0_to_pos_10_cv_voltage = <4200000>; /* Unit: 0.001mV */
+	jeita_temp_neg_10_to_pos_0_cv_voltage = <4200000>; /* Unit: 0.001mV */
+	jeita_temp_below_neg_10_cv_voltage = <4200000>; /* Unit: 0.001mV */
+
+	/* For JEITA Linear Charging only */
+	jeita_neg_10_to_pos_0_full_current = <120>; /* Unit: mA */
+	jeita_temp_pos_45_to_pos_60_recharge_voltage = <4000>; /* Unit: mV */
+	jeita_temp_pos_10_to_pos_45_recharge_voltage = <4100>; /* Unit: mV */
+	jeita_temp_pos_0_to_pos_10_recharge_voltage = <4100>; /* Unit: mV */
+	jeita_temp_neg_10_to_pos_0_recharge_voltage = <4100>; /* Unit: mV */
+	jeita_temp_pos_45_to_pos_60_cc2topoff_threshold = <4050>; /* Unit: mV */
+	jeita_temp_pos_10_to_pos_45_cc2topoff_threshold = <4050>; /* Unit: mV */
+	jeita_temp_pos_0_to_pos_10_cc2topoff_threshold = <4050>; /* Unit: mV */
+	jeita_temp_neg_10_to_pos_0_cc2topoff_threshold = <4050>; /* Unit: mV */
+};
+
+&bat_meter{
+
+	/* cust_pmic.h */
+	vbat_channel_number = <6>;
+	isense_channel_number = <7>;
+	vbattemp_channel_number = <5>;
+	vcharger_channel_number = <4>;
+	swchr_power_path = <1>;
+	external_swchr_support = <1>;
+
+	vbat_internal_charging = <7>;
+	isense_internal_charging = <6>;
+
+	/* cust_battery_meter.h */
+	/* ADC resistor  */
+	r_bat_sense = <4>;
+	r_i_sense = <4>;
+	r_charger_1 = <330>;
+	r_charger_2 = <39>;
+	temperature_t0 = <110>;
+	temperature_t1 = <0>;
+	temperature_t1_5 = <10>;
+	temperature_t2 = <25>;
+	temperature_t3 = <50>;
+	temperature_t = <255>;	/* this should be fixed, never change the value */
+	fg_meter_resistance = <0>;
+
+	/* Discharge percentage, 1: D5, 0: D2 */
+	oam_d5 = <0>;
+
+	change_tracking_point = <1>;
+	/* SW OCV tracking setting */
+	cust_tracking_point = <14>;
+	cust_r_sense = <200>;
+	cust_hw_cc = <0>;
+	aging_tuning_value = <100>;
+	cust_r_fg_offset = <0>;
+	ocv_board_compesate = <0>;
+	r_fg_board_base = <1000>;
+	r_fg_board_slope = <1000>;
+	car_tune_value = <100>;
+
+	/* HW Fuel gague  */
+	current_detect_r_fg = <10>;	/* Unit: mA */
+	minerroroffset = <1000>;
+	fg_vbat_average_size = <18>;
+	r_fg_value = <10>;	/* Unit: mOhm */
+
+	cust_poweron_delta_capacity_tolrance = <45>;
+	cust_poweron_low_capacity_tolrance = <5>;
+	cust_poweron_max_vbat_tolrance = <70>;
+	cust_poweron_delta_vbat_tolrance = <45>;
+	cust_poweron_delta_hw_sw_ocv_capacity_tolrance = <10>;
+
+	/* Fixed battery temperature */
+	fixed_tbat_25 = <0>;
+	/* Dynamic change wake up period of battery thread when suspend */
+	vbat_normal_wakeup = <3600>;	/* Unit: mV */
+	vbat_low_power_wakeup = <3500>;	/* Unit: mV */
+	normal_wakeup_period = <5400>;	/* Unit: second */
+	low_power_wakeup_period = <300>;	/* Unit: second */
+	close_poweroff_wakeup_period = <30>;	/* Unit: second */
+
+	rbat_pull_up_r = <61900>;
+	rbat_pull_down_r = <100000>;
+	rbat_pull_up_volt = <1800>;
+
+	step_of_qmax = <60>; /* Unit: mAh */
+
+	/* Multi battery support */
+	battery_id_channel_number = <12>;
+	id_volt_max = <1480>;
+	id_volt_min = <700>;
+	total_battery_number = <3>;
+	bat_id_volt_thres = <1200 1300 (-1)>;
+
+	batt_temperature_table_num = <17>;
+	batt_temperature_table = <
+				(-20) 499900
+				(-15) 371600
+				(-10) 278700
+				(-5) 210800
+				0 160800
+				5 123800
+				10 96030
+				15 75100
+				20 59190
+				25 47000
+				30 37590
+				35 30270
+				40 24540
+				45 20020
+				50 16430
+				55 13570
+				60 11270>;
+
+#include "karnak_battery_table_0.dtsi"
+#include "karnak_battery_table_1.dtsi"
+#include "karnak_battery_table_2.dtsi"
+};

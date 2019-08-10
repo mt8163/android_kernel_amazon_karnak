@@ -1,0 +1,30 @@
+config MTK_LEDS
+	tristate "MediaTek LED Support"
+	depends on LEDS_CLASS
+	---help---
+	  This selects the MediaTek(R) LEDs connected to MediaTek chips.
+	  If you want to use MediaTek(R) LEDs support, say Y or M here.
+	  If unsure, say N.
+	  Mediatek LED module includes backlight, indicate LED, keypad LED, button LED etc.
+
+config LIGHTNESS_MAPPING_VALUE
+	int "LIGHTNESS_MAPPING_VALUE"
+	default 255
+ 	---help---
+	  Backlight brightness mapping value, from 0 to 255.
+
+config BACKLIGHT_SUPPORT_LP8557
+	bool "Support backlight lp8557 board"
+
+config ENABLE_BACKLIGHT_FACTOR
+	tristate "MediaTek LED Support"
+	default n
+	---help---
+	  Support backlight of factor,and adapt to different manufacturers to adajust to
+	  the led brightness.
+
+config MTK_LEDS_DEFAULT_BRIGHTNESS
+	bool "MediaTek Led Support Default Brightness"
+	default n
+	---help---
+	  Support setting a default brightness on boot for each led.

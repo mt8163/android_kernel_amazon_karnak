@@ -1,0 +1,39 @@
+Binding for ISSI IS31FL3236 LED Driver
+
+Required Properties:
+	- compatible: "issi,is31fl3236"
+	- reg: I2C Slave Address
+
+Optional Properties:
+	- setup-device: hard reset the device (toggle enable gpio)
+	  and soft reset the device (write 0x1 into enable register)
+	- enable-gpio: phandle to the gpio connected to the reset pin
+	  Note: ignored if setup-device is not defined.
+	- play-boot-animation: start kthread on probe to play boot animation
+	  Note: you can still start the kthread by write 1 into the boot_animation
+	  sysfs entry
+	- channel-offset: Apply an offset to the starting channel for alignment
+
+Example:
+	1) Setup the driver on boot and play boot pattern on a device @ 0x3F:
+	is31fl3236@3F {
+		compatible = "issi,is31fl32326";
+		reg = <0x3F>;
+		setup-device;
+		enable-gpio  = <&gpio 01 0>;
+		play-boot-animation;
+	};
+
+	2) No setup and no boot animation on a device @ 0x3F:
+	is31fl3236@3F {
+		compatible = "issi,is31fl32326";
+		reg = <0x3F>;
+	};
+
+	3) No setup and no boot animation.
+	   Shift the starting led by one, which is 3-channels (R, G & B)
+	is31fl3236@3F {
+		compatible = "issi,is31fl32326";
+		reg = <0x3F>;
+		channel-offset = /bits/ 8 <3>;
+	};

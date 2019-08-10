@@ -1,0 +1,116 @@
+config MT_SND_SOC_V1
+	bool "MT_SND_SOC_V1"
+    default n
+    help
+        If you say Y, enable MT_SND_SOC_V1_driver.
+config MT_SND_SOC_V2
+    bool "MT_SND_SOC_V2"
+	default n
+	help
+        If you say Y, enable MT_SND_SOC_V2_driver.
+config MT_SND_SOC_V3
+    bool "MT_SND_SOC_V3"
+	default n
+	help
+        If you say Y, enable MT_SND_SOC_V3_driver.
+config MT_SND_SOC_6580
+    bool "MT_SND_SOC_6580"
+	default n
+	help
+        If you say Y, enable MT_SND_SOC_6580_driver.
+config MT_SND_SOC_6755
+    bool "MT_SND_SOC_6755"
+	default n
+	help
+        If you say Y, enable MT_SND_SOC_6755_driver.
+config MT_SND_SOC_8163
+    bool "MT_SND_SOC_8163"
+	default n
+	help
+        If you say Y, enable MT_SND_SOC_8163_driver.
+
+config MT_SND_SOC_8163_AMZN
+    bool "MT_SND_SOC_8163_AMZN"
+    select SND_SOC_TLV320AIC3101
+    select SND_SOC_8_MICS if !SND_I2S_MCLK
+    select SND_SOC_TLV320AIC32X4
+	default n
+	help
+        If you say Y, enable MT_SND_SOC_8163_AMZN driver.
+
+config SND_I2S_MCLK
+    bool "Enable I2S_MCLK for DAC3203 and AIC3101"
+
+config SND_SOC_8_MICS
+	bool "Enable 4 ADC support for AIC3101"
+
+config AMP_AW8737S
+	bool "Using amplifier AW8737S"
+
+config MTK_SPEAKER
+	bool "MTK_SPEAKER"
+	default n
+	help
+	  If you say Y, enable MTK_SPEAKER_AMP
+config MTK_NXP_TFA9890
+    bool "MTK_NXP_TFA9890"
+	default n
+	help
+        If you say Y, enable MTK_NXP_TFA9890 driver.
+
+config SND_SOC_MT8173
+    tristate
+
+config SND_SOC_MT8173_MT6391_MACH
+    tristate "ASoC Audio driver for MT8173 with MT6391 codec"
+    depends on ARCH_MT8173
+    select SND_SOC_MT8173
+    select SND_SOC_MT6391
+    help
+        This adds audio driver for MT8173 platform with the MT6391 audio codec.
+
+config VOICE_DSP_MICBIAS0
+	bool "Voice DSP Uses PMIC MICBIAS0 Providing Power"
+
+config MT_SND_SOC_2701
+    tristate
+
+config SND_SOC_MT2701_EVB
+	bool "SND_SOC_MT2701_EVB"
+	select MT_SND_SOC_2701
+	help
+	  Say Y if you want to use the MT2701 EVB
+	  Audio interfaces for MT2701.
+
+config MTK_ALIGN_24BIT_DATA_8BIT_0
+	bool "MTK_ALIGN_24BIT_DATA_8BIT_0"
+	default n
+	help
+	  Say Y if you want alignment to be 24 bits data then padded with 8 0 bits.
+
+config SND_SOC_MT2701_RT5640
+	bool "SND_SOC_MT2701_RT5640"
+	select MT_SND_SOC_2701
+	select SND_SOC_RT5640
+	help
+	  This adds ASoC driver for Mediatek MT2701 boards
+	  with the RT5640 audio codec.
+	  Select Y if you have such device.
+
+config MTK_16BIT_IN_24BIT_OUT
+	bool "MTK_16BITS_IN_24BIT_OUT"
+	default n
+	help
+	  Say Y if you output to be 24 bits with 16 bits input
+
+config SND_BT_SCO_I2S
+	bool "SND_BT_SCO_I2S"
+	default n
+	help
+	  Say Y if you enable BT SCO through I2S0/I2S3 4 pin interface
+
+config MTK_AUDIO_USE_SHARED_SRAM
+	bool "MTK_AUDIO_USE_SHARED_SRAM"
+	default n
+	help
+	  Say Y if you want to split the sram for playback (18K) and capture (18K).

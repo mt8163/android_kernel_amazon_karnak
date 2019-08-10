@@ -1,0 +1,12 @@
+obj-$(CONFIG_ARCH_MT6735) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT6735M) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT6580) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT6753) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT6755) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT8163) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT8173) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT8163) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+obj-$(CONFIG_ARCH_MT6735) += spm_v1/
+obj-$(CONFIG_ARCH_MT6735M) += spm_v1/
+obj-$(CONFIG_ARCH_MT6753) += spm_v1/
+obj-$(CONFIG_ARCH_MT6580) += spm_v1/
