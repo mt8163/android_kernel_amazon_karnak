@@ -16,9 +16,6 @@
 #include <linux/syscalls.h>
 #include <linux/syscore_ops.h>
 #include <linux/uaccess.h>
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
 
 /*
  * this indicates whether you can reboot with ctrl-alt-del: the default is yes
@@ -334,17 +331,11 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		panic("cannot halt");
 
 	case LINUX_REBOOT_CMD_POWER_OFF:
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-		life_cycle_set_shutdown_reason(SHUTDOWN_BY_SW);
-#endif
 		kernel_power_off();
 		do_exit(0);
 		break;
 
 	case LINUX_REBOOT_CMD_RESTART2:
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-		life_cycle_set_boot_reason(WARMBOOT_BY_SW);
-#endif
 		ret = strncpy_from_user(&buffer[0], arg, sizeof(buffer) - 1);
 		if (ret < 0) {
 			ret = -EFAULT;

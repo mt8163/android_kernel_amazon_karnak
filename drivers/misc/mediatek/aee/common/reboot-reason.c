@@ -20,7 +20,6 @@
 #include "aee-common.h"
 #include <mtk_rtc.h>
 #include <mt_boot_reason.h>
-#include <linux/sign_of_life.h>
 #include <mt_pmic_wrap.h>
 #include <mach/mtk_rtc_hal.h>
 #include <mach/mt_rtc_hw.h>

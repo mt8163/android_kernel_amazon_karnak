@@ -93,9 +93,6 @@
 /* #include <mach/mt_pmic_irq.h> */
 #include <linux/reboot.h>
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
 
 #ifdef CONFIG_FB
 #include <linux/notifier.h>
@@ -432,9 +429,6 @@ battery_critical_voltage_check(void)
 			"bq24297:def:critical_shutdown=1;CT;1:HI");
 
 		log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-		life_cycle_set_special_mode(LIFE_CYCLE_SMODE_LOW_BATTERY);
-#endif
 	}
 }
 

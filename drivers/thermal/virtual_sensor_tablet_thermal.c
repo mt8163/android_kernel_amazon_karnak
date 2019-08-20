@@ -38,9 +38,6 @@
 #include <linux/platform_data/mtk_thermal.h>
 #include <linux/thermal_framework.h>
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 #include <linux/metricslog.h>
@@ -351,11 +348,6 @@ static int virtual_sensor_thermal_notify(struct thermal_zone_device *thermal,
 		last_kmsg_thermal_shutdown();
 		pr_err("%s: thermal_shutdown notify end\n", __func__);
 	}
-
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-	if (type == THERMAL_TRIP_CRITICAL)
-		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_PCB);
-#endif
 	return 0;
 }
 static struct thermal_zone_device_ops virtual_sensor_tz_dev_ops = {

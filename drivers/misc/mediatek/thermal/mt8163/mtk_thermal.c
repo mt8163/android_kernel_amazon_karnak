@@ -24,10 +24,6 @@
 
 #include "inc/mtk_ts_cpu.h"
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
-
 #ifdef CONFIG_OF
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -1578,15 +1574,6 @@ static int tscpu_thermal_notify(struct thermal_zone_device *thermal,
 {
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	char buf[TSCPU_METRICS_STR_LEN];
-#endif
-
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-	if (type == THERMAL_TRIP_CRITICAL) {
-		tscpu_printk("[%s] Thermal shutdown CPU, temp=%d, trip=%d\n",
-				__func__, thermal->temperature, trip);
-		life_cycle_set_thermal_shutdown_reason(
-						THERMAL_SHUTDOWN_REASON_SOC);
-	}
 #endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG

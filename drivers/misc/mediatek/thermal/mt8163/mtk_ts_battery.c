@@ -22,9 +22,6 @@
 #include "inc/mtk_ts_battery.h"
 #include <linux/platform_data/mtk_thermal.h>
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 #include <linux/metricslog.h>
@@ -361,13 +358,7 @@ static int mtktsbattery_thermal_notify(struct thermal_zone_device *thermal,
 		pr_err("%s: thermal_shutdown notify end\n", __func__);
 	}
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_debug("[%s] Thermal shutdown Battery, temp=%d, trip=%d\n",
-				__func__, thermal->temperature, trip);
-		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_BATTERY);
-	}
-#endif
+
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	if (type == THERMAL_TRIP_CRITICAL) {
@@ -440,9 +431,6 @@ static int tsbat_sysrst_set_cur_state(struct thermal_cooling_device *cdev, unsig
 		pr_debug("*****************************************");
 		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_BATTERY);
-#endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 		snprintf(mBuf, THERMO_METRICS_STR_LEN,
