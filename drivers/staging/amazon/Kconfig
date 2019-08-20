@@ -8,52 +8,12 @@ config AMAZON
 
 if AMAZON
 
-config AMAZON_KLOG_CONSOLE
-	bool "Amazon Kernel Log Console"
-	depends on ANDROID_LOGGER
-	default N
-	---help---
-	  provide the kernel log console which will rewrite the kernel message to Android Logger buffer.
-
-config AMAZON_KLOG_CONSOLE_DEBUG
-	bool "Amazon Kernel Log Console debug"
-	depends on AMAZON_KLOG_CONSOLE
-	default n
-	---help---
-	  provide amazon kernel log debug info, such as delayed log count, total log counts.
-
 config AMAZON_LOGD
     bool "Amazon Logd"
     depends on ANDROID_LOGGER
     default N
     ---help---
       device uses logd for logging
-
-config AMAZON_SIGN_OF_LIFE
-	bool "Amazon Sign of Life"
-	help
-	enable the life cycle metrics to log device boot and shutdown information
-
-config AMAZON_SIGN_OF_LIFE_MTK
-	bool "Amazon Sign of Life MTK platform implementation"
-	help
-	enable the life cycle metrics to log device boot and shutdown information on MTK Platform
-
-config AMAZON_SIGN_OF_LIFE
-	bool "Amazon Sign of Life"
-	help
-	enable the life cycle metrics to log device boot and shutdown information
-
-config AMAZON_SIGN_OF_LIFE_MTK
-	bool "Amazon Sign of Life MTK platform implementation"
-	help
-	enable the life cycle metrics to log device boot and shutdown information on MTK Platform
-
-config AMAZON_POWEROFF_LOG
-	bool "Long press key power off log"
-	default N
-	help
-	enable Long press key power off log
 
 config BISCUIT
 	bool "Biscuit MTK platform project"
