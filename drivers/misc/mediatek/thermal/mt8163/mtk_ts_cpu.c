@@ -38,10 +38,6 @@
 #endif
 #define __MT_MTK_TS_CPU_C__
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#define TSCPU_METRICS_STR_LEN 128
-#endif
 
 #ifdef CONFIG_OF
 
@@ -2107,24 +2103,11 @@ static int tscpu_get_crit_temp(struct thermal_zone_device *thermal, unsigned lon
 static int tscpu_thermal_notify(struct thermal_zone_device *thermal,
 				int trip, enum thermal_trip_type type)
 {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[TSCPU_METRICS_STR_LEN];
-#endif
 	if (type == THERMAL_TRIP_CRITICAL) {
 		pr_err("%s: thermal_shutdown notify\n", __func__);
 		last_kmsg_thermal_shutdown();
 		pr_err("%s: thermal_shutdown notify end\n", __func__);
 	}
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (type == THERMAL_TRIP_CRITICAL) {
-		snprintf(buf, TSCPU_METRICS_STR_LEN,
-			"%s:tscpumonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
-#endif
-
 	return 0;
 }
 
@@ -2583,23 +2566,6 @@ static int dtm_cpu_get_cur_state(struct thermal_cooling_device *cdev, unsigned l
 static int dtm_cpu_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
 {
 	int i = 0;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[TSCPU_METRICS_STR_LEN];
-#endif
-
-	/* tscpu_dprintk("dtm_cpu_set_cur_state %s\n", cdev->type); */
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	for (i = 0; i < Num_of_OPP; i++) {
-		if ((!strcmp(cdev->type, &cooler_name[i * 20])) &&
-			cl_dev_state[i] != state) {
-			snprintf(buf, TSCPU_METRICS_STR_LEN,
-				"%s:cpumonitor;CT;1,cooler=%s;state=%ld;CT;1:NR",
-				PREFIX, cdev->type, state);
-			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-		}
-	}
-#endif
-
 	tscpu_printk("[%s]: CPU change state, cooler=%s, state=%ld\n",
 			__func__, cdev->type, state);
 	for (i = 0; i < Num_of_OPP; i++) {

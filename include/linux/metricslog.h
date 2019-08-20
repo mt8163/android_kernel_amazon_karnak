@@ -36,34 +36,4 @@ typedef enum android_log_priority {
 	ANDROID_LOG_SILENT,	/* only for SetMinPriority(); must be last */
 } android_LogPriority;
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-int log_to_metrics(enum android_log_priority priority,
-	const char *domain, char *logmsg);
-
-int log_counter_to_vitals(enum android_log_priority priority,
-	const char *domain, const char *program,
-	const char *source, const char *key,
-	long counter_value, const char *unit,
-	const char *metadata, vitals_type type);
-int log_timer_to_vitals(enum android_log_priority priority,
-	const char *domain, const char *program,
-	const char *source, const char *key,
-	long timer_value, const char *unit, vitals_type type);
-
-#else
-int log_to_metrics(enum android_log_priority priority,
-        const char *domain, char *logmsg) { return -1; };
-
-int log_counter_to_vitals(enum android_log_priority priority,
-        const char *domain, const char *program,
-        const char *source, const char *key,
-        long counter_value, const char *unit,
-        const char *metadata, vitals_type type) { return -1; };
-
-int log_timer_to_vitals(enum android_log_priority priority,
-        const char *domain, const char *program,
-        const char *source, const char *key,
-        long timer_value, const char *unit, vitals_type type) { return -1; };
-#endif /* CONFIG_AMAZON_METRICS_LOG */
-
 #endif /* _LINUX_METRICSLOG_H */

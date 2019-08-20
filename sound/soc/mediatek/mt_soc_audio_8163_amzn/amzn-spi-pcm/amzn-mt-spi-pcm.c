@@ -25,9 +25,6 @@
 #include <linux/spinlock.h>
 #include <linux/thread_info.h>
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#endif
 
 #include "dough.h"
 #include "amzn-mt-spi-pcm.h"
@@ -62,10 +59,6 @@
 struct amzn_spi_priv {
 	struct workqueue_struct *spi_wq;
 	struct work_struct spi_work;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	struct workqueue_struct *metrics_wq;
-	struct work_struct metrics_work;
-#endif
 	struct snd_pcm_substream *substream;
 	uint8_t *dma_vaddr;
 	dma_addr_t dma_paddr;
@@ -82,9 +75,6 @@ struct amzn_spi_priv {
 
 static void spi_data_read(struct work_struct *work);
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-static void overrun_to_metrics(struct work_struct *work);
-#endif
 
 static int transfer_timestamps_enab = SPI_HEADER;
 
@@ -326,18 +316,6 @@ static int amzn_mt_spi_pcm_open(struct snd_pcm_substream *substream)
 		pr_err("%s:Couldn't create_singlethread_workqueue\n", __func__);
 		return -ENOMEM;
 	}
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	spi_data.metrics_wq = alloc_workqueue("audio_overrun_metrics",
-					WQ_MEM_RECLAIM, 0);
-	if (spi_data.metrics_wq == NULL) {
-		pr_err("%s:Couldn't alloc_workqueue\n", __func__);
-		destroy_workqueue(spi_data.spi_wq);
-		spi_data.spi_wq = NULL;
-		return -ENOMEM;
-	}
-#endif
-
 	spi_data.cur_write_offset = 0;
 	spi_data.elapsed = 0;
 
@@ -345,9 +323,6 @@ static int amzn_mt_spi_pcm_open(struct snd_pcm_substream *substream)
 	spin_lock_init(&(spi_data.write_spinlock));
 	spi_data.substream = substream;
 	INIT_WORK(&(spi_data.spi_work), spi_data_read);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	INIT_WORK(&(spi_data.metrics_work), overrun_to_metrics);
-#endif
 	return 0;
 }
 
@@ -358,14 +333,6 @@ static int amzn_mt_spi_pcm_close(struct snd_pcm_substream *substream)
 		destroy_workqueue(spi_data.spi_wq);
 		spi_data.spi_wq = NULL;
 	}
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (spi_data.metrics_wq) {
-		destroy_workqueue(spi_data.metrics_wq);
-		spi_data.metrics_wq = NULL;
-	}
-#endif
-
 	pr_info("%s: End\n", __func__);
 
 	return 0;
@@ -381,11 +348,6 @@ static int amzn_mt_spi_pcm_hw_free(struct snd_pcm_substream *ss)
 		(void *)ss->runtime->dma_addr);
 
 	flush_workqueue(spi_data.spi_wq);
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	flush_workqueue(spi_data.metrics_wq);
-#endif
-
 	if (spi_data.dma_vaddr) {
 #if !defined SPI_USES_HDMI_BUFFER && !defined SPI_USES_LOCAL_DMA
 		snd_pcm_lib_free_pages(ss);
@@ -708,14 +670,6 @@ fail:
 		wakeup_minlat, wakeup_maxlat);
 }
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-static void overrun_to_metrics(struct work_struct *work)
-{
-	log_to_metrics(ANDROID_LOG_ERROR, "AudioRecordOverrun",
-		"amzn-mt-spi-pcm:Overrun:num=1;CT;1:NR");
-}
-#endif
-
 static int amzn_mt_spi_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 {
 	pr_info("%s: cmd=%d\n", __func__, cmd);
@@ -785,9 +739,6 @@ static int amzn_mt_spi_pcm_copy(struct snd_pcm_substream *substream,
 			__func__, pos, count, spi_data.elapsed,
 			src_offset, bytes_to_cpy, end,
 			spi_data.cur_write_offset);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		queue_work(spi_data.metrics_wq, &(spi_data.metrics_work));
-#endif
 	}
 #ifdef SPI_DATA_DEBUG
 	else {

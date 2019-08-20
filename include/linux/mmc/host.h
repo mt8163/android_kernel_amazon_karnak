@@ -152,10 +152,6 @@ struct mmc_host_ops {
 	int	(*multi_io_quirk)(struct mmc_card *card,
 				  unsigned int direction, int blk_size);
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	/* Optional callback to support log card detection irq */
-	void (*cd_irq)(struct mmc_host *host);
-#endif
 };
 
 struct mmc_card;
@@ -313,11 +309,6 @@ struct mmc_host {
 	struct device_attribute clkgate_delay_attr;
 	unsigned long           clkgate_delay;
 #endif
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		struct delayed_work 	metrics_delay_work; /* delayed metrics output */
-#endif /* CONFIG_AMAZON_METRICS_LOG */
-
 	/* host specific block data */
 	unsigned int		max_seg_size;	/* see blk_queue_max_segment_size */
 	unsigned short		max_segs;	/* see blk_queue_max_segments */

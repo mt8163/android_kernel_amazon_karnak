@@ -26,10 +26,6 @@
 #include <../drivers/thermal/thermal_core.h>
 #include <linux/platform_data/mtk_thermal.h>
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#define METRICS_STR_LEN 128
-#endif
 
 #define PREFIX "thermalthrottle:def"
 
@@ -43,9 +39,7 @@ int wifi_enable_throttle(struct thermal_cooling_device *cdev, int state)
 	char *envp[] = { data[0], data[1], data[2], data[3], NULL };
 	int cdev_level;
 	struct mtk_cooler_platform_data *pdata = cdev->devdata;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[METRICS_STR_LEN];
-#endif
+
 
 	cdev_level = pdata->levels[state];
 
@@ -54,13 +48,6 @@ int wifi_enable_throttle(struct thermal_cooling_device *cdev, int state)
 	snprintf(data[2], sizeof(data[2]), "CDTYPE=%s", cdev->type);
 	snprintf(data[3], sizeof(data[3]), "CDLEV=%d", cdev_level);
 	kobject_uevent_env(&cdev->device.kobj, KOBJ_CHANGE, envp);
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	snprintf(buf, METRICS_STR_LEN,
-		"%s:cooler_%s_throttling,state=%d;level=%d;CT;1:NR",
-		PREFIX, cdev->type, state, cdev_level);
-	log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-#endif
 
 	dev_info(&cdev->device, "wifi_enable_throttle uevent state=%d level=%d\n",
 		state, cdev_level);

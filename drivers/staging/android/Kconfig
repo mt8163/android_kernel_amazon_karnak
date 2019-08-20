@@ -94,17 +94,6 @@ config ANDROID_INTF_ALARM_DEV
 	  Espically for wake up alarm ioctl.
 	  Also exports the alarm interface to user-space.
 
-config AMAZON_METRICS_LOG
-	bool "Amazon metrics logging support"
-	depends on ANDROID_LOGGER
-	default y
-	help
-	  Enables a new metrics log for collecting
-	  metrics information.
-
-	  These logs will be present at
-	  /dev/log/metrics.
-
 config SYNC
 	bool "Synchronization framework"
 	default n

@@ -124,12 +124,6 @@ static void send_dsp_reset_event(struct rt551x_dsp *rt551x_dsp) {
 		pr_err("%s -- send dsp reset uevent!\n", __func__);
 		kobject_uevent_env(&rt551x_dsp->dev->kobj, KOBJ_CHANGE, reset_event);
 		rt551x_reset_duetoSPI();
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-			"RT551X_DSP_metrics_count","DSP_Reset", 1, "count", NULL, VITALS_NORMAL);
-
-		log_to_metrics(ANDROID_LOG_INFO, "voice_dsp", "voice_dsp:def:DSP_Reset=1;CT;1:NR");
-#endif
 	}
 	rt551x_dsp->sending_crash_event = 1;
 }
@@ -212,9 +206,6 @@ static void rt551x_spi_copy_work(struct work_struct *work)
 	size_t period_bytes, truncated_bytes = 0;
 	int had_reset_read_pointer = 0;
 	size_t bufsize_avaldata = 0;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	ktime_t Current;
-#endif
 	mutex_lock(&rt551x_dsp->dma_lock);
 
 	if (!rt551x_dsp->substream) {
@@ -303,28 +294,6 @@ static void rt551x_spi_copy_work(struct work_struct *work)
 		schedule_delayed_work(&rt551x_dsp->copy_work, msecs_to_jiffies(20));
 		if (rt551x_dsp->fgMetricLogPrint == false)
 		{
-#ifdef CONFIG_AMAZON_METRICS_LOG
-			rt551x_dsp->fgMetricLogPrint = true;
-			Current = ktime_get();
-			if (rt551x_dsp->dspStreamDuration >= MIN_SUSPEND_AUDIO_DURATION) {
-				char buf[128];
-				snprintf(buf, sizeof(buf),
-					"voice_dsp:def:DSP_catchup_ms=%lld;TI;1:NR",
-					ktime_to_ms(Current) - ktime_to_ms(rt551x_dsp->StreamOpenTime));
-				log_to_metrics(ANDROID_LOG_INFO, "voice_dsp", buf);
-
-				log_timer_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-					"RT551X_DSP_metrics_time","DSP_DATA_CATCH-UP_FINISH",
-					ktime_to_ms(Current)  - ktime_to_ms(rt551x_dsp->StreamOpenTime),
-					"ms", VITALS_NORMAL);
-
-			}
-			else
-				log_timer_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-					"RT551X_DSP_metrics_time","DSP_DATA_PROCESS_FINISH",
-					ktime_to_ms(Current)  - ktime_to_ms(rt551x_dsp->StreamOpenTime),
-					"ms", VITALS_NORMAL);
-#endif
 		}
 	}
 done:
@@ -340,10 +309,6 @@ static int rt551x_spi_pcm_open(struct snd_pcm_substream *substream)
 		rt551x_dsp_pointer->fgMetricLogPrint = false;
 		rt551x_dsp_pointer->StreamOpenTime = ktime_get();
 		rt551x_dsp_pointer->dspStreamDuration = 0;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-			"RT551X_DSP_metrics_count","DSP_DATA_PROCESS_BEGIN", 1, "count", NULL, VITALS_NORMAL);
-#endif
 	}
 	return 0;
 }
@@ -372,9 +337,6 @@ static int rt551x_spi_hw_free(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct rt551x_dsp *rt551x_dsp =
 			snd_soc_platform_get_drvdata(rtd->platform);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		ktime_t Current;
-#endif
 	mutex_lock(&rt551x_dsp->dma_lock);
 	rt551x_dsp->substream = NULL;
 	rt551x_dsp->buf_base = 0;
@@ -384,13 +346,6 @@ static int rt551x_spi_hw_free(struct snd_pcm_substream *substream)
 	if (rt551x_dsp->fgMetricLogPrint == false)
 	{
 		rt551x_dsp->fgMetricLogPrint = true;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		Current = ktime_get();
-		log_timer_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-			"RT551X_DSP_metrics_time","DSP_DATA_CANCEL",
-			ktime_to_ms(Current)  - ktime_to_ms(rt551x_dsp->StreamOpenTime),
-			"ms", VITALS_NORMAL);
-#endif
 	}
 
 	return snd_pcm_lib_free_vmalloc_buffer(substream);

@@ -7,14 +7,6 @@ config AMAZON
 	  Enable support for various drivers needed on the Amazon Fire OS platform
 
 if AMAZON
-
-config AMAZON_LOGD
-    bool "Amazon Logd"
-    depends on ANDROID_LOGGER
-    default N
-    ---help---
-      device uses logd for logging
-
 config BISCUIT
 	bool "Biscuit MTK platform project"
 	help
@@ -29,20 +21,6 @@ config abc123
 	bool "abc123 MTK platform project"
 	help
 	isolate Amazon abc123 changes for MTK Platform
-
-config AMAZON_METRICS_LOG
-	bool "Amazon Metrics logger driver"
-	select RING_BUFFER
-	default n
-	---help---
-		Enable Amazon Metrics/Vitals logger driver
-
-config AMAZON_METRICS_LOG_TEST
-	tristate "Amazon Metrics logger driver test module"
-	depends on AMAZON_METRICS_LOG
-	default n
-	---help---
-		Enable Amazon Metrics/Vitals logger test module
 
 endif # if AMAZON
 

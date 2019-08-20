@@ -1572,19 +1572,9 @@ static void rt551x_handler_work(struct work_struct *work)
 	{
 		schedule_work(&rt551x->hotword_work);
 		wake_lock_timeout(&rt551x->vad_wake, msecs_to_jiffies(800));
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel","RT5514_DSP_metrics_count","DSP_IRQ", 1, "count", NULL, VITALS_NORMAL);
-
-		log_to_metrics(ANDROID_LOG_INFO, "voice_dsp", "voice_dsp:def:DSP_IRQ=1;CT;1:NR");
-#endif
 	}
 	else
 	{
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel","RT5514_DSP_metrics_count","DSP_Watchdog", 1, "count", NULL, VITALS_NORMAL);
-
-		log_to_metrics(ANDROID_LOG_INFO, "voice_dsp", "voice_dsp:def:DSP_Watchdog=1;CT;1:NR");
-#endif
 		schedule_work(&rt551x->watchdog_work);
 	}
 }

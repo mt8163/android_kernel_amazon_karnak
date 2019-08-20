@@ -209,10 +209,6 @@ extern unsigned int suspend_time;
 extern bool bat_spm_timeout;
 extern unsigned int _g_bat_sleep_total_time;
 
-#if defined(CONFIG_AMAZON_METRICS_LOG)
-extern signed int gFG_BATT_CAPACITY_aging;
-extern signed int gFG_BATT_CAPACITY;
-#endif
 
 /* ============================================================ */
 /* External function */

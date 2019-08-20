@@ -22,13 +22,6 @@
 
 #include <linux/platform_data/mtk_thermal.h>
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-
-#ifndef THERMO_METRICS_STR_LEN
-#define THERMO_METRICS_STR_LEN 128
-#endif
-#endif
 
 #define MAXIMUM_CPU_POWER 4600
 #define MAX_NUM_MTK_COOLER_BUDGET 2
@@ -174,15 +167,6 @@ static int thermal_budget_set_cur_state(struct thermal_cooling_device *cdev,
 {
 	int level;
 	struct mtk_cooler_platform_data *pdata = cdev->devdata;
-
-#if 0
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char mBuf[THERMO_METRICS_STR_LEN];
-	char vBuf[THERMO_METRICS_STR_LEN];
-	long timer_value = 0;
-#endif
-#endif
-
 	if (pdata->state == state)
 		return 0;
 
@@ -199,36 +183,6 @@ static int thermal_budget_set_cur_state(struct thermal_cooling_device *cdev,
 
 	_thermal_budget_cooler = level;
 	_thermal_budget_notify(_thermal_budget_cpu, level);
-
-#if 0
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (cdev->prev_state != state) {
-		ktime_t delta = ktime_sub(ktime_get(), cdev->last_time);
-
-		snprintf(mBuf, THERMO_METRICS_STR_LEN,
-			 "syseng_board_status:tempstat:soc_ts%d_time=%d:CT;1:NR",
-			 (int) cdev->prev_state,
-			 (int) ktime_to_ms(delta));
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", mBuf);
-
-		timer_value = ((long)ktime_to_ms(ktime_get()))/MSEC_PER_SEC;
-		snprintf(vBuf,
-			 THERMO_METRICS_STR_LEN,
-			 "zone%d",
-			 (int) state);
-		log_timer_to_vitals(ANDROID_LOG_INFO,
-				    "thermal engine",
-				    "thermal",
-				    "time_in_thermal_bucket",
-				    vBuf,
-				    timer_value,
-				    "s",
-				    VITALS_TIME_BUCKET);
-		cdev->last_time = ktime_get();
-		cdev->prev_state = state;
-	}
-#endif
-#endif
 	mutex_unlock(&notify_mutex);
 
 	return 0;

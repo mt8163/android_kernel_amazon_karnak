@@ -20,10 +20,6 @@
 #include "mach/mt_thermal.h"
 #include "inc/mtk_ts_cpu.h"
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#define TSBTS_METRICS_STR_LEN 128
-#endif
 
 struct BTS_TEMPERATURE {
 	INT32 BTS_Temp;
@@ -457,22 +453,11 @@ static int mtkts_bts_get_crit_temp(struct thermal_zone_device *thermal,
 #define PREFIX "thermaltsbts:def"
 static int mtkts_bts_thermal_notify(struct thermal_zone_device *thermal, int trip, enum thermal_trip_type type)
 {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[TSBTS_METRICS_STR_LEN];
-#endif
 
 	pr_err("%s: thermal_shutdown notify\n", __func__);
 	last_kmsg_thermal_shutdown();
 	pr_err("%s: thermal_shutdown notify end\n", __func__);
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (type == THERMAL_TRIP_CRITICAL) {
-		snprintf(buf, TSBTS_METRICS_STR_LEN,
-			"%s:tsbtsmonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
-#endif
 	return 0;
 }
 
