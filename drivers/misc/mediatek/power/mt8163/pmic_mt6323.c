@@ -730,24 +730,6 @@ static void mt6323_irq_ack_locked(struct mt6323_chip_priv *chip, unsigned int ev
 	pwrap_read(chip->int_stat[1], &val[1]);
 }
 
-#ifdef CONFIG_AMAZON_POWEROFF_LOG
-static void log_long_press_power_key(void)
-{
-	int rc;
-	char *argv[] = {
-		"/sbin/crashreport",
-		"long_press_power_key",
-		NULL
-	};
-
-	rc = call_usermodehelper(argv[0], argv, NULL, UMH_WAIT_EXEC);
-
-	if (rc < 0)
-		pr_err("call /sbin/crashreport failed, rc = %d\n", rc);
-
-	msleep(6000); /* 6s */
-}
-#endif /* CONFIG_AMAZON_POWEROFF_LOG */
 
 static void long_press_restart(struct work_struct *dummy)
 {
@@ -765,9 +747,6 @@ static void long_press_restart(struct work_struct *dummy)
 		}
 #endif
 		pr_err("Long key press power off\n");
-#ifdef CONFIG_AMAZON_POWEROFF_LOG
-		log_long_press_power_key();
-#endif /* CONFIG_AMAZON_POWEROFF_LOG */
 		if (upmu_get_pwrkey_deb())
 			goto done;
 		sys_sync();
