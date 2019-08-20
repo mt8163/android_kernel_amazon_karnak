@@ -3868,11 +3868,6 @@ static void mt_battery_thermal_check(void)
 		}
 #if defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
 		/* ignore default rule */
-		if (BMT_status.temperature <= -10) {
-			pr_notice("[Battery] Tbat(%d)<= -10, system need power down.\n", BMT_status.temperature);
-			life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_BATTERY);
-			orderly_poweroff(true);
-		}
 #else
 		if (BMT_status.temperature >= 60) {
 #if defined(CONFIG_POWER_EXT)
