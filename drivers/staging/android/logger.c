@@ -71,47 +71,13 @@ struct logger_log {
 	struct miscdevice	misc;
 	wait_queue_head_t	wq;
 	struct list_head	readers;
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
-	union {
-		struct mutex		mutex;
-		struct semaphore	sem;
-	};
-	int is_mutex;
-#else
 	struct mutex		mutex;
-#endif
-	size_t			w_off;
-	size_t			head;
-	size_t			size;
+	size_t			    w_off;
+	size_t			    head;
+	size_t			    size;
 	struct list_head	logs;
 };
 
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
-#define logger_lock(log) \
-	do { \
-		if(log->is_mutex) \
-			mutex_lock(&log->mutex); \
-		else \
-			down(&log->sem); \
-	} while(0)
-
-#define logger_unlock(log) \
-	do { \
-		if(log->is_mutex) \
-			mutex_unlock(&log->mutex); \
-		else \
-			up(&log->sem); \
-	} while(0)
-
-#define init_logger_lock(log) \
-	do { \
-		if(log->is_mutex) \
-			mutex_init(&log->mutex); \
-		else \
-			sema_init(&log->sem, 1); \
-	} while(0)
-
-#else
 
 #define logger_lock(log) mutex_lock(&log->mutex)
 
@@ -119,7 +85,6 @@ struct logger_log {
 
 #define init_logger_lock(log) mutex_init(&log->mutex);
 
-#endif
 
 static LIST_HEAD(log_list);
 
@@ -985,9 +950,6 @@ static int __init create_log(char *log_name, int size)
 
 	init_waitqueue_head(&log->wq);
 	INIT_LIST_HEAD(&log->readers);
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
-	log->is_mutex = strncmp(log_name, LOGGER_LOG_KERNEL, strlen(LOGGER_LOG_KERNEL));
-#endif
 	init_logger_lock(log);
 	log->w_off = 0;
 	log->head = 0;
@@ -1017,7 +979,6 @@ out_free_buffer:
 	return ret;
 }
 
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
 #define KERNEL_DOMAIN  "Kernel"
 #define ANDROID_LOG_INFO   (4)
 
@@ -1028,48 +989,6 @@ struct kmsg_write_priv {
 
 
 static struct logger_log *kmsg_log;
-
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE_DEBUG
-static long long kmsg_delayed_count;
-static ssize_t kmsg_delayed_count_show(struct kobject *kobj,
-				  struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%lld\n", kmsg_delayed_count);
-}
-static struct kobj_attribute kmsg_delayed_count_attr =
-	__ATTR_RO(kmsg_delayed_count);
-
-static long long kmsg_failed_count;
-static ssize_t kmsg_failed_count_show(struct kobject *kobj,
-				  struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%lld\n", kmsg_failed_count);
-}
-static struct kobj_attribute kmsg_failed_count_attr =
-	__ATTR_RO(kmsg_failed_count);
-
-static long long kmsg_total_count;
-static ssize_t kmsg_total_count_show(struct kobject *kobj,
-				  struct kobj_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%lld\n", kmsg_total_count);
-}
-static struct kobj_attribute kmsg_total_count_attr =
-	__ATTR_RO(kmsg_total_count);
-
-static struct attribute *kmsg_attrs[] = {
-	&kmsg_delayed_count_attr.attr,
-	&kmsg_total_count_attr.attr,
-	&kmsg_failed_count_attr.attr,
-	NULL
-};
-
-static struct attribute_group kmsg_attr_group = {
-	.name = "kmsg",
-	.attrs = kmsg_attrs,
-};
-#endif
-
 /* buffer for kernel log when it cannot get semphore */
 #define KERNEL_LOG_BUF_LEN (1 << CONFIG_LOG_BUF_SHIFT)
 static char kernel_log_buf[KERNEL_LOG_BUF_LEN] __aligned(8);
@@ -1308,7 +1227,6 @@ void logger_kmsg_write(const char *log_msg, size_t len)
 	/* get the main log handler */
 	if (!kmsg_log) {
 		list_for_each_entry(log, &log_list, logs)
-			if (0 == strcmp(log->misc.name, LOGGER_LOG_KERNEL)) {
 				kmsg_log = log;
 				break;
 				}
@@ -1342,9 +1260,6 @@ void logger_kmsg_write(const char *log_msg, size_t len)
 	/* null writes succeed, return zero */
 	if (unlikely(!header.len))
 		return;
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE_DEBUG
-	kmsg_total_count++;
-#endif
 
 	/*
 	 * We need to lock log->sem here, however, we can not call
@@ -1371,14 +1286,6 @@ void logger_kmsg_write(const char *log_msg, size_t len)
 	 */
 	if (down_trylock(&log->sem)) {
 		int ret = logger_kmsg_drain(&header, log_msg, len);
-
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE_DEBUG
-		if (!ret) {
-			kmsg_failed_count++;
-		} else {
-			kmsg_delayed_count++;
-		}
-#endif
 		return;
 	}
 
@@ -1416,7 +1323,7 @@ void logger_kmsg_write(const char *log_msg, size_t len)
 	__get_cpu_var(priv_data).log = log;
 	irq_work_queue(&(__get_cpu_var(priv_data).kmsg_write_work));
 }
-#endif
+
 
 static int __init logger_init(void)
 {
@@ -1440,16 +1347,6 @@ static int __init logger_init(void)
 		goto out;
 #endif /* CONFIG_AMAZON_LOGD */
 
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
-	ret = create_log(LOGGER_LOG_KERNEL, __KERNEL_BUF_SIZE);
-	if (unlikely(ret))
-		goto out;
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE_DEBUG
-	ret = sysfs_create_group(kernel_kobj, &kmsg_attr_group);
-	if (ret)
-		goto out;
-#endif
-#endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	ret = create_log(LOGGER_LOG_METRICS, __METRICS_BUF_SIZE);

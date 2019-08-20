@@ -96,11 +96,6 @@ struct logger_entry {
 #define __SYSTEM_BUF_SIZE 256*1024
 #endif
 
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
-#ifndef __KERNEL_BUF_SIZE
-#define __KERNEL_BUF_SIZE 256*1024
-#endif
-#endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 #ifndef __METRICS_BUF_SIZE
@@ -134,10 +129,8 @@ struct logger_entry {
 #define __SYSTEM_BUF_SIZE 64*1024
 #endif
 
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
 #ifndef __KERNEL_BUF_SIZE
 #define __KERNEL_BUF_SIZE 128*1024
-#endif
 #endif
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
@@ -160,9 +153,6 @@ struct logger_entry {
 #define LOGGER_LOG_EVENTS	"log_events"	/* system/hardware events */
 #define LOGGER_LOG_SYSTEM	"log_system"	/* system/framework messages */
 #define LOGGER_LOG_MAIN		"log_main"	/* everything else */
-#ifdef CONFIG_AMAZON_KLOG_CONSOLE
-#define LOGGER_LOG_KERNEL   "log_kernel"  /* kernel message */
-#endif
 #ifdef CONFIG_AMAZON_LOG
 #define LOGGER_LOG_AMAZON_MAIN "log_amazon_main"       /* private buffer for amazon signed apk */
 #endif
