@@ -29,10 +29,6 @@
 
 static struct proc_dir_entry *aee_rr_file;
 
-#define WDT_NORMAL_BOOT 0
-#define WDT_HW_REBOOT 1
-#define WDT_SW_REBOOT 2
-
 #define BR_REBOOT_START		(BR_UNKNOWN + 1)
 #define BR_REBOOT_WARM		(BR_REBOOT_START + RTC_REBOOT_REASON_WARM)
 #define BR_REBOOT_PANIC		(BR_REBOOT_START + RTC_REBOOT_REASON_PANIC)
@@ -99,8 +95,6 @@ static const char * const shutdown_reason_values[] = {
 	"long key press",
 };
 
-char boot_reason[][16] = { "XXXXXX", "XXXXXXX", "XXX", "XXX",
-	"XXXXXX", "XXXXXXXXXXX", "XXXX", "XXXXXX", "XXXXXX" };
 
 int __weak aee_rr_reboot_reason_show(struct seq_file *m, void *v)
 {
@@ -139,104 +133,35 @@ EXPORT_SYMBOL(aee_rr_proc_done);
 /* define /sys/bootinfo/powerup_reason */
 static ssize_t powerup_reason_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	int g_boot_reason = 0;
-	char *br_ptr;
-
-	br_ptr = strstr(saved_command_line, "boot_reason=");
-	if (br_ptr != 0) {
-		/* get boot reason */
-		g_boot_reason = br_ptr[12] - '0';
-		LOGE("g_boot_reason=%d\n", g_boot_reason);
-#ifdef CONFIG_MTK_RAM_CONSOLE
-		if (aee_rr_last_fiq_step() != 0)
-			g_boot_reason = 0;
-#endif
-		return sprintf(buf, "%s\n", boot_reason[g_boot_reason]);
-	} else
-		return 0;
-
+	return sprintf(buf, "%s\n", boot_reason_values[s_boot_reason]);
 }
 
 static struct kobj_attribute powerup_reason_attr = __ATTR_RO(powerup_reason);
+
+/* define /sys/bootinfo/shutdown_reason */
+static ssize_t shutdown_reason_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	/*
+	 * Check whether last shutdown is due to long power key press.
+	 */
+
+	return sprintf(buf, "%s\n", shutdown_reason_values[g_shutdown_reason]);
+}
+
+static struct kobj_attribute shutdown_reason_attr = __ATTR_RO(shutdown_reason);
 
 struct kobject *bootinfo_kobj;
 EXPORT_SYMBOL(bootinfo_kobj);
 
 static struct attribute *bootinfo_attrs[] = {
 	&powerup_reason_attr.attr,
+	&shutdown_reason_attr.attr,
 	NULL
 };
 
 static struct attribute_group bootinfo_attr_group = {
 	.attrs = bootinfo_attrs,
 };
-
-#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
-static u16 rtc_read(u16 addr)
-{
-	u32 rdata = 0;
-
-	pwrap_read((u32)addr, &rdata);
-	return (u16)rdata;
-}
-
-static void rtc_write(u16 addr, u16 data)
-{
-	pwrap_write((u32)addr, (u32)data);
-}
-
-static void rtc_busy_wait(void)
-{
-	u32 count = 0;
-
-	do {
-		while (rtc_read(RTC_BBPU) & RTC_BBPU_CBUSY) {
-			if (count > 1000)
-				break;
-			mdelay(1);
-			count++;
-
-		}
-	} while (0);
-}
-
-static void rtc_write_trigger(void)
-{
-	rtc_write(RTC_WRTGR, 1);
-	rtc_busy_wait();
-}
-
-static int early_life_cycle_set_boot_reason(life_cycle_reason_t boot_reason)
-{
-	u16 rtc_breason;
-
-	rtc_acquire_lock();
-	rtc_breason = rtc_read(RTC_AL_DOM);
-
-	pr_notice("%s() current 0x%x boot_reason 0x%x\n",
-		__func__, rtc_breason, boot_reason);
-	if (boot_reason == WARMBOOT_BY_KERNEL_PANIC)
-		rtc_breason |= RTC_NEW_SPARE1_WARM_BOOT_KERNEL_PANIC;
-	else if (boot_reason == WARMBOOT_BY_KERNEL_WATCHDOG)
-		rtc_breason |= RTC_NEW_SPARE1_WARM_BOOT_KERNEL_WDOG;
-	else if (boot_reason == WARMBOOT_BY_HW_WATCHDOG)
-		rtc_breason |= RTC_NEW_SPARE1_WARM_BOOT_HW_WDOG;
-	else if (boot_reason == WARMBOOT_BY_SW)
-		rtc_breason |= RTC_NEW_SPARE1_WARM_BOOT_SW;
-	else if (boot_reason == COLDBOOT_BY_USB)
-		rtc_breason |= RTC_NEW_SPARE1_COLD_BOOT_USB;
-	else if (boot_reason == COLDBOOT_BY_POWER_KEY)
-		rtc_breason |= RTC_NEW_SPARE1_COLD_BOOT_POWER_KEY;
-	else if (boot_reason == COLDBOOT_BY_POWER_SUPPLY)
-		rtc_breason |= RTC_NEW_SPARE1_COLD_BOOT_POWER_SUPPLY;
-
-	rtc_write(RTC_AL_DOM, rtc_breason);
-	rtc_write_trigger();
-	rtc_release_lock();
-
-	return 0;
-}
-#endif
 
 /* Print boot reason and shutdown reason into kernel log */
 static void print_boot_shutdown_reason(void)
@@ -270,9 +195,7 @@ static void print_boot_shutdown_reason(void)
 		if ((g_boot_mode != KERNEL_POWER_OFF_CHARGING_BOOT)
 			&& (g_boot_mode != LOW_POWER_OFF_CHARGING_BOOT)) {
 			rtc_mark_reboot_reason(RTC_REBOOT_REASON_WARM);
-			if (s_boot_reason == BR_REBOOT_FROM_POC) {
-			pr_notice("early_life_cycle_set_boot_reason(WARMBOOT_BY_SW)\n");
-			early_life_cycle_set_boot_reason(WARMBOOT_BY_SW);
+		    if (s_boot_reason == BR_REBOOT_FROM_POC) {
 			}
 		} else
 			rtc_mark_reboot_reason(RTC_REBOOT_REASON_FROM_POC);
