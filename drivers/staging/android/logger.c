@@ -1304,37 +1304,6 @@ void logger_kmsg_write(const char *log_msg, size_t len)
 static int __init logger_init(void)
 {
 	int ret;
-
-#ifndef CONFIG_AMAZON_LOGD
-	ret = create_log(LOGGER_LOG_MAIN, __MAIN_BUF_SIZE);
-	if (unlikely(ret))
-		goto out;
-
-	ret = create_log(LOGGER_LOG_EVENTS, __EVENTS_BUF_SIZE);
-	if (unlikely(ret))
-		goto out;
-
-	ret = create_log(LOGGER_LOG_RADIO, __RADIO_BUF_SIZE);
-	if (unlikely(ret))
-		goto out;
-
-	ret = create_log(LOGGER_LOG_SYSTEM, __SYSTEM_BUF_SIZE);
-	if (unlikely(ret))
-		goto out;
-#endif /* CONFIG_AMAZON_LOGD */
-
-
-#ifdef CONFIG_AMAZON_LOG
-#ifndef CONFIG_AMAZON_LOGD
-    ret = create_log(LOGGER_LOG_AMAZON_MAIN, 256*1024);
-    if (unlikely(ret))
-        goto out;
-#endif /* CONFIG_AMAZON_LOGD */
-
-	ret = create_log(LOGGER_LOG_AMAZON_VITALS, __VITALS_BUF_SIZE);
-	if (unlikely(ret))
-		goto out;
-#endif
 out:
 	return ret;
 }
