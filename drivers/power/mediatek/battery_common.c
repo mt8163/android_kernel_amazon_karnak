@@ -17,6 +17,7 @@
  * -------
  * Oscar Liu
  *
+ * REFACTORED BY KAI <joneskai626@gmail.com>
  ****************************************************************************/
 #include <linux/init.h>		/* For init/exit macros */
 #include <linux/module.h>	/* For MODULE_ marcros  */
@@ -47,15 +48,15 @@
 #include <linux/platform_device.h>
 #include <linux/seq_file.h>
 #include <linux/scatterlist.h>
-#ifdef CONFIG_USB_AMAZON_DOCK
-#include <linux/switch.h>
-#endif
 #ifdef CONFIG_OF
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
 #endif
 #include <linux/suspend.h>
+
+#include <linux/reboot.h>
+
 #include <linux/thermal.h>
 #include <linux/thermal_framework.h>
 #include <linux/platform_data/mtk_thermal.h>
@@ -81,12 +82,6 @@
 #include <mt-plat/internal_charging.h>
 #endif
 
-#ifdef CONFIG_USB_AMAZON_DOCK
-enum DOCK_STATE_TYPE {
-	TYPE_DOCKED = 5,
-	TYPE_UNDOCKED = 6,
-};
-#endif
 
 /* ///////////////////////////////////////////////////////////////////////////////////////// */
 /* // Smart Battery Structure */
@@ -111,11 +106,7 @@ static char *DISO_state_s[8] = {
  * Thermal related flags
  */
 int g_battery_thermal_throttling_flag = 1;
-/*  0:nothing,
- *	1:enable batTT&chrTimer,
- *	2:disable batTT&chrTimer,
- *	3:enable batTT,
- *	disable chrTimer
+/*  0:nothing, 1:enable batTT&chrTimer, 2:disable batTT&chrTimer, 3:enable batTT, disable chrTimer
  */
 int battery_cmd_thermal_test_mode = 0;
 int battery_cmd_thermal_test_mode_value = 0;
@@ -285,9 +276,6 @@ struct battery_data {
 	int BAT_PRESENT;
 	int BAT_TECHNOLOGY;
 	int BAT_CAPACITY;
-#ifdef CONFIG_USB_AMAZON_DOCK
-	struct switch_dev dock_state;
-#endif
 	/* Add for Battery Service */
 	int BAT_batt_vol;
 	int BAT_batt_temp;
@@ -352,9 +340,6 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_present_smb,
 	/* ADB CMD Discharging */
 	POWER_SUPPLY_PROP_adjust_power,
-#ifdef CONFIG_USB_AMAZON_DOCK
-	POWER_SUPPLY_PROP_DOCK_PRESENT,
-#endif
 };
 
 /*void check_battery_exist(void);*/
@@ -560,25 +545,6 @@ static int usb_get_property(struct power_supply *psy,
 	return ret;
 }
 
-#ifdef CONFIG_USB_AMAZON_DOCK
-static int battery_property_is_writeable(struct power_supply *psy,
-		enum power_supply_property psp)
-{
-	int ret;
-
-	switch (psp) {
-	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
-	case POWER_SUPPLY_PROP_DOCK_PRESENT:
-		ret = 1;
-		break;
-	default:
-		ret = 0;
-	}
-
-	return ret;
-}
-#endif
-
 static int battery_get_property(struct power_supply *psy,
 				enum power_supply_property psp, union power_supply_propval *val)
 {
@@ -600,9 +566,6 @@ static int battery_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = data->BAT_CAPACITY;
-		break;
-	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
-		val->intval = data->BAT_ChargeCounter;
 		break;
 	case POWER_SUPPLY_PROP_batt_vol:
 		val->intval = data->BAT_batt_vol;
@@ -655,100 +618,12 @@ static int battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_adjust_power:
 		val->intval = data->adjust_power;
 		break;
-#ifdef CONFIG_USB_AMAZON_DOCK
-	case POWER_SUPPLY_PROP_DOCK_PRESENT:
-		val->intval = switch_get_state(&data->dock_state)
-			== TYPE_UNDOCKED ? 0 : 1;
-		break;
-#endif
-
 	default:
 		ret = -EINVAL;
 		break;
 	}
 
 	return ret;
-}
-
-#define DOCK_STATE_TYPE 5
-static int battery_set_property(struct power_supply *psy,
-				enum power_supply_property psp,
-				const union power_supply_propval *val)
-{
-	int level_up;
-#ifdef CONFIG_USB_AMAZON_DOCK
-	int state;
-#endif
-	static int level;
-	static bool bcct_enable = bcct_false;
-	struct battery_data *data = container_of(psy, struct battery_data, psy);
-
-	switch (psp) {
-	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
-		if (!data->cool_dev)
-			return 0;
-		/*current state == last state*/
-		if (data->cool_dev->state == val->intval)
-			return 0;
-		else {
-			if (val->intval > data->cool_dev->state)
-				level_up = 1;
-			else
-				level_up = 0;
-		}
-		/*last state = current state*/
-		data->cool_dev->state = \
-		(val->intval > data->cool_dev->max_state) ? data->cool_dev->max_state : val->intval;
-		switch (bcct_enable) {
-		case bcct_false:
-			level = data->cool_dev->levels[data->cool_dev->state - 1];
-			set_bat_charging_current_limit(level/100);
-			bcct_enable = bcct_true;
-			break;
-		case bcct_true:
-			if (!data->cool_dev->state) {
-				set_bat_charging_current_limit(-1);
-				bcct_enable = bcct_false;
-			} else {
-				data->cool_dev->level = level;
-				level = data->cool_dev->levels[data->cool_dev->state - 1];
-				if (level > data->cool_dev->level && 1 == level_up)
-					return 0;
-				set_bat_charging_current_limit(level/100);
-				bcct_enable = bcct_true;
-			}
-			break;
-		default:
-			break;
-		}
-		break;
-#ifdef CONFIG_USB_AMAZON_DOCK
-	case POWER_SUPPLY_PROP_DOCK_PRESENT:
-		if (val->intval == 0) {
-			state = TYPE_UNDOCKED;
-			if (g_custom_aicl_input_current == 0) {
-				batt_cust_data.aicl_input_current_max
-				= batt_cust_data.ap15_charger_input_current_max;
-				batt_cust_data.aicl_input_current_min
-				= batt_cust_data.ap15_charger_input_current_min;
-			}
-		} else {
-			state = TYPE_DOCKED;
-			if (g_custom_aicl_input_current == 0) {
-				batt_cust_data.aicl_input_current_max
-				= batt_cust_data.ap15_dock_input_current_max;
-				batt_cust_data.aicl_input_current_min
-				= batt_cust_data.ap15_dock_input_current_min;
-			}
-		}
-		switch_set_state(&data->dock_state, state);
-		break;
-#endif
-	default:
-		break;
-	}
-
-	return 0;
 }
 
 /* wireless_data initialization */
@@ -816,10 +691,6 @@ static struct battery_data battery_main = {
 		.properties = battery_props,
 		.num_properties = ARRAY_SIZE(battery_props),
 		.get_property = battery_get_property,
-		.set_property = battery_set_property,
-#ifdef CONFIG_USB_AMAZON_DOCK
-		.property_is_writeable = battery_property_is_writeable,
-#endif
 		},
 /* CC: modify to have a full power supply status */
 #if defined(CONFIG_POWER_EXT)
@@ -2506,16 +2377,10 @@ static void ac_update(struct ac_data *ac_data)
 		ac_data->ac_present = 1;
 #if !defined(CONFIG_MTK_DUAL_INPUT_CHARGER_SUPPORT)
 		if ((BMT_status.charger_type == NONSTANDARD_CHARGER) ||
-		    (BMT_status.charger_type == STANDARD_CHARGER) ||
-		    (BMT_status.charger_type == APPLE_2_1A_CHARGER) ||
-		    (BMT_status.charger_type == APPLE_1_0A_CHARGER) ||
-		    (BMT_status.charger_type == APPLE_0_5A_CHARGER)) {
+		    (BMT_status.charger_type == STANDARD_CHARGER)) {
 #else
 		if ((BMT_status.charger_type == NONSTANDARD_CHARGER) ||
 		    (BMT_status.charger_type == STANDARD_CHARGER) ||
-		    (BMT_status.charger_type == APPLE_2_1A_CHARGER) ||
-		    (BMT_status.charger_type == APPLE_1_0A_CHARGER) ||
-		    (BMT_status.charger_type == APPLE_0_5A_CHARGER) ||
 		    (DISO_data.diso_state.cur_vdc_state == DISO_ONLINE)) {
 #endif
 			ac_data->AC_ONLINE = 1;
@@ -3511,21 +3376,12 @@ void update_battery_2nd_info(int status_smb, int capacity_smb, int present_smb)
 	g_smartbook_update = 1;
 #endif
 }
-
-#ifdef CONFIG_USB_AMAZON_DOCK
-extern void musb_rerun_dock_detection(void);
-#endif
 void do_chrdet_int_task(void)
 {
 	int vbus_stat = 0;
 	int otg_en = 0;
 
 	if (g_bat_init_flag == true) {
-
-#ifdef CONFIG_USB_AMAZON_DOCK
-		/* Recheck for unpowered dock */
-		musb_rerun_dock_detection();
-#endif
 
 #if !defined(CONFIG_MTK_DUAL_INPUT_CHARGER_SUPPORT)
 		if (upmu_is_chr_det() == true) {
@@ -4772,17 +4628,6 @@ static int battery_probe(struct platform_device *dev)
 	wake_lock_init(&TA_charger_suspend_lock, WAKE_LOCK_SUSPEND, "TA charger suspend wakelock");
 #endif
 
-#ifdef CONFIG_USB_AMAZON_DOCK
-	battery_main.dock_state.name = "dock";
-	battery_main.dock_state.index = 0;
-	battery_main.dock_state.state = TYPE_UNDOCKED;
-	ret = switch_dev_register(&battery_main.dock_state);
-	if (ret) {
-		pr_notice("[BAT_probe] switch_dev_register dock_state Fail\n");
-		return ret;
-	}
-#endif
-
 	/* Integrate with Android Battery Service */
 	ret = power_supply_register(&(dev->dev), &ac_main.psy);
 	if (ret) {
@@ -5037,9 +4882,6 @@ static void battery_timer_resume(void)
 
 static int battery_remove(struct platform_device *dev)
 {
-#ifdef CONFIG_USB_AMAZON_DOCK
-	switch_dev_unregister(&battery_main.dock_state);
-#endif
 	pr_notice("******** battery driver remove!! ********\n");
 
 	return 0;

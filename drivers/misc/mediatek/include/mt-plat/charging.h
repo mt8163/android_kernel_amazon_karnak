@@ -469,6 +469,15 @@ typedef enum {
 /* ============================================================ */
 typedef signed int(*CHARGING_CONTROL) (CHARGING_CTRL_CMD cmd, void *data);
 
+#ifndef BATTERY_BOOL
+#define BATTERY_BOOL
+typedef enum {
+	KAL_FALSE = 0,
+	KAL_TRUE  = 1,
+} kal_bool;
+#endif
+
+
 /* ============================================================ */
 /* External Variables */
 /* ============================================================ */

@@ -29,10 +29,11 @@
 #include <linux/time.h>
 #include <linux/vmalloc.h>
 #include <linux/aio.h>
-#include <linux/irq_work.h>
 #include "logger.h"
 
 #include <asm/ioctls.h>
+
+
 static int s_fake_read;
 module_param_named(fake_read, s_fake_read, int, 0660);
 
@@ -95,9 +96,9 @@ static LIST_HEAD(log_list);
 struct logger_reader {
 	struct logger_log	*log;
 	struct list_head	list;
-	size_t			r_off;
-	bool			r_all;
-	int			r_ver;
+	size_t			    r_off;
+	bool			    r_all;
+	int		     	    r_ver;
     size_t      missing_bytes;
 };
 
@@ -353,12 +354,12 @@ static ssize_t logger_read(struct file *file, char __user *buf,
 
 start:
 	while (1) {
-		logger_lock(log);
+		mutex_lock(&log->mutex);
 
 		prepare_to_wait(&log->wq, &wait, TASK_INTERRUPTIBLE);
 
 		ret = (log->w_off == reader->r_off);
-		logger_unlock(log);
+		mutex_unlock(&log->mutex);
 		if (!ret)
 			break;
 
@@ -379,7 +380,7 @@ start:
 	if (ret)
 		return ret;
 
-	logger_lock(log);
+	mutex_lock(&log->mutex);
 
 	if (!reader->r_all)
 		reader->r_off = get_next_entry_by_uid(log,
@@ -387,7 +388,7 @@ start:
 
 	/* is there still something to read or did we race? */
 	if (unlikely(log->w_off == reader->r_off)) {
-		logger_unlock(log);
+		mutex_unlock(&log->mutex);
 		goto start;
 	}
 
@@ -415,7 +416,7 @@ start:
 	ret = do_read_log_to_user(log, reader, buf, ret);
 
 out:
-	logger_unlock(log);
+	mutex_unlock(&log->mutex);
 
 	return ret;
 }
@@ -580,7 +581,7 @@ static ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	if (unlikely(!header.len))
 		return 0;
 
-	logger_lock(log);
+	mutex_lock(&log->mutex);
 
 	orig = log->w_off;
 
@@ -605,7 +606,7 @@ static ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 		nr = do_write_log_from_user(log, iov->iov_base, len);
 		if (unlikely(nr < 0)) {
 			log->w_off = orig;
-			logger_unlock(log);
+			mutex_unlock(&log->mutex);
 			return nr;
 		}
 
@@ -613,7 +614,7 @@ static ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 		ret += nr;
 	}
 
-	logger_unlock(log);
+	mutex_unlock(&log->mutex);
 
 	/* wake up any blocked readers */
 	wake_up_interruptible(&log->wq);
@@ -664,10 +665,10 @@ static int logger_open(struct inode *inode, struct file *file)
 
 		INIT_LIST_HEAD(&reader->list);
 
-		logger_lock(log);
+		mutex_lock(&log->mutex);
 		reader->r_off = log->head;
 		list_add_tail(&reader->list, &log->readers);
-		logger_unlock(log);
+		mutex_unlock(&log->mutex);
 
 		file->private_data = reader;
 	} else
@@ -687,9 +688,9 @@ static int logger_release(struct inode *ignored, struct file *file)
 		struct logger_reader *reader = file->private_data;
 		struct logger_log *log = reader->log;
 
-		logger_lock(log);
+		mutex_lock(&log->mutex);
 		list_del(&reader->list);
-		logger_unlock(log);
+		mutex_unlock(&log->mutex);
 
 		kfree(reader);
 	}
@@ -720,14 +721,14 @@ static unsigned int logger_poll(struct file *file, poll_table *wait)
 
 	poll_wait(file, &log->wq, wait);
 
-	logger_lock(log);
+	mutex_lock(&log->mutex);
 	if (!reader->r_all)
 		reader->r_off = get_next_entry_by_uid(log,
 			reader->r_off, current_euid());
 
 	if (log->w_off != reader->r_off)
 		ret |= POLLIN | POLLRDNORM;
-	logger_unlock(log);
+	mutex_unlock(&log->mutex);
 
 	return ret;
 }
@@ -752,7 +753,7 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	long ret = -EINVAL;
 	void __user *argp = (void __user *) arg;
 
-	logger_lock(log);
+	mutex_lock(&log->mutex);
 
 	switch (cmd) {
 	case LOGGER_GET_LOG_BUF_SIZE:
@@ -819,7 +820,7 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	}
 
-	logger_unlock(log);
+	mutex_unlock(&log->mutex);
 
 	return ret;
 }
@@ -860,7 +861,7 @@ static void logger_kernel_write(struct logger_log *log, const struct iovec *iov,
 	if (unlikely(!header.len))
 		return;
 
-	logger_lock(log);
+	mutex_lock(&log->mutex);
 
 	/*
 	 * Fix up any readers, pulling them forward to the first readable
@@ -887,7 +888,7 @@ static void logger_kernel_write(struct logger_log *log, const struct iovec *iov,
 		total_len += len;
 	}
 
-	logger_unlock(log);
+	mutex_unlock(&log->mutex);
 
 	/* wake up any blocked readers */
 	wake_up_interruptible(&log->wq);
@@ -926,7 +927,7 @@ static int __init create_log(char *log_name, int size)
 
 	init_waitqueue_head(&log->wq);
 	INIT_LIST_HEAD(&log->readers);
-	init_logger_lock(log);
+	init_mutex_lock(&log->mutex);
 	log->w_off = 0;
 	log->head = 0;
 	log->size = size;
@@ -1294,7 +1295,7 @@ void logger_kmsg_write(const char *log_msg, size_t len)
 		total_len += len;
 	}
 
-	logger_unlock(log);
+	mutex_unlock(&log->mutex);
 
 	__get_cpu_var(priv_data).log = log;
 	irq_work_queue(&(__get_cpu_var(priv_data).kmsg_write_work));

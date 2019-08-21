@@ -140,6 +140,26 @@ typedef enum {
 	TEMP_POS_HIGH
 } batt_temp_state_enum;
 
+#ifndef BATTERY_BOOL
+#define BATTERY_BOOL
+typedef enum {
+	KAL_FALSE = 0,
+	KAL_TRUE  = 1,
+} kal_bool;
+#endif
+
+#ifndef BOOL
+typedef unsigned char  BOOL;
+#endif
+
+#ifndef FALSE
+  #define FALSE (0)
+#endif
+
+#ifndef TRUE
+  #define TRUE  (1)
+#endif
+
 /*****************************************************************************
  *  structure
  ****************************************************************************/

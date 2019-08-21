@@ -15,10 +15,6 @@
 #include <linux/list.h>
 #include <linux/gpio.h>
 #include <linux/io.h>
-#ifdef CONFIG_USB_AMAZON_DOCK
-#include <linux/power_supply.h>
-#include <mt-plat/battery_meter.h>
-#endif
 #ifndef CONFIG_OF
 #include <mach/irqs.h>
 #endif
@@ -44,7 +40,6 @@
 #endif
 
 #ifdef CONFIG_USB_MTK_OTG
-#endif
 
 #ifdef CONFIG_OF
 static unsigned int iddig_pin;
@@ -104,15 +99,6 @@ static struct musb_fifo_cfg fifo_cfg_host[] = {
 { .hw_ep_num =	8, .style = MUSB_FIFO_TX,   .maxpacket = 512, .mode = MUSB_BUF_SINGLE},
 { .hw_ep_num =	8, .style = MUSB_FIFO_RX,   .maxpacket = 64,  .mode = MUSB_BUF_SINGLE},
 };
-
-#ifdef CONFIG_USB_AMAZON_DOCK
-enum dock_state {
-	DOCK_NOT_PRESENT = 0,
-	DOCK_PRESENT = 1,
-	DOCK_UNPOWERED = 2,
-};
-static DEFINE_MUTEX(dock_detection_mutex);
-#endif
 
 u32 delay_time = 15;
 module_param(delay_time, int, 0644);
@@ -280,11 +266,7 @@ void mt_usb_init_drvvbus(void)
 #endif
 }
 
-#ifdef CONFIG_USB_AMAZON_DOCK
-u32 sw_deboun_time = 100;
-#else
 u32 sw_deboun_time = 400;
-#endif
 module_param(sw_deboun_time, int, 0644);
 struct switch_dev otg_state;
 
@@ -440,142 +422,6 @@ void switch_int_to_host_and_mask(struct musb *musb)
 #endif
 	DBG(0, "swtich_int_to_host_and_mask is done\n");
 }
-
-#ifdef CONFIG_USB_AMAZON_DOCK
-static struct power_supply *musb_get_bat_psy(struct musb *musb)
-{
-	if (musb->batt_psy)
-		return musb->batt_psy;
-
-	musb->batt_psy = power_supply_get_by_name("battery");
-	if (!musb->batt_psy) {
-		pr_err("%s: can't find battery psy\n", __func__);
-		return NULL;
-	}
-
-	return musb->batt_psy;
-}
-
-static int musb_set_dock_present(struct musb *musb, bool en)
-{
-	union power_supply_propval val;
-	int ret = 0;
-
-	if (!musb_get_bat_psy(musb))
-		return -1;
-
-	val.intval = en ? 1 : 0;
-	ret = musb->batt_psy->set_property(musb->batt_psy,
-				POWER_SUPPLY_PROP_DOCK_PRESENT, &val);
-	if (ret) {
-		pr_err("%s: set_property fail\n", __func__);
-		return ret;
-	}
-
-	return ret;
-}
-
-#define VALID_VBUS_MV 4300
-static int musb_dock_detection(void)
-{
-	int type = 0, vbus_mv = 0;
-	bool is_present = false;
-
-	type = mt_charger_type_detection();
-	DBG(0, "%s: charger_type = %d\n", __func__, type);
-	if (type != STANDARD_CHARGER)
-		return DOCK_NOT_PRESENT;
-
-	vbus_mv = battery_meter_get_charger_voltage();
-	is_present = bat_is_charger_exist();
-	DBG(0, "%s: vbus_mv = %d\n", __func__, vbus_mv);
-	if (vbus_mv < VALID_VBUS_MV || !is_present)
-		return DOCK_UNPOWERED;
-
-	return DOCK_PRESENT;
-}
-
-static bool musb_dock_handler(int iddig_state)
-{
-	bool is_dock_mode = false;
-
-	DBG(0, "%s: iddig_state = %d\n", __func__, iddig_state);
-	mutex_lock(&dock_detection_mutex);
-	if (iddig_state == 0) {
-		mtk_musb->dock_state = musb_dock_detection();
-		switch (mtk_musb->dock_state) {
-		case DOCK_PRESENT:
-			pr_info("%s: Dock detected\n", __func__);
-			musb_set_dock_present(mtk_musb, true);
-			switch_int_to_device(mtk_musb);
-			is_dock_mode = true;
-			break;
-		case DOCK_UNPOWERED:
-			pr_info("%s: Unpowered Dock detected\n", __func__);
-			switch_int_to_device(mtk_musb);
-			is_dock_mode = true;
-			break;
-		default:
-			break;
-		}
-	} else {
-		switch (mtk_musb->dock_state) {
-		case DOCK_PRESENT:
-			pr_info("%s: Dock removed\n", __func__);
-			musb_set_dock_present(mtk_musb, false);
-			switch_int_to_host(mtk_musb);
-			mtk_musb->dock_state = DOCK_NOT_PRESENT;
-			is_dock_mode = true;
-			break;
-		case DOCK_UNPOWERED:
-			pr_info("%s: Unpowered Dock removed\n", __func__);
-			switch_int_to_host(mtk_musb);
-			mtk_musb->dock_state = DOCK_NOT_PRESENT;
-			is_dock_mode = true;
-			break;
-		default:
-			break;
-		}
-	}
-	mutex_unlock(&dock_detection_mutex);
-
-	DBG(0, "%s: is_dock_mode = %d\n", __func__, is_dock_mode);
-	return is_dock_mode;
-}
-
-void musb_rerun_dock_detection(void)
-{
-	int vbus_mv = 0;
-	bool is_present = false;
-
-	mutex_lock(&dock_detection_mutex);
-	vbus_mv = battery_meter_get_charger_voltage();
-	is_present = bat_is_charger_exist();
-	pr_info("%s: state: %d, vbus_mv: %d, is_present: %d\n", __func__,
-			mtk_musb->dock_state, vbus_mv, is_present);
-	switch (mtk_musb->dock_state) {
-	case DOCK_UNPOWERED:
-		if (vbus_mv > VALID_VBUS_MV || is_present) {
-			pr_info("%s: Dock detected: Unpowered -> Powered\n",
-					__func__);
-			mtk_musb->dock_state = DOCK_PRESENT;
-			musb_set_dock_present(mtk_musb, true);
-		}
-		break;
-	case DOCK_PRESENT:
-		if (vbus_mv < VALID_VBUS_MV || !is_present) {
-			pr_info("%s: Dock removed: Powered -> Unpowered\n",
-					__func__);
-			mtk_musb->dock_state = DOCK_UNPOWERED;
-			musb_set_dock_present(mtk_musb, false);
-		}
-		break;
-	default:
-		break;
-	}
-	mutex_unlock(&dock_detection_mutex);
-}
-#endif
 static void musb_id_pin_work(struct work_struct *data)
 {
 	u8 devctl = 0;
@@ -609,11 +455,6 @@ static void musb_id_pin_work(struct work_struct *data)
 	spin_unlock_irqrestore(&mtk_musb->lock, flags);
 
 	down(&mtk_musb->musb_lock);
-#ifdef CONFIG_USB_AMAZON_DOCK
-	/* Dock detection */
-	if (musb_dock_handler(iddig_state))
-		goto out;
-#endif
 	DBG(0, "work start, is_host=%d\n", mtk_musb->is_host);
 	if (mtk_musb->in_ipo_off) {
 		DBG(0, "do nothing due to in_ipo_off\n");
