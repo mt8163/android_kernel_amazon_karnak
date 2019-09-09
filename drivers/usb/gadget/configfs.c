@@ -1059,7 +1059,7 @@ static const struct usb_gadget_driver configfs_driver_template = {
 #else
 	.setup          = composite_setup,
 	.disconnect     = composite_disconnect,
-
+#endif
 	.max_speed	= USB_SPEED_SUPER,
 	.driver = {
 		.owner          = THIS_MODULE,
