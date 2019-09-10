@@ -1359,6 +1359,7 @@ static int task_get_unused_fd_flags(struct binder_proc *proc, int flags)
 	struct files_struct *files;
 	unsigned long rlim_cur;
 	unsigned long irqs;
+	int ret;
 
 	files = binder_get_files_struct(proc);
 	if (files == NULL)
