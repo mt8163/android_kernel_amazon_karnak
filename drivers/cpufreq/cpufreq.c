@@ -28,9 +28,6 @@
 #include <linux/slab.h>
 #include <linux/suspend.h>
 #include <linux/tick.h>
-#ifdef CONFIG_SMP
-#include <linux/sched.h>
-#endif
 #include <trace/events/power.h>
 
 /**
@@ -369,9 +366,6 @@ static void cpufreq_notify_post_transition(struct cpufreq_policy *policy,
 void cpufreq_freq_transition_begin(struct cpufreq_policy *policy,
 		struct cpufreq_freqs *freqs)
 {
-#ifdef CONFIG_SMP
-	int cpu;
-#endif
 
 	/*
 	 * Catch double invocations of _begin() which lead to self-deadlock.
@@ -398,11 +392,6 @@ wait:
 	policy->transition_task = current;
 
 	spin_unlock(&policy->transition_lock);
-
-#ifdef CONFIG_SMP
-	for_each_cpu(cpu, policy->cpus)
-		trace_cpu_capacity(capacity_curr_of(cpu), cpu);
-#endif
 
 	cpufreq_notify_transition(policy, freqs, CPUFREQ_PRECHANGE);
 }
