@@ -481,11 +481,7 @@ static int snd_timer_start1(struct snd_timer_instance *timeri,
 
 /* start/continue a slave timer */
 static int snd_timer_start_slave(struct snd_timer_instance *timeri,
-<<<<<<< HEAD
-				bool start)
-=======
 				 bool start)
->>>>>>> 1174014a57ed... ALSA: timer: Call notifier in the same spinlock
 {
 	unsigned long flags;
 
