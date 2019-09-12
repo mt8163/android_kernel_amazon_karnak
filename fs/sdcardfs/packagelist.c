@@ -1,3 +1,4 @@
+/*
  * fs/sdcardfs/packagelist.c
  *
  * Copyright (c) 2013 Samsung Electronics Co. Ltd
@@ -34,7 +35,7 @@ struct hashtable_entry {
 	struct hlist_node dlist; /* for deletion cleanup */
 	struct qstr key;
 	atomic_t value;
-};	kfree(extension_details->name.name);
+};
 
 static DEFINE_HASHTABLE(package_to_appid, 8);
 static DEFINE_HASHTABLE(package_to_userid, 8);
@@ -277,9 +278,14 @@ static void fixup_all_perms_name_userid(const struct qstr *key, userid_t userid)
 static void fixup_all_perms_userid(userid_t userid)
 {
 	struct sdcardfs_sb_info *sbinfo;
-	list_for_each_entry(sbinfo, &sdcardfs_super_list, list)
-		if (sbinfo)
-			fixup_perms(sbinfo->sb, key);
+	struct limit_search limit = {
+		.flags = BY_USERID,
+		.userid = userid,
+	};
+	list_for_each_entry(sbinfo, &sdcardfs_super_list, list) {
+		if (sbinfo_has_sdcard_magic(sbinfo))
+			fixup_perms_recursive(sbinfo->sb->s_root, &limit);
+	}
 }
 
 static int insert_packagelist_entry(const struct qstr *key, appid_t value)
@@ -287,7 +293,7 @@ static int insert_packagelist_entry(const struct qstr *key, appid_t value)
 	int err;
 
 	mutex_lock(&sdcardfs_super_list_lock);
-	err = insert_packagelist_entry_locked(key, value);
+	err = insert_packagelist_appid_entry_locked(key, value);
 	if (!err)
 		fixup_all_perms_name(key);
 	mutex_unlock(&sdcardfs_super_list_lock);
@@ -429,8 +435,8 @@ static void remove_userid_exclude_entry_locked(const struct qstr *key, userid_t 
 static void remove_userid_exclude_entry(const struct qstr *key, userid_t userid)
 {
 	mutex_lock(&sdcardfs_super_list_lock);
-	remove_packagelist_entry_locked(key);
-	fixup_all_perms(key);
+	remove_userid_exclude_entry_locked(key, userid);
+	fixup_all_perms_name_userid(key, userid);
 	mutex_unlock(&sdcardfs_super_list_lock);
 	return;
 }
@@ -444,8 +450,11 @@ static void packagelist_destroy(void)
 	mutex_lock(&sdcardfs_super_list_lock);
 	hash_for_each_rcu(package_to_appid, i, hash_cur, hlist) {
 		hash_del_rcu(&hash_cur->hlist);
-		hlist_add_head(&hash_cur->hlist, &free_list);
-
+		hlist_add_head(&hash_cur->dlist, &free_list);
+	}
+	hash_for_each_rcu(package_to_userid, i, hash_cur, hlist) {
+		hash_del_rcu(&hash_cur->hlist);
+		hlist_add_head(&hash_cur->dlist, &free_list);
 	}
 	synchronize_rcu();
 	hlist_for_each_entry_safe(hash_cur, h_t, &free_list, dlist)
@@ -554,6 +563,9 @@ static void package_details_release(struct config_item *item)
 }
 
 PACKAGE_DETAILS_ATTR(appid, S_IRUGO | S_IWUGO, package_details_appid_show, package_details_appid_store);
+PACKAGE_DETAILS_ATTR(excluded_userids, S_IRUGO | S_IWUGO,
+		package_details_excluded_userids_show, package_details_excluded_userids_store);
+PACKAGE_DETAILS_ATTR(clear_userid, S_IWUGO, NULL, package_details_clear_userid_store);
 
 static struct configfs_attribute *package_details_attrs[] = {
 	PACKAGE_DETAILS_ATTRIBUTE(appid),
@@ -563,6 +575,7 @@ static struct configfs_attribute *package_details_attrs[] = {
 };
 
 CONFIGFS_ATTR_OPS(package_details);
+
 static struct configfs_item_operations package_details_item_ops = {
 	.release = package_details_release,
 	.show_attribute = package_details_attr_show,
@@ -727,7 +740,7 @@ static struct config_item *packages_make_item(struct config_group *group, const 
 	}
 	qstr_init(&package_details->name, tmp);
 	config_item_init_type_name(&package_details->item, name,
-				   &package_appid_type);
+						&package_appid_type);
 
 	return &package_details->item;
 }
@@ -735,13 +748,15 @@ static struct config_item *packages_make_item(struct config_group *group, const 
 static ssize_t packages_list_show(struct packages *packages,
 					 char *page)
 {
-	struct hashtable_entry *hash_cur;
+	struct hashtable_entry *hash_cur_app;
+	struct hashtable_entry *hash_cur_user;
 	int i;
 	int count = 0, written = 0;
 	const char errormsg[] = "<truncated>\n";
+	unsigned int hash;
 
 	rcu_read_lock();
-	hash_for_each_rcu(package_to_appid, i, hash_cur, hlist) {
+	hash_for_each_rcu(package_to_appid, i, hash_cur_app, hlist) {
 		written = scnprintf(page + count, PAGE_SIZE - sizeof(errormsg) - count, "%s %d\n",
 					hash_cur_app->key.name, atomic_read(&hash_cur_app->value));
 		hash = hash_cur_app->key.hash;
@@ -763,11 +778,25 @@ static ssize_t packages_list_show(struct packages *packages,
 	return count;
 }
 
+static ssize_t packages_remove_userid_store(struct packages *packages,
+				       const char *page, size_t count)
+{
+	unsigned int tmp;
+	int ret;
+
+	ret = kstrtouint(page, 10, &tmp);
+	if (ret)
+		return ret;
+	remove_userid_all_entry(tmp);
+	return count;
+}
+
 struct packages_attribute packages_attr_packages_gid_list = __CONFIGFS_ATTR_RO(packages_gid.list, packages_list_show);
 PACKAGES_ATTR(remove_userid, S_IWUGO, NULL, packages_remove_userid_store);
 
 static struct configfs_attribute *packages_attrs[] = {
 	&packages_attr_packages_gid_list.attr,
+	&packages_attr_remove_userid.attr,
 	NULL,
 };
 
