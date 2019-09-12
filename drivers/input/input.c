@@ -691,7 +691,6 @@ static void input_dev_release_keys(struct input_dev *dev)
 {
 	bool need_sync = false;
 	int code;
-	bool need_sync = false;
 
 	if (is_event_supported(EV_KEY, dev->evbit, EV_MAX)) {
 		for (code = 0; code <= KEY_MAX; code++) {
