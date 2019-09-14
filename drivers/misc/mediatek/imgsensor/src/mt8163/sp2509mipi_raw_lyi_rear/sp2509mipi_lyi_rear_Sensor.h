@@ -2,7 +2,7 @@
  *
  * Filename:
  * ---------
- *     sp2509mipi_blx_rear_Sensor.h
+ *     sp2509mipi_lyi_rear_Sensor.h
  *
  * Project:
  * --------

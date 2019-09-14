@@ -5141,7 +5141,7 @@ static int battery_meter_resume(struct platform_device *dev)
 
 #elif defined(SOC_BY_SW_FG) || defined(SOC_BY_HW_FG)
 #if defined(SOC_BY_SW_FG)
-	signed int hw_ocv_after_sleep;
+	signed int hw_ocv_after_sleep = -1;
 	signed int DOD_hwocv, sleep_interval;
 	struct timespec now_time;
 #endif
@@ -5210,9 +5210,9 @@ static int battery_meter_resume(struct platform_device *dev)
 			DOD_hwocv, oam_d_2);
 	} else {
 		/* 0.1mAh */
-		oam_car_1 = oam_car_1 + (40*sleep_interval/3600);
+		oam_car_1 = oam_car_1 + (80*sleep_interval/3600);
 		/* 0.1mAh */
-		oam_car_2 = oam_car_2 + (40*sleep_interval/3600);
+		oam_car_2 = oam_car_2 + (80*sleep_interval/3600);
 	}
 
 	pr_debug("sleeptime=(%d)s, be_ocv=(%d), af_ocv=(%d), D0=(%d), car1=(%d), car2=(%d)\n",

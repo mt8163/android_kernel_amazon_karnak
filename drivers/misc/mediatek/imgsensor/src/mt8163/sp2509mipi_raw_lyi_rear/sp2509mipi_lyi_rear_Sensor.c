@@ -2,7 +2,7 @@
  *
  * Filename:
  * ---------
- *     sp2509mipi_blx_rear_Sensor.c
+ *     sp2509mipi_lyi_rear_Sensor.c
  *
  * Project:
  * --------
@@ -32,10 +32,10 @@
 #include "kd_imgsensor_define.h"
 #include "kd_imgsensor_errcode.h"
 
-#include "sp2509mipi_blx_rear_Sensor.h"
+#include "sp2509mipi_lyi_rear_Sensor.h"
 
 /****************************Modify Following Strings for Debug****************************/
-#define PFX "SP2509_blx_rear_camera_sensor"
+#define PFX "SP2509_lyi_rear_camera_sensor"
 #define LOG_1 LOG_INF("SP2509,MIPI 1LANE\n")
 #define LOG_2 LOG_INF("preview 1280*960@30fps,420Mbps/lane; video 1280*960@30fps,420Mbps/lane; capture 5M@15fps,420Mbps/lane\n")
 /****************************   Modify end    *******************************************/
@@ -43,10 +43,10 @@
 #define LOG_INF(format, args...)    pr_debug("[%s] " format, __FUNCTION__, ##args)
 
 static DEFINE_SPINLOCK(imgsensor_drv_lock);
-kal_bool SP2509_BLX_REAR_DuringTestPattern = KAL_FALSE;
+kal_bool SP2509_LYI_REAR_DuringTestPattern = KAL_FALSE;
 
 static imgsensor_info_struct imgsensor_info = {
-	.sensor_id = SP2509MIPI_BLX_REAR_SENSOR_ID,	//record sensor id defined in Kd_imgsensor.h
+	.sensor_id = SP2509MIPI_LYI_REAR_SENSOR_ID,	//record sensor id defined in Kd_imgsensor.h
 
 	.checksum_value = 0xf7375923,	//checksum value for Camera Auto Test
 
@@ -521,14 +521,14 @@ static kal_uint32 get_imgsensor_id(UINT32 * sensor_id)
 	int adc_channel = 13;    //Auxadc channel, corresponding to ID pin
 
 	IMM_auxadc_GetOneChannelValue_Cali(adc_channel, &adc_volt);
-	printk("BLX sp2509 rear adc_volt: %d\n", adc_volt);
+	printk("LYI sp2509 rear adc_volt: %d\n", adc_volt);
 	/* The ID pin voltage values of the two modules are 600mv and 1000mv.
 	To prevent voltage fluctuations from causing other problems,
 	So we chose 800mv as the criterion.
 	If voltage value is 0mv or return error, it will call this sensor driver.
 	*/
 
-	if (adc_volt >= 800000)
+	if (adc_volt < 800000)
 	{
 		return ERROR_SENSOR_CONNECT_FAIL;
 	}
@@ -539,9 +539,9 @@ static kal_uint32 get_imgsensor_id(UINT32 * sensor_id)
 		spin_unlock(&imgsensor_drv_lock);
 		do {
 			*sensor_id = return_sensor_id();
-			if (*sensor_id == imgsensor_info.sensor_id) {
-				printk("i2c write id: 0x%x, sensor id: 0x%x\n",
-				       imgsensor.i2c_write_id, *sensor_id);
+			if (*sensor_id == (imgsensor_info.sensor_id - 2)) {
+				printk("i2c write id: 0x%x, mgsensor_info.sensor_id :0x%x, sensor id: 0x%x\n",
+				       imgsensor.i2c_write_id, imgsensor_info.sensor_id, *sensor_id);
 				return ERROR_NONE;
 			}
 			printk
@@ -552,7 +552,7 @@ static kal_uint32 get_imgsensor_id(UINT32 * sensor_id)
 		i++;
 		retry = 2;
 	}
-	if (*sensor_id != imgsensor_info.sensor_id) {
+	if (*sensor_id != (imgsensor_info.sensor_id - 2)) {
 		// if Sensor ID is not correct, Must set *sensor_id to 0xFFFFFFFF
 		*sensor_id = 0xFFFFFFFF;
 		return ERROR_SENSOR_CONNECT_FAIL;
@@ -590,7 +590,7 @@ static kal_uint32 open(void)
 		spin_unlock(&imgsensor_drv_lock);
 		do {
 			sensor_id = return_sensor_id();
-			if (sensor_id == imgsensor_info.sensor_id) {
+			if (sensor_id == (imgsensor_info.sensor_id - 2)) {
 				LOG_INF("i2c write id: 0x%x, sensor id: 0x%x\n",
 					imgsensor.i2c_write_id, sensor_id);
 				break;
@@ -601,11 +601,11 @@ static kal_uint32 open(void)
 			retry--;
 		} while (retry > 0);
 		i++;
-		if (sensor_id == imgsensor_info.sensor_id)
+		if (sensor_id == (imgsensor_info.sensor_id - 2))
 			break;
 		retry = 2;
 	}
-	if (imgsensor_info.sensor_id != sensor_id)
+	if ((imgsensor_info.sensor_id - 2) != sensor_id)
 		return ERROR_SENSOR_CONNECT_FAIL;
 
 	/* initail sequence write in  */
@@ -625,7 +625,7 @@ static kal_uint32 open(void)
 	imgsensor.test_pattern = KAL_FALSE;
 	imgsensor.current_fps = imgsensor_info.pre.max_framerate;
 	spin_unlock(&imgsensor_drv_lock);
-	SP2509_BLX_REAR_DuringTestPattern = KAL_FALSE;
+	SP2509_LYI_REAR_DuringTestPattern = KAL_FALSE;
 
 	return ERROR_NONE;
 }				/*    open  */
@@ -1347,10 +1347,10 @@ static SENSOR_FUNCTION_STRUCT sensor_func = {
 	close
 };
 
-UINT32 SP2509MIPI_BLX_REAR_RAW_SensorInit(PSENSOR_FUNCTION_STRUCT * pfFunc)
+UINT32 SP2509MIPI_LYI_REAR_RAW_SensorInit(PSENSOR_FUNCTION_STRUCT * pfFunc)
 {
 	/* To Do : Check Sensor status here */
 	if (pfFunc != NULL)
 		*pfFunc = &sensor_func;
 	return ERROR_NONE;
-}				/*    SP2509MIPI_BLX_REAR_RAW_SensorInit    */
+}				/*    SP2509MIPI_LYI_REAR_RAW_SensorInit    */

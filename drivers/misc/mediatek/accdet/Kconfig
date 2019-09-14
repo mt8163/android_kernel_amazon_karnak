@@ -10,12 +10,12 @@ config MTK_ACCDET
 	  If unsure, say N.
 
 config MTK_AMZN_ACCDET
-	tristate "sbc123/Biscuit ACCDET driver"
+	tristate "sbc123/abh123 ACCDET driver"
 	---help---
 
-	  ACCDET driver support for Biscuit and sbc123 with MTK SOC
+	  ACCDET driver support for abh123 and sbc123 with MTK SOC
 
-	  If you want to use Biscuit and sbc123 ACCDET driver,
+	  If you want to use abh123 and sbc123 ACCDET driver,
 	  say Y or M here.
 
 	  If unsure, say N.

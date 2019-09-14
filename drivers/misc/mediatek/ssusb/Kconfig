@@ -103,5 +103,5 @@ config SSUSB_PHY0_U2_CURRENT_DETECT
 	---help---
 	  Enable it if dynamically select current source of u2-phy0
 	  which are internal current or U3 current; it's add only for
-	  mt8173-magna platform. so for others, disable it anyway.
+	  mt8173-abc123 platform. so for others, disable it anyway.
 	  If unsure, say N.

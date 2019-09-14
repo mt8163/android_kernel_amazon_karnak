@@ -317,7 +317,7 @@ static int IMM_auxadc_GetOneChannelValue(int dwChannel, int data[4], int *rawdat
 
 /* 1v == 1000000 uv */
 /* this function voltage Unit is uv */
-static int IMM_auxadc_GetOneChannelValue_Cali(int Channel, int *voltage)
+int IMM_auxadc_GetOneChannelValue_Cali(int Channel, int *voltage)
 {
 	int ret = 0, data[4], rawvalue;
 	u_int64_t temp_vol;

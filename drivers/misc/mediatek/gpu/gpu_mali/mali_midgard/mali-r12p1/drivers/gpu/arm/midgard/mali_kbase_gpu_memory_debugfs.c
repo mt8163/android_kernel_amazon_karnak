@@ -113,7 +113,7 @@ void kbasep_gpu_memory_seq_show_lmk(void)
 		/* output the total memory usage and cap for this device */
 		lmk_add_to_buffer("%-25s  %-10s  %-10s  %-10s  %-10s\n"\
 				"==============================================================================================================\n",
-				"kbase_context", "tgid", "gpu_mem", "sys_id", "pid");
+				"kbase_context", "pid", "gpu_mem", "sys_id", "tgid");
 
 #ifdef ENABLE_MTK_MEMINFO
 		g_mtk_gpu_total_memory_usage_in_pages_debugfs = atomic_read(&(kbdev->memdev.used_pages));
@@ -130,10 +130,10 @@ void kbasep_gpu_memory_seq_show_lmk(void)
 			lmk_add_to_buffer("  %s-0x%p  %-10u  %-10u  %-10u  %-10u\n",
 				"kctx",
 				element->kctx, \
-				element->kctx->tgid,
+				element->kctx->pid,
 				atomic_read(&(element->kctx->used_pages)) * PAGE_SIZE,
 				element->kctx->id,
-				element->kctx->pid);
+				element->kctx->tgid);
 
 #ifdef ENABLE_MTK_MEMINFO
 			mtk_kbase_set_gpu_meminfo(mtk_kbase_gpu_meminfo_index, element->kctx->tgid, \

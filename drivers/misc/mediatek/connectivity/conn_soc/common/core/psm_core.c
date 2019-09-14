@@ -453,7 +453,7 @@ static INT32 _stp_psm_proc(void *pvData)
 	P_OSAL_OP pOp;
 	UINT32 id;
 	INT32 result;
-#ifdef CONFIG_BISCUIT
+#ifdef CONFIG_abh123
 	{
 		int i_ret = -1;
 		struct sched_param param = {

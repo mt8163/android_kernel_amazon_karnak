@@ -64,6 +64,13 @@
 */
 /* Roaming Discovery interval, SCAN result need to be updated */
 #define ROAMING_DISCOVERY_TIMEOUT_SEC               5	/* Seconds. */
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+#define ROAMING_ONE_AP_SKIP_TIMES_INITIAL		2
+#define ROAMING_ONE_AP_SKIP_TIMES_IN_POOR		2
+#define ROAMING_ONE_AP_SKIP_TIMES_IN_GOOD		3
+#define ROAMING_ONE_AP_GOOD_AREA_RCPI			90
+#define ROAMING_ONE_AP_POOR_AREA_RCPI			67
+#endif
 
 /* #define ROAMING_NO_SWING_RCPI_STEP                  5 //rcpi */
 /*******************************************************************************
@@ -95,14 +102,22 @@ typedef struct _ROAMING_PARAM_T {
 	UINT_16 u2Reason;
 } ROAMING_PARAM_T, *P_ROAMING_PARAM_T;
 
- typedef struct _CMD_ROAMING_CTRL_T {
-	 UINT_8 fgEnable;
-	 UINT_8 ucRcpiAdjustStep;
-	 UINT_16 u2RcpiLowThr;
-	 UINT_8 ucRoamingRetryCount;
-	 UINT_8 ucRoamingStableTimeout;
-	 UINT_8 aucReserved[2];
- } CMD_ROAMING_CTRL_T, *P_CMD_ROAMING_CTRL_T;
+typedef struct _CMD_ROAMING_CTRL_T {
+	UINT_8 fgEnable;
+	UINT_8 ucRcpiAdjustStep;
+	UINT_16 u2RcpiLowThr;
+	UINT_8 ucRoamingRetryCount;
+	UINT_8 ucRoamingStableTimeout;
+	UINT_8 aucReserved[2];
+} CMD_ROAMING_CTRL_T, *P_CMD_ROAMING_CTRL_T;
+
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+typedef struct _CMD_ROAMING_SKIP_ONE_AP_T {
+	UINT_8 fgIsRoamingSkipOneAP;
+	UINT_8 aucReserved[3];
+	UINT_8 aucReserved2[8];
+} CMD_ROAMING_SKIP_ONE_AP_T, *P_CMD_ROAMING_SKIP_ONE_AP_T;
+#endif
 
  /**/ typedef enum _ENUM_ROAMING_STATE_T {
 	ROAMING_STATE_IDLE = 0,
