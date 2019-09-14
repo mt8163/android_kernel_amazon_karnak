@@ -43,7 +43,7 @@
 #define LOG_INF(format, args...)    pr_debug("[%s] " format, __FUNCTION__, ##args)
 
 static DEFINE_SPINLOCK(imgsensor_drv_lock);
-kal_bool GC2375_Front_DuringTestPattern = KAL_FALSE;
+kal_bool GC2375_BLX_Front_DuringTestPattern = KAL_FALSE;
 
 static imgsensor_info_struct imgsensor_info = {
 	.sensor_id = GC2375MIPI_BLX_FRONT_SENSOR_ID,	//record sensor id defined in Kd_imgsensor.h
@@ -640,6 +640,21 @@ static kal_uint32 get_imgsensor_id(UINT32 * sensor_id)
 {
 	kal_uint8 i = 0;
 	kal_uint8 retry = 2;
+	int adc_volt;
+	int adc_channel = 14;    //Auxadc channel, corresponding to ID pin
+
+	IMM_auxadc_GetOneChannelValue_Cali(adc_channel, &adc_volt);
+	printk("BLX GC2375 front adc_volt: %d\n", adc_volt);
+	/* The ID pin voltage values of the two modules are 400mv and 800mv.
+	To prevent voltage fluctuations from causing other problems,
+	So we chose 600mv as the criterion.
+	If voltage value is 0mv or return error, it will call this sensor driver.
+	*/
+
+	if (adc_volt >= 600000)
+	{
+		return ERROR_SENSOR_CONNECT_FAIL;
+	}
 
 	while (imgsensor_info.i2c_addr_table[i] != 0xff) {
 		spin_lock(&imgsensor_drv_lock);
@@ -738,7 +753,7 @@ static kal_uint32 open(void)
 	imgsensor.test_pattern = KAL_FALSE;
 	imgsensor.current_fps = imgsensor_info.pre.max_framerate;
 	spin_unlock(&imgsensor_drv_lock);
-	GC2375_Front_DuringTestPattern = KAL_FALSE;
+	GC2375_BLX_Front_DuringTestPattern = KAL_FALSE;
 
 	return ERROR_NONE;
 }				/*    open  */

@@ -1053,16 +1053,16 @@ static VOID statsParsePktInfo(PUINT_8 pucPkt, UINT_8 status, UINT_8 eventType, P
 			u4TransID = pucBootp[4]<<24  | pucBootp[5]<<16 | pucBootp[6]<<8  | pucBootp[7];
 			switch (eventType) {
 			case EVENT_RX:
-				DBGLOG(RX, INFO, "<RX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
+				DBGLOG(RX, STATE, "<RX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
 								u2IpId, pucBootp[0], u4TransID);
 				break;
 			case EVENT_TX:
-				DBGLOG(RX, INFO, "<TX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
+				DBGLOG(RX, STATE, "<TX> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
 								u2IpId, pucBootp[0], u4TransID);
 				*needAck = TRUE;
 				break;
 			case EVENT_TX_DONE:
-				DBGLOG(RX, INFO, "<TX status:%d> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
+				DBGLOG(RX, STATE, "<TX status:%d> DHCP: IPID 0x%02x, MsgType 0x%x, TransID 0x%04x\n",
 						status, u2IpId, pucBootp[0], u4TransID);
 				break;
 			}

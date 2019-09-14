@@ -751,6 +751,11 @@ typedef enum _ENUM_CMD_ID_T {
 	CMD_ID_SET_COUNTRY_POWER_LIMIT = 0x4A,	/* 0x4A (Set) */
 	CMD_ID_SET_IPV6_ADDRESS = 0x4B,     /* 0x4B (Set) */
 	CMD_ID_SET_SYSTEM_SUSPEND = 0x60,	/* 0x60 (Set) */
+
+#if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
+	CMD_ID_SET_ROAMING_SKIP = 0x6D, /* 0x6D (Set) used to setting roaming skip*/
+#endif
+
 	CMD_ID_SET_RX_BA_WIN_SIZE = 0x74,	/* 0x74 (Set) */
 	CMD_ID_GET_NIC_CAPABILITY = 0x80,	/* 0x80 (Query) */
 	CMD_ID_GET_LINK_QUALITY,	/* 0x81 (Query) */

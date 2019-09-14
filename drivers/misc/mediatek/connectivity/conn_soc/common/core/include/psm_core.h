@@ -207,7 +207,7 @@ typedef struct stp_psm_opid_record {
 INT32 stp_psm_disable_by_tx_rx_density(MTKSTP_PSM_T *stp_psm, INT32 dir);
 #else
 #define SAMPLE_DURATION 1	/*1 second */
-#ifdef CONFIG_BISCUIT
+#ifdef CONFIG_abh123
 #define RTX_SPEED_THRESHOLD     25000	/*25KB/s */
 #else
 #define RTX_SPEED_THRESHOLD     50000   /*50KB/s */

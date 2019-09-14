@@ -2835,8 +2835,8 @@ static void battery_update(struct battery_data *bat_data)
 
 	} else {		/* Only Battery */
 
-		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_NOT_CHARGING;
-		pr_notice("battery status: %s\n", "not charging");
+		bat_data->BAT_STATUS = POWER_SUPPLY_STATUS_DISCHARGING;
+		pr_notice("battery status: %s\n", "discharging");
 		if (BMT_status.bat_vol <= batt_cust_data.v_0percent_tracking)
 			resetBatteryMeter = mt_battery_0Percent_tracking_check();
 		else
@@ -5738,6 +5738,10 @@ static void battery_timer_resume(void)
 
 	if (is_pcm_timer_trigger == true || bat_spm_timeout) {
 		mutex_lock(&bat_mutex);
+
+		if (bat_spm_timeout && (BMT_status.UI_SOC > BMT_status.SOC))
+			BMT_status.UI_SOC = BMT_status.SOC;
+
 		BAT_thread();
 		mutex_unlock(&bat_mutex);
 	} else {

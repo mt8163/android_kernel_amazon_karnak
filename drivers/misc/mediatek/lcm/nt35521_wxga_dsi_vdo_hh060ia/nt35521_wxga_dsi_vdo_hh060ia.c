@@ -294,7 +294,7 @@ static void power_on(void)
 
 #endif
 
-static void init_memphis_hvt_lgd_lcm(void)
+static void init_abc123_hvt_lgd_lcm(void)
 {
 	unsigned int data_array[64];
 
@@ -994,7 +994,7 @@ static void init_memphis_hvt_lgd_lcm(void)
 
 
 
-static void init_memphis_hvt_inx_rubbing_lcm(void)
+static void init_abc123_hvt_inx_rubbing_lcm(void)
 {
 	unsigned int data_array[64];
 
@@ -1775,9 +1775,9 @@ static void lcm_init(void)
 
 
 	if(vendor_id == 0)
-		init_memphis_hvt_lgd_lcm(); /* LGD panel */
+		init_abc123_hvt_lgd_lcm(); /* LGD panel */
 	else
-		init_memphis_hvt_inx_rubbing_lcm(); /* INX panel */
+		init_abc123_hvt_inx_rubbing_lcm(); /* INX panel */
 
 #else
 	pr_info("[nt35521] %s enter, skip power_on & init lcm since it's done by lk\n",
@@ -1821,9 +1821,9 @@ static void lcm_resume(void)
 	get_lcm_id();
 
 	if(vendor_id == 0)
-		init_memphis_hvt_lgd_lcm(); /* LGD panel */
+		init_abc123_hvt_lgd_lcm(); /* LGD panel */
 	else
-		init_memphis_hvt_inx_rubbing_lcm(); /* INX panel */
+		init_abc123_hvt_inx_rubbing_lcm(); /* INX panel */
 
 }
 

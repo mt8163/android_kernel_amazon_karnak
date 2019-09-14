@@ -2,7 +2,7 @@
  *
  * Filename:
  * ---------
- *     sp2509mipi_blx_rear_Sensor.c
+ *     gc2375mipi_lyi_front_Sensor.c
  *
  * Project:
  * --------
@@ -26,34 +26,34 @@
 #include <linux/uaccess.h>
 #include <linux/fs.h>
 #include <asm/atomic.h>
+#include <linux/kernel.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
 #include "kd_imgsensor_define.h"
 #include "kd_imgsensor_errcode.h"
 
-#include "sp2509mipi_blx_rear_Sensor.h"
+#include "gc2375mipi_lyi_front_Sensor.h"
 
 /****************************Modify Following Strings for Debug****************************/
-#define PFX "SP2509_blx_rear_camera_sensor"
-#define LOG_1 LOG_INF("SP2509,MIPI 1LANE\n")
-#define LOG_2 LOG_INF("preview 1280*960@30fps,420Mbps/lane; video 1280*960@30fps,420Mbps/lane; capture 5M@15fps,420Mbps/lane\n")
+#define PFX "GC2375_lyi_front_camera_sensor"
+#define LOG_1 LOG_INF("GC2375,MIPI 1LANE\n")
 /****************************   Modify end    *******************************************/
 
 #define LOG_INF(format, args...)    pr_debug("[%s] " format, __FUNCTION__, ##args)
 
 static DEFINE_SPINLOCK(imgsensor_drv_lock);
-kal_bool SP2509_BLX_REAR_DuringTestPattern = KAL_FALSE;
+kal_bool GC2375_LYI_Front_DuringTestPattern = KAL_FALSE;
 
 static imgsensor_info_struct imgsensor_info = {
-	.sensor_id = SP2509MIPI_BLX_REAR_SENSOR_ID,	//record sensor id defined in Kd_imgsensor.h
+	.sensor_id = GC2375MIPI_LYI_FRONT_SENSOR_ID,	//record sensor id defined in Kd_imgsensor.h
 
 	.checksum_value = 0xf7375923,	//checksum value for Camera Auto Test
 
 	.pre = {
-		.pclk = 36000000,	//record different mode's pclk
-		.linelength = 947,	//record different mode's linelength
-		.framelength = 1234,	//record different mode's framelength
+		.pclk = 39000000,	//record different mode's pclk
+		.linelength = 1040,	//record different mode's linelength
+		.framelength = 1240,	//record different mode's framelength
 		.startx = 0,	//record different mode's startx of grabwindow
 		.starty = 0,	//record different mode's starty of grabwindow
 		.grabwindow_width = 1600,	//record different mode's width of grabwindow
@@ -64,69 +64,69 @@ static imgsensor_info_struct imgsensor_info = {
 		.max_framerate = 300,
 		},
 	.cap = {
-		.pclk = 36000000,
-		.linelength = 947,
-		.framelength = 1234,
+		.pclk = 39000000,
+		.linelength = 1040,
+		.framelength = 1240,
 		.startx = 0,
 		.starty = 0,
-		.grabwindow_width = 1600,	//4192,
-		.grabwindow_height = 1200,	//3104,
+		.grabwindow_width = 1600,
+		.grabwindow_height = 1200,
 		.mipi_data_lp2hs_settle_dc = 85,
 		.max_framerate = 300,
 		},
-	.cap1 = {
-		 .pclk = 36000000,
-		 .linelength = 947,
-		 .framelength = 1234,
-		 .startx = 0,
-		 .starty = 0,
-		 .grabwindow_width = 1600,	//4192,
-		 .grabwindow_height = 1200,	//3104,
-		 .mipi_data_lp2hs_settle_dc = 85,
-		 .max_framerate = 300,
-		 },
+	.cap1 = {		//capture for PIP 24fps relative information, capture1 mode must use same framelength, linelength with Capture mode for shutter calculate
+		.pclk = 39000000,
+		.linelength = 1040,
+		.framelength = 1240,
+		.startx = 0,
+		.starty = 0,
+		.grabwindow_width = 1600,
+		.grabwindow_height = 1200,
+		.mipi_data_lp2hs_settle_dc = 85,
+		.max_framerate = 300,
+		},
 	.normal_video = {
-			 .pclk = 36000000,
-			 .linelength = 947,
-			 .framelength = 1234,
-			 .startx = 0,
-			 .starty = 0,
-			 .grabwindow_width = 1600,	//4192,
-			 .grabwindow_height = 1200,	//3104,
-			 .mipi_data_lp2hs_settle_dc = 85,
-			 .max_framerate = 300,
-			 },
+		.pclk = 39000000,
+		.linelength = 1040,
+		.framelength = 1240,
+		.startx = 0,
+		.starty = 0,
+		.grabwindow_width = 1600,
+		.grabwindow_height = 1200,
+		.mipi_data_lp2hs_settle_dc = 85,
+		.max_framerate = 300,
+		},
 	.hs_video = {
-		     .pclk = 36000000,
-		     .linelength = 947,
-		     .framelength = 1234,
-		     .startx = 0,
-		     .starty = 0,
-		     .grabwindow_width = 1600,	//4192,
-		     .grabwindow_height = 1200,	//3104,
-		     .mipi_data_lp2hs_settle_dc = 85,
-		     .max_framerate = 300,
-		     },
+		.pclk = 39000000,
+		.linelength = 1040,
+		.framelength = 1240,
+		.startx = 0,
+		.starty = 0,
+		.grabwindow_width = 1600,
+		.grabwindow_height = 1200,
+		.mipi_data_lp2hs_settle_dc = 85,
+		.max_framerate = 300,
+		},
 	.slim_video = {
-		       .pclk = 36000000,
-		       .linelength = 947,
-		       .framelength = 1234,
-		       .startx = 0,
-		       .starty = 0,
-		       .grabwindow_width = 1600,	//4192,
-		       .grabwindow_height = 1200,	//3104,
-		       .mipi_data_lp2hs_settle_dc = 85,
-		       .max_framerate = 300,
-		       },
-	.margin = 4,		//sensor framelength & shutter margin
-	.min_shutter = 4,	//min shutter
-	.max_frame_length = 0x7fff,	//max framelength by sensor register's limitation
+		.pclk = 39000000,
+		.linelength = 1040,
+		.framelength = 1240,
+		.startx = 0,
+		.starty = 0,
+		.grabwindow_width = 1600,
+		.grabwindow_height = 1200,
+		.mipi_data_lp2hs_settle_dc = 85,
+		.max_framerate = 300,
+		},
+	.margin = 0,		//sensor framelength & shutter margin
+	.min_shutter = 1,	//min shutter
+	.max_frame_length = 0x3fff,	//max framelength by sensor register's limitation
 	.ae_shut_delay_frame = 0,	//shutter delay frame for AE cycle, 2 frame with ispGain_delay-shut_delay=2-0=2
 	.ae_sensor_gain_delay_frame = 0,	//sensor gain delay frame for AE cycle,2 frame with ispGain_delay-sensor_gain_delay=2-0=2
 	.ae_ispGain_delay_frame = 2,	//isp gain delay frame for AE cycle
 	.ihdr_support = 0,	//1, support; 0,not support
 	.ihdr_le_firstline = 0,	//1,le first ; 0, se first
-	.sensor_mode_num = 5,	//support sensor mode num
+	.sensor_mode_num = 3,	//support sensor mode num
 
 	.cap_delay_frame = 2,	//enter capture delay frame num
 	.pre_delay_frame = 2,	//enter preview delay frame num
@@ -134,22 +134,21 @@ static imgsensor_info_struct imgsensor_info = {
 	.hs_video_delay_frame = 2,	//enter high speed video  delay frame num
 	.slim_video_delay_frame = 2,	//enter slim video delay frame num
 
-	.isp_driving_current = ISP_DRIVING_4MA,	//mclk driving current
+	.isp_driving_current = ISP_DRIVING_6MA,	//mclk driving current
 	.sensor_interface_type = SENSOR_INTERFACE_TYPE_MIPI,	//sensor_interface_type
 	.mipi_sensor_type = MIPI_OPHY_NCSI2,	//0,MIPI_OPHY_NCSI2;  1,MIPI_OPHY_CSI2
 	.mipi_settle_delay_mode = MIPI_SETTLEDELAY_MANUAL,	//0,MIPI_SETTLEDELAY_AUTO; 1,MIPI_SETTLEDELAY_MANNUAL
 	.sensor_output_dataformat = SENSOR_OUTPUT_FORMAT_RAW_B,	//sensor output first pixel color
 	.mclk = 24,		//mclk value, suggest 24 or 26 for 24Mhz or 26Mhz
 	.mipi_lane_num = SENSOR_MIPI_1_LANE,	//mipi lane num
-	.i2c_addr_table = {0x7a, 0xff},
-	.i2c_speed = 200,
+	.i2c_addr_table = {0x6e, 0xff},	//record sensor support all write id addr, only supprt 4must end with 0xff
 };
 
 static imgsensor_struct imgsensor = {
 	.mirror = IMAGE_NORMAL,	//mirrorflip information
 	.sensor_mode = IMGSENSOR_MODE_INIT,	//IMGSENSOR_MODE enum value,record current sensor mode,such as: INIT, Preview, Capture, Video,High Speed Video, Slim Video
-	.shutter = 0x3D0,	//current shutter
-	.gain = 0x100,		//current gain
+	.shutter = 0x3ED,	//current shutter
+	.gain = 0x40,		//current gain
 	.dummy_pixel = 0,	//current dummypixel
 	.dummy_line = 0,	//current dummyline
 	.current_fps = 300,	//full size current fps : 24fps for PIP, 30fps for Normal or ZSD
@@ -157,7 +156,7 @@ static imgsensor_struct imgsensor = {
 	.test_pattern = KAL_FALSE,	//test pattern mode or not. KAL_FALSE for in test pattern mode, KAL_TRUE for normal output
 	.current_scenario_id = MSDK_SCENARIO_ID_CAMERA_PREVIEW,	//current scenario id
 	.ihdr_en = 0,		//sensor need support LE, SE with HDR feature
-	.i2c_write_id = 0x7a,	//record current sensor's i2c write id
+	.i2c_write_id = 0x6e,	//record current sensor's i2c write id
 };
 
 /* Sensor output window information */
@@ -166,12 +165,12 @@ static SENSOR_WINSIZE_INFO_STRUCT imgsensor_winsize_info[5] = {
 	{1600, 1200, 0, 0, 1600, 1200, 1600, 1200, 0000, 0000, 1600, 1200, 0, 0, 1600, 1200},	// capture
 	{1600, 1200, 0, 0, 1600, 1200, 1600, 1200, 0000, 0000, 1600, 1200, 0, 0, 1600, 1200},	// video
 	{1600, 1200, 0, 0, 1600, 1200, 1600, 1200, 0000, 0000, 1600, 1200, 0, 0, 1600, 1200},	//hight speed video
-	{1600, 1200, 0, 0, 1600, 1200, 1600, 1200, 0000, 0000, 1600, 1200, 0, 0, 1600, 1200}
-	};				// slim video
+	{1600, 1200, 0, 0, 1600, 1200, 1600, 1200, 0000, 0000, 1600, 1200, 0, 0,
+	 1600, 1200}
+};				// slim video
 
 static kal_uint16 read_cmos_sensor(kal_uint32 addr)
 {
-	//kdSetI2CSpeed(imgsensor_info.i2c_speed); // Add this func to set i2c speed by each sensor
 	kal_uint16 get_byte = 0;
 
 	char pu_send_cmd[1] = { (char)(addr & 0xFF) };
@@ -184,7 +183,6 @@ static kal_uint16 read_cmos_sensor(kal_uint32 addr)
 
 static void write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
 {
-	//kdSetI2CSpeed(imgsensor_info.i2c_speed); // Add this func to set i2c speed by each sensor
 	char pu_send_cmd[2] = { (char)(addr & 0xFF), (char)(para & 0xFF) };
 	iWriteRegI2C(pu_send_cmd, 2, imgsensor.i2c_write_id);
 
@@ -192,24 +190,28 @@ static void write_cmos_sensor(kal_uint32 addr, kal_uint32 para)
 
 static void set_dummy(void)
 {
-	LOG_INF("dummyline = %d, dummypixels = %d \n", imgsensor.dummy_line,
-		imgsensor.dummy_pixel);
-	/* you can set dummy by imgsensor.dummy_line and imgsensor.dummy_pixel, or you can set dummy by imgsensor.frame_length and imgsensor.line_length */
-	write_cmos_sensor(0xfd, 0x01);
-	write_cmos_sensor(0x05, (imgsensor.dummy_line >> 8) & 0xFF);
-	write_cmos_sensor(0x06, imgsensor.dummy_line & 0xFF);
-	write_cmos_sensor(0x01, 0x01);
-}				/*    set_dummy  */
+	kal_uint32 vb = 0;
+	kal_uint32  basic_line = 1224;
+	LOG_INF("dummyline = %d\n", imgsensor.dummy_line);
+
+	vb = imgsensor.frame_length - basic_line;
+	vb = max(vb, (kal_uint32)16);
+	vb = min(vb, (kal_uint32)8191);
+
+	write_cmos_sensor(0x07, (vb >> 8) & 0x1F);
+	write_cmos_sensor(0x08, vb & 0xFF);
+
+}    /*    set_dummy  */
 
 static kal_uint32 return_sensor_id(void)
 {
-	write_cmos_sensor(0xfd, 0x00);
-	return ((read_cmos_sensor(0x02) << 8) | read_cmos_sensor(0x03));
+	return ((read_cmos_sensor(0xf0) << 8) | read_cmos_sensor(0xf1));
 }
 
 static void set_max_framerate(UINT16 framerate, kal_bool min_framelength_en)
 {
 	kal_uint32 frame_length = imgsensor.frame_length;
+	LOG_INF("framerate = %d, min framelength should enable = %d\n", framerate, min_framelength_en);
 
 	frame_length = imgsensor.pclk / framerate * 10 / imgsensor.line_length;
 	spin_lock(&imgsensor_drv_lock);
@@ -230,16 +232,6 @@ static void set_max_framerate(UINT16 framerate, kal_bool min_framelength_en)
 	spin_unlock(&imgsensor_drv_lock);
 	set_dummy();
 }				/*    set_max_framerate  */
-
-static void write_shutter(kal_uint16 shutter)
-{
-	write_cmos_sensor(0xfd, 0x01);
-	write_cmos_sensor(0x03, (shutter >> 8) & 0xFF);
-	write_cmos_sensor(0x04, shutter & 0xFF);
-	write_cmos_sensor(0x01, 0x01);
-	LOG_INF("shutter =%d, framelength =%d\n", shutter,
-		imgsensor.frame_length);
-}
 
 /*************************************************************************
 * FUNCTION
@@ -264,20 +256,28 @@ static void set_shutter(kal_uint16 shutter)
 	imgsensor.shutter = shutter;
 	spin_unlock_irqrestore(&imgsensor_drv_lock, flags);
 
-	write_shutter(shutter);
-}
+	/* if shutter bigger than frame_length, should extend frame length first */
+	spin_lock(&imgsensor_drv_lock);
+	if (shutter > imgsensor.min_frame_length - imgsensor_info.margin)
+		imgsensor.frame_length = shutter + imgsensor_info.margin;
+	else
+		imgsensor.frame_length = imgsensor.min_frame_length;
+	if (imgsensor.frame_length > imgsensor_info.max_frame_length)
+		imgsensor.frame_length = imgsensor_info.max_frame_length;
+	spin_unlock(&imgsensor_drv_lock);
+	shutter = max((kal_uint32)shutter, imgsensor_info.min_shutter);
+	shutter = min((kal_uint32)shutter, (imgsensor_info.max_frame_length - imgsensor_info.margin));
 
-/*
-static kal_uint16 gain2reg(const kal_uint16 gain)
-{
-    kal_uint16 reg_gain = 0x0000;
+	/* Update Shutter */
+	write_cmos_sensor(0xfe, 0x00);
+	write_cmos_sensor(0x03, (shutter >> 8) & 0x3F);
+	write_cmos_sensor(0x04, shutter & 0xFF);
 
-    reg_gain = ((gain / BASEGAIN) << 4) + ((gain % BASEGAIN) * 16 / BASEGAIN);
-    reg_gain = reg_gain & 0xFFFF;
+	LOG_INF("Exit! shutter =%d, framelength =%d\n", shutter,
+		imgsensor.frame_length);
 
-    return (kal_uint16)reg_gain;
-}
-*/
+}				/*    set_shutter */
+
 /*************************************************************************
 * FUNCTION
 *    set_gain
@@ -294,34 +294,142 @@ static kal_uint16 gain2reg(const kal_uint16 gain)
 * GLOBALS AFFECTED
 *
 *************************************************************************/
+
+#define ANALOG_GAIN_1 64	// 1.00x
+#define ANALOG_GAIN_2 92	// 1.43x
+#define ANALOG_GAIN_3 128	// 2.00x
+#define ANALOG_GAIN_4 182	// 2.84x
+#define ANALOG_GAIN_5 254	// 3.97x
+#define ANALOG_GAIN_6 363	// 5.68x
+#define ANALOG_GAIN_7 521	// 8.14x
+#define ANALOG_GAIN_8 725	// 11.34x
+#define ANALOG_GAIN_9 1038	// 16.23x
+
 static kal_uint16 set_gain(kal_uint16 gain)
 {
-	kal_uint8 iReg;
+	kal_uint16 iReg, temp;
 
-	if (gain >= BASEGAIN && gain <= 15 * BASEGAIN) {
-		iReg = 0x10 * gain / BASEGAIN;	//change mtk gain base to aptina gain base
+	iReg = gain;
 
-		if (iReg <= 0x10) {
-			write_cmos_sensor(0xfd, 0x01);
-			write_cmos_sensor(0x24, 0x10);	//0x23
-			write_cmos_sensor(0x01, 0x01);
-			LOG_INF("SP2509MIPI_SetGain = 16");
-		} else if (iReg >= 0xa0)	//gpw
-		{
-			write_cmos_sensor(0xfd, 0x01);
-			write_cmos_sensor(0x24, 0xa0);
-			write_cmos_sensor(0x01, 0x01);
-			LOG_INF("SP2509MIPI_SetGain = 160");
-		} else {
-			write_cmos_sensor(0xfd, 0x01);
-			write_cmos_sensor(0x24, (kal_uint8) iReg);
-			write_cmos_sensor(0x01, 0x01);
-			LOG_INF("SP2509MIPI_SetGain = %d\n", iReg);
-		}
-	} else
-		LOG_INF("error gain setting");
+	if (iReg < 0x40)
+		iReg = 0x40;
 
+	if ((ANALOG_GAIN_1 <= iReg) && (iReg < ANALOG_GAIN_2)) {
+		write_cmos_sensor(0x20, 0x0b);
+		write_cmos_sensor(0x22, 0x0c);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x00);
+		temp = iReg;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 1x, GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	}
+
+	else if ((ANALOG_GAIN_2 <= iReg) && (iReg < ANALOG_GAIN_3)) {
+
+		write_cmos_sensor(0x20, 0x0c);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x01);
+		temp = 64 * iReg / ANALOG_GAIN_2;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 1.43x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	} else if ((ANALOG_GAIN_3 <= iReg) && (iReg < ANALOG_GAIN_4)) {
+		write_cmos_sensor(0x20, 0x0c);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x02);
+		temp = 64 * iReg / ANALOG_GAIN_3;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 2x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	} else if ((ANALOG_GAIN_4 <= iReg) && (iReg < ANALOG_GAIN_5)) {
+		write_cmos_sensor(0x20, 0x0c);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x03);
+		temp = 64 * iReg / ANALOG_GAIN_4;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 2.84x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	} else if ((ANALOG_GAIN_5 <= iReg) && (iReg < ANALOG_GAIN_6)) {
+		write_cmos_sensor(0x20, 0x0c);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x04);
+		temp = 64 * iReg / ANALOG_GAIN_5;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 3.97x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	} else if ((ANALOG_GAIN_6 <= iReg) && (iReg < ANALOG_GAIN_7)) {
+		write_cmos_sensor(0x20, 0x0e);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x05);
+		temp = 64 * iReg / ANALOG_GAIN_6;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 5.68x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	} else if ((ANALOG_GAIN_7 <= iReg) && (iReg < ANALOG_GAIN_8)) {
+		write_cmos_sensor(0x20, 0x0c);
+		write_cmos_sensor(0x22, 0x0c);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x06);
+		temp = 64 * iReg / ANALOG_GAIN_7;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 8.14x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	} else if ((ANALOG_GAIN_8 <= iReg) && (iReg < ANALOG_GAIN_9)) {
+		write_cmos_sensor(0x20, 0x0e);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x07);
+		temp = 64 * iReg / ANALOG_GAIN_8;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 11.34x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	}
+
+	else {
+		write_cmos_sensor(0x20, 0x0c);
+		write_cmos_sensor(0x22, 0x0e);
+		write_cmos_sensor(0x26, 0x0e);
+		//analog gain
+		write_cmos_sensor(0xb6, 0x08);
+		temp = 64 * iReg / ANALOG_GAIN_9;
+		write_cmos_sensor(0xb1, temp >> 6);
+		write_cmos_sensor(0xb2, (temp << 2) & 0xfc);
+		LOG_INF
+		    ("GC2375MIPI_LYI_FRONT analogic gain 16.23x , GC2375MIPI_LYI_FRONT add pregain = %d\n",
+		     temp);
+	}
 	return gain;
+
 }				/*    set_gain  */
 
 static void ihdr_write_shutter_gain(kal_uint16 le, kal_uint16 se,
@@ -355,146 +463,161 @@ static void night_mode(kal_bool enable)
 static void sensor_init(void)
 {
 	LOG_INF("E");
+	/*System */
+	write_cmos_sensor(0xfe, 0x00);
+	write_cmos_sensor(0xfe, 0x00);
+	write_cmos_sensor(0xfe, 0x00);
+	write_cmos_sensor(0xf7, 0x01);
+	write_cmos_sensor(0xf8, 0x0c);
+	write_cmos_sensor(0xf9, 0x42);
+	write_cmos_sensor(0xfa, 0x88);
+	write_cmos_sensor(0xfc, 0x8e);
+	write_cmos_sensor(0xfe, 0x00);
+	write_cmos_sensor(0x88, 0x03);
 
-	/*system */
-	write_cmos_sensor(0xfd, 0x00);
-	write_cmos_sensor(0x2f, 0x0c);
-	write_cmos_sensor(0x34, 0x00);
-	write_cmos_sensor(0x35, 0x21);	//wu
-	write_cmos_sensor(0x30, 0x1d);
-	write_cmos_sensor(0x33, 0x05);
-	write_cmos_sensor(0xfd, 0x01);
-	write_cmos_sensor(0x44, 0x00);
-	write_cmos_sensor(0x2a, 0x7c);	//9.29canshu 7c
-	write_cmos_sensor(0x2b, 0x1e);
-	write_cmos_sensor(0x2c, 0x60);
-	write_cmos_sensor(0x25, 0x11);
-	write_cmos_sensor(0x03, 0x03);
-	write_cmos_sensor(0x04, 0xf8);
+	/*Analog */
+	write_cmos_sensor(0x03, 0x04);
+	write_cmos_sensor(0x04, 0x65);
+	write_cmos_sensor(0x05, 0x02);
+	write_cmos_sensor(0x06, 0x5a);
+	write_cmos_sensor(0x07, 0x00);
+	write_cmos_sensor(0x08, 0x10);
 	write_cmos_sensor(0x09, 0x00);
-	write_cmos_sensor(0x0a, 0x02);
-	write_cmos_sensor(0x06, 0x0a);
-	write_cmos_sensor(0x24, 0x30);
-	write_cmos_sensor(0x01, 0x01);
-	write_cmos_sensor(0xfb, 0x73);	//9.29canshu 63
-	write_cmos_sensor(0xfd, 0x01);
-	write_cmos_sensor(0x16, 0x04);
-	write_cmos_sensor(0x1c, 0x09);
-	write_cmos_sensor(0x21, 0x42);  //0x42  huazai
-	write_cmos_sensor(0x6c, 0x00);
-	write_cmos_sensor(0x6b, 0x00);
-	write_cmos_sensor(0x84, 0x00);
-	write_cmos_sensor(0x85, 0x0c);
-	write_cmos_sensor(0x86, 0x0c);
-	write_cmos_sensor(0x87, 0x00);
-	write_cmos_sensor(0x50, 0x00);
-	write_cmos_sensor(0x12, 0x04);
-	write_cmos_sensor(0x13, 0x40);
-	write_cmos_sensor(0x11, 0x20);
-	write_cmos_sensor(0x33, 0x40);
-	write_cmos_sensor(0xd0, 0x03);
-	write_cmos_sensor(0xd1, 0x01);
-	write_cmos_sensor(0xd2, 0x00);
-	write_cmos_sensor(0xd3, 0x01);
-	write_cmos_sensor(0xd4, 0x20);
-	write_cmos_sensor(0x51, 0x14);
-	write_cmos_sensor(0x52, 0x10);
-	write_cmos_sensor(0x55, 0x30);
-	write_cmos_sensor(0x58, 0x10);
-	write_cmos_sensor(0x71, 0x10);
-	write_cmos_sensor(0x6f, 0x40);
-	write_cmos_sensor(0x75, 0x60);
-	write_cmos_sensor(0x76, 0x34);    //0x34   huazai  20171128
-	write_cmos_sensor(0x8a, 0x22);
-	write_cmos_sensor(0x8b, 0x22);
-	write_cmos_sensor(0x19, 0xf1);
-	write_cmos_sensor(0x29, 0x01);
-	write_cmos_sensor(0xfd, 0x01);
-	write_cmos_sensor(0x9d, 0xea);	//96
-	write_cmos_sensor(0xa0, 0x29);	//0x29,  huazai   20171128
-	write_cmos_sensor(0xa1, 0x04);  //0x04    huazai   20171128
-	write_cmos_sensor(0xad, 0x62);	//
-	write_cmos_sensor(0xae, 0x00);	//
-	write_cmos_sensor(0xaf, 0x85);	//
-	write_cmos_sensor(0xb1, 0x01);
-	write_cmos_sensor(0xac, 0x01);
-	write_cmos_sensor(0xfd, 0x01);
-	write_cmos_sensor(0xf0, 0xfe);
-	write_cmos_sensor(0xf1, 0xfe);
-	write_cmos_sensor(0xf2, 0xfe);
-	write_cmos_sensor(0xf3, 0xfe);
-	write_cmos_sensor(0xf4, 0x00);
-	write_cmos_sensor(0xf5, 0x00);
-	write_cmos_sensor(0xf6, 0x00);
-	write_cmos_sensor(0xf7, 0x00);
-	write_cmos_sensor(0xfc, 0x10);	// 9.29wu
-	write_cmos_sensor(0xfe, 0x10);	// 9.29wu
-	write_cmos_sensor(0xf9, 0x00);	// 9.29wu
-	write_cmos_sensor(0xfa, 0x00);	// 9.29wu
+	write_cmos_sensor(0x0a, 0x08);
+	write_cmos_sensor(0x0b, 0x00);
+	write_cmos_sensor(0x0c, 0x18);
+	write_cmos_sensor(0x0d, 0x04);
+	write_cmos_sensor(0x0e, 0xb8);
+	write_cmos_sensor(0x0f, 0x06);
+	write_cmos_sensor(0x10, 0x48);
+	write_cmos_sensor(0x17, MIRROR);
+	write_cmos_sensor(0x1c, 0x10);
+	write_cmos_sensor(0x1d, 0x13);
+	write_cmos_sensor(0x20, 0x0b);
+	write_cmos_sensor(0x21, 0x6d);
+	write_cmos_sensor(0x22, 0x0c);
+	write_cmos_sensor(0x25, 0xc1);
+	write_cmos_sensor(0x26, 0x0e);
+	write_cmos_sensor(0x27, 0x22);
+	write_cmos_sensor(0x29, 0x5f);
+	write_cmos_sensor(0x2b, 0x88);
+	write_cmos_sensor(0x2f, 0x12);
+	write_cmos_sensor(0x38, 0x86);
+	write_cmos_sensor(0x3d, 0x00);
+	write_cmos_sensor(0xcd, 0xa3);
+	write_cmos_sensor(0xce, 0x57);
+	write_cmos_sensor(0xd0, 0x09);
+	write_cmos_sensor(0xd1, 0xca);
+	write_cmos_sensor(0xd2, 0x34);
+	write_cmos_sensor(0xd3, 0xbb);
+	write_cmos_sensor(0xd8, 0x60);
+	write_cmos_sensor(0xe0, 0x08);
+	write_cmos_sensor(0xe1, 0x1f);
+	write_cmos_sensor(0xe4, 0xf8);
+	write_cmos_sensor(0xe5, 0x0c);
+	write_cmos_sensor(0xe6, 0x10);
+	write_cmos_sensor(0xe7, 0xcc);
+	write_cmos_sensor(0xe8, 0x02);
+	write_cmos_sensor(0xe9, 0x01);
+	write_cmos_sensor(0xea, 0x02);
+	write_cmos_sensor(0xeb, 0x01);
 
-	write_cmos_sensor(0x8e, 0x06);
-	write_cmos_sensor(0x8f, 0x40);
-	write_cmos_sensor(0x90, 0x04);
-	write_cmos_sensor(0x91, 0xb0);
-	write_cmos_sensor(0x45, 0x01);
-	write_cmos_sensor(0x46, 0x00);
-	write_cmos_sensor(0x47, 0x6c);
-	write_cmos_sensor(0x48, 0x03);
-	write_cmos_sensor(0x49, 0x8b);
+	/*out crop */
+	write_cmos_sensor(0x90, 0x01);
+	write_cmos_sensor(0x92, STARTY);
+	write_cmos_sensor(0x94, STARTX);
+	write_cmos_sensor(0x95, 0x04);
+	write_cmos_sensor(0x96, 0xb0);
+	write_cmos_sensor(0x97, 0x06);
+	write_cmos_sensor(0x98, 0x40);
+
+	 /*BLK*/ write_cmos_sensor(0x18, 0x02);
+	write_cmos_sensor(0x1a, 0x18);
+	write_cmos_sensor(0x28, 0x00);
+	write_cmos_sensor(0x3f, 0x40);
+	write_cmos_sensor(0x40, 0x26);
+	write_cmos_sensor(0x41, 0x00);
+	write_cmos_sensor(0x43, 0x03);
 	write_cmos_sensor(0x4a, 0x00);
-	write_cmos_sensor(0x4b, 0x07);
-	write_cmos_sensor(0x4c, 0x04);
-	write_cmos_sensor(0x4d, 0xb7);
+	write_cmos_sensor(0x4e, BLK_Select1_H);
+	write_cmos_sensor(0x4f, BLK_Select1_L);
+	write_cmos_sensor(0x66, BLK_Select2_H);
+	write_cmos_sensor(0x67, BLK_Select2_L);
 
-	write_cmos_sensor(0xfd, 0x02);
-	write_cmos_sensor(0x10, 0xb2);//0xff 20180123 sp_lcg
-	write_cmos_sensor(0x11, 0xb2);//0xff 20180123 sp_lcg
-	write_cmos_sensor(0x13, 0xb2);//0xff 20180123 sp_lcg
-	write_cmos_sensor(0x14, 0xb2);//0xff 20180123 sp_lcg
+	/*Dark sun */
+	write_cmos_sensor(0x68, 0x00);
+
+	/*Gain */
+	write_cmos_sensor(0xb0, 0x58);
+	write_cmos_sensor(0xb1, 0x01);
+	write_cmos_sensor(0xb2, 0x00);
+	write_cmos_sensor(0xb6, 0x00);
+
+	 /*MIPI*/ write_cmos_sensor(0xef, 0x90);
+	write_cmos_sensor(0xfe, 0x03);
+	write_cmos_sensor(0x01, 0x03);
+	write_cmos_sensor(0x02, 0x33);
+	write_cmos_sensor(0x03, 0x90);
+	write_cmos_sensor(0x04, 0x04);
+	write_cmos_sensor(0x05, 0x00);
+	write_cmos_sensor(0x06, 0x80);
+	write_cmos_sensor(0x11, 0x2b);
+	write_cmos_sensor(0x12, 0xd0);
+	write_cmos_sensor(0x13, 0x07);
+	write_cmos_sensor(0x15, 0x00);
+	write_cmos_sensor(0x21, 0x08);
+	write_cmos_sensor(0x22, 0x05);
+	write_cmos_sensor(0x23, 0x13);
+	write_cmos_sensor(0x24, 0x02);
+	write_cmos_sensor(0x25, 0x13);
+	write_cmos_sensor(0x26, 0x08);
+	write_cmos_sensor(0x29, 0x06);
+	write_cmos_sensor(0x2a, 0x08);
+	write_cmos_sensor(0x2b, 0x08);
+	write_cmos_sensor(0xfe, 0x00);
 }				/*    sensor_init  */
 
 static void preview_setting(void)
 {
-    /********************************************************
-       *
-       *   1296x972 30fps 2 lane MIPI 420Mbps/lane
-       *
-       ********************************************************/
-
+	LOG_INF("E!\n");
 }				/*    preview_setting  */
 
 static void capture_setting(kal_uint16 currefps)
 {
+	LOG_INF("E! currefps:%d\n", currefps);
 
-}				/*    capture_setting  */
+}
 
 static void normal_video_setting(kal_uint16 currefps)
 {
-
-}				/*    preview_setting  */
-
-static void video_1080p_setting(void)
-{
-
-}				/*    preview_setting  */
-
-static void video_720p_setting(void)
-{
-
-}				/*    preview_setting  */
+	LOG_INF("E! currefps:%d\n", currefps);
+}
 
 static void hs_video_setting(void)
 {
 	LOG_INF("E\n");
-
-	video_1080p_setting();
 }
 
 static void slim_video_setting(void)
 {
 	LOG_INF("E\n");
+}
 
-	video_720p_setting();
+static kal_uint32 set_test_pattern_mode(kal_bool enable)
+{
+	LOG_INF("enable: %d\n", enable);
+
+	if (enable) {
+		write_cmos_sensor(0xfe, 0x00);
+		write_cmos_sensor(0x8c, 0x11);
+	} else {
+		write_cmos_sensor(0xfe, 0x00);
+		write_cmos_sensor(0x8c, 0x10);
+	}
+	spin_lock(&imgsensor_drv_lock);
+	imgsensor.test_pattern = enable;
+	spin_unlock(&imgsensor_drv_lock);
+	return ERROR_NONE;
 }
 
 /*************************************************************************
@@ -518,17 +641,17 @@ static kal_uint32 get_imgsensor_id(UINT32 * sensor_id)
 	kal_uint8 i = 0;
 	kal_uint8 retry = 2;
 	int adc_volt;
-	int adc_channel = 13;    //Auxadc channel, corresponding to ID pin
+	int adc_channel = 14;    //Auxadc channel, corresponding to ID pin
 
 	IMM_auxadc_GetOneChannelValue_Cali(adc_channel, &adc_volt);
-	printk("BLX sp2509 rear adc_volt: %d\n", adc_volt);
-	/* The ID pin voltage values of the two modules are 600mv and 1000mv.
+	printk("LYI GC2375 front adc_volt: %d\n", adc_volt);
+	/* The ID pin voltage values of the two modules are 400mv and 800mv.
 	To prevent voltage fluctuations from causing other problems,
-	So we chose 800mv as the criterion.
+	So we chose 600mv as the criterion.
 	If voltage value is 0mv or return error, it will call this sensor driver.
 	*/
 
-	if (adc_volt >= 800000)
+	if (adc_volt < 600000)
 	{
 		return ERROR_SENSOR_CONNECT_FAIL;
 	}
@@ -539,20 +662,23 @@ static kal_uint32 get_imgsensor_id(UINT32 * sensor_id)
 		spin_unlock(&imgsensor_drv_lock);
 		do {
 			*sensor_id = return_sensor_id();
-			if (*sensor_id == imgsensor_info.sensor_id) {
-				printk("i2c write id: 0x%x, sensor id: 0x%x\n",
-				       imgsensor.i2c_write_id, *sensor_id);
+			if (*sensor_id == (imgsensor_info.sensor_id - 2)) {
+				printk
+				    ("front i2c write id: 0x%x, imgsensor_info.sensor_id :0x%x, sensor id: 0x%x\n",
+				     imgsensor.i2c_write_id,
+				     imgsensor_info.sensor_id, *sensor_id);
 				return ERROR_NONE;
 			}
 			printk
-			    ("Read sensor id fail, write id: 0x%x, id: 0x%x\n",
-			     imgsensor.i2c_write_id, *sensor_id);
+			    ("front Read sensor id fail, write id: 0x%x, imgsensor_info.sensor_id :0x%x,id: 0x%x\n",
+			     imgsensor.i2c_write_id, imgsensor_info.sensor_id,
+			     *sensor_id);
 			retry--;
 		} while (retry > 0);
 		i++;
 		retry = 2;
 	}
-	if (*sensor_id != imgsensor_info.sensor_id) {
+	if (*sensor_id != (imgsensor_info.sensor_id - 2)) {
 		// if Sensor ID is not correct, Must set *sensor_id to 0xFFFFFFFF
 		*sensor_id = 0xFFFFFFFF;
 		return ERROR_SENSOR_CONNECT_FAIL;
@@ -582,7 +708,6 @@ static kal_uint32 open(void)
 	kal_uint8 retry = 2;
 	kal_uint32 sensor_id = 0;
 	LOG_1;
-	LOG_2;
 
 	while (imgsensor_info.i2c_addr_table[i] != 0xff) {
 		spin_lock(&imgsensor_drv_lock);
@@ -590,22 +715,25 @@ static kal_uint32 open(void)
 		spin_unlock(&imgsensor_drv_lock);
 		do {
 			sensor_id = return_sensor_id();
-			if (sensor_id == imgsensor_info.sensor_id) {
-				LOG_INF("i2c write id: 0x%x, sensor id: 0x%x\n",
-					imgsensor.i2c_write_id, sensor_id);
+			if (sensor_id == (imgsensor_info.sensor_id - 2)) {
+				printk
+				    ("open front i2c write id: 0x%x, imgsensor_info.sensor_id :0x%x, sensor id: 0x%x\n",
+				     imgsensor.i2c_write_id,
+				     imgsensor_info.sensor_id, sensor_id);
 				break;
 			}
-			LOG_INF
-			    ("Read sensor id fail, write id: 0x%x, id: 0x%x\n",
-			     imgsensor.i2c_write_id, sensor_id);
+			printk
+			    ("open front Read sensor id fail, write id: 0x%x, imgsensor_info.sensor_id :0x%x,id: 0x%x\n",
+			     imgsensor.i2c_write_id, imgsensor_info.sensor_id,
+			     sensor_id);
 			retry--;
 		} while (retry > 0);
 		i++;
-		if (sensor_id == imgsensor_info.sensor_id)
+		if (sensor_id == (imgsensor_info.sensor_id - 2))
 			break;
 		retry = 2;
 	}
-	if (imgsensor_info.sensor_id != sensor_id)
+	if ((imgsensor_info.sensor_id - 2) != sensor_id)
 		return ERROR_SENSOR_CONNECT_FAIL;
 
 	/* initail sequence write in  */
@@ -625,7 +753,7 @@ static kal_uint32 open(void)
 	imgsensor.test_pattern = KAL_FALSE;
 	imgsensor.current_fps = imgsensor_info.pre.max_framerate;
 	spin_unlock(&imgsensor_drv_lock);
-	SP2509_BLX_REAR_DuringTestPattern = KAL_FALSE;
+	GC2375_LYI_Front_DuringTestPattern = KAL_FALSE;
 
 	return ERROR_NONE;
 }				/*    open  */
@@ -1077,8 +1205,8 @@ static kal_uint32 set_max_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM
 			    imgsensor.dummy_line;
 			imgsensor.min_frame_length = imgsensor.frame_length;
 			spin_unlock(&imgsensor_drv_lock);
-			set_dummy();
 		}
+		set_dummy();
 		break;
 	case MSDK_SCENARIO_ID_HIGH_SPEED_VIDEO:
 		frame_length =
@@ -1127,9 +1255,9 @@ static kal_uint32 set_max_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM
 		    imgsensor_info.pre.framelength + imgsensor.dummy_line;
 		imgsensor.min_frame_length = imgsensor.frame_length;
 		spin_unlock(&imgsensor_drv_lock);
-		set_dummy();
 		LOG_INF("error scenario_id = %d, we use preview scenario \n",
 			scenario_id);
+		set_dummy();
 		break;
 	}
 	return ERROR_NONE;
@@ -1164,24 +1292,6 @@ static kal_uint32 get_default_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM
 		break;
 	}
 
-	return ERROR_NONE;
-}
-
-static kal_uint32 set_test_pattern_mode(kal_bool enable)
-{
-	LOG_INF("enable: %d\n", enable);
-
-	if (enable) {
-		write_cmos_sensor(0xfd, 0x01);
-		write_cmos_sensor(0x0d, 0x01);
-	} else {
-		write_cmos_sensor(0xfd, 0x01);
-		write_cmos_sensor(0x0d, 0x00);
-	}
-
-	spin_lock(&imgsensor_drv_lock);
-	imgsensor.test_pattern = enable;
-	spin_unlock(&imgsensor_drv_lock);
 	return ERROR_NONE;
 }
 
@@ -1347,10 +1457,10 @@ static SENSOR_FUNCTION_STRUCT sensor_func = {
 	close
 };
 
-UINT32 SP2509MIPI_BLX_REAR_RAW_SensorInit(PSENSOR_FUNCTION_STRUCT * pfFunc)
+UINT32 GC2375MIPI_LYI_FRONT_RAW_SensorInit(PSENSOR_FUNCTION_STRUCT * pfFunc)
 {
 	/* To Do : Check Sensor status here */
 	if (pfFunc != NULL)
 		*pfFunc = &sensor_func;
 	return ERROR_NONE;
-}				/*    SP2509MIPI_BLX_REAR_RAW_SensorInit    */
+}				/*    GC2375MIPI_LYI_FRONT_RAW_SensorInit    */

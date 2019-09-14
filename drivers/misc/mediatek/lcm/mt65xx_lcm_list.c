@@ -915,12 +915,12 @@ LCM_DRIVER *lcm_driver_list[] = {
 	&nt35521_wxga_dsi_vdo_hh060ia_lcm_drv,
 #endif
 
-#if defined(NT35521_WXGA_DSI_VDO_abc123)
-	&nt35521_wxga_dsi_vdo_abc123_lcm_drv,
+#if defined(NT35521_WXGA_DSI_VDO_abf123)
+	&nt35521_wxga_dsi_vdo_abf123_lcm_drv,
 #endif
 
-#if defined(NT35521_WXGA_DSI_VDO_DOUGLAS)
-	&nt35521_wxga_dsi_vdo_douglas_lcm_drv,
+#if defined(NT35521_WXGA_DSI_VDO_abg123)
+	&nt35521_wxga_dsi_vdo_abg123_lcm_drv,
 #endif
 
 #if defined(NT35521_WXGA_DSI_VDO_KARNAK)
@@ -931,8 +931,9 @@ LCM_DRIVER *lcm_driver_list[] = {
 	&jd9366_wxga_dsi_vdo_karnak_fiti_tpv_lcm_drv,
 	&jd9367_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv,
 	&jd9367_wxga_dsi_vdo_karnak_fiti_inx_lcm_drv,
-	&jd9366_wxga_dsi_vdo_karnak_fiti_txd_lcm_drv,
 	&jd9366_wxga_dsi_vdo_karnak_fiti_starry_lcm_drv,
+	&jd9366_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv,
+	&jd9365_wxga_dsi_vdo_karnak_fiti_kd_hsd_lcm_drv,
 #endif
 
 #if defined(OTM7290B_WSVGA_DSI_VDO_abc123)

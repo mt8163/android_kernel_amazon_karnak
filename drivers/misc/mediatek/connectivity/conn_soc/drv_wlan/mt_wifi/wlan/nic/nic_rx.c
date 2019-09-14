@@ -2077,9 +2077,12 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 
 			prTxDone = (P_EVENT_TX_DONE_T) (prEvent->aucBuffer);
 
-			DBGLOG(RX, TRACE, "EVENT_ID_TX_DONE PacketSeq:%u ucStatus: %u SN: %u\n",
-					     prTxDone->ucPacketSeq, prTxDone->ucStatus, prTxDone->u2SequenceNumber);
-
+			if (prTxDone->ucStatus == WLAN_STATUS_SUCCESS)
+				DBGLOG(RX, TRACE, "EVENT_ID_TX_DONE PacketSeq:%u ucStatus: %u SN: %u\n",
+						     prTxDone->ucPacketSeq, prTxDone->ucStatus, prTxDone->u2SequenceNumber);
+			else
+				DBGLOG(RX, WARN, "EVENT_ID_TX_DONE PacketSeq:%u ucStatus: %u SN: %u\n",
+						     prTxDone->ucPacketSeq, prTxDone->ucStatus, prTxDone->u2SequenceNumber);
 			/* call related TX Done Handler */
 			prMsduInfo = nicGetPendingTxMsduInfo(prAdapter, prTxDone->ucPacketSeq);
 
@@ -2195,7 +2198,7 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 
 			prEventBssBeaconTimeout = (P_EVENT_BSS_BEACON_TIMEOUT_T) (prEvent->aucBuffer);
 
-			DBGLOG(RX, INFO, "Beacon Timeout Reason = %u\n", prEventBssBeaconTimeout->ucReason);
+			DBGLOG(RX, WARN, "Beacon Timeout Reason = %u\n", prEventBssBeaconTimeout->ucReason);
 
 			if (prEventBssBeaconTimeout->ucNetTypeIndex == NETWORK_TYPE_AIS_INDEX) {
 				/* Request stats report before beacon timeout */

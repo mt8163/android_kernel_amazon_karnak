@@ -2,7 +2,7 @@
  *
  * Filename:
  * ---------
- *     gc2375mipi_blx_front_Sensor.h
+ *     gc2375mipi_lyi_front_Sensor.h
  *
  * Project:
  * --------
@@ -58,8 +58,8 @@
 #define BLK_Select2_L 0x00
 #endif
 
-#ifndef _GC2375MIPI_BLX_FRONT_SENSOR_H
-#define _GC2375MIPI_BLX_FRONT_SENSOR_H
+#ifndef _GC2375MIPI_LYI_FRONT_SENSOR_H
+#define _GC2375MIPI_LYI_FRONT_SENSOR_H
 
 typedef enum {
 	IMGSENSOR_MODE_INIT,
