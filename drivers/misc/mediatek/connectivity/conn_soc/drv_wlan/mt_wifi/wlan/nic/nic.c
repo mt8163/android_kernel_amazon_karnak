@@ -636,6 +636,10 @@
 */
 #include "precomp.h"
 
+#ifdef CONFIG_MTK_WIFI_PM_CONTROL
+#include "wlan_pms.h"
+#endif
+
 /*******************************************************************************
 *                              C O N S T A N T S
 ********************************************************************************
@@ -2250,7 +2254,13 @@ nicConfigPowerSaveProfile(IN P_ADAPTER_T prAdapter,
 /* prAdapter->rWlanInfo.ePowerSaveMode.ucNetTypeIndex = eNetTypeIndex; */
 /* prAdapter->rWlanInfo.ePowerSaveMode.ucPsProfile = (UINT_8)ePwrMode; */
 	prAdapter->rWlanInfo.arPowerSaveMode[eNetTypeIndex].ucNetTypeIndex = eNetTypeIndex;
-	prAdapter->rWlanInfo.arPowerSaveMode[eNetTypeIndex].ucPsProfile = (UINT_8) ePwrMode;
+#ifdef CONFIG_MTK_WIFI_PM_CONTROL
+	if(lock) {
+		prAdapter->rWlanInfo.arPowerSaveMode[eNetTypeIndex].ucPsProfile = (UINT_8)custPowerMode;
+	}
+	else
+#endif
+		prAdapter->rWlanInfo.arPowerSaveMode[eNetTypeIndex].ucPsProfile = (UINT_8)ePwrMode;
 
 	return wlanSendSetQueryCmd(prAdapter,
 				   CMD_ID_POWER_SAVE_MODE,
