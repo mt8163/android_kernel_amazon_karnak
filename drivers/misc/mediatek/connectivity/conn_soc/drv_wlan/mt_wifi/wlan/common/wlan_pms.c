@@ -50,7 +50,7 @@ static ssize_t pm_mode_store(struct kobject *kobj, struct kobj_attribute *attr, 
 
 static struct kobj_attribute pm_mode_attribute =
 	__ATTR(pm_mode,
-		0666,
+		0660,
 		pm_mode_show,
 		pm_mode_store);
 
