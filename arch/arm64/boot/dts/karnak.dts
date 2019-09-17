@@ -64,32 +64,6 @@
 		bootargs = "console=ttyS0,921600n1 root=/dev/ram initrd=0x44000200,0x200000";
 	};
 
-	/* firmware */
-	firmware {
-		android {
-			compatible = "android,firmware";
-			fstab {
-				compatible = "android,fstab";
-				system {
-					compatible = "android,system";
-					dev = "/dev/block/platform/soc/11230000.mmc/by-name/system";
-					type = "ext4";
-					mnt_flags = "ro";
-					fsmgr_flags = "wait";
-					status = "ok";
-				};
-				vendor {
-					compatible = "android,vendor";
-					dev = "/dev/block/platform/soc/11230000.mmc/by-name/vendor";
-					type = "ext4";
-					mnt_flags = "ro";
-					fsmgr_flags = "wait";
-					status = "ok";
-				};
-			};
-		};
-	};
-
 	mtcpufreq {
 		compatible = "mediatek,mt8163-cpufreq";
 		reg-ext-vproc-supply = <&vproc>;
