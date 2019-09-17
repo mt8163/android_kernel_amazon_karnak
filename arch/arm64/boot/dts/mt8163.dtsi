@@ -93,7 +93,33 @@
 			};
 		};
 	};
-	
+
+	/* firmware */
+	firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/soc/11230000.mmc/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait";
+					status = "ok";
+				};
+				vendor {
+					compatible = "android,vendor";
+					dev = "/dev/block/platform/soc/11230000.mmc/by-name/vendor";
+					type = "ext4";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait";
+					status = "ok";
+				};
+			};
+		};
+	};
+
 	pmu {
 		compatible = "arm,cortex-a53";
 		interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL_LOW>,
