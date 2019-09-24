@@ -319,6 +319,8 @@ int g_present_smb = 0;
 static int cmd_discharging = -1;
 static int adjust_power = -1;
 static int suspend_discharging = -1;
+static int current_now = -1;
+static int voltage_now = -1;
 static bool is_uisoc_ever_100;
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
@@ -655,6 +657,8 @@ struct battery_data {
 	int capacity_smb;
 	int present_smb;
 	int adjust_power;
+	int current_now;
+	int voltage_now;
 	struct mtk_cooler_platform_data *cool_dev;
 };
 
@@ -706,6 +710,8 @@ static enum power_supply_property battery_props[] = {
 #ifdef CONFIG_USB_AMAZON_DOCK
 	POWER_SUPPLY_PROP_DOCK_PRESENT,
 #endif
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
 /*void check_battery_exist(void);*/
@@ -1006,6 +1012,12 @@ static int battery_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_adjust_power:
 		val->intval = data->adjust_power;
 		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		val->intval = data->current_now;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = data->voltage_now;
+		break;
 #ifdef CONFIG_USB_AMAZON_DOCK
 	case POWER_SUPPLY_PROP_DOCK_PRESENT:
 		val->intval = switch_get_state(&data->dock_state)
@@ -1187,6 +1199,8 @@ static struct battery_data battery_main = {
 	.present_smb = 0,
 	/* ADB CMD discharging */
 	.adjust_power = -1,
+	.current_now = -1,
+	.voltage_now = -1,
 #else
 	.BAT_STATUS = POWER_SUPPLY_STATUS_NOT_CHARGING,
 	.BAT_HEALTH = POWER_SUPPLY_HEALTH_GOOD,
@@ -1205,6 +1219,8 @@ static struct battery_data battery_main = {
 	.present_smb = 0,
 	/* ADB CMD discharging */
 	.adjust_power = -1,
+	.current_now = -1,
+	.voltage_now = -1,
 #endif
 };
 
@@ -2993,6 +3009,15 @@ static void battery_update(struct battery_data *bat_data)
 		bat_data->adjust_power = adjust_power;
 		pr_notice("adjust_power=(%d)\n", adjust_power);
 	}
+	if (current_now != -1) {
+		bat_data->current_now = current_now;
+		pr_notice("current_now=(%d)\n", current_now);
+	}
+
+	if (voltage_now != -1) {
+		bat_data->voltage_now = voltage_now;
+		pr_notice("voltage_now=(%d)\n", voltage_now);
+	}
 #ifdef DLPT_POWER_OFF_EN
 	/*extern int dlpt_check_power_off(void);*/
 	if (bat_data->BAT_CAPACITY <= DLPT_POWER_OFF_THD) {
@@ -3453,6 +3478,8 @@ void mt_battery_GetBatteryData(void)
 	temperature = battery_meter_get_battery_temperature();
 	temperatureV = battery_meter_get_tempV();
 	temperatureR = battery_meter_get_tempR(temperatureV);
+	current_now = ICharging * 1000;
+	voltage_now = bat_vol * 1000;
 
 	if (bat_meter_timeout == true || bat_spm_timeout == true || fg_wake_up_bat == true) {
 		SOC = battery_meter_get_battery_percentage();
@@ -5545,7 +5572,7 @@ static int battery_probe(struct platform_device *dev)
 		battery_main.BAT_PRESENT = 1;
 		battery_main.BAT_TECHNOLOGY = POWER_SUPPLY_TECHNOLOGY_LION;
 		battery_main.BAT_CAPACITY = 100;
-		battery_main.BAT_batt_vol = 4200;
+		battery_main.BAT_batt_vol = 4200000;
 		battery_main.BAT_batt_temp = 220;
 
 		g_bat_init_flag = true;
