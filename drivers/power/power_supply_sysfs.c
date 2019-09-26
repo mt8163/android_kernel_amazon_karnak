@@ -108,6 +108,8 @@ static ssize_t power_supply_show_property(struct device *dev,
 
 	if (off == POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT)
 		return sprintf(buf, "%lld\n", value.int64val);
+	else if (off == POWER_SUPPLY_PROP_batt_vol)
+		return sprintf(buf, "%d\n", (value.intval * 1000));
 	else
 		return sprintf(buf, "%d\n", value.intval);
 }
