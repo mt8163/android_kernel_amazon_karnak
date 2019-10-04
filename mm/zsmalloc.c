@@ -217,9 +217,9 @@ struct mapping_area {
 
 #ifdef CONFIG_ZPOOL
 
-static void *zs_zpool_create(char *name, gfp_t gfp, struct zpool_ops *zpool_ops)
+static void *zs_zpool_create(gfp_t gfp, struct zpool_ops *zpool_ops)
 {
-	return zs_create_pool(name, gfp);
+	return zs_create_pool(gfp);
 }
 
 static void zs_zpool_destroy(void *pool)
@@ -1122,7 +1122,7 @@ EXPORT_SYMBOL_GPL(zs_free);
  * On success, a pointer to the newly created pool is returned,
  * otherwise NULL.
  */
-struct zs_pool *zs_create_pool(char *name, gfp_t flags)
+struct zs_pool *zs_create_pool(gfp_t flags)
 {
 	int i;
 	struct zs_pool *pool;
