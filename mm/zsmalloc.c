@@ -142,11 +142,6 @@ enum fullness_group {
 };
 
 /*
- * number of size_classes
- */
-static int zs_size_classes;
-
-/*
  * We assign a page to ZS_ALMOST_EMPTY fullness group when:
  *	n <= N / f, where
  * n = number of allocated objects
@@ -190,7 +185,7 @@ struct link_free {
 };
 
 struct zs_pool {
-	struct size_class **size_class;
+	struct size_class size_class[ZS_SIZE_CLASSES];
 
 	gfp_t flags;	/* allocation flags used when growing pool */
 	atomic_long_t pages_allocated;
@@ -761,7 +756,7 @@ static inline int __zs_cpu_up(struct mapping_area *area)
 	 */
 	if (area->vm_buf)
 		return 0;
-	area->vm_buf = kmalloc(ZS_MAX_ALLOC_SIZE, GFP_KERNEL);
+	area->vm_buf = (char *)__get_free_page(GFP_KERNEL);
 	if (!area->vm_buf)
 		return -ENOMEM;
 	return 0;
@@ -769,7 +764,8 @@ static inline int __zs_cpu_up(struct mapping_area *area)
 
 static inline void __zs_cpu_down(struct mapping_area *area)
 {
-	kfree(area->vm_buf);
+	if (area->vm_buf)
+		free_page((unsigned long)area->vm_buf);
 	area->vm_buf = NULL;
 }
 
@@ -887,17 +883,6 @@ static int zs_register_cpu_notifier(void)
 	return notifier_to_errno(ret);
 }
 
-static void init_zs_size_classes(void)
-{
-	int nr;
-
-	nr = (ZS_MAX_ALLOC_SIZE - ZS_MIN_ALLOC_SIZE) / ZS_SIZE_CLASS_DELTA + 1;
-	if ((ZS_MAX_ALLOC_SIZE - ZS_MIN_ALLOC_SIZE) % ZS_SIZE_CLASS_DELTA)
-		nr += 1;
-
-	zs_size_classes = nr;
-}
-
 static void __exit zs_exit(void)
 {
 #ifdef CONFIG_ZPOOL
@@ -914,8 +899,6 @@ static int __init zs_init(void)
 		zs_unregister_cpu_notifier();
 		return ret;
 	}
-
-	init_zs_size_classes();
 
 #ifdef CONFIG_ZPOOL
 	zpool_register_driver(&zs_zpool_driver);
@@ -943,18 +926,7 @@ struct zs_pool *zs_create_pool(gfp_t flags)
 	if (!pool)
 		return NULL;
 
-	pool->size_class = kcalloc(zs_size_classes, sizeof(struct size_class *),
-			GFP_KERNEL);
-	if (!pool->size_class) {
-		kfree(pool);
-		return NULL;
-	}
-
-	/*
-	 * Iterate reversly, because, size of size_class that we want to use
-	 * for merging should be larger or equal to current size.
-	 */
-	for (i = zs_size_classes - 1; i >= 0; i--) {
+	for (i = 0; i < ZS_SIZE_CLASSES; i++) {
 		int size;
 		struct size_class *class;
 
@@ -980,7 +952,7 @@ void zs_destroy_pool(struct zs_pool *pool)
 {
 	int i;
 
-	for (i = 0; i < zs_size_classes; i++) {
+	for (i = 0; i < ZS_SIZE_CLASSES; i++) {
 		int fg;
 		struct size_class *class = &pool->size_class[i];
 
@@ -991,8 +963,6 @@ void zs_destroy_pool(struct zs_pool *pool)
 			}
 		}
 	}
-
-	kfree(pool->size_class);
 	kfree(pool);
 }
 EXPORT_SYMBOL_GPL(zs_destroy_pool);
