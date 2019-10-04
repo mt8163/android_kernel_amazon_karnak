@@ -468,7 +468,7 @@ int replace_page_cache_page(struct page *old, struct page *new, gfp_t gfp_mask)
 	VM_BUG_ON_PAGE(!PageLocked(new), new);
 	VM_BUG_ON_PAGE(new->mapping, new);
 
-	error = radix_tree_preload(gfp_mask & GFP_RECLAIM_MASK);
+	error = radix_tree_preload(gfp_mask & ~__GFP_HIGHMEM);
 	if (!error) {
 		struct address_space *mapping = old->mapping;
 		void (*freepage)(struct page *);
@@ -561,7 +561,7 @@ static int __add_to_page_cache_locked(struct page *page,
 			return error;
 	}
 
-	error = radix_tree_maybe_preload(gfp_mask & GFP_RECLAIM_MASK);
+	error = radix_tree_maybe_preload(gfp_mask & ~__GFP_HIGHMEM);
 	if (error) {
 		if (!huge)
 			mem_cgroup_cancel_charge(page, memcg);
@@ -2489,11 +2489,6 @@ again:
 			break;
 		}
 
-		if (fatal_signal_pending(current)) {
-			status = -EINTR;
-			break;
-		}
-
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
 		if (unlikely(status < 0))
@@ -2531,6 +2526,10 @@ again:
 		written += copied;
 
 		balance_dirty_pages_ratelimited(mapping);
+		if (fatal_signal_pending(current)) {
+			status = -EINTR;
+			break;
+		}
 	} while (iov_iter_count(i));
 
 	return written ? written : status;

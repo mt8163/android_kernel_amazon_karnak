@@ -636,7 +636,7 @@ static void object_err(struct kmem_cache *s, struct page *page,
 	print_trailer(s, page, object);
 }
 
-static __printf(3, 4) void slab_err(struct kmem_cache *s, struct page *page,
+static void slab_err(struct kmem_cache *s, struct page *page,
 			const char *fmt, ...)
 {
 	va_list args;
@@ -850,12 +850,12 @@ static int check_slab(struct kmem_cache *s, struct page *page)
 	maxobj = order_objects(compound_order(page), s->size, s->reserved);
 	if (page->objects > maxobj) {
 		slab_err(s, page, "objects %u > max %u",
-			page->objects, maxobj);
+			s->name, page->objects, maxobj);
 		return 0;
 	}
 	if (page->inuse > page->objects) {
 		slab_err(s, page, "inuse %u > max %u",
-			page->inuse, page->objects);
+			s->name, page->inuse, page->objects);
 		return 0;
 	}
 	/* Slab_pad_check fixes things up after itself */
@@ -872,7 +872,7 @@ static int on_freelist(struct kmem_cache *s, struct page *page, void *search)
 	int nr = 0;
 	void *fp;
 	void *object = NULL;
-	int max_objects;
+	unsigned long max_objects;
 
 	fp = page->freelist;
 	while (fp && nr <= page->objects) {
@@ -1578,7 +1578,7 @@ static void *get_partial_node(struct kmem_cache *s, struct kmem_cache_node *n,
 {
 	struct page *page, *page2;
 	void *object = NULL;
-	unsigned int available = 0;
+	int available = 0;
 	int objects;
 
 	/*
@@ -2706,7 +2706,7 @@ EXPORT_SYMBOL(kmem_cache_free);
  * take the list_lock.
  */
 static int slub_min_order;
-static int slub_max_order;
+static int slub_max_order = PAGE_ALLOC_COSTLY_ORDER;
 static int slub_min_objects;
 
 /*
@@ -4380,10 +4380,10 @@ static ssize_t cpu_partial_show(struct kmem_cache *s, char *buf)
 static ssize_t cpu_partial_store(struct kmem_cache *s, const char *buf,
 				 size_t length)
 {
-	unsigned int objects;
+	unsigned long objects;
 	int err;
 
-	err = kstrtouint(buf, 10, &objects);
+	err = kstrtoul(buf, 10, &objects);
 	if (err)
 		return err;
 	if (objects && !kmem_cache_has_cpu_partial(s))
@@ -4973,7 +4973,6 @@ static void memcg_propagate_slab_attrs(struct kmem_cache *s)
 		char mbuf[64];
 		char *buf;
 		struct slab_attribute *attr = to_slab_attr(slab_attrs[i]);
-		ssize_t len;
 
 		if (!attr || !attr->store || !attr->show)
 			continue;
@@ -4998,9 +4997,8 @@ static void memcg_propagate_slab_attrs(struct kmem_cache *s)
 			buf = buffer;
 		}
 
-		len = attr->show(root_cache, buf);
-		if (len > 0)
-			attr->store(s, buf, len);
+		attr->show(root_cache, buf);
+		attr->store(s, buf, strlen(buf));
 	}
 
 	if (buffer)

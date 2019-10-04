@@ -363,6 +363,15 @@ void tlb_remove_table(struct mmu_gather *tlb, void *table)
 {
 	struct mmu_table_batch **batch = &tlb->batch;
 
+	/*
+	 * When there's less then two users of this mm there cannot be a
+	 * concurrent page-table walk.
+	 */
+	if (atomic_read(&tlb->mm->mm_users) < 2) {
+		__tlb_remove_table(table);
+		return;
+	}
+
 	if (*batch == NULL) {
 		*batch = (struct mmu_table_batch *)__get_free_page(GFP_NOWAIT | __GFP_NOWARN);
 		if (*batch == NULL) {
@@ -2582,6 +2591,40 @@ out_release:
 }
 
 /*
+ * This is like a special single-page "expand_{down|up}wards()",
+ * except we must first make sure that 'address{-|+}PAGE_SIZE'
+ * doesn't hit another vma.
+ */
+static inline int check_stack_guard_page(struct vm_area_struct *vma, unsigned long address)
+{
+	address &= PAGE_MASK;
+	if ((vma->vm_flags & VM_GROWSDOWN) && address == vma->vm_start) {
+		struct vm_area_struct *prev = vma->vm_prev;
+
+		/*
+		 * Is there a mapping abutting this one below?
+		 *
+		 * That's only ok if it's the same stack mapping
+		 * that has gotten split..
+		 */
+		if (prev && prev->vm_end == address)
+			return prev->vm_flags & VM_GROWSDOWN ? 0 : -ENOMEM;
+
+		return expand_downwards(vma, address - PAGE_SIZE);
+	}
+	if ((vma->vm_flags & VM_GROWSUP) && address + PAGE_SIZE == vma->vm_end) {
+		struct vm_area_struct *next = vma->vm_next;
+
+		/* As VM_GROWSDOWN but s/below/above/ */
+		if (next && next->vm_start == address + PAGE_SIZE)
+			return next->vm_flags & VM_GROWSUP ? 0 : -ENOMEM;
+
+		return expand_upwards(vma, address + PAGE_SIZE);
+	}
+	return 0;
+}
+
+/*
  * We enter with non-exclusive mmap_sem (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
  * We return with mmap_sem still held, but pte unmapped and unlocked.
@@ -2600,6 +2643,10 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	/* File mapping without ->vm_ops ? */
 	if (vma->vm_flags & VM_SHARED)
 		return VM_FAULT_SIGBUS;
+
+	/* Check if we need to add a guard page to the stack */
+	if (check_stack_guard_page(vma, address) < 0)
+		return VM_FAULT_SIGSEGV;
 
 	/* Use the zero-page for reads */
 	if (!(flags & FAULT_FLAG_WRITE)) {
@@ -3172,6 +3219,7 @@ static int handle_pte_fault(struct mm_struct *mm,
 			if (vma->vm_ops)
 				return do_linear_fault(mm, vma, address,
 						pte, pmd, flags, entry);
+
 			return do_anonymous_page(mm, vma, address,
 						 pte, pmd, flags);
 		}
@@ -3285,18 +3333,8 @@ static int __handle_mm_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (unlikely(pmd_none(*pmd)) &&
 	    unlikely(__pte_alloc(mm, vma, pmd, address)))
 		return VM_FAULT_OOM;
-	/*
-	 * If a huge pmd materialized under us just retry later.  Use
-	 * pmd_trans_unstable() instead of pmd_trans_huge() to ensure the pmd
-	 * didn't become pmd_trans_huge under us and then back to pmd_none, as
-	 * a result of MADV_DONTNEED running immediately after a huge pmd fault
-	 * in a different thread of this mm, in turn leading to a misleading
-	 * pmd_trans_huge() retval.  All we have to ensure is that it is a
-	 * regular pmd that we can walk with pte_offset_map() and we can do that
-	 * through an atomic read in C, which is what pmd_trans_unstable()
-	 * provides.
-	 */
-	if (unlikely(pmd_trans_unstable(pmd)))
+	/* if an huge pmd materialized from under us just retry later */
+	if (unlikely(pmd_trans_huge(*pmd)))
 		return 0;
 	/*
 	 * A regular pmd is established and it can't morph into a huge pmd
@@ -3524,9 +3562,6 @@ int generic_access_phys(struct vm_area_struct *vma, unsigned long addr,
 		return -EINVAL;
 
 	maddr = ioremap_prot(phys_addr, PAGE_ALIGN(len + offset), prot);
-	if (!maddr)
-		return -ENOMEM;
-
 	if (write)
 		memcpy_toio(maddr + offset, buf, len);
 	else
