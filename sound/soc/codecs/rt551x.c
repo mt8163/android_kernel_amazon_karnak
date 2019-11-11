@@ -646,7 +646,13 @@ err_gpio:
 }
 
 static const char *rt551x_dsp_mode[] = {
-	"Stop", "Mode1", "Mode2", "Mode3", "Mode4", "Mode5", "Mode6"
+	"Stop", "Mode1", "Mode2", "Mode3", "Mode4", "Mode5", "Mode6", "Mode7", "Mode8"
+};
+/* Note that, the binary naming rule of DSP FW may be different to the CSM layer */
+static const char *rt551x_dsp_binary_name[] = {
+	"",
+	"SMicBin_rt5518_mode11.dat", "SMicBin_rt5518_mode12.dat", "SMicBin_rt5518_mode13.dat", "SMicBin_rt5518_mode14.dat",
+	"SMicBin_rt5518_mode21.dat", "SMicBin_rt5518_mode22.dat", "SMicBin_rt5518_mode23.dat", "SMicBin_rt5518_mode24.dat"
 };
 
 static const SOC_ENUM_SINGLE_DECL(rt551x_dsp_mod_enum, 0, 0,
@@ -804,10 +810,7 @@ static int rt551x_set_dsp_mode(struct snd_soc_codec *codec, int DSPMode)
 			if (rt551x->chip_id == RT5514_DEVICE_ID)
 				request_firmware(&fw, "SMicBin_rt5514.dat", codec->dev);
 			else if (rt551x->chip_id == RT5518_DEVICE_ID)
-			{
-				snprintf(file_path, sizeof(file_path), "SMicBin_rt5518_mode%u.dat", rt551x->dsp_enabled);
-				request_firmware(&fw, file_path, codec->dev);
-			}
+				request_firmware(&fw, rt551x_dsp_binary_name[rt551x->dsp_enabled], codec->dev);
 			if (fw)
 			{
 				rt551x_parse_header(codec, fw->data);
@@ -2012,7 +2015,18 @@ static int rt551x_i2c_probe(struct i2c_client *i2c,
 			dev_err(&i2c->dev,
 				"Device with ID register %#x is not rt5514 or rt5518\n",
 				ret);
-			return -ENODEV;
+			// if i2c cannot read the correct device ID, use rt5518 as default.
+			rt551x->chip_id = RT5518_DEVICE_ID;
+			rt551x->regmap = devm_regmap_init_i2c(i2c, &rt5518_regmap);
+			rt551x->fp_reset = rt5518_reset;
+			rt551x->fp_enable_dsp = rt5518_enable_dsp;
+			rt551x->fp_enable_dsp_clock = rt5518_enable_dsp_clock;
+			rt551x->fp_readable_register = rt5518_readable_register;
+			ret = rt5518_hw_reset_gpio_init(rt551x);
+			if (ret) {
+				printk("%s: rt5518_hw_reset request failed!\n",__func__);
+			}
+			// return -ENODEV;
 	}
 	rt551x_reset(rt551x);
 #ifdef CONFIG_SND_SOC_RT551X_TEST_ONLY

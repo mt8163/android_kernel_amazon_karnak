@@ -114,3 +114,7 @@ config MTK_AUDIO_USE_SHARED_SRAM
 	default n
 	help
 	  Say Y if you want to split the sram for playback (18K) and capture (18K).
+
+config MTK_AUDIO_DEBUG_KERNEL_PANIC
+	bool "MTK_AUDIO_DEBUG_KERNEL_PANIC"
+	default n

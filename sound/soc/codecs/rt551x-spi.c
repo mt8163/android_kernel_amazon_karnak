@@ -481,6 +481,8 @@ static int rt551x_spi_pcm_probe(struct snd_soc_platform *platform)
 
 	rt551x_dsp = devm_kzalloc(platform->dev, sizeof(*rt551x_dsp),
 			GFP_KERNEL);
+	if (rt551x_dsp == NULL)
+		return -ENOMEM;
 
 	rt551x_dsp->dev = &rt551x_spi->dev;
 	mutex_init(&rt551x_dsp->dma_lock);
@@ -748,7 +750,7 @@ err_comp:
 	snd_soc_unregister_platform(&spi->dev);
 err_plat:
 
-	return 0;
+	return ret;
 }
 
 static int rt551x_spi_remove(struct spi_device *spi)
