@@ -497,9 +497,6 @@ static int umh_pipe_setup(struct subprocess_info *info, struct cred *new)
 	return err;
 }
 
-#if CONFIG_SECURITY_SELINUX_KERN_PERMISSIVE
-extern int selinux_set_enforce(bool enforce);
-#endif
 
 void do_coredump(const siginfo_t *siginfo)
 {
@@ -515,7 +512,6 @@ void do_coredump(const siginfo_t *siginfo)
 	struct files_struct *displaced;
 	bool need_nonrelative = false;
 	bool core_dumped = false;
-	int selinux_enforced = 0;
 
 	static atomic_t core_dump_count = ATOMIC_INIT(0);
 	struct coredump_params cprm = {
