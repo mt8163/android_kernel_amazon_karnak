@@ -32,7 +32,6 @@
 
 static int kbasep_gpu_memory_seq_show(struct seq_file *sfile, void *data)
 {
-	ssize_t ret = 0;
 	struct list_head *entry;
 	const struct list_head *kbdev_list;
 
@@ -43,64 +42,23 @@ static int kbasep_gpu_memory_seq_show(struct seq_file *sfile, void *data)
 
 		kbdev = list_entry(entry, struct kbase_device, entry);
 		/* output the total memory usage and cap for this device */
-		ret = seq_printf(sfile, "%-16s  %10u\n",
+		seq_printf(sfile, "%-16s  %10u\n",
 				kbdev->devname,
 				atomic_read(&(kbdev->memdev.used_pages)));
 		mutex_lock(&kbdev->kctx_list_lock);
 		list_for_each_entry(element, &kbdev->kctx_list, link) {
 			/* output the memory usage and cap for each kctx
 			* opened on this device */
-			ret = seq_printf(sfile, "  %s-0x%p %10u %10u\n", \
+			seq_printf(sfile, "  %s-0x%p %10u\n",
 				"kctx",
-				element->kctx, \
-				atomic_read(&(element->kctx->used_pages)),
-				element->kctx->tgid);
+				element->kctx,
+				atomic_read(&(element->kctx->used_pages)));
 		}
 		mutex_unlock(&kbdev->kctx_list_lock);
 	}
 	kbase_dev_list_put(kbdev_list);
-	return ret;
+	return 0;
 }
-
-/* fosmod_fireos_crash_reporting begin */
-void lmk_add_to_buffer(const char *fmt, ...);
-
-void kbasep_gpu_memory_seq_show_lmk(void)
-{
-	struct list_head *entry;
-	const struct list_head *kbdev_list;
-
-	kbdev_list = kbase_dev_list_get();
-	list_for_each(entry, kbdev_list) {
-		struct kbase_device *kbdev = NULL;
-		struct kbasep_kctx_list_element *element;
-
-		kbdev = list_entry(entry, struct kbase_device, entry);
-		/* output the total memory usage and cap for this device */
-		lmk_add_to_buffer("%-25s  %-10s  %-10s  %-10s  %-10s\n"\
-				"==============================================================================================================\n",
-				"kbase_context", "tgid", "gpu_mem", "sys_id", "pid");
-		mutex_lock(&kbdev->kctx_list_lock);
-		list_for_each_entry(element, &kbdev->kctx_list, link) {
-			/* output the memory usage and cap for each kctx
-			* opened on this device */
-			lmk_add_to_buffer("  %s-0x%p  %-10u  %-10u  %-10u  %-10u\n",
-				"kctx",
-				element->kctx, \
-				element->kctx->tgid,
-				atomic_read(&(element->kctx->used_pages)) * PAGE_SIZE,
-				element->kctx->id,
-				element->kctx->pid);
-		}
-		lmk_add_to_buffer("%-16s (total gpu mem)  %10u bytes\n",
-				kbdev->devname,
-				atomic_read(&(kbdev->memdev.used_pages)) * PAGE_SIZE);
-		mutex_unlock(&kbdev->kctx_list_lock);
-	}
-	kbase_dev_list_put(kbdev_list);
-}
-
-/* fosmod_fireos_crash_reporting end */
 
 /*
  *  File operations related to debugfs entry for gpu_memory

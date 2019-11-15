@@ -90,66 +90,6 @@ static int kbasep_gpu_memory_seq_show(struct seq_file *sfile, void *data)
 	return ret;
 }
 
-/* fosmod_fireos_crash_reporting begin */
-void lmk_add_to_buffer(const char *fmt, ...);
-
-void kbasep_gpu_memory_seq_show_lmk(void)
-{
-	struct list_head *entry;
-	const struct list_head *kbdev_list;
-
-#ifdef ENABLE_MTK_MEMINFO
-	ssize_t mtk_kbase_gpu_meminfo_index;
-
-	mtk_kbase_reset_gpu_meminfo();
-#endif /* ENABLE_MTK_MEMINFO */
-
-	kbdev_list = kbase_dev_list_get();
-	list_for_each(entry, kbdev_list) {
-		struct kbase_device *kbdev = NULL;
-		struct kbasep_kctx_list_element *element;
-
-		kbdev = list_entry(entry, struct kbase_device, entry);
-		/* output the total memory usage and cap for this device */
-		lmk_add_to_buffer("%-25s  %-10s  %-10s  %-10s  %-10s\n"\
-				"==============================================================================================================\n",
-				"kbase_context", "pid", "gpu_mem", "sys_id", "tgid");
-
-#ifdef ENABLE_MTK_MEMINFO
-		g_mtk_gpu_total_memory_usage_in_pages_debugfs = atomic_read(&(kbdev->memdev.used_pages));
-#endif /* ENABLE_MTK_MEMINFO */
-
-		mutex_lock(&kbdev->kctx_list_lock);
-#ifdef ENABLE_MTK_MEMINFO
-		mtk_kbase_gpu_meminfo_index = 0;
-#endif /* ENABLE_MTK_MEMINFO */
-
-		list_for_each_entry(element, &kbdev->kctx_list, link) {
-			/* output the memory usage and cap for each kctx
-			* opened on this device */
-			lmk_add_to_buffer("  %s-0x%p  %-10u  %-10u  %-10u  %-10u\n",
-				"kctx",
-				element->kctx, \
-				element->kctx->pid,
-				atomic_read(&(element->kctx->used_pages)) * PAGE_SIZE,
-				element->kctx->id,
-				element->kctx->tgid);
-
-#ifdef ENABLE_MTK_MEMINFO
-			mtk_kbase_set_gpu_meminfo(mtk_kbase_gpu_meminfo_index, element->kctx->tgid, \
-					(int)atomic_read(&(element->kctx->used_pages)));
-			mtk_kbase_gpu_meminfo_index++;
-#endif /* ENABLE_MTK_MEMINFO */
-		}
-		lmk_add_to_buffer("%-16s (total gpu mem)  %10u bytes\n",
-				kbdev->devname,
-				atomic_read(&(kbdev->memdev.used_pages)) * PAGE_SIZE);
-		mutex_unlock(&kbdev->kctx_list_lock);
-	}
-	kbase_dev_list_put(kbdev_list);
-}
-/* fosmod_fireos_crash_reporting begin */
-
 /*
  *  File operations related to debugfs entry for gpu_memory
  */
