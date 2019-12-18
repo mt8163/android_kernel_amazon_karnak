@@ -320,6 +320,8 @@ static int cmd_discharging = -1;
 static int adjust_power = -1;
 static int suspend_discharging = -1;
 static bool is_uisoc_ever_100;
+static int current_now = -1;
+static int voltage_now = -1;
 
 #ifdef CONFIG_AMAZON_METRICS_LOG
 
@@ -705,6 +707,8 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_present_smb,
 	/* ADB CMD Discharging */
 	POWER_SUPPLY_PROP_adjust_power,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 #if (defined CONFIG_USB_AMAZON_DOCK) || (defined CONFIG_POGO_PIN_DOCK)
 	POWER_SUPPLY_PROP_DOCK_PRESENT,
 #endif
