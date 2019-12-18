@@ -298,3 +298,10 @@ config MTK_WIFI_LOGGING_REDUCTION
 	help
 	  Ease Wifi logging.
 
+config WIFI_DFS_CHANNEL
+	bool "WIFI_DFS_CHANNEL"
+	default n
+
+config SUPPORT_FT
+	bool "SUPPORT_FT"
+	default n

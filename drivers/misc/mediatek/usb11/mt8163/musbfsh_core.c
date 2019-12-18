@@ -462,6 +462,10 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 				}; s; }
 		    ), VBUSERR_RETRY_COUNT - musbfsh->vbuserr_retry, musbfsh->port1_status);
 
+#ifdef CONFIG_POGO_PIN_DOCK
+		usb_root_hub_lost_power(musbfsh_to_hcd(musbfsh)->self.root_hub);
+#endif
+
 		/* go through A_WAIT_VFALL then start a new session */
 		if (!ignore)
 			musbfsh_platform_set_vbus(musbfsh, 0);
@@ -1584,10 +1588,21 @@ static int musbfsh_suspend(struct device *dev)
 	struct musbfsh *musbfsh = dev_to_musbfsh(&pdev->dev);
 
 	WARNING("++\n");
+#ifdef CONFIG_POGO_PIN_DOCK
+	if (true == musbfsh_power) {
+		disable_irq_nosync(usb1_irq_number);
+
+		spin_lock_irqsave(&musbfsh->lock, flags);
+		musbfsh_save_context(musbfsh);
+		musbfsh_platform_set_power(musbfsh, 0);
+		spin_unlock_irqrestore(&musbfsh->lock, flags);
+	}
+#else
 	spin_lock_irqsave(&musbfsh->lock, flags);
 	musbfsh_save_context(musbfsh);
 	musbfsh_platform_set_power(musbfsh, 0);
 	spin_unlock_irqrestore(&musbfsh->lock, flags);
+#endif
 
 	clk_unprepare(usb11_clk);
 	clk_unprepare(usb11_mcu_clk);
@@ -1607,12 +1622,46 @@ static int musbfsh_resume(struct device *dev)
 	clk_prepare(usb11_clk);
 
 	WARNING("++\n");
+#ifdef CONFIG_POGO_PIN_DOCK
+	if (false == musbfsh_power) {
+		spin_lock_irqsave(&musbfsh->lock, flags);
+		musbfsh_platform_set_power(musbfsh, 1);
+		musbfsh_restore_context(musbfsh);
+		spin_unlock_irqrestore(&musbfsh->lock, flags);
+
+		enable_irq(usb1_irq_number);
+	}
+#else
 	spin_lock_irqsave(&musbfsh->lock, flags);
 	musbfsh_platform_set_power(musbfsh, 1);
 	musbfsh_restore_context(musbfsh);
 	spin_unlock_irqrestore(&musbfsh->lock, flags);
+#endif
+
 	return 0;
 }
+
+#ifdef CONFIG_POGO_PIN_DOCK
+void musbfsh_force_enable(bool enable)
+{
+	unsigned long flags;
+
+	WARNING("musbfsh_power= %d enable= %d \n",musbfsh_power,enable);
+	if((false == musbfsh_power) && (true == enable)) {
+		spin_lock_irqsave(&musbfsh_Device->lock, flags);
+		musbfsh_platform_set_power(musbfsh_Device, true);
+		spin_unlock_irqrestore(&musbfsh_Device->lock, flags);
+		enable_irq(usb1_irq_number);
+	} else if((true == musbfsh_power) && (false == enable)) {
+		musbfsh_root_disconnect(musbfsh_Device);
+		disable_irq_nosync(usb1_irq_number);
+		spin_lock_irqsave(&musbfsh_Device->lock, flags);
+		musbfsh_platform_set_power(musbfsh_Device, false);
+		spin_unlock_irqrestore(&musbfsh_Device->lock, flags);
+	}
+}
+EXPORT_SYMBOL_GPL(musbfsh_force_enable);
+#endif
 
 static const struct dev_pm_ops musbfsh_dev_pm_ops = {
 	.suspend = musbfsh_suspend,

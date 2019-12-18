@@ -798,13 +798,16 @@ typedef enum _ENUM_BSS_TYPE_T {
 /* #if defined(WINDOWS_DDK) || defined(WINDOWS_CE) */
 /* #pragma pack(1) */
 /* #endif */
+#define MAX_NUM_SUPPORTED_CIPHER_SUITES 9	/* max number of supported cipher suites */
 
-#define MAX_NUM_SUPPORTED_CIPHER_SUITES 8	/* max number of supported cipher suites */
+#if 0
 #if CFG_SUPPORT_802_11W
 #define MAX_NUM_SUPPORTED_AKM_SUITES    8	/* max number of supported AKM suites */
 #else
 #define MAX_NUM_SUPPORTED_AKM_SUITES    6	/* max number of supported AKM suites */
 #endif
+#endif
+#define MAX_NUM_SUPPORTED_AKM_SUITES    11	/* max number of supported AKM suites */
 
 /* Structure of RSN Information */
 typedef struct _RSN_INFO_T {

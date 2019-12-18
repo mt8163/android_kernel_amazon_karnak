@@ -783,6 +783,13 @@ VOID qmActivateStaRec(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T prStaRec)
 	prStaRec->fgIsInPS = FALSE;
 	prStaRec->ucPsSessionID = 0xFF;
 	prStaRec->fgIsAp = (IS_AP_STA(prStaRec)) ? TRUE : FALSE;
+#if CFG_SUPPORT_802_11R
+	if ((prStaRec->ucNetTypeIndex == NETWORK_TYPE_AIS_INDEX) && secEnabledInAis(prAdapter)) {
+		if (prStaRec->fgIsTxKeyReady)
+			prStaRec->fgIsTxAllowed = TRUE;
+	} else
+		prStaRec->fgIsTxAllowed = TRUE;
+#endif
 
 	/* Done in qmInit() or qmDeactivateStaRec() */
 #if 0
@@ -829,6 +836,9 @@ VOID qmDeactivateStaRec(IN P_ADAPTER_T prAdapter, IN UINT_32 u4StaRecIdx)
 	/* 4 <3> Deactivate the STA_REC */
 	prStaRec->fgIsValid = FALSE;
 	prStaRec->fgIsInPS = FALSE;
+#if CFG_SUPPORT_802_11R
+	prStaRec->fgIsTxAllowed = FALSE;
+#endif
 
 	/* To reduce printk for IOT sta to connect all the time, */
 	/* DBGLOG(QM, INFO, ("QM: -STA[%ld]\n", u4StaRecIdx)); */
@@ -1569,7 +1579,11 @@ qmDequeueTxPacketsFromPerStaQueues(IN P_ADAPTER_T prAdapter,
 		ASSERT(prStaRec);
 
 		/* Only Data frame (1x was not included) will be queued in */
-		if (prStaRec->fgIsValid) {
+		if (prStaRec->fgIsValid
+#if CFG_SUPPORT_802_11R
+			&& prStaRec->fgIsTxAllowed
+#endif
+		) {
 
 			prBssInfo = &(prAdapter->rWifiVar.arBssInfo[prStaRec->ucNetTypeIndex]);
 
@@ -1786,7 +1800,11 @@ qmDequeueTxPacketsFromPerStaQueues(IN P_ADAPTER_T prAdapter,
 		prStaRec = &prAdapter->arStaRec[((*pu4HeadStaRecIndex) + i + 1) % CFG_NUM_OF_STA_RECORD];
 		ASSERT(prStaRec);
 
-		if (prStaRec->fgIsValid) {
+		if (prStaRec->fgIsValid
+#if CFG_SUPPORT_802_11R
+			&& prStaRec->fgIsTxAllowed
+#endif
+		) {
 
 			prBssInfo = &(prAdapter->rWifiVar.arBssInfo[prStaRec->ucNetTypeIndex]);
 			ASSERT(prBssInfo->ucNetTypeIndex == prStaRec->ucNetTypeIndex);
@@ -3951,6 +3969,9 @@ VOID mqmProcessScanResult(IN P_ADAPTER_T prAdapter, IN P_BSS_DESC_T prScanResult
 #if (CFG_SUPPORT_TDLS == 1)
 			TdlsexBssExtCapParse(prStaRec, pucIE);
 #endif /* CFG_SUPPORT_TDLS */
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+			prStaRec->fgSupportBTM = ((*(PUINT_16)(pucIE+2)) & BIT(ELEM_EXT_CAP_BSS_TRANSITION_BIT));
+#endif
 			break;
 
 		case ELEM_ID_WMM:
@@ -4932,4 +4953,31 @@ UINT_32 qmGetRxReorderQueuedBufferCount(IN P_ADAPTER_T prAdapter)
 	}
 	ASSERT(u4Total <= (CFG_NUM_OF_QM_RX_PKT_NUM * 2));
 	return u4Total;
+}
+VOID qmMoveStaTxQueue(P_STA_RECORD_T prSrcStaRec, P_STA_RECORD_T prDstStaRec)
+{
+	UINT_8 ucQueArrayIdx;
+	P_QUE_T prSrcQue = NULL;
+	P_QUE_T prDstQue = NULL;
+	P_MSDU_INFO_T prMsduInfo = NULL;
+	UINT_8 ucDstStaIndex = 0;
+
+	ASSERT(prSrcStaRec);
+	ASSERT(prDstStaRec);
+
+	prSrcQue = &prSrcStaRec->arTxQueue[0];
+	prDstQue = &prDstStaRec->arTxQueue[0];
+	ucDstStaIndex = prDstStaRec->ucIndex;
+
+	DBGLOG(QM, INFO, "Pending MSDUs for TC 0~3, %u %u %u %u\n", prSrcQue[TC0_INDEX].u4NumElem,
+		prSrcQue[TC1_INDEX].u4NumElem, prSrcQue[TC2_INDEX].u4NumElem, prSrcQue[TC3_INDEX].u4NumElem);
+	/* Concatenate all MSDU_INFOs in TX queues of this STA_REC */
+	for (ucQueArrayIdx = 0; ucQueArrayIdx < TC4_INDEX; ucQueArrayIdx++) {
+		prMsduInfo = (P_MSDU_INFO_T)QUEUE_GET_HEAD(&prDstQue[ucQueArrayIdx]);
+		while (prMsduInfo) {
+			prMsduInfo->ucStaRecIndex = ucDstStaIndex;
+			prMsduInfo = (P_MSDU_INFO_T)QUEUE_GET_NEXT_ENTRY(&prMsduInfo->rQueEntry);
+		}
+		QUEUE_CONCATENATE_QUEUES((&prDstQue[ucQueArrayIdx]), (&prSrcQue[ucQueArrayIdx]));
+	}
 }

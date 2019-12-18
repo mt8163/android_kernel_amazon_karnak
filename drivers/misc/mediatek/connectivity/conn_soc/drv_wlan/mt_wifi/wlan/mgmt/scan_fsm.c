@@ -473,7 +473,13 @@ VOID scnSendScanReq(IN P_ADAPTER_T prAdapter)
 	} else {
 		/* send command packet for scan */
 		kalMemZero(&rCmdScanReq, sizeof(CMD_SCAN_REQ));
-
+		rCmdScanReq.ucStructVersion = 1;
+#if CFG_SUPPORT_802_11K
+		if (kalMemCmp(prScanParam->aucBSSID, "\0\0\0\0\0\0", MAC_ADDR_LEN)) {
+			kalMemCopy(rCmdScanReq.aucBSSID, prScanParam->aucBSSID, MAC_ADDR_LEN);
+			DBGLOG(SCN, INFO, "Include BSSID %pM in probe request\n", rCmdScanReq.aucBSSID);
+		}
+#endif
 		rCmdScanReq.ucSeqNum = prScanParam->ucSeqNum;
 		rCmdScanReq.ucNetworkType = (UINT_8) prScanParam->eNetTypeIndex;
 		rCmdScanReq.ucScanType = (UINT_8) prScanParam->eScanType;
@@ -510,6 +516,15 @@ VOID scnSendScanReq(IN P_ADAPTER_T prAdapter)
 		if (prScanParam->eNetTypeIndex == NETWORK_TYPE_AIS_INDEX)
 			rCmdScanReq.u2ChannelDwellTime = CFG_FAST_SCAN_DWELL_TIME;
 #endif
+#if CFG_SUPPORT_802_11K
+		if (prScanParam->eNetTypeIndex == NETWORK_TYPE_AIS_INDEX) {
+			if (prScanParam->u2ChannelDwellTime > 0)
+				rCmdScanReq.u2ChannelDwellTime = prScanParam->u2ChannelDwellTime;
+			if (prScanParam->u2MinChannelDwellTime > 0)
+				prScanParam->u2MinChannelDwellTime = prScanParam->u2MinChannelDwellTime;
+		}
+#endif
+
 		if (prScanParam->u2IELen <= MAX_IE_LENGTH)
 			rCmdScanReq.u2IELen = prScanParam->u2IELen;
 		else
@@ -671,7 +686,6 @@ VOID scnSendScanReqV2(IN P_ADAPTER_T prAdapter)
 		if (prScanParam->eNetTypeIndex == NETWORK_TYPE_P2P_INDEX)
 			rCmdScanReq.u2ChannelDwellTime = prScanParam->u2PassiveListenInterval;
 #endif
-
 		if (prScanParam->u2IELen <= MAX_IE_LENGTH)
 			rCmdScanReq.u2IELen = prScanParam->u2IELen;
 		else
@@ -819,7 +833,12 @@ VOID scnFsmHandleScanMsg(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ prScanR
 	prScanParam->eScanType = prScanReqMsg->eScanType;
 	prScanParam->eNetTypeIndex = (ENUM_NETWORK_TYPE_INDEX_T) prScanReqMsg->ucNetTypeIndex;
 	prScanParam->ucSSIDType = prScanReqMsg->ucSSIDType;
-	if (prScanParam->ucSSIDType & (SCAN_REQ_SSID_SPECIFIED | SCAN_REQ_SSID_P2P_WILDCARD)) {
+#if CFG_SUPPORT_802_11K
+	kalMemCopy(prScanParam->aucBSSID, prScanReqMsg->aucBSSID, MAC_ADDR_LEN);
+#endif
+
+	if (prScanParam->ucSSIDType & (SCAN_REQ_SSID_SPECIFIED | SCAN_REQ_SSID_P2P_WILDCARD |
+		SCAN_REQ_SSID_SPECIFIED_ONLY)) {
 		prScanParam->ucSSIDNum = 1;
 
 		COPY_SSID(prScanParam->aucSpecifiedSSID[0],
@@ -857,6 +876,12 @@ VOID scnFsmHandleScanMsg(IN P_ADAPTER_T prAdapter, IN P_MSG_SCN_SCAN_REQ prScanR
 #if CFG_ENABLE_WIFI_DIRECT
 	if (prScanParam->eNetTypeIndex == NETWORK_TYPE_P2P_INDEX)
 		prScanParam->u2PassiveListenInterval = prScanReqMsg->u2ChannelDwellTime;
+#endif
+#if CFG_SUPPORT_802_11K
+	if (prScanParam->eNetTypeIndex == NETWORK_TYPE_AIS_INDEX) {
+		prScanParam->u2ChannelDwellTime = prScanReqMsg->u2ChannelDwellTime;
+		prScanParam->u2MinChannelDwellTime = prScanReqMsg->u2MinChannelDwellTime;
+	}
 #endif
 	prScanParam->ucSeqNum = prScanReqMsg->ucSeqNum;
 

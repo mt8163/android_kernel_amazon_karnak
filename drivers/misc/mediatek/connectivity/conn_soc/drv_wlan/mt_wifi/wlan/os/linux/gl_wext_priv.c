@@ -2143,382 +2143,6 @@ _priv_get_struct(IN struct net_device *prNetDev,
 			}
 		}
 		return 0;
-	case PRIV_CMD_STAT:
-	{
-		static UINT_8 aucBuffer[512];
-		static UINT_8 aucBuffer2[512];
-		UINT_8 *p_buffer;
-		P_CMD_SW_DBG_CTRL_T pSwDbgCtrl;
-		INT_32 i4Rssi;
-		UINT_32 u4Rate = 0;
-		int n, pos = 0;
-		PARAM_MAC_ADDRESS arBssid;
-		PARAM_SSID_T ssid;
-		int i;
-		P_BSS_INFO_T prBssInfo;
-
-		pSwDbgCtrl = (P_CMD_SW_DBG_CTRL_T)aucBuffer;
-		p_buffer = &aucBuffer2[0];
-
-		if (kalIoctl(prGlueInfo,
-			wlanoidQueryDbgCntr,
-			(PVOID)aucBuffer,
-			sizeof(UINT_8) * 512, TRUE, TRUE, TRUE, FALSE, &u4BufLen)
-			== WLAN_STATUS_SUCCESS) {
-
-			if (pSwDbgCtrl) {
-				if (pSwDbgCtrl->u4Data == SWCR_DBG_TYPE_ALL) {
-					n = sprintf(&p_buffer[pos], "Tx success = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_CNT] -
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_FAILED_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos], "Tx retry count = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_RETRY_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						"Tx fail to Rcv ACK after retry = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_ERROR_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos], "Rx success = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos], "Rx with CRC = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_FCSERR_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos],
-						"Rx drop due to out of resource = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_FIFOFULL_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos], "Rx duplicate frame = %d\n",
-						pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_DUP_DROP_CNT]);
-					pos += n;
-					n = sprintf(&p_buffer[pos], "False CCA(total) = \n");
-					pos += n;
-					n = sprintf(&p_buffer[pos], "False CCA(one-second) = \n");
-					pos += n;
-				}
-			}
-		}
-
-		if (kalIoctl(prGlueInfo, wlanoidQueryRssi, &i4Rssi, sizeof(i4Rssi),
-				TRUE, TRUE, TRUE, FALSE, &u4BufLen) == WLAN_STATUS_SUCCESS) {
-
-			n = sprintf(&p_buffer[pos], "RSSI = %d\n", i4Rssi);
-			pos += n;
-			n = sprintf(&p_buffer[pos], "P2P GO RSSI =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "SNR-A = \n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "SNR-B (if available) =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "NoiseLevel-A =\n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "NoiseLevel-B =\n");
-			pos += n;
-		}
-
-		status = kalIoctl(prGlueInfo, wlanoidQueryLinkSpeed, &u4Rate,
-						sizeof(u4Rate), TRUE, TRUE, TRUE, FALSE, &u4BufLen);
-
-		/* STA stats */
-		kalMemZero(arBssid, MAC_ADDR_LEN);
-		if (wlanQueryInformation(prGlueInfo->prAdapter, wlanoidQueryBssid,
-			&arBssid[0], sizeof(arBssid), &u4BufLen) == WLAN_STATUS_SUCCESS) {
-
-			prBssInfo =
-				&(prGlueInfo->prAdapter->rWifiVar.arBssInfo[NETWORK_TYPE_AIS_INDEX]);
-
-			wlanQueryInformation(prGlueInfo->prAdapter, wlanoidQuerySsid,
-				&ssid, sizeof(ssid), &u4BufLen);
-
-			n = sprintf(&p_buffer[pos], "\n(STA) connected AP MAC Address = ");
-			pos += n;
-
-			for (i = 0; i < PARAM_MAC_ADDR_LEN; i++) {
-
-				n = sprintf(&p_buffer[pos], "%02x", arBssid[i]);
-				pos += n;
-				if (i != PARAM_MAC_ADDR_LEN - 1) {
-
-					n = sprintf(&p_buffer[pos], ":");
-					pos += n;
-				}
-			}
-			n = sprintf(&p_buffer[pos], "\n");
-			pos += n;
-
-			n = sprintf(&p_buffer[pos], "PhyMode:");
-			pos += n;
-			switch (prBssInfo->ucPhyTypeSet) {
-			case PHY_TYPE_SET_802_11B:
-				n = sprintf(&p_buffer[pos], "802.11b\n");
-				break;
-			case PHY_TYPE_SET_802_11ABG:
-			case PHY_TYPE_SET_802_11BG:
-				n = sprintf(&p_buffer[pos], "802.11g\n");
-				break;
-			case PHY_TYPE_SET_802_11A:
-				n = sprintf(&p_buffer[pos], "802.11a\n");
-				break;
-			case PHY_TYPE_SET_802_11ABGN:
-			case PHY_TYPE_SET_802_11BGN:
-			case PHY_TYPE_SET_802_11AN:
-			case PHY_TYPE_SET_802_11GN:
-				n = sprintf(&p_buffer[pos], "802.11n\n");
-				break;
-			default:
-				break;
-			}
-			pos += n;
-
-			n = sprintf(&p_buffer[pos], "RSSI = \n");
-			pos += n;
-			n = sprintf(&p_buffer[pos], "Last TX Rate = %d \n", u4Rate*100);
-			pos += n;
-
-			if (getLastRxRate(prNetDev, &u4Rate) == 0) {
-				n = sprintf(&p_buffer[pos], "Last RX Rate = %d\n",
-					((u4Rate>>24)&0xff)*1000000);
-			} else {
-				n = sprintf(&p_buffer[pos], "Last RX Rate = \n");
-			}
-			pos += n;
-		} else {
-			n = sprintf(&p_buffer[pos], "\n(STA) Not connected\n");
-			pos += n;
-		}
-
-		DBGLOG(REQ, INFO, "%s() stat length %d\n", __func__, pos);
-
-		if (copy_to_user(prIwReqData->data.pointer, &aucBuffer2[0], pos + 1)) {
-			DBGLOG(REQ, ERROR, "%s() copy_to_user() fail\n", __func__);
-			return -EFAULT;
-		} else
-			return 0;
-	}
-	case PRIV_CMD_CONNSTATUS:
-	{
-		PARAM_MAC_ADDRESS arBssid;
-		PARAM_SSID_T ssid;
-		char buffer[128];
-		char *pc;
-		WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
-		int i, n;
-
-		kalMemZero(arBssid, MAC_ADDR_LEN);
-		rStatus = wlanQueryInformation(prGlueInfo->prAdapter,
-			wlanoidQueryBssid, &arBssid[0], sizeof(arBssid), &u4BufLen);
-
-		kalMemZero(buffer, 128);
-		pc = &buffer[0];
-		if (rStatus == WLAN_STATUS_SUCCESS) {
-			wlanQueryInformation(prGlueInfo->prAdapter, wlanoidQuerySsid, &ssid, sizeof(ssid), &u4BufLen);
-
-			n = sprintf(pc, "connStatus: Connected (AP: %s (", ssid.aucSsid);
-			pc += n;
-
-			for (i = 0; i < PARAM_MAC_ADDR_LEN; i++) {
-				n = sprintf(pc, "%02x", arBssid[i]);
-				pc += n;
-				if (i != PARAM_MAC_ADDR_LEN - 1) {
-					n = sprintf(pc, ":");
-					pc += n;
-				}
-			}
-			n = sprintf(pc, "))");
-		} else
-			n = sprintf(pc, "connStatus: Not connected");
-
-		if (copy_to_user(prIwReqData->data.pointer, &buffer[0], 128))
-			return -EFAULT;
-		else
-			return status;
-	}
-#if CFG_SUPPORT_WAKEUP_STATISTICS
-	case PRIV_CMD_INT_STAT:
-	{
-		char buf[512];
-		int pos = 0;
-		int i = 0;
-		P_WAKEUP_STATISTIC *prWakeupSta = NULL;
-
-		kalMemZero(buf, 512);
-		prWakeupSta = prGlueInfo->prAdapter->arWakeupStatistic;
-		pos += snprintf(buf, sizeof(buf),
-				"Abnormal Interrupt:%d\n"
-				"Software Interrupt:%d\n"
-				"TX Interrupt:%d\n"
-				"RX data:%d\n"
-				"RX Event:%d\n"
-				"RX mgmt:%d\n"
-				"RX others:%d\n",
-				prWakeupSta[0].u2Count,
-				prWakeupSta[1].u2Count,
-				prWakeupSta[2].u2Count,
-				prWakeupSta[3].u2Count,
-				prWakeupSta[4].u2Count,
-				prWakeupSta[5].u2Count,
-				prWakeupSta[6].u2Count);
-		for (i = 0; i < EVENT_ID_END; i++) {
-			if (prGlueInfo->prAdapter->wake_event_count[i] > 0)
-				pos += snprintf(buf + pos, sizeof(buf) - pos,
-						"RX EVENT(0x%0x):%d\n", i,
-						prGlueInfo->prAdapter->wake_event_count[i]);
-		}
-		if (copy_to_user(prIwReqData->data.pointer, &buf[0], sizeof(buf)))
-			return -EFAULT;
-		else
-			return status;
-	}
-#endif
-#if CFG_SHOW_NVRAM
-	case PRIV_CMD_SHOW_NVRAM:
-	{
-		P_ADAPTER_T prAdapter = prGlueInfo->prAdapter;
-		P_REG_INFO_T prRegInfo = &prGlueInfo->rRegInfo;
-		TX_PWR_PARAM_T rTxPwr = prRegInfo->rTxPwr;
-
-		static UINT_8 buffer[892];
-		char *pc;
-		WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
-		int n;
-
-		kalMemZero(buffer, 892);
-		pc = &buffer[0];
-
-		if (!prAdapter || !prRegInfo ) return -EFAULT;
-
-		if (prRegInfo->au2CountryCode[0]==0)
-			n = sprintf(pc, "[Country] %x%x\n", prRegInfo->au2CountryCode[0],prRegInfo->au2CountryCode[1]);
-		else
-			n = sprintf(pc, "[Country] %c%c\n", prRegInfo->au2CountryCode[0],prRegInfo->au2CountryCode[1]);
-		pc += n;
-
-		n = sprintf(pc, "[Support 5GHz]\n");
-		pc += n;
-		n = sprintf(pc, "\tSupport 5G Band:%d\n", prRegInfo->ucSupport5GBand);
-		pc += n;
-		n = sprintf(pc, "\tEnable 5G Band:%d\n", prRegInfo->ucEnable5GBand);
-		pc += n;
-
-		n = sprintf(pc, "[Band Edge Power Used]\n");
-		pc += n;
-
-		if (prRegInfo->fg2G4BandEdgePwrUsed ==1) {
-			n = sprintf(pc, "\tBand edge power in 2G4:%x \n", prRegInfo->fg2G4BandEdgePwrUsed);
-			pc += n;
-			if (!prAdapter->fgTestMode) {
-				n = sprintf(pc, "\tMaxPwrCCK/OFDM20/OFDM40 in 2G4:(%x,%x,%x)\n",
-					prRegInfo->cBandEdgeMaxPwrCCK, prRegInfo->cBandEdgeMaxPwrOFDM20,
-					prRegInfo->cBandEdgeMaxPwrOFDM40);
-				pc += n;
-			} else {
-				n = sprintf(pc, "\tMaxPwrCCK/OFDM20/OFDM40 in 2G4:(%x,%x,%x)\n",
-					MAX_TX_POWER, MAX_TX_POWER, MAX_TX_POWER);
-				pc += n;
-			}
-		} else {
-			n = sprintf(pc, "\tBand edge power in 2G4:%x \n", prRegInfo->fg2G4BandEdgePwrUsed);
-			pc += n;
-		}
-		if (prRegInfo->aucEFUSE && prRegInfo->aucEFUSE[OFFSET_fg5GBandEdgePwrUsed]==0x1) {
-			n = sprintf(pc, "\tBand edge power in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_fg5GBandEdgePwrUsed]);
-			pc += n;
-			if (!prAdapter->fgTestMode) {
-				n = sprintf(pc, "\tMaxPwrOFDM20/OFDM40 in 5G:(%x,%x)\n",
-					prRegInfo->aucEFUSE[OFFSET_c5GBandEdgeMaxPwrOFDM20],
-					prRegInfo->aucEFUSE[OFFSET_c5GBandEdgeMaxPwrOFDM40]);
-				pc += n;
-			} else {
-				n = sprintf(pc, "\tMaxPwrOFDM20/OFDM40 in 5G:(%x,%x)\n", MAX_TX_POWER, MAX_TX_POWER);
-				pc += n;
-			}
-		} else {
-			n = sprintf(pc, "\tBand edge power in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_fg5GBandEdgePwrUsed]);
-			pc += n;
-		}
-
-		n = sprintf(pc, "[Channel Offset]\n");
-		pc += n;
-		if (prRegInfo->aucEFUSE && prRegInfo->aucEFUSE[OFFSET_ucChannelOffsetValid]==0x1) {
-			n = sprintf(pc, "\tEnable in 2G4:%x \n", prRegInfo->aucEFUSE[OFFSET_ucChannelOffsetValid]);
-			pc += n;
-			n = sprintf(pc, "\taucChOffset:(%x,%x,%x) \n", prRegInfo->aucEFUSE[OFFSET_aucChOffset],
-				prRegInfo->aucEFUSE[OFFSET_aucChOffset+1],prRegInfo->aucEFUSE[OFFSET_aucChOffset+2]);
-			pc += n;
-		} else {
-			n = sprintf(pc, "\tEnable in 2G4:%x \n", prRegInfo->aucEFUSE[OFFSET_ucChannelOffsetValid]);
-			pc += n;
-		}
-
-		if (prRegInfo->aucEFUSE && prRegInfo->aucEFUSE[OFFSET_uc5GChannelOffsetValid]==0x1) {
-			n = sprintf(pc, "\tEnable in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_uc5GChannelOffsetValid]);
-			pc += n;
-			n = sprintf(pc, "\tauc5GChOffset:(%x,%x,%x,%x,%x,%x,%x,%x) \n", prRegInfo->aucEFUSE[OFFSET_auc5GChOffset],
-				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+1],prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+2],
-				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+3],prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+4],
-				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+5],prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+6],
-				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+7]);
-			pc += n;
-		} else {
-			n = sprintf(pc, "\tEnable in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_uc5GChannelOffsetValid]);
-			pc += n;
-		}
-		n = sprintf(pc, "\tacAllChannelOffset:(%x) \n", prRegInfo->aucEFUSE[OFFSET_acAllChannelOffset]);
-		pc += n;
-
-		n = sprintf(pc, "[Power Table In Use]\n");
-		pc += n;
-		n = sprintf(pc, "\tucTxPwrValid:%d\n", prRegInfo->ucTxPwrValid);
-		pc += n;
-		n = sprintf(pc, "\t2G4Cck:(%x)\n", rTxPwr.cTxPwr2G4Cck);
-		pc += n;
-		n = sprintf(pc, "\t2G4OFDM_BPSK/QPSK/16QAM/48M/54M:(%x,%x,%x,%x,%x)\n",
-			rTxPwr.cTxPwr2G4OFDM_BPSK, rTxPwr.cTxPwr2G4OFDM_QPSK, rTxPwr.cTxPwr2G4OFDM_16QAM,
-			rTxPwr.cTxPwr2G4OFDM_48Mbps, rTxPwr.cTxPwr2G4OFDM_54Mbps);
-		pc += n;
-		n = sprintf(pc, "\t2G4HT20_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
-			rTxPwr.cTxPwr2G4HT20_BPSK, rTxPwr.cTxPwr2G4HT20_QPSK, rTxPwr.cTxPwr2G4HT20_16QAM,
-			rTxPwr.cTxPwr2G4HT20_MCS5, rTxPwr.cTxPwr2G4HT20_MCS6, rTxPwr.cTxPwr2G4HT20_MCS7);
-		pc += n;
-		n = sprintf(pc, "\t2G4HT40_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
-			rTxPwr.cTxPwr2G4HT40_BPSK, rTxPwr.cTxPwr2G4HT40_QPSK, rTxPwr.cTxPwr2G4HT40_16QAM,
-			rTxPwr.cTxPwr2G4HT40_MCS5, rTxPwr.cTxPwr2G4HT40_MCS6,rTxPwr.cTxPwr2G4HT40_MCS7);
-		pc += n;
-		n = sprintf(pc, "\t5GOFDM_BPSK/QPSK/16QAM/48M/54M:(%x,%x,%x,%x,%x)\n",
-			rTxPwr.cTxPwr5GOFDM_BPSK, rTxPwr.cTxPwr5GOFDM_QPSK,	rTxPwr.cTxPwr5GOFDM_16QAM,
-			rTxPwr.cTxPwr5GOFDM_48Mbps, rTxPwr.cTxPwr5GOFDM_54Mbps);
-		pc += n;
-		n = sprintf(pc, "\t5GHT20_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
-			rTxPwr.cTxPwr5GHT20_BPSK, rTxPwr.cTxPwr5GHT20_QPSK, rTxPwr.cTxPwr5GHT20_16QAM,
-			rTxPwr.cTxPwr5GHT20_MCS5, rTxPwr.cTxPwr5GHT20_MCS6,rTxPwr.cTxPwr5GHT20_MCS7);
-		pc += n;
-		n = sprintf(pc, "\t5GHT40_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
-			rTxPwr.cTxPwr5GHT40_BPSK, rTxPwr.cTxPwr5GHT40_QPSK, rTxPwr.cTxPwr5GHT40_16QAM,
-			rTxPwr.cTxPwr5GHT40_MCS5, rTxPwr.cTxPwr5GHT40_MCS6,rTxPwr.cTxPwr5GHT40_MCS7);
-		pc += n;
-
-		n = sprintf(pc, "[Fixed 20M]\n");
-		pc += n;
-		n = sprintf(pc, "\tin 2G4 BW:%d\n", prRegInfo->uc2G4BwFixed20M);
-		pc += n;
-		n = sprintf(pc, "\tin 5G BW:%d\n", prRegInfo->uc5GBwFixed20M);
-		pc += n;
-
-		n = sprintf(pc, "[Rssi Compensation]\n");
-		pc += n;
-		n = sprintf(pc, "\tValid bit:%d\n", prRegInfo->fgRssiCompensationValidbit);
-		pc += n;
-		n = sprintf(pc, "\tRssi Compensation(2G4,5G):(%d,%d)\n",
-			prRegInfo->uc2GRssiCompensation, prRegInfo->uc5GRssiCompensation);
-		pc += n;
-
-		if (copy_to_user(prIwReqData->data.pointer, &buffer[0], 892))
-			return -EFAULT;
-		else
-			return rStatus;
-	}
-#endif
 	default:
 		DBGLOG(REQ, WARN, "get struct cmd:0x%x\n", u4SubCmd);
 		return -EOPNOTSUPP;
@@ -2973,6 +2597,342 @@ _priv_set_string(IN struct net_device *prNetDev,
 	}
 
 	return Status;
+}
+
+/*----------------------------------------------------------------------------*/
+/*!
+* \brief The routine handles a get operation for a single OID.
+*
+* \param[in] pDev Net device requested.
+* \param[in] ndisReq Ndis request OID information copy from user.
+* \param[out] outputLen_p If the call is successful, returns the number of
+*                         bytes written into the query buffer. If the
+*                         call failed due to invalid length of the query
+*                         buffer, returns the amount of storage needed..
+*
+* \retval 0 On success.
+* \retval -EOPNOTSUPP If cmd is not supported.
+*
+*/
+/*----------------------------------------------------------------------------*/
+static int
+_priv_get_string(IN struct net_device *prNetDev,
+		IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN OUT char *pcExtra)
+{
+	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+	P_GLUE_INFO_T prGlueInfo = NULL;
+	UINT_32 u4SubCmd = 0;
+	UINT_32 u4TotalLen = 2000;
+	UINT_32 u4BufLen = 0;
+	int status= 0;
+	int pos = 0;
+	int i = 0;
+	char *buf = pcExtra;
+	PARAM_MAC_ADDRESS arBssid;
+	PARAM_SSID_T ssid;
+
+	if (!prNetDev || !prIwReqData || !pcExtra) {
+		DBGLOG(REQ, WARN, "_priv_get_string(): invalid param(0x%p, 0x%p)\n", prNetDev, prIwReqData);
+		return -EINVAL;
+	}
+
+	u4SubCmd = (UINT_32) prIwReqData->data.flags;
+	prGlueInfo = *((P_GLUE_INFO_T *) netdev_priv(prNetDev));
+	if (!prGlueInfo) {
+		DBGLOG(REQ, INFO, "priv_get_string(): invalid prGlueInfo(0x%p, 0x%p)\n",
+				   prNetDev, *((P_GLUE_INFO_T *) netdev_priv(prNetDev)));
+		return -EINVAL;
+	}
+	if (pcExtra) {
+		pcExtra[u4TotalLen] = '\0';
+	}
+	pos += scnprintf(buf + pos, u4TotalLen - pos, "\n");
+
+	switch (u4SubCmd) {
+	case PRIV_CMD_CONNSTATUS:
+	{
+		kalMemZero(arBssid, MAC_ADDR_LEN);
+		rStatus = wlanQueryInformation(prGlueInfo->prAdapter,
+					wlanoidQueryBssid, &arBssid[0], sizeof(arBssid), &u4BufLen);
+
+		if (rStatus == WLAN_STATUS_SUCCESS) {
+			wlanQueryInformation(prGlueInfo->prAdapter,
+				wlanoidQuerySsid, &ssid, sizeof(ssid), &u4BufLen);
+
+			pos += scnprintf(buf + pos, u4TotalLen - pos,
+								"connStatus: Connected (AP: %s (", ssid.aucSsid);
+
+			for (i = 0; i < PARAM_MAC_ADDR_LEN; i++) {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "%02x", arBssid[i]);
+				if (i != PARAM_MAC_ADDR_LEN - 1) {
+					pos += scnprintf(buf + pos, u4TotalLen - pos, ":");
+				}
+			}
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "))");
+		} else
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "connStatus: Not connected");
+
+		break;
+	}
+	case PRIV_CMD_STAT:
+	{
+		static UINT_8 aucBuffer[512];
+		P_CMD_SW_DBG_CTRL_T pSwDbgCtrl;
+		INT_32 i4Rssi;
+		UINT_32 u4Rate = 0;
+		P_BSS_INFO_T prBssInfo;
+
+		kalMemZero(aucBuffer, 512);
+		pSwDbgCtrl = (P_CMD_SW_DBG_CTRL_T)aucBuffer;
+
+		if (kalIoctl(prGlueInfo,
+			wlanoidQueryDbgCntr,
+			(PVOID)aucBuffer,
+			sizeof(UINT_8) * 512, TRUE, TRUE, TRUE, FALSE, &u4BufLen)
+			== WLAN_STATUS_SUCCESS) {
+			if (pSwDbgCtrl) {
+				if (pSwDbgCtrl->u4Data == SWCR_DBG_TYPE_ALL) {
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "Tx success = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_CNT] -
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_FAILED_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "Tx retry count = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_RETRY_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos,
+										"Tx fail to Rcv ACK after retry = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_TX_ERROR_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "Rx success = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "Rx with CRC = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_FCSERR_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos,
+										"Rx drop due to out of resource = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_FIFOFULL_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "Rx duplicate frame = %d\n",
+										pSwDbgCtrl->u4DebugCnt[SWCR_DBG_ALL_RX_DUP_DROP_CNT]);
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "False CCA(total) = \n");
+					pos +=	scnprintf(buf + pos, u4TotalLen - pos, "False CCA(one-second) = \n");
+				}
+			}
+		}
+
+		if (kalIoctl(prGlueInfo, wlanoidQueryRssi, &i4Rssi, sizeof(i4Rssi),
+				TRUE, TRUE, TRUE, FALSE, &u4BufLen) == WLAN_STATUS_SUCCESS) {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "RSSI = %d\n", i4Rssi);
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "P2P GO RSSI =\n");
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "SNR-A = \n");
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "SNR-B (if available) =\n");
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "NoiseLevel-A =\n");
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "NoiseLevel-B =\n");
+		}
+
+		status = kalIoctl(prGlueInfo, wlanoidQueryLinkSpeed, &u4Rate,
+						sizeof(u4Rate), TRUE, TRUE, TRUE, FALSE, &u4BufLen);
+
+		/* STA stats */
+		kalMemZero(arBssid, MAC_ADDR_LEN);
+		if (wlanQueryInformation(prGlueInfo->prAdapter, wlanoidQueryBssid,
+			&arBssid[0], sizeof(arBssid), &u4BufLen) == WLAN_STATUS_SUCCESS) {
+			prBssInfo =
+				&(prGlueInfo->prAdapter->rWifiVar.arBssInfo[NETWORK_TYPE_AIS_INDEX]);
+
+			wlanQueryInformation(prGlueInfo->prAdapter, wlanoidQuerySsid,
+				&ssid, sizeof(ssid), &u4BufLen);
+
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\n(STA) connected AP MAC Address = ");
+
+			for (i = 0; i < PARAM_MAC_ADDR_LEN; i++) {
+
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "%02x", arBssid[i]);
+				if (i != PARAM_MAC_ADDR_LEN - 1) {
+
+					pos += scnprintf(buf + pos, u4TotalLen - pos, ":");
+				}
+			}
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\n");
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "PhyMode:");
+			switch (prBssInfo->ucPhyTypeSet) {
+			case PHY_TYPE_SET_802_11B:
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "802.11b\n");
+				break;
+			case PHY_TYPE_SET_802_11ABG:
+			case PHY_TYPE_SET_802_11BG:
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "802.11g\n");
+				break;
+			case PHY_TYPE_SET_802_11A:
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "802.11a\n");
+				break;
+			case PHY_TYPE_SET_802_11ABGN:
+			case PHY_TYPE_SET_802_11BGN:
+			case PHY_TYPE_SET_802_11AN:
+			case PHY_TYPE_SET_802_11GN:
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "802.11n\n");
+				break;
+			default:
+				break;
+			}
+
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "Last TX Rate = %d \n", u4Rate*100);
+
+			if (getLastRxRate(prNetDev, &u4Rate) == 0) {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "Last RX Rate = %d\n",
+					((u4Rate>>24)&0xff)*1000000);
+			} else {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "Last RX Rate = \n");
+			}
+		} else {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\n(STA) Not connected\n");
+		}
+
+		break;
+	}
+#if CFG_SUPPORT_WAKEUP_STATISTICS
+	case PRIV_CMD_INT_STAT:
+	{
+		P_WAKEUP_STATISTIC *prWakeupSta = NULL;
+
+		prWakeupSta = prGlueInfo->prAdapter->arWakeupStatistic;
+		pos += scnprintf(buf + pos, u4TotalLen - pos,
+				"Abnormal Interrupt:%d\n"
+				"Software Interrupt:%d\n"
+				"TX Interrupt:%d\n"
+				"RX data:%d\n"
+				"RX Event:%d\n"
+				"RX mgmt:%d\n"
+				"RX others:%d\n",
+				prWakeupSta[0].u2Count,
+				prWakeupSta[1].u2Count,
+				prWakeupSta[2].u2Count,
+				prWakeupSta[3].u2Count,
+				prWakeupSta[4].u2Count,
+				prWakeupSta[5].u2Count,
+				prWakeupSta[6].u2Count);
+		for (i = 0; i < EVENT_ID_END; i++) {
+			if (prGlueInfo->prAdapter->wake_event_count[i] > 0)
+				pos += scnprintf(buf + pos, u4TotalLen - pos,
+						"RX EVENT(0x%0x):%d\n", i,
+						prGlueInfo->prAdapter->wake_event_count[i]);
+		}
+
+		break;
+	}
+#endif
+#if CFG_SHOW_NVRAM
+	case PRIV_CMD_SHOW_NVRAM:
+	{
+		P_ADAPTER_T prAdapter = prGlueInfo->prAdapter;
+		P_REG_INFO_T prRegInfo = &prGlueInfo->rRegInfo;
+		TX_PWR_PARAM_T rTxPwr = prRegInfo->rTxPwr;
+
+		if (!prAdapter || !prRegInfo)
+			return -EFAULT;
+
+		if (prRegInfo->au2CountryCode[0] == 0)
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "[Country] %x%x\n", prRegInfo->au2CountryCode[0], prRegInfo->au2CountryCode[1]);
+		else
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "[Country] %c%c\n", prRegInfo->au2CountryCode[0], prRegInfo->au2CountryCode[1]);
+
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "[Support 5GHz]\n");
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tSupport 5G Band:%d\n", prRegInfo->ucSupport5GBand);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tEnable 5G Band:%d\n", prRegInfo->ucEnable5GBand);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "[Band Edge Power Used]\n");
+
+		if (prRegInfo->fg2G4BandEdgePwrUsed == 1) {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tBand edge power in 2G4:%x \n", prRegInfo->fg2G4BandEdgePwrUsed);
+			if (!prAdapter->fgTestMode) {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "\tMaxPwrCCK/OFDM20/OFDM40 in 2G4:(%x,%x,%x)\n",
+					prRegInfo->cBandEdgeMaxPwrCCK, prRegInfo->cBandEdgeMaxPwrOFDM20,
+					prRegInfo->cBandEdgeMaxPwrOFDM40);
+			} else {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "\tMaxPwrCCK/OFDM20/OFDM40 in 2G4:(%x,%x,%x)\n",
+					MAX_TX_POWER, MAX_TX_POWER, MAX_TX_POWER);
+			}
+		} else {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tBand edge power in 2G4:%x \n", prRegInfo->fg2G4BandEdgePwrUsed);
+		}
+		if (prRegInfo->aucEFUSE && prRegInfo->aucEFUSE[OFFSET_fg5GBandEdgePwrUsed] == 0x1) {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tBand edge power in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_fg5GBandEdgePwrUsed]);
+			if (!prAdapter->fgTestMode) {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "\tMaxPwrOFDM20/OFDM40 in 5G:(%x,%x)\n",
+					prRegInfo->aucEFUSE[OFFSET_c5GBandEdgeMaxPwrOFDM20],
+					prRegInfo->aucEFUSE[OFFSET_c5GBandEdgeMaxPwrOFDM40]);
+			} else {
+				pos += scnprintf(buf + pos, u4TotalLen - pos, "\tMaxPwrOFDM20/OFDM40 in 5G:(%x,%x)\n", MAX_TX_POWER, MAX_TX_POWER);
+			}
+		} else {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tBand edge power in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_fg5GBandEdgePwrUsed]);
+		}
+
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "[Channel Offset]\n");
+		if (prRegInfo->aucEFUSE && prRegInfo->aucEFUSE[OFFSET_ucChannelOffsetValid] == 0x1) {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tEnable in 2G4:%x \n", prRegInfo->aucEFUSE[OFFSET_ucChannelOffsetValid]);
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\taucChOffset:(%x,%x,%x) \n", prRegInfo->aucEFUSE[OFFSET_aucChOffset],
+				prRegInfo->aucEFUSE[OFFSET_aucChOffset+1], prRegInfo->aucEFUSE[OFFSET_aucChOffset+2]);
+		} else {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tEnable in 2G4:%x \n", prRegInfo->aucEFUSE[OFFSET_ucChannelOffsetValid]);
+		}
+
+		if (prRegInfo->aucEFUSE && prRegInfo->aucEFUSE[OFFSET_uc5GChannelOffsetValid] == 0x1) {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tEnable in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_uc5GChannelOffsetValid]);
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tauc5GChOffset:(%x,%x,%x,%x,%x,%x,%x,%x) \n", prRegInfo->aucEFUSE[OFFSET_auc5GChOffset],
+				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+1], prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+2],
+				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+3], prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+4],
+				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+5], prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+6],
+				prRegInfo->aucEFUSE[OFFSET_auc5GChOffset+7]);
+		} else {
+			pos += scnprintf(buf + pos, u4TotalLen - pos, "\tEnable in 5G:%x \n", prRegInfo->aucEFUSE[OFFSET_uc5GChannelOffsetValid]);
+		}
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tacAllChannelOffset:(%x) \n", prRegInfo->aucEFUSE[OFFSET_acAllChannelOffset]);
+
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "[Power Table In Use]\n");
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tucTxPwrValid:%d\n", prRegInfo->ucTxPwrValid);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t2G4Cck:(%x)\n", rTxPwr.cTxPwr2G4Cck);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t2G4OFDM_BPSK/QPSK/16QAM/48M/54M:(%x,%x,%x,%x,%x)\n",
+			rTxPwr.cTxPwr2G4OFDM_BPSK, rTxPwr.cTxPwr2G4OFDM_QPSK, rTxPwr.cTxPwr2G4OFDM_16QAM,
+			rTxPwr.cTxPwr2G4OFDM_48Mbps, rTxPwr.cTxPwr2G4OFDM_54Mbps);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t2G4HT20_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
+			rTxPwr.cTxPwr2G4HT20_BPSK, rTxPwr.cTxPwr2G4HT20_QPSK, rTxPwr.cTxPwr2G4HT20_16QAM,
+			rTxPwr.cTxPwr2G4HT20_MCS5, rTxPwr.cTxPwr2G4HT20_MCS6, rTxPwr.cTxPwr2G4HT20_MCS7);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t2G4HT40_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
+			rTxPwr.cTxPwr2G4HT40_BPSK, rTxPwr.cTxPwr2G4HT40_QPSK, rTxPwr.cTxPwr2G4HT40_16QAM,
+			rTxPwr.cTxPwr2G4HT40_MCS5, rTxPwr.cTxPwr2G4HT40_MCS6, rTxPwr.cTxPwr2G4HT40_MCS7);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t5GOFDM_BPSK/QPSK/16QAM/48M/54M:(%x,%x,%x,%x,%x)\n",
+			rTxPwr.cTxPwr5GOFDM_BPSK, rTxPwr.cTxPwr5GOFDM_QPSK, rTxPwr.cTxPwr5GOFDM_16QAM,
+			rTxPwr.cTxPwr5GOFDM_48Mbps, rTxPwr.cTxPwr5GOFDM_54Mbps);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t5GHT20_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
+			rTxPwr.cTxPwr5GHT20_BPSK, rTxPwr.cTxPwr5GHT20_QPSK, rTxPwr.cTxPwr5GHT20_16QAM,
+			rTxPwr.cTxPwr5GHT20_MCS5, rTxPwr.cTxPwr5GHT20_MCS6, rTxPwr.cTxPwr5GHT20_MCS7);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\t5GHT40_BPSK/QPSK/16QAM/MCS5/MCS6/MCS7:(%x,%x,%x,%x,%x,%x)\n",
+			rTxPwr.cTxPwr5GHT40_BPSK, rTxPwr.cTxPwr5GHT40_QPSK, rTxPwr.cTxPwr5GHT40_16QAM,
+			rTxPwr.cTxPwr5GHT40_MCS5, rTxPwr.cTxPwr5GHT40_MCS6, rTxPwr.cTxPwr5GHT40_MCS7);
+
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "[Fixed 20M]\n");
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tin 2G4 BW:%d\n", prRegInfo->uc2G4BwFixed20M);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tin 5G BW:%d\n", prRegInfo->uc5GBwFixed20M);
+
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "[Rssi Compensation]\n");
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tValid bit:%d\n", prRegInfo->fgRssiCompensationValidbit);
+		pos += scnprintf(buf + pos, u4TotalLen - pos, "\tRssi Compensation(2G4,5G):(%d,%d)\n",
+			prRegInfo->uc2GRssiCompensation, prRegInfo->uc5GRssiCompensation);
+
+		break;
+	}
+#endif
+	default:
+		DBGLOG(REQ, WARN, "get string cmd:0x%x\n", u4SubCmd);
+		return -EOPNOTSUPP;
+	}
+
+	DBGLOG(REQ, WARN, "%s i4BytesWritten = %d\n", __func__, pos);
+	if (pos > 0) {
+
+		if (pos > u4TotalLen)
+			pos = u4TotalLen;
+		prIwReqData->data.length = pos;	/* the iwpriv will use the length */
+
+	} else if (pos == 0) {
+		prIwReqData->data.length = pos;
+	}
+	return 0;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -3449,6 +3409,13 @@ exit:
 #define CMD_CH_ENV_GET			"CH_ENV_GET"
 #endif
 
+#if CFG_SUPPORT_802_11K
+#define CMD_NEIGHBOR_REQUEST    "NEIGHBOR-REQUEST"
+#endif
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+#define CMD_BSS_TRANSITION_QUERY    "BSS-TRANSITION-QUERY"
+#endif
+
 INT_32 priv_driver_cmds(IN struct net_device *prNetDev, IN PCHAR pcCommand, IN INT_32 i4TotalLen)
 {
 	P_GLUE_INFO_T prGlueInfo = NULL;
@@ -3720,6 +3687,13 @@ int
 priv_set_string(IN struct net_device *prNetDev,
 		IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN char *pcExtra)
 {
-	return compat_priv(prNetDev, prIwReqInfo, prIwReqData, pcExtra, _priv_set_string);
+	return _priv_set_string(prNetDev, prIwReqInfo, prIwReqData, pcExtra);
+}
+
+int
+priv_get_string(IN struct net_device *prNetDev,
+		IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN OUT char *pcExtra)
+{
+	return _priv_get_string(prNetDev, prIwReqInfo, prIwReqData, pcExtra);
 }
 

@@ -170,6 +170,10 @@ WLAN_STATUS saaFsmRunEventRxDisassoc(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prS
 
 VOID saaFsmRunEventAbort(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgHdr);
 
+#if CFG_SUPPORT_802_11R
+VOID saaFsmRunEventFTContinue(IN P_ADAPTER_T prAdapter, IN P_MSG_HDR_T prMsgHdr);
+#endif
+
 /*----------------------------------------------------------------------------*/
 /* Routines in aaa_fsm.c                                                      */
 /*----------------------------------------------------------------------------*/

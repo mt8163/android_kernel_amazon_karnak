@@ -404,6 +404,10 @@ static PUINT_8 apucDebugMsg[] = {
 	(PUINT_8) DISP_STRING("MID_OID_AIS_FSM_JOIN_REQ"),
 	(PUINT_8) DISP_STRING("MID_OID_AIS_FSM_ABORT"),
 	(PUINT_8) DISP_STRING("MID_AIS_SAA_FSM_START"),
+#if CFG_SUPPORT_802_11R
+	(PUINT_8) DISP_STRING("MID_OID_SAA_FSM_CONTINUE"),
+#endif
+
 	(PUINT_8) DISP_STRING("MID_AIS_SAA_FSM_ABORT"),
 	(PUINT_8) DISP_STRING("MID_SAA_AIS_JOIN_COMPLETE"),
 
@@ -445,7 +449,10 @@ static PUINT_8 apucDebugMsg[] = {
 	(PUINT_8) DISP_STRING("MID_SAA_AIS_FSM_ABORT"),
 	(PUINT_8) DISP_STRING("MID_MNY_AIS_REMAIN_ON_CHANNEL"),
 	(PUINT_8) DISP_STRING("MID_MNY_AIS_CANCEL_REMAIN_ON_CHANNEL"),
-	(PUINT_8) DISP_STRING("MID_MNY_AIS_MGMT_TX")
+	(PUINT_8) DISP_STRING("MID_MNY_AIS_MGMT_TX"),
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+	(PUINT_8) DISP_STRING("MID_WNM_AIS_BSS_TRANSITION"),
+#endif
 };
 
 /*lint -restore */
@@ -505,6 +512,9 @@ static MSG_HNDL_ENTRY_T arMsgMapTable[] = {
 	{MID_OID_AIS_FSM_JOIN_REQ, aisFsmRunEventAbort},
 	{MID_OID_AIS_FSM_ABORT, aisFsmRunEventAbort},
 	{MID_AIS_SAA_FSM_START, saaFsmRunEventStart},
+#if CFG_SUPPORT_802_11R
+	{MID_OID_SAA_FSM_CONTINUE, saaFsmRunEventFTContinue},
+#endif
 	{MID_AIS_SAA_FSM_ABORT, saaFsmRunEventAbort},
 	{MID_SAA_AIS_JOIN_COMPLETE, aisFsmRunEventJoinComplete},
 
@@ -549,7 +559,10 @@ static MSG_HNDL_ENTRY_T arMsgMapTable[] = {
 	{MID_SAA_AIS_FSM_ABORT, aisFsmRunEventAbort},
 	{MID_MNY_AIS_REMAIN_ON_CHANNEL, aisFsmRunEventRemainOnChannel},
 	{MID_MNY_AIS_CANCEL_REMAIN_ON_CHANNEL, aisFsmRunEventCancelRemainOnChannel},
-	{MID_MNY_AIS_MGMT_TX, aisFsmRunEventMgmtFrameTx}
+	{MID_MNY_AIS_MGMT_TX, aisFsmRunEventMgmtFrameTx},
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+	{MID_WNM_AIS_BSS_TRANSITION, aisFsmRunEventBssTransition},
+#endif
 };
 
 /*******************************************************************************

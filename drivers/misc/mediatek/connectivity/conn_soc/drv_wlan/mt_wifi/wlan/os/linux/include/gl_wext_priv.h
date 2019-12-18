@@ -167,7 +167,6 @@ extern VOID rlmCmd(P_GLUE_INFO_T prGlueInfo, UINT_8 *prInBuf, UINT_32 u4InBufLen
 #define IOCTL_SET_STRUCT_FOR_EM         (SIOCIWFIRSTPRIV + 11)
 #define IOCTL_SET_INTS                  (SIOCIWFIRSTPRIV + 12)
 #define IOCTL_GET_INTS                  (SIOCIWFIRSTPRIV + 13)
-#define IOCTL_SET_STRING				(SIOCIWFIRSTPRIV + 14)
 
 #define PRIV_CMD_REG_DOMAIN             0
 #define PRIV_CMD_BEACON_PERIOD          1
@@ -422,6 +421,9 @@ UINT_32 CmdStringMacParse(IN UINT_8 *InStr, OUT UINT_8 **OutStr, OUT UINT_32 *Ou
 int
 priv_set_string(IN struct net_device *prNetDev,
 		IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN char *pcExtra);
+int
+priv_get_string(IN struct net_device *prNetDev,
+		IN struct iw_request_info *prIwReqInfo, IN union iwreq_data *prIwReqData, IN OUT char *pcExtra);
 
 int priv_support_ioctl(IN struct net_device *prDev, IN OUT struct ifreq *prReq, IN int i4Cmd);
 

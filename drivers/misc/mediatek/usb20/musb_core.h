@@ -378,7 +378,10 @@ struct musb {
 	struct work_struct otg_notifier_work;
 	u16 hwvers;
 	struct delayed_work id_pin_work;
-
+#ifdef CONFIG_POGO_PIN_DOCK
+	struct delayed_work dock_det_work;
+	struct delayed_work dock_vbat_ocp_work;
+#endif
 	struct musb_fifo_cfg *fifo_cfg;
 	unsigned fifo_cfg_size;
 	struct musb_fifo_cfg *fifo_cfg_host;
@@ -533,7 +536,7 @@ struct musb {
 	enum usb_force_mode force_mode; /*0:OTG mode 1:host mode 2:device mode 3:idle mode*/
 #endif
 
-#ifdef CONFIG_USB_AMAZON_DOCK
+#if (defined CONFIG_USB_AMAZON_DOCK) || (defined CONFIG_POGO_PIN_DOCK)
 	int dock_state;
 	struct power_supply *batt_psy;
 #endif

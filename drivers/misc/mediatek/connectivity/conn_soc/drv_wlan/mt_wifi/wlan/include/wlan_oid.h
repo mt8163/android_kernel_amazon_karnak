@@ -298,6 +298,9 @@ extern int sprintf(char *buf, const char *fmt, ...);
 /*----------------------------------------------------------------------------*/
 /* NDIS_802_11_AUTHENTICATION_MODE */
 typedef enum _ENUM_PARAM_AUTH_MODE_T {
+#if CFG_SUPPORT_802_11R
+	AUTH_MODE_NON_RSN_FT, /* Fast Bss Transition in a Non FT */
+#endif
 	AUTH_MODE_OPEN,		/*!< Open system */
 	AUTH_MODE_SHARED,	/*!< Shared key */
 	AUTH_MODE_AUTO_SWITCH,	/*!< Either open system or shared key */
@@ -306,6 +309,10 @@ typedef enum _ENUM_PARAM_AUTH_MODE_T {
 	AUTH_MODE_WPA_NONE,	/*!< For Ad hoc */
 	AUTH_MODE_WPA2,
 	AUTH_MODE_WPA2_PSK,
+#if CFG_SUPPORT_802_11R
+	AUTH_MODE_WPA2_FT, /* Fast Bss Transition for 802.1x */
+	AUTH_MODE_WPA2_FT_PSK, /* Fast Bss Transition for WPA2 PSK */
+#endif
 	AUTH_MODE_NUM		/*!< Upper bound, not real case */
 } ENUM_PARAM_AUTH_MODE_T, *P_ENUM_PARAM_AUTH_MODE_T;
 
@@ -388,6 +395,7 @@ typedef enum _ENUM_PARAM_AD_HOC_MODE_T {
 typedef enum _ENUM_PARAM_MEDIA_STATE_T {
 	PARAM_MEDIA_STATE_CONNECTED,
 	PARAM_MEDIA_STATE_DISCONNECTED,
+	PARAM_MEDIA_STATE_DISCONNECT_PREV,
 	PARAM_MEDIA_STATE_TO_BE_INDICATED	/* for following MSDN re-association behavior */
 } ENUM_PARAM_MEDIA_STATE_T, *P_ENUM_PARAM_MEDIA_STATE_T;
 
@@ -432,6 +440,9 @@ typedef enum _ENUM_STATUS_TYPE_T {
 	ENUM_STATUS_TYPE_AUTHENTICATION,
 	ENUM_STATUS_TYPE_MEDIA_STREAM_MODE,
 	ENUM_STATUS_TYPE_CANDIDATE_LIST,
+#if CFG_SUPPORT_802_11R
+	ENUM_STATUS_TYPE_FT_AUTH_STATUS,
+#endif
 	ENUM_STATUS_TYPE_NUM	/*!< Upper bound, not real case */
 } ENUM_STATUS_TYPE_T, *P_ENUM_STATUS_TYPE_T;
 
@@ -1855,6 +1866,27 @@ wlanoid_set_antenna_moving_avg_mode(IN P_ADAPTER_T prAdapter,
 				    IN PVOID pvSetBuffer,
 				    IN UINT_32 u4SetBufferLen,
 				    OUT PUINT_32 pu4SetInfoLen);
+#endif
+
+#if CFG_SUPPORT_802_11R
+WLAN_STATUS
+wlanoidUpdateFtIes(IN P_ADAPTER_T prAdapter,
+		   IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
+#endif
+
+#if CFG_SUPPORT_802_11K
+WLAN_STATUS
+wlanoidSync11kCapbilities(IN P_ADAPTER_T prAdapter,
+			  IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
+
+WLAN_STATUS
+wlanoidSendNeighborRequest(IN P_ADAPTER_T prAdapter,
+			   IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
+#endif
+
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+WLAN_STATUS wlanoidSendBTMQuery(IN P_ADAPTER_T prAdapter,
+				IN PVOID pvSetBuffer, IN UINT_32 u4SetBufferLen, OUT PUINT_32 pu4SetInfoLen);
 #endif
 
 WLAN_STATUS

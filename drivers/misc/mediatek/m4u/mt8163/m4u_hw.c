@@ -1221,6 +1221,8 @@ static int _m4u_config_port(int port, int virt, int sec, int dis, int dir)
 	unsigned int larb, larb_port;
 	int ret = 0;
 
+	if (!m4u_base)
+		return -1;
 	if (0 == virt || 1 == sec)
 		M4ULOG_HIGH("config_port:%s,v%d,s%d\n", m4u_get_port_name(port), virt, sec);
 
@@ -1270,6 +1272,13 @@ static int _m4u_config_port(int port, int virt, int sec, int dis, int dir)
 			port = M4U_PORT_AUDIO;	/* these two config is the same bit */
 		else if (port >= M4U_PORT_DBG_I2C) {
 			M4UMSG("warning cannot config virtual for port %d\n", port);
+			ret = -1;
+			goto unlock_out;
+		}
+
+		if (!gPericfgBaseAddr) {
+			M4UMSG("warning gPericfgBaseAddr is %lu\n",
+				gPericfgBaseAddr);
 			ret = -1;
 			goto unlock_out;
 		}

@@ -2278,7 +2278,7 @@ static int musbfsh_bus_suspend(struct usb_hcd *hcd)
 	/* Edge triggered EINT interrupt will be hold after masked (only one), and reported after unmasked */
 	mt_eint_unmask(CUST_EINT_MT6280_USB_WAKEUP_NUM);
 #endif
-#if 0
+#ifdef CONFIG_POGO_PIN_DOCK
 /*wx, let child port do the job;joson,runtime suspend not ready now,set suspend signal here */
 	power |= MUSBFSH_POWER_SUSPENDM | MUSBFSH_POWER_ENSUSPEND;
 	musbfsh_writeb(musbfsh->mregs, MUSBFSH_POWER, power);
@@ -2298,7 +2298,7 @@ static int musbfsh_bus_resume(struct usb_hcd *hcd)
 #ifdef MTK_USB_RUNTIME_SUPPORT
 	mt_eint_mask(CUST_EINT_MT6280_USB_WAKEUP_NUM);
 #endif
-#if 0
+#ifdef CONFIG_POGO_PIN_DOCK
 /*wx, let child port do the job;joson,runtime suspend not ready now,set resume signal here */
 	power |= MUSBFSH_POWER_RESUME;
 	power &= ~MUSBFSH_POWER_SUSPENDM;

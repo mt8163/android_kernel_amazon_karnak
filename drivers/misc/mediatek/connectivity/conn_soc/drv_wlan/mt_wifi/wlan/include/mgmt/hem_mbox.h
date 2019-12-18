@@ -267,6 +267,9 @@ typedef enum _ENUM_MSG_ID_T {
 	MID_OID_AIS_FSM_JOIN_REQ,	/* OID/IOCTL notify AIS for join */
 	MID_OID_AIS_FSM_ABORT,	/* OID/IOCTL notify AIS for abort */
 	MID_AIS_SAA_FSM_START,	/* AIS notify SAA for Starting authentication/association fsm */
+#if CFG_SUPPORT_802_11R
+	MID_OID_SAA_FSM_CONTINUE, /* OID notify SAA to continue to do authentication/association fsm for FT */
+#endif
 	MID_AIS_SAA_FSM_ABORT,	/* AIS notify SAA for Aborting authentication/association fsm */
 	MID_SAA_AIS_JOIN_COMPLETE,	/* SAA notify AIS for indicating join complete */
 
@@ -318,7 +321,9 @@ typedef enum _ENUM_MSG_ID_T {
 	MID_MNY_AIS_REMAIN_ON_CHANNEL,
 	MID_MNY_AIS_CANCEL_REMAIN_ON_CHANNEL,
 	MID_MNY_AIS_MGMT_TX,
-
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+	MID_WNM_AIS_BSS_TRANSITION,
+#endif
 	MID_TOTAL_NUM
 } ENUM_MSG_ID_T, *P_ENUM_MSG_ID_T;
 
@@ -398,6 +403,14 @@ typedef struct _MSG_MGMT_TX_REQUEST_T {
 	BOOLEAN fgNoneCckRate;
 	BOOLEAN fgIsWaitRsp;
 } MSG_MGMT_TX_REQUEST_T, *P_MSG_MGMT_TX_REQUEST_T;
+
+#if CFG_SUPPORT_802_11R
+struct MSG_SAA_FT_CONTINUE {
+	MSG_HDR_T rMsgHdr;
+	P_STA_RECORD_T prStaRec;
+	BOOLEAN fgFTRicRequest; /* if fgFTRicRequest is TRUE, then will do FT Resource Request Protocol */
+};
+#endif
 
 /* specific message data types */
 typedef MSG_SAA_FSM_START_T MSG_JOIN_REQ_T, *P_MSG_JOIN_REQ_T;

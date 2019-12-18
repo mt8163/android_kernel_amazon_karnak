@@ -44,7 +44,7 @@ endif
 obj-$(CONFIG_THERMAL) += mtk_thermal_budget.o
 obj-$(CONFIG_THERMAL) += mtk_ts_bts.o
 #obj-$(CONFIG_THERMAL) += mtk_ts_btsmdpa.o
-ifeq ($(CONFIG_roc123), y)
+ifeq ($(CONFIG_abe123), y)
 	# mtk_thermal interfaces generic solution, recommend to enable this for mt8163
 	obj-$(CONFIG_THERMAL) += mtk_thermal.o
 	obj-$(CONFIG_CPU_THERMAL) += mtk_cpufreq_cooling.o

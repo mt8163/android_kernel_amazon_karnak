@@ -2512,6 +2512,27 @@ VOID nicRxProcessEventPacket(IN P_ADAPTER_T prAdapter, IN OUT P_SW_RFB_T prSwRfb
 		break;
 #endif /* CFG_SUPPORT_STATISTICS */
 
+#if CFG_SUPPORT_802_11R
+		case EVENT_ID_ADD_PKEY_DONE:
+		{
+			struct EVENT_ADD_KEY_DONE_INFO *prKeyDone = (struct EVENT_ADD_KEY_DONE_INFO *)prEvent->aucBuffer;
+			P_STA_RECORD_T prStaRec = NULL;
+
+			prStaRec = cnmGetStaRecByAddress(prAdapter, prKeyDone->ucNetworkType, prKeyDone->aucStaAddr);
+
+			if (!prStaRec) {
+				DBGLOG(RX, INFO, "AddPKeyDone, Net %d, Addr %pM, StaRec is NULL\n",
+					prKeyDone->ucNetworkType, prKeyDone->aucStaAddr);
+				break;
+			}
+			prStaRec->fgIsTxKeyReady = TRUE;
+			if (prStaRec->fgIsValid)
+				prStaRec->fgIsTxAllowed = TRUE;
+			DBGLOG(RX, INFO, "AddPKeyDone, Net %d, Addr %pM, Tx Allowed %d\n",
+				prKeyDone->ucNetworkType, prKeyDone->aucStaAddr, prStaRec->fgIsTxAllowed);
+			break;
+		}
+#endif
 	default:
 		prCmdInfo = nicGetPendingCmdInfo(prAdapter, prEvent->ucSeqNum);
 
@@ -3733,6 +3754,21 @@ WLAN_STATUS nicRxProcessActionFrame(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T prSw
 				rlmProcessSpecMgtAction(prAdapter, prSwRfb);
 		}
 		break;
+#endif
+#if CFG_SUPPORT_802_11K
+	case CATEGORY_RM_ACTION:
+		switch (prActFrame->ucAction) {
+		case RM_ACTION_RM_REQUEST:
+			rlmProcessRadioMeasurementRequest(prAdapter, prSwRfb);
+			break;
+		/*case RM_ACTION_LM_REQUEST:
+			rlmProcessLinkMeasurementRequest(prAdapter, prActFrame);
+			break;*/ /* Link Measurement is handled in Firmware */
+		case RM_ACTION_REIGHBOR_RESPONSE:
+			rlmProcessNeighborReportResonse(prAdapter, prActFrame, prSwRfb->u2PacketLen);
+			break;
+	}
+	break;
 #endif
 
 #if (CFG_SUPPORT_TDLS == 1)

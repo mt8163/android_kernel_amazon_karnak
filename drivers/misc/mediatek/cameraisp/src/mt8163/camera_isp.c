@@ -666,7 +666,8 @@ int sendSignal(void)
 {
 	int ret = 0;
 
-	ret = send_sig_info(SIG_TEST, &info, t);	/* send the signal */
+	if (t != NULL)
+		ret = send_sig_info(SIG_TEST, &info, t);
 	if (ret < 0) {
 		LOG_DBG("error sending signal");
 		return ret;
@@ -1996,7 +1997,7 @@ static MINT32 ISP_ReadReg(ISP_REG_IO_STRUCT *pRegIo)
 		/* pData++; */
 		if ((ISP_ADDR_CAMINF + reg.Addr >= ISP_ADDR)
 		    && (ISP_ADDR_CAMINF + reg.Addr < (ISP_ADDR_CAMINF + ISP_RANGE))) {
-			reg.Val = ISP_RD32((ISP_ADDR_CAMINF + reg.Addr));
+			reg.Val = ISP_RD32((ISP_ADDR_CAMINF + reg.Addr)&(~0x3));
 		} else {
 			LOG_ERR("Wrong address(0x%x)", (unsigned int)(ISP_ADDR_CAMINF + reg.Addr));
 			reg.Val = 0;
@@ -2468,6 +2469,14 @@ static MINT32 ISP_WriteReg(ISP_REG_IO_STRUCT *pRegIo)
 	MINT32 TimeTasklet = 0;
 	/* MUINT8 *pData = NULL; */
 	ISP_REG_STRUCT *pData = NULL;
+
+	if ((pRegIo->Count > (PAGE_SIZE / sizeof(unsigned int))) ||
+		(pRegIo->Count == 0) || (pRegIo->pData == NULL)) {
+		LOG_ERR("ERROR %s pRegIo->pData NULL or pRegIo->Count:%d\n",
+			__func__, pRegIo->Count);
+		Ret = -EFAULT;
+		goto EXIT;
+	}
 
 	if (g_IspInfo.DebugMask & ISP_DBG_WRITE_REG) {
 		/* LOG_DBG("Data(0x%08X), Count(%d)", (MUINT32)(pRegIo->Data), (MUINT32)(pRegIo->Count)); */
@@ -4735,6 +4744,11 @@ static long ISP_ioctl(struct file *pFile, MUINT32 Cmd, unsigned long Param)
 			    0) {
 				MUINT32 lock_key = _IRQ_MAX;
 
+				if (DebugFlag[1] >= _IRQ_MAX) {
+					Ret = -EFAULT;
+					return Ret;
+				}
+
 				if (DebugFlag[1] == _IRQ_D)
 					lock_key = _IRQ;
 				else
@@ -5006,6 +5020,11 @@ static long ISP_ioctl(struct file *pFile, MUINT32 Cmd, unsigned long Param)
 		if (copy_from_user(DebugFlag, (void __user *)Param, sizeof(MUINT32)) == 0) {
 			MUINT32 currentPPB = m_CurrentPPB;
 			MUINT32 lock_key = _IRQ_MAX;
+
+			if (DebugFlag[0] >= _IRQ_MAX) {
+				Ret = -EFAULT;
+				return Ret;
+			}
 
 			if (DebugFlag[0] == _IRQ_D)
 				lock_key = _IRQ;

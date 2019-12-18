@@ -85,6 +85,8 @@ static bool pwrkey_press;
 static void pwrkey_log_to_metrics(struct work_struct *data);
 #endif
 
+static atomic_t pmic_suspend;
+
 #define RELEASE_PWRKEY_TIME		(3)	/* 3sec */
 #define PWRKEY_INITIAL_STATE (0)
 #define LONG_PRESS_PWRKEY_SHUTDOWN_TIME		(6)	/* 6sec */
@@ -311,12 +313,16 @@ unsigned int PMIC_IMM_GetOneChannelValue(pmic_adc_ch_list_enum dwChannel, int de
 	if (dwChannel == 0 || dwChannel == 2)
 		return 0;
 
+	if (atomic_read(&pmic_suspend) && (dwChannel == 5)) {
+		pr_notice("[%s] suspend(%d)\n", __func__, atomic_read(&pmic_suspend));
+		return -1;
+	}
+
 	wake_lock(&pmicAuxadc_irq_lock);
 
+	mutex_lock(&pmic_adc_mutex);
 
 	do {
-
-		mutex_lock(&pmic_adc_mutex);
 
 		PMIC_IMM_PollingAuxadcChannel();
 
@@ -367,9 +373,6 @@ unsigned int PMIC_IMM_GetOneChannelValue(pmic_adc_ch_list_enum dwChannel, int de
 						  PMIC_RG_AP_RQST_LIST_RSV_MASK,
 						  PMIC_RG_AP_RQST_LIST_RSV_SHIFT);
 		}
-
-
-		mutex_unlock(&pmic_adc_mutex);
 
 		/* Duo to HW limitation */
 		if (dwChannel != 8)
@@ -496,6 +499,7 @@ unsigned int PMIC_IMM_GetOneChannelValue(pmic_adc_ch_list_enum dwChannel, int de
 
 		default:
 			pr_err("[AUXADC] Invalid channel value(%d,%d)\n", dwChannel, trimd);
+			mutex_unlock(&pmic_adc_mutex);
 			wake_unlock(&pmicAuxadc_irq_lock);
 			return -1;
 		}
@@ -505,6 +509,8 @@ unsigned int PMIC_IMM_GetOneChannelValue(pmic_adc_ch_list_enum dwChannel, int de
 		u4Sample_times++;
 
 	} while (u4Sample_times < deCount);
+
+	mutex_unlock(&pmic_adc_mutex);
 
 	/* Value averaging  */
 	adc_result_temp = u4channel / deCount;
@@ -562,8 +568,8 @@ unsigned int PMIC_IMM_GetOneChannelValue(pmic_adc_ch_list_enum dwChannel, int de
 		return -1;
 	}
 
-	pr_debug("[AUXADC] adc_result_temp=%d, adc_result=%d, r_val_temp=%d.\n",
-		  adc_result_temp, adc_result, r_val_temp);
+	pr_debug("[%s] CH%d adc_result_temp=%d, adc_result=%d\n",
+		__func__, dwChannel, adc_result_temp, adc_result);
 
 	wake_unlock(&pmicAuxadc_irq_lock);
 
@@ -1672,6 +1678,8 @@ static int pmic_mt6323_probe(struct platform_device *dev)
 	INIT_WORK(&metrics_work, pwrkey_log_to_metrics);
 #endif
 
+	atomic_set(&pmic_suspend, 0);
+
 	device_create_file(&(dev->dev), &dev_attr_pmic_access);
 	return 0;
 
@@ -1685,6 +1693,8 @@ err_free:
 static int pmic_mt6323_suspend(struct platform_device *dev, pm_message_t state)
 {
 	struct mt6323_chip_priv *chip = dev_get_drvdata(&dev->dev);
+
+	atomic_set(&pmic_suspend, 1);
 
 	upmu_set_rg_vref18_enb(1);
 	upmu_set_rg_adc_deci_gdly(1);
@@ -1716,6 +1726,8 @@ static int pmic_mt6323_resume(struct platform_device *dev)
 	upmu_set_rg_auxadc_sdm_ck_sel(0);
 	upmu_set_rg_auxadc_sdm_ck_pdn(0);
 	upmu_set_rg_auxadc_sdm_ck_wake_pdn(1);
+
+	atomic_set(&pmic_suspend, 0);
 
 	return 0;
 }

@@ -777,6 +777,18 @@ typedef struct _TDLS_INFO_T {
 } TDLS_INFO_T;
 #endif /* CFG_SUPPORT_TDLS */
 
+#if CFG_SUPPORT_802_11R
+struct FT_IES {
+	UINT_16 u2MDID;
+	struct IE_MOBILITY_DOMAIN_T *prMDIE;
+	struct IE_FAST_TRANSITION_T *prFTIE;
+	IE_TIMEOUT_INTERVAL_T *prTIE;
+	P_RSN_INFO_ELEM_T prRsnIE;
+	PUINT_8 pucIEBuf;
+	UINT_32 u4IeLength;
+};
+#endif
+
 /*
 * type definition of pointer to p2p structure
 */
@@ -973,6 +985,10 @@ struct _GLUE_INFO_T {
 /* UINT32                                  u4TdlsDisconIdx; */
 #endif				/* CFG_SUPPORT_TDLS */
 
+#if CFG_SUPPORT_802_11R
+	struct FT_IES rFtIeForTx;
+	struct cfg80211_ft_event_params rFtEventParam;
+#endif
 };
 
 typedef irqreturn_t(*PFN_WLANISR) (int irq, void *dev_id, struct pt_regs *regs);
@@ -1013,6 +1029,7 @@ enum TestModeCmdType {
 	/* all new added test mode command should great than TESTMODE_CMD_ID_NEW_BEGIN */
 	TESTMODE_CMD_ID_NEW_BEGIN = 100,
 	TESTMODE_CMD_ID_SUSPEND = 101,
+	TESTMODE_CMD_ID_STR_CMD = 102,
 };
 #if CFG_SUPPORT_HOTSPOT_2_0
 enum Hs20CmdType {

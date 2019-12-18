@@ -49,6 +49,7 @@
 
 static DEFINE_MUTEX(FGADC_mutex);
 static DEFINE_MUTEX(qmax_mutex);
+static DEFINE_MUTEX(tbat_mutex);
 
 #if defined(CONFIG_MTK_BATTERY_LIFETIME_DATA_SUPPORT)
 #define MAX_BATTERY_CYCLE 500
@@ -1239,10 +1240,7 @@ int force_get_tbat(bool update)
 	int bat_temperature_volt = 0;
 	int bat_temperature_val = 0;
 	static int pre_bat_temperature_val = -1;
-	int fg_r_value = 0;
-	signed int fg_current_temp = 0;
-	bool fg_current_state = false;
-	int bat_temperature_volt_temp = 0;
+	int bat_temperature_volt_db = 0;
 	int ret = 0;
 
 	if (batt_meter_cust_data.fixed_tbat_25) {
@@ -1253,55 +1251,36 @@ int force_get_tbat(bool update)
 	if (update == true || pre_bat_temperature_val == -1) {
 		/* Get V_BAT_Temperature */
 		bat_temperature_volt = 2;
-		ret =
-		    battery_meter_ctrl(BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP, &bat_temperature_volt);
-
-		if (bat_temperature_volt != 0) {
-#if defined(SOC_BY_HW_FG)
-			fg_r_value = get_r_fg_value();
-
-			ret =
-			    battery_meter_ctrl(BATTERY_METER_CMD_GET_HW_FG_CURRENT,
-					       &fg_current_temp);
-			ret =
-			    battery_meter_ctrl(BATTERY_METER_CMD_GET_HW_FG_CURRENT_SIGN,
-					       &fg_current_state);
-			fg_current_temp = fg_current_temp / 10;
-
-			if (fg_current_state == true) {
-				bat_temperature_volt_temp = bat_temperature_volt;
-				bat_temperature_volt =
-				    bat_temperature_volt - ((fg_current_temp * fg_r_value) / 1000);
-			} else {
-				bat_temperature_volt_temp = bat_temperature_volt;
-				bat_temperature_volt =
-				    bat_temperature_volt + ((fg_current_temp * fg_r_value) / 1000);
-			}
-#endif
-
+		ret = battery_meter_ctrl(BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP,
+				&bat_temperature_volt);
+		if (ret)
+			return pre_bat_temperature_val;
+		else
 			bat_temperature_val = BattVoltToTemp(bat_temperature_volt);
-		}
 
 		if ((update == true) &&
-			(abs(pre_bat_temperature_val - bat_temperature_val) > 10)) {
-			pr_notice("[%s] %d,%d,%d,%d,%d,%d,%d\n", __func__,
-			bat_temperature_volt_temp, bat_temperature_volt, fg_current_state,
-			fg_current_temp, fg_r_value, bat_temperature_val, pre_bat_temperature_val);
+			(abs(pre_bat_temperature_val - bat_temperature_val) > 5)) {
+			bat_temperature_volt_db = bat_temperature_volt;
 
 			/* get ntc voltage again */
 			bat_temperature_volt = 2;
-			ret = battery_meter_ctrl(BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP,
+			ret = battery_meter_ctrl(
+				BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP,
 				&bat_temperature_volt);
+			if (!ret)
+				bat_temperature_val = BattVoltToTemp(bat_temperature_volt);
 
 			/* dump auxadc value */
-			pr_notice("[%s] Batntc(%d),Batsns(%d), Isense(%d)\n", __func__,
-			bat_temperature_volt, battery_meter_get_battery_voltage(true),
-			battery_meter_get_VSense());
+			pr_notice("[%s] %d,%d,%d,%d,%d,%d\n", __func__,
+				bat_temperature_volt_db, bat_temperature_volt,
+				pre_bat_temperature_val, bat_temperature_val,
+				battery_meter_get_battery_voltage(true),
+				battery_meter_get_VSense());
 		}
 
-		pr_debug("[force_get_tbat] %d,%d,%d,%d,%d,%d\n",
-			 bat_temperature_volt_temp, bat_temperature_volt, fg_current_state,
-			 fg_current_temp, fg_r_value, bat_temperature_val);
+		pr_debug("[%s] %d,%d,%d\n", __func__,
+			bat_temperature_volt, pre_bat_temperature_val,
+			bat_temperature_val);
 		pre_bat_temperature_val = bat_temperature_val;
 	} else {
 		bat_temperature_val = pre_bat_temperature_val;
@@ -3975,17 +3954,25 @@ signed int battery_meter_get_car(void)
 
 signed int battery_meter_get_battery_temperature(void)
 {
+	signed int batt_temp;
+
 #if defined(CONFIG_MTK_BATTERY_LIFETIME_DATA_SUPPORT)
-	signed int batt_temp = force_get_tbat(true);
+	mutex_lock(&tbat_mutex);
+	batt_temp = force_get_tbat(true);
 
 	if (batt_temp > gFG_max_temperature)
 		gFG_max_temperature = batt_temp;
 	if (batt_temp < gFG_min_temperature)
 		gFG_min_temperature = batt_temp;
 
+	mutex_unlock(&tbat_mutex);
 	return batt_temp;
 #else
-	return force_get_tbat(true);
+	mutex_lock(&tbat_mutex);
+	batt_temp = force_get_tbat(true);
+	mutex_unlock(&tbat_mutex);
+
+	return batt_temp;
 #endif
 }
 
@@ -4328,9 +4315,16 @@ signed int battery_meter_get_tempV(void)
 #else
 	int ret = 0;
 	int val = 0;
+	static int pre_val = 0;
 
 	val = 1;		/* set avg times */
 	ret = battery_meter_ctrl(BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP, &val);
+	if (ret) {
+		pr_notice("[%s] %d,%d\n", __func__, pre_val, val);
+		val = pre_val;
+	} else
+		pre_val = val;
+
 	return val;
 #endif
 }

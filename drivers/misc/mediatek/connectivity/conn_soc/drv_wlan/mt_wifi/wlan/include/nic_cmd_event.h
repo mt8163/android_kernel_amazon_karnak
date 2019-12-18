@@ -750,6 +750,10 @@ typedef enum _ENUM_CMD_ID_T {
 	CMD_ID_GET_GSCN_SCN_RESULT = 0x48,	/* 0x48 (Get) */
 	CMD_ID_SET_COUNTRY_POWER_LIMIT = 0x4A,	/* 0x4A (Set) */
 	CMD_ID_SET_IPV6_ADDRESS = 0x4B,     /* 0x4B (Set) */
+#if CFG_SUPPORT_802_11K
+	CMD_ID_SET_RRM_CAPABILITY = 0x59, /* 0x59 (Set) */
+	CMD_ID_SET_MAX_TXPWR_LIMIT = 0x5A, /* 0x5A (Set) */
+#endif
 	CMD_ID_SET_SYSTEM_SUSPEND = 0x60,	/* 0x60 (Set) */
 
 #if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
@@ -868,6 +872,9 @@ typedef enum _ENUM_EVENT_ID_T {
 	EVENT_ID_GSCAN_RESULT = 0x36,
 	EVENT_ID_BATCH_RESULT = 0x37,
 
+#if CFG_SUPPORT_802_11R
+	EVENT_ID_ADD_PKEY_DONE = 0x44, /* 0x44 (Unsolicited) */
+#endif
 	EVENT_ID_TDLS = 0x80,
 	EVENT_ID_STATS_ENV = 0x81,
 
@@ -1059,6 +1066,20 @@ typedef struct _CMD_CUSTOM_UAPSD_PARAM_STRUCT_T {
 	UINT_8 ucMaxSpLen;
 	UINT_8 aucResv[2];
 } CMD_CUSTOM_UAPSD_PARAM_STRUCT_T, *P_CMD_CUSTOM_UAPSD_PARAM_STRUCT_T;
+
+#if CFG_SUPPORT_802_11K
+struct CMD_SET_MAX_TXPWR_LIMIT {
+	UINT_8 ucMaxTxPwrLimitEnable;
+	INT_8 cMaxTxPwr; /* in unit of 0.5 dBm */
+	UINT_8 aucReserved[2];
+};
+
+struct CMD_SET_RRM_CAPABILITY {
+	UINT_8 ucDot11RadioMeasurementEnabled;
+	UINT_8 aucCapabilities[5];
+	UINT_8 aucReserved[2];
+};
+#endif
 
 /* EVENT_CONNECTION_STATUS */
 typedef struct _EVENT_CONNECTION_STATUS {
@@ -1561,13 +1582,16 @@ typedef struct _CMD_SCAN_REQ_T {
 	UINT_8 ucScanType;
 	UINT_8 ucSSIDType;	/* BIT(0) wildcard / BIT(1) P2P-wildcard / BIT(2) specific */
 	UINT_8 ucSSIDLength;
-	UINT_8 aucReserved[1];
+	UINT_8 ucStructVersion;
 	UINT_16 u2ChannelMinDwellTime;
 	UINT_8 aucSSID[32];
 	UINT_16 u2ChannelDwellTime;	/* For P2P */
 	UINT_8 ucChannelType;
 	UINT_8 ucChannelListNum;
 	CHANNEL_INFO_T arChannelList[32];
+#if CFG_SUPPORT_802_11K
+	UINT_8 aucBSSID[MAC_ADDR_LEN];
+#endif
 	UINT_16 u2IELen;
 	UINT_8 aucIE[MAX_IE_LENGTH];
 } CMD_SCAN_REQ, *P_CMD_SCAN_REQ;
@@ -1819,6 +1843,14 @@ typedef struct _EVENT_AP_OBSS_STATUS_T {
 	UINT_8 ucObssBeaconForcedTo20M;
 	UINT_8 aucReserved[2];
 } EVENT_AP_OBSS_STATUS_T, *P_EVENT_AP_OBSS_STATUS_T;
+
+#if CFG_SUPPORT_802_11R
+struct EVENT_ADD_KEY_DONE_INFO {
+	UINT_8 ucNetworkType;
+	UINT_8 ucReserved;
+	UINT_8 aucStaAddr[MAC_ADDR_LEN];
+};
+#endif
 
 typedef struct _CMD_EDGE_TXPWR_LIMIT_T {
 	INT_8 cBandEdgeMaxPwrCCK;

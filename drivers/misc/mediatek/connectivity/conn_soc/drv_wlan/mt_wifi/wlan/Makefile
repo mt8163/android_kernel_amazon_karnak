@@ -125,8 +125,6 @@ COMMON_OBJS :=	$(COMMON_DIR)dump.o \
 	       		$(COMMON_DIR)wlan_oid.o \
 	       		$(COMMON_DIR)wlan_bow.o
 
-obj-$(CONFIG_MTK_WIFI_PM_CONTROL) += $(COMMON_DIR)wlan_pms.o
-
 NIC_OBJS := $(NIC_DIR)nic.o \
 			$(NIC_DIR)nic_tx.o \
 			$(NIC_DIR)nic_rx.o \
@@ -168,7 +166,8 @@ MGMT_OBJS := $(MGMT_DIR)ais_fsm.o \
              $(MGMT_DIR)swcr.o \
  			 $(MGMT_DIR)swcr.o \
 			 $(MGMT_DIR)roaming_fsm.o \
-			 $(MGMT_DIR)hs20.o
+			 $(MGMT_DIR)hs20.o \
+             $(MGMT_DIR)wnm.o
 
 # ---------------------------------------------------
 # TDLS Objects List

@@ -80,6 +80,9 @@ VOID p2pFuncRequestScan(IN P_ADAPTER_T prAdapter, IN P_P2P_SCAN_REQ_INFO_T prSca
 		prScanReq->u2IELen = (UINT_16) prScanReqInfo->u4BufLength;
 
 		prScanReq->u2ChannelDwellTime = prScanReqInfo->u2PassiveDewellTime;
+#if CFG_SUPPORT_802_11K
+		prScanReq->u2MinChannelDwellTime = prScanReq->u2ChannelDwellTime;
+#endif
 
 		switch (prScanReqInfo->eChannelSet) {
 		case SCAN_CHANNEL_SPECIFIED:

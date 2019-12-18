@@ -19,6 +19,13 @@ config USB_AMAZON_DOCK
 	  which is a Amazon special Dock, it's different with
 	  ACA Dock.
 
+config POGO_PIN_DOCK
+	tristate "Pogo Pin Dock Support"
+	depends on USB_MTK_HDRC
+	default n
+	help
+	  Say Y here if you want to support Pogo pin Dock (abm123).
+
 config MTK_MUSB_QMU_SUPPORT
 	bool "QMU Transfer mode of MediaTek MUSB"
 	default n

@@ -821,6 +821,7 @@ int mtk_cfg80211_connect(struct wiphy *wiphy, struct net_device *ndev, struct cf
 	ENUM_PARAM_ENCRYPTION_STATUS_T eEncStatus;
 	ENUM_PARAM_AUTH_MODE_T eAuthMode;
 	UINT_32 cipher;
+	UINT_32 u4AkmSuite = 0;
 	PARAM_CONNECT_T rNewSsid;
 	BOOLEAN fgCarryWPSIE = FALSE;
 	ENUM_PARAM_OP_MODE_T eOpMode;
@@ -870,6 +871,12 @@ int mtk_cfg80211_connect(struct wiphy *wiphy, struct net_device *ndev, struct cf
 	case NL80211_AUTHTYPE_SHARED_KEY:
 		prGlueInfo->rWpaInfo.u4AuthAlg = IW_AUTH_ALG_SHARED_KEY;
 		break;
+#if CFG_SUPPORT_802_11R
+		case NL80211_AUTHTYPE_FT:
+			prGlueInfo->rWpaInfo.u4AuthAlg = IW_AUTH_ALG_FT;
+			break;
+#endif
+
 	default:
 		prGlueInfo->rWpaInfo.u4AuthAlg = IW_AUTH_ALG_OPEN_SYSTEM | IW_AUTH_ALG_SHARED_KEY;
 		break;
@@ -931,32 +938,60 @@ int mtk_cfg80211_connect(struct wiphy *wiphy, struct net_device *ndev, struct cf
 			switch (sme->crypto.akm_suites[0]) {
 			case WLAN_AKM_SUITE_8021X:
 				eAuthMode = AUTH_MODE_WPA;
+				u4AkmSuite = WPA_AKM_SUITE_802_1X;
 				break;
 			case WLAN_AKM_SUITE_PSK:
 				eAuthMode = AUTH_MODE_WPA_PSK;
+				u4AkmSuite = WPA_AKM_SUITE_PSK;
 				break;
 			default:
-				DBGLOG(REQ, WARN, "invalid cipher group (%d)\n", sme->crypto.cipher_group);
+				DBGLOG(REQ, WARN, "invalid auth mode (%d)\n", sme->crypto.akm_suites[0]);
 				return -EINVAL;
 			}
 		} else if (prGlueInfo->rWpaInfo.u4WpaVersion == IW_AUTH_WPA_VERSION_WPA2) {
 			switch (sme->crypto.akm_suites[0]) {
 			case WLAN_AKM_SUITE_8021X:
 				eAuthMode = AUTH_MODE_WPA2;
+				u4AkmSuite = WPA_AKM_SUITE_802_1X;
 				break;
 			case WLAN_AKM_SUITE_PSK:
 				eAuthMode = AUTH_MODE_WPA2_PSK;
+				u4AkmSuite = WPA_AKM_SUITE_PSK;
 				break;
+#if CFG_SUPPORT_802_11R
+			case WLAN_AKM_SUITE_FT_8021X:
+				eAuthMode = AUTH_MODE_WPA2_FT;
+				u4AkmSuite = RSN_AKM_SUITE_FT_802_1X;
+				break;
+			case WLAN_AKM_SUITE_FT_PSK:
+				eAuthMode = AUTH_MODE_WPA2_FT_PSK;
+				u4AkmSuite = RSN_AKM_SUITE_FT_PSK;
+				break;
+#endif
 			default:
-				DBGLOG(REQ, WARN, "invalid cipher group (%d)\n", sme->crypto.cipher_group);
+				DBGLOG(REQ, WARN, "invalid auth mode (%d)\n", sme->crypto.akm_suites[0]);
 				return -EINVAL;
 			}
 		}
 	}
 
 	if (prGlueInfo->rWpaInfo.u4WpaVersion == IW_AUTH_WPA_VERSION_DISABLED) {
+#if CFG_SUPPORT_802_11R
+		switch (prGlueInfo->rWpaInfo.u4AuthAlg) {
+		case IW_AUTH_ALG_OPEN_SYSTEM:
+			eAuthMode = AUTH_MODE_OPEN;
+			break;
+		case IW_AUTH_ALG_FT:
+			eAuthMode = AUTH_MODE_NON_RSN_FT;
+			break;
+		default:
+			eAuthMode = AUTH_MODE_AUTO_SWITCH;
+			break;
+		}
+#else
 		eAuthMode = (prGlueInfo->rWpaInfo.u4AuthAlg == IW_AUTH_ALG_OPEN_SYSTEM) ?
-		    AUTH_MODE_OPEN : AUTH_MODE_AUTO_SWITCH;
+			AUTH_MODE_OPEN : AUTH_MODE_AUTO_SWITCH;
+#endif
 	}
 
 	prGlueInfo->rWpaInfo.fgPrivacyInvoke = sme->privacy;
@@ -2947,6 +2982,10 @@ int mtk_cfg80211_testmode_cmd(IN struct wiphy *wiphy, IN struct wireless_dev *wd
 		case TESTMODE_CMD_ID_COUNTRY_GET:
 			i4Status = mtk_cfg80211_testmode_country_get(wiphy, data, len, prGlueInfo);
 			break;
+		case TESTMODE_CMD_ID_STR_CMD:
+			i4Status = mtk_cfg80211_process_str_cmd(prGlueInfo,
+					(PUINT_8)(prParams+1), len - sizeof(*prParams));
+			break;
 		default:
 			i4Status = -EINVAL;
 			break;
@@ -4355,4 +4394,64 @@ nla_put_failure:
 
 }
 #endif
+#endif
+
+INT_32 mtk_cfg80211_process_str_cmd(P_GLUE_INFO_T prGlueInfo, PUINT_8 cmd, INT_32 len)
+{
+	WLAN_STATUS rStatus = WLAN_STATUS_SUCCESS;
+#if (CFG_SUPPORT_802_11K || CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT)
+	UINT_32 u4SetInfoLen = 0;
+#endif
+
+	DBGLOG(REQ, INFO, "--> %s()\n", __func__);
+
+	if (kalStrniCmp(cmd, "NEIGHBOR-REQUEST", 16) == 0) {
+		PUINT_8 pucSSID = NULL;
+		UINT_32 u4SSIDLen = 0;
+
+		if (len > 16 && (kalStrniCmp(cmd+16, " SSID=", 6) == 0)) {
+			pucSSID = cmd + 22;
+			u4SSIDLen = len - 22;
+			DBGLOG(REQ, INFO, "cmd=%s, ssid len %u, ssid=%s\n", cmd, u4SSIDLen, pucSSID);
+		}
+#if CFG_SUPPORT_802_11K		
+		rStatus = kalIoctl(prGlueInfo, wlanoidSendNeighborRequest,
+				   (PVOID)pucSSID, u4SSIDLen, FALSE, FALSE, TRUE, FALSE, &u4SetInfoLen);
+#endif
+	} else if (kalStrniCmp(cmd, "BSS-TRANSITION-QUERY", 20) == 0) {
+		PUINT_8 pucReason = NULL;
+
+		if (len > 20 && (kalStrniCmp(cmd+20, " reason=", 8) == 0))
+			pucReason = cmd + 28;
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+		rStatus = kalIoctl(prGlueInfo,
+				   wlanoidSendBTMQuery,
+				   (PVOID)pucReason, 1, FALSE, FALSE, TRUE, FALSE, &u4SetInfoLen);
+#endif
+	} else
+		return -EOPNOTSUPP;
+
+	if (rStatus == WLAN_STATUS_SUCCESS)
+		return 0;
+
+	return -EINVAL;
+}
+
+#if CFG_SUPPORT_802_11R
+int mtk_cfg80211_update_ft_ies(struct wiphy *wiphy, struct net_device *dev,
+				 struct cfg80211_update_ft_ies_params *ftie)
+{
+	P_GLUE_INFO_T prGlueInfo = NULL;
+	UINT_32 u4InfoBufLen = 0;
+	WLAN_STATUS rStatus = WLAN_STATUS_FAILURE;
+
+	if (!wiphy)
+		return -1;
+	prGlueInfo = (P_GLUE_INFO_T) wiphy_priv(wiphy);
+	rStatus = kalIoctl(prGlueInfo, wlanoidUpdateFtIes, (PVOID)ftie, sizeof(*ftie), FALSE,
+					FALSE, FALSE, FALSE, &u4InfoBufLen);
+	if (rStatus != WLAN_STATUS_SUCCESS)
+		DBGLOG(OID, INFO, "update Ft IE failed\n");
+	return 0;
+}
 #endif

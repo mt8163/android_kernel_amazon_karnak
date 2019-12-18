@@ -58,7 +58,11 @@ MODULE_PARM_DESC (blinkenlights, "true to cycle leds on hubs");
  * 10 seconds to send reply for the initial 64-byte descriptor request.
  */
 /* define initial 64-byte descriptor request timeout in milliseconds */
+#ifdef CONFIG_POGO_PIN_DOCK
+static int initial_descriptor_timeout = 2000;
+#else
 static int initial_descriptor_timeout = USB_CTRL_GET_TIMEOUT;
+#endif
 module_param(initial_descriptor_timeout, int, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(initial_descriptor_timeout,
 		"initial 64-byte descriptor request timeout in milliseconds "

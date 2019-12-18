@@ -275,12 +275,43 @@ unsigned int m4u_do_mva_alloc_fix(unsigned int mva, unsigned int size, void *pri
 
 	region_start = startIdx;
 	/* find prev head of this region */
-	while (mvaGraph[region_start] == 0)
-		region_start--;
+	for (;;region_start--) {
+		/* we must ensure we get the head of the free region, not the tail */
+		if (MVA_GET_NR(region_start) == 1)
+			break;
+
+		if (region_start == MVA_MAX_BLOCK_NR)
+			continue;
+
+		if (MVA_GET_NR(region_start) == 2) {
+			int temp = 1;
+
+			while (region_start >= temp &&
+			       MVA_GET_NR(region_start - temp) == 2) {
+				temp++;
+			}
+			if (temp % 2 == 0)
+				region_start--;
+			break;
+		}
+		if (mvaGraph[region_start] != 0 &&
+		    mvaGraph[region_start + 1] == 0) {
+			break;
+		}
+	}
 
 	if (MVA_IS_BUSY(region_start) || (MVA_GET_NR(region_start) < nr + startIdx - region_start)) {
 		M4UMSG("mva is inuse index=0x%x, mvaGraph=0x%x\n", region_start,
 		       mvaGraph[region_start]);
+		mva = 0;
+		goto out;
+	}
+
+	if (MVA_GET_NR(region_start) > (MVA_MAX_BLOCK_NR - region_start + 1)) {
+		M4UMSG("mvaGraph err! index=0x%x mvaGraph=0x%x\n",
+			region_start, mvaGraph[region_start]);
+		m4u_mvaGraph_dump_raw();
+		m4u_mvaGraph_dump();
 		mva = 0;
 		goto out;
 	}

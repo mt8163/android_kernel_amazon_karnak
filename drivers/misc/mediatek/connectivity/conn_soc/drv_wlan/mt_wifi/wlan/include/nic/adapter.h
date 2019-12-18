@@ -981,6 +981,9 @@ struct _AIS_SPECIFIC_BSS_INFO_T {
 	TIMER_T rSaQueryTimer;
 	BOOLEAN fgBipKeyInstalled;
 #endif
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+	struct BSS_TRANSITION_MGT_PARAM_T rBTMParam;
+#endif
 };
 
 struct _BOW_SPECIFIC_BSS_INFO_T {
@@ -1097,7 +1100,10 @@ typedef struct _WIFI_VAR_T {
 #if CFG_AUTO_CHANNEL_SEL_SUPPORT
 	PARAM_GET_CHN_LOAD rChnLoadInfo;
 #endif
-
+#if CFG_SUPPORT_802_11K
+	struct RADIO_MEASUREMENT_REQ_PARAMS rRmReqParams;
+	struct RADIO_MEASUREMENT_REPORT_PARAMS rRmRepParams;
+#endif
 } WIFI_VAR_T, *P_WIFI_VAR_T;	/* end of _WIFI_VAR_T */
 
 /* cnm_timer module */

@@ -55,10 +55,10 @@ config AMAZON_POWEROFF_LOG
 	help
 	enable Long press key power off log
 
-config BISCUIT
-	bool "Biscuit MTK platform project"
+config abh123
+	bool "abh123 MTK platform project"
 	help
-	isolate amazon biscuit changes for MTK Platform
+	isolate amazon abh123 changes for MTK Platform
 
 config rbc123
 	bool "rbc123 MTK platform project"
@@ -83,6 +83,13 @@ config AMAZON_METRICS_LOG_TEST
 	default n
 	---help---
 		Enable Amazon Metrics/Vitals logger test module
+
+config AMAZON_INTEGRITY_MODULE
+	tristate "Amazon Integrity Module"
+	depends on AMAZON_METRICS_LOG
+	default n
+	---help---
+	  Say Y here if you want to enable Amazon Integrity Module
 
 endif # if AMAZON
 

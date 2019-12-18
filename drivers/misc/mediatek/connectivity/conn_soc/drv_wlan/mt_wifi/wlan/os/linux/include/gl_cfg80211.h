@@ -384,6 +384,13 @@ int mtk_p2p_cfg80211_testmode_sw_cmd(IN struct wiphy *wiphy, IN void *data, IN i
 #error "Please ENABLE kernel config (CONFIG_NL80211_TESTMODE) to support Wi-Fi Direct"
 #endif
 
+INT_32 mtk_cfg80211_process_str_cmd(P_GLUE_INFO_T prGlueInfo, PUINT_8 cmd, INT_32 len);
+
+#if CFG_SUPPORT_802_11R
+int mtk_cfg80211_update_ft_ies(struct wiphy *wiphy, struct net_device *dev,
+			       struct cfg80211_update_ft_ies_params *ftie);
+#endif
+
 /*******************************************************************************
 *                              F U N C T I O N S
 ********************************************************************************

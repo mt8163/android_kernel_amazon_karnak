@@ -717,6 +717,7 @@ struct _STA_RECORD_T {
 				 * TODO(Kevin): TBD
 				 */
 	UINT_8 ucAuthAlgNum;	/* For Infra/AP Mode, the Auth Algorithm Num used in Authentication(SAA/AAA) */
+	UINT_8 ucAuthTranNum;	 /* For Infra/AP Mode, the Auth Transaction Number */
 	BOOLEAN fgIsReAssoc;	/* For Infra/AP Mode, to indicate ReAssoc Frame was in used(SAA/AAA) */
 
 	UINT_8 ucTxAuthAssocRetryCount;	/* For Infra Mode, the Retry Count of TX Auth/Assod Frame(SAA) */
@@ -845,6 +846,10 @@ struct _STA_RECORD_T {
     /*------------------------------------------------------------------------------------------*/
 	/* When this STA_REC is in use, set to TRUE. */
 	BOOLEAN fgIsValid;
+#if CFG_SUPPORT_802_11R
+	BOOLEAN fgIsTxAllowed;
+	BOOLEAN fgIsTxKeyReady;
+#endif
 
 	/* Per-STA Queues: [0] AC0, [1] AC1, [2] AC2, [3] AC3, [4] 802.1x */
 	QUE_T arTxQueue[NUM_OF_PER_STA_TX_QUEUES];
@@ -906,6 +911,9 @@ struct _STA_RECORD_T {
 
 	UINT8 ucStatsGenDisplayCnt;
 #endif				/* CFG_SUPPORT_STATISTICS */
+#if CFG_SUPPORT_802_11V_BSS_TRANSITION_MGT
+	BOOLEAN fgSupportBTM; /* flag to indicate Capbility for Bss Transition Management */
+#endif
 };
 
 #if 0

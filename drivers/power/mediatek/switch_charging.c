@@ -345,7 +345,11 @@ static BATTERY_VOLTAGE_ENUM select_jeita_cv(void)
 		cv_voltage = g_custom_charging_cv;
 
 	if (g_custom_charging_mode) /* For demo unit */
+#ifdef CONFIG_POGO_PIN_DOCK
+		cv_voltage = BATTERY_VOLT_04_000000_V;
+#else
 		cv_voltage = BATTERY_VOLT_04_100000_V;
+#endif
 
 	pr_info("[%s] CV(%d) custom CV(%d)\r\n",
 		__func__, cv_voltage, g_custom_charging_cv);

@@ -79,6 +79,12 @@ static int polling_trip_temp2 = 20000;
 static int polling_factor1 = 5000;
 static int polling_factor2 = 10000;
 
+/* shutdown point: 58C */
+#define BATTERY_TEMP_CRIT 58000
+
+/* Invalid value for getting temperature: 999C  */
+#define INVALID_TEMP_VALUE 999000
+
 /* static int battery_write_flag=0; */
 
 #define mtktsbattery_TEMP_CRIT 60000	/* 60.000 degree Celsius */
@@ -197,10 +203,33 @@ int mtktsbattery_get_hw_temp(void)
 
 static int mtktsbattery_get_temp(struct thermal_zone_device *thermal, unsigned long *t)
 {
-	if((int)*t >= polling_trip_temp_high)
+	static atomic64_t temp = ATOMIC64_INIT(INVALID_TEMP_VALUE);
+	int check_count;
+
+	if (INVALID_TEMP_VALUE == atomic64_read(&temp)) {
+		*t = mtktsbattery_get_hw_temp();
+		goto check_temp;
+	}
+
+	if (atomic64_read(&temp) >= polling_trip_temp_high) {
 		*t = battery_meter_get_battery_temperature();
+		*t = (*t) * 1000;
+	}
 	else
 		*t = mtktsbattery_get_hw_temp();
+
+check_temp:
+	/* recheck 3 times for critical temperature */
+	for (check_count = 0; check_count < 3; check_count++) {
+		if (*t >= BATTERY_TEMP_CRIT) {
+			*t = battery_meter_get_battery_temperature();
+			*t = (*t) * 1000;
+			pr_warn("recheck battery temperature result: %ld\n", *t);
+			msleep(20);
+			continue;
+		} else
+			break;
+	}
 
 	if ((int)*t >= polling_trip_temp1)
 		thermal->polling_delay = interval * 1000;
@@ -208,6 +237,8 @@ static int mtktsbattery_get_temp(struct thermal_zone_device *thermal, unsigned l
 		thermal->polling_delay = interval * polling_factor2;
 	else
 		thermal->polling_delay = interval * polling_factor1;
+
+	atomic64_set(&temp, *t);
 
 	return 0;
 }

@@ -816,7 +816,10 @@ P_STA_RECORD_T cnmStaRecAlloc(P_ADAPTER_T prAdapter, UINT_8 ucNetTypeIndex)
 			prStaRec->ucIndex = (UINT_8) i;
 			prStaRec->ucNetTypeIndex = ucNetTypeIndex;
 			prStaRec->fgIsInUse = TRUE;
-
+#if CFG_SUPPORT_802_11R
+			prStaRec->fgIsTxAllowed = FALSE;
+			prStaRec->fgIsTxKeyReady = FALSE;
+#endif
 			if (prStaRec->pucAssocReqIe) {
 				kalMemFree(prStaRec->pucAssocReqIe, VIR_MEM_TYPE, prStaRec->u2AssocReqIeLen);
 				prStaRec->pucAssocReqIe = NULL;

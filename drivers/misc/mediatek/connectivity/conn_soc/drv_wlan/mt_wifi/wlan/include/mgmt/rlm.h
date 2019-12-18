@@ -241,10 +241,71 @@
 #define CONFIG_BW_20_40M            0
 #define CONFIG_BW_20M               1	/* 20MHz only */
 
+#if CFG_SUPPORT_802_11K
+/* Radio Measurement Request Mode definition */
+#define RM_REQ_MODE_PARALLEL_BIT                    BIT(0)
+#define RM_REQ_MODE_ENABLE_BIT                      BIT(1)
+#define RM_REQ_MODE_REQUEST_BIT                     BIT(2)
+#define RM_REQ_MODE_REPORT_BIT                      BIT(3)
+#define RM_REQ_MODE_DURATION_MANDATORY_BIT          BIT(4)
+#define RM_REP_MODE_LATE                            BIT(0)
+#define RM_REP_MODE_INCAPABLE                       BIT(1)
+#define RM_REP_MODE_REFUSED                         BIT(2)
+
+/* Radio Measurement Report Frame Max Length */
+#define RM_REPORT_FRAME_MAX_LENGTH                  1600
+
+/* beacon request mode definition */
+#define RM_BCN_REQ_PASSIVE_MODE                     0
+#define RM_BCN_REQ_ACTIVE_MODE                      1
+#define RM_BCN_REQ_TABLE_MODE                       2
+
+#define RLM_INVALID_POWER_LIMIT                     -127
+#endif
 /*******************************************************************************
 *                             D A T A   T Y P E S
 ********************************************************************************
 */
+
+#if CFG_SUPPORT_802_11K
+struct SUB_ELEMENT_LIST {
+	struct SUB_ELEMENT_LIST *prNext;
+	struct SUB_ELEMENT_T rSubIE;
+};
+enum RM_STATE {
+	RM_NO_REQUEST,
+	RM_ON_GOING,
+	RM_WAITING, /*waiting normal scan done */
+};
+
+struct NORMAL_SCAN_PARAMS {
+	P_PARAM_SSID_T prSSID;
+	PUINT_8 pucScanIE;
+	UINT_32 u4IELen;
+	BOOLEAN fgExist;
+};
+
+struct RADIO_MEASUREMENT_REQ_PARAMS {
+	/* Remain Request Elements Length, started at prMeasElem. if it is 0, means RM is done */
+	UINT_16 u2RemainReqLen;
+	UINT_16 u2ReqIeBufLen;
+	P_IE_MEASUREMENT_REQ_T prCurrMeasElem;
+	enum RM_STATE eState;
+	struct NORMAL_SCAN_PARAMS rNormalScan;
+	OS_SYSTIME rStartTime;
+
+	UINT_16 u2Repetitions;
+	PUINT_8 pucReqIeBuf;
+};
+
+struct RADIO_MEASUREMENT_REPORT_PARAMS {
+	UINT_16 u2ReportFrameLen; /* the total length of Measurement Report elements */
+	PUINT_8 pucReportFrameBuff;
+	/* Variables to collect report */
+	LINK_T rReportLink; /* a link to save received report entry */
+	LINK_T rFreeReportLink;
+};
+#endif
 
 /*******************************************************************************
 *                            P U B L I C   D A T A
@@ -373,6 +434,36 @@ rlmCmd(
 	UINT_8		*prInBuf,
 	UINT_32	u4InBufLen
 	);
+
+#if CFG_SUPPORT_802_11K
+VOID rlmGernerateRRMEnabledCapIE(IN P_ADAPTER_T prAdapter, IN P_MSDU_INFO_T prMsduInfo);
+
+VOID rlmGerneratePowerCapIE(IN P_ADAPTER_T prAdapter, IN P_MSDU_INFO_T prMsduInfo);
+
+VOID rlmProcessRadioMeasurementRequest(P_ADAPTER_T prAdapter, P_SW_RFB_T prSwRfb);
+
+VOID rlmProcessLinkMeasurementRequest(P_ADAPTER_T prAdapter, P_WLAN_ACTION_FRAME prAction);
+
+VOID rlmProcessNeighborReportResonse(P_ADAPTER_T prAdapter, P_WLAN_ACTION_FRAME prAction, UINT_16 u2PacketLen);
+
+VOID rlmFillRrmCapa(PUINT_8 pucCapa);
+
+VOID rlmSetMaxTxPwrLimit(IN P_ADAPTER_T prAdapter, INT_8 cLimit, UINT_8 ucEnable);
+
+VOID rlmStartNextMeasurement(P_ADAPTER_T prAdapter, BOOLEAN fgNewStarted);
+
+BOOLEAN rlmRadioMeasurementRunning(P_ADAPTER_T prAdapter);
+
+BOOLEAN rlmFillScanMsg(P_ADAPTER_T prAdapter, P_MSG_SCN_SCAN_REQ prMsg);
+
+VOID rlmDoBeaconMeasurement(P_ADAPTER_T prAdapter, ULONG ulParam);
+
+VOID rlmTxNeighborReportRequest(P_ADAPTER_T prAdapter, P_STA_RECORD_T prStaRec, struct SUB_ELEMENT_LIST *prSubIEs);
+
+VOID rlmTxRadioMeasurementReport(P_ADAPTER_T prAdapter);
+
+VOID rlmCancelRadioMeasurement(P_ADAPTER_T prAdapter);
+#endif
 
 /*******************************************************************************
 *                              F U N C T I O N S

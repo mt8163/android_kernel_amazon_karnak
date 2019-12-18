@@ -194,6 +194,7 @@ typedef enum _ENUM_DBG_MODULE_T {
 	DBG_WAPI_IDX,		/* WAPI */
 	DBG_ROAMING_IDX,	/* ROAMING */
 	DBG_TDLS_IDX,		/* TDLS *//* CFG_SUPPORT_TDLS */
+	DBG_WNM_IDX,
 	DBG_OID_IDX,
 	DBG_NIC_IDX,
 	DBG_ANT_IDX,		/* Antenna selection */

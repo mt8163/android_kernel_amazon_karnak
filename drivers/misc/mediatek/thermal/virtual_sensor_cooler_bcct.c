@@ -66,19 +66,6 @@ static int virtual_sensor_get_cur_state(struct thermal_cooling_device *cdev,
 	return 0;
 }
 
-static bool check_virtual_sensor_state(void)
-{
-	int i = 0;
-
-	for(i=0;i<MAX_NUM_COOLER_BCCT;i++)
-	{
-			if(cool_dev[i].state)
-				return true;
-		}
-
-	return false;
-}
-
 static int virtual_sensor_set_cur_state(struct thermal_cooling_device *cdev,
 			   unsigned long state)
 {
@@ -109,10 +96,9 @@ static int virtual_sensor_set_cur_state(struct thermal_cooling_device *cdev,
 
 	level = thermal_level_compare(pdata, &bcct_list_head, true);
 
-	if (!pdata->state) {
-		if(!check_virtual_sensor_state())
-			set_bat_charging_current_limit(-1);
-	} else
+	if (level >= CHARGE_CURRENT_MAX)
+		set_bat_charging_current_limit(-1);
+	else
 		set_bat_charging_current_limit(level/100);
 
 out:

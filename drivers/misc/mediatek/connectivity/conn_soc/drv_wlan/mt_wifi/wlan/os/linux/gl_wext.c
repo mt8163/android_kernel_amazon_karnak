@@ -437,7 +437,8 @@ static const struct iw_priv_args rIwPrivTable[] = {
 	{IOCTL_GET_INT, 0, IW_PRIV_TYPE_INT | 50, ""},
 	{IOCTL_GET_INT, 0, IW_PRIV_TYPE_CHAR | 16, ""},
 
-	{IOCTL_SET_STRING, IW_PRIV_TYPE_CHAR | 256, 0, ""},
+	{IOCTL_SET_STR, IW_PRIV_TYPE_CHAR | 256, 0, ""},
+	{IOCTL_GET_STR, 0, IW_PRIV_TYPE_CHAR | 2000, ""},
 
 	/* added for set_oid and get_oid */
 	{IOCTL_SET_STRUCT, 256, 0, ""},
@@ -509,19 +510,19 @@ static const struct iw_priv_args rIwPrivTable[] = {
 	 "get_ant_query"},
 #endif
 
-	{ PRIV_CMD_STAT, 0, 256, "stat" },
-	{ PRIV_CMD_CONNSTATUS, 0, 256, "connStatus" },
+	{ PRIV_CMD_STAT, 0, IW_PRIV_TYPE_CHAR | 2000, "stat" },
+	{ PRIV_CMD_CONNSTATUS, 0, IW_PRIV_TYPE_CHAR | 2000, "connStatus" },
 	{ PRIV_CMD_SHOW_CHANNEL, 0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, "show_Channel" },
 	{ PRIV_CMD_SET_RESETCOUNTER, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0, "set_ResetCounter" },
 #if CFG_SHOW_NVRAM
-	{ PRIV_CMD_SHOW_NVRAM, 0, 256, "show_settings" },
+	{ PRIV_CMD_SHOW_NVRAM, 0, IW_PRIV_TYPE_CHAR | 2000, "show_settings" },
 #endif
 	{PRIV_CMD_DTIM_SKIP_COUNT, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1, 0,
 		"set_dtim_skip"},
 	{PRIV_CMD_DTIM_SKIP_COUNT, 0, IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
 		"get_dtim_skip"},
 #if CFG_SUPPORT_WAKEUP_STATISTICS
-	{ PRIV_CMD_INT_STAT, 0, 256, "get_int_stat" },
+	{ PRIV_CMD_INT_STAT, 0, IW_PRIV_TYPE_CHAR | 2000, "get_int_stat" },
 #endif
 };
 
@@ -530,8 +531,8 @@ static const iw_handler rIwPrivHandler[] = {
 	[IOCTL_GET_INT - SIOCIWFIRSTPRIV] = priv_get_int,
 	[IOCTL_SET_ADDRESS - SIOCIWFIRSTPRIV] = NULL,
 	[IOCTL_GET_ADDRESS - SIOCIWFIRSTPRIV] = NULL,
-	[IOCTL_SET_STR - SIOCIWFIRSTPRIV] = NULL,
-	[IOCTL_GET_STR - SIOCIWFIRSTPRIV] = NULL,
+	[IOCTL_SET_STR - SIOCIWFIRSTPRIV] = priv_set_string,
+	[IOCTL_GET_STR - SIOCIWFIRSTPRIV] = priv_get_string,
 	[IOCTL_SET_KEY - SIOCIWFIRSTPRIV] = NULL,
 	[IOCTL_GET_KEY - SIOCIWFIRSTPRIV] = NULL,
 	[IOCTL_SET_STRUCT - SIOCIWFIRSTPRIV] = priv_set_struct,
@@ -539,7 +540,6 @@ static const iw_handler rIwPrivHandler[] = {
 	[IOCTL_SET_STRUCT_FOR_EM - SIOCIWFIRSTPRIV] = priv_set_struct,
 	[IOCTL_SET_INTS - SIOCIWFIRSTPRIV] = priv_set_ints,
 	[IOCTL_GET_INTS - SIOCIWFIRSTPRIV] = priv_get_ints,
-	[IOCTL_SET_STRING - SIOCIWFIRSTPRIV] = priv_set_string,
 };
 
 const struct iw_handler_def wext_handler_def = {

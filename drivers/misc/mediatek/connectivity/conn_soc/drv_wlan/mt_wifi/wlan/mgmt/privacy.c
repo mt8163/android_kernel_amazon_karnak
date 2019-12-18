@@ -278,6 +278,7 @@
 VOID secInit(IN P_ADAPTER_T prAdapter, IN UINT_8 ucNetTypeIdx)
 {
 	UINT_8 i;
+	UINT_8 j = 0;
 	P_CONNECTION_SETTINGS_T prConnSettings;
 	P_BSS_INFO_T prBssInfo;
 	P_AIS_SPECIFIC_BSS_INFO_T prAisSpecBssInfo;
@@ -323,24 +324,29 @@ VOID secInit(IN P_ADAPTER_T prAdapter, IN UINT_8 ucNetTypeIdx)
 	for (i = 0; i < MAX_NUM_SUPPORTED_CIPHER_SUITES; i++)
 		prAdapter->rMib.dot11RSNAConfigPairwiseCiphersTable[i].dot11RSNAConfigPairwiseCipherEnabled = FALSE;
 
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[0].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    WPA_AKM_SUITE_NONE;
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[1].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    WPA_AKM_SUITE_802_1X;
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[2].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    WPA_AKM_SUITE_PSK;
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[3].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    RSN_AKM_SUITE_NONE;
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[4].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    RSN_AKM_SUITE_802_1X;
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[5].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    RSN_AKM_SUITE_PSK;
-
 #if CFG_SUPPORT_802_11W
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[6].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    RSN_AKM_SUITE_802_1X_SHA256;
-	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[7].dot11RSNAConfigAuthenticationSuite =
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
 	    RSN_AKM_SUITE_PSK_SHA256;
+#endif
+#if CFG_SUPPORT_802_11R
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
+		RSN_AKM_SUITE_FT_802_1X;
+	prAdapter->rMib.dot11RSNAConfigAuthenticationSuitesTable[j++].dot11RSNAConfigAuthenticationSuite =
+		RSN_AKM_SUITE_FT_PSK;
 #endif
 
 	for (i = 0; i < MAX_NUM_SUPPORTED_AKM_SUITES; i++) {

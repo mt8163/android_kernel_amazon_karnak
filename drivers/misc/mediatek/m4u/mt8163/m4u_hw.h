@@ -88,10 +88,10 @@ extern int gM4u_port_num;
 
 static inline char *m4u_get_port_name(M4U_PORT_ID portID)
 {
-	if (portID < gM4u_port_num)
-		return gM4uPort[portID].name;
-	else
+	if (unlikely(portID < 0 || portID >= gM4u_port_num))
 		return "m4u_port_unknown";
+	else
+		return gM4uPort[portID].name;
 }
 
 static inline int m4u_get_port_by_tf_id(int m4u_id, int tf_id)

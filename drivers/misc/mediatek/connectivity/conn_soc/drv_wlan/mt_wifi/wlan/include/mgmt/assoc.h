@@ -104,6 +104,10 @@ WLAN_STATUS assocProcessRxAssocReqFrame(IN P_ADAPTER_T prAdapter, IN P_SW_RFB_T 
 
 WLAN_STATUS assocSendReAssocRespFrame(IN P_ADAPTER_T prAdapter, IN P_STA_RECORD_T prStaRec);
 
+#if CFG_SUPPORT_802_11R
+VOID assocGenerateMDIE(IN P_ADAPTER_T prAdapter, IN OUT P_MSDU_INFO_T prMsduInfo);
+#endif
+
 /*******************************************************************************
 *                              F U N C T I O N S
 ********************************************************************************

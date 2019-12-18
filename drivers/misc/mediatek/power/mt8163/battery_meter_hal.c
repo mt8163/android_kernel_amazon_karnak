@@ -223,12 +223,14 @@ static signed int read_adc_v_i_sense(void *data)
 
 static signed int read_adc_v_bat_temp(void *data)
 {
+	int ret = 0;
+
 #if defined(CONFIG_POWER_EXT)
 	*(signed int *)(data) = 0;
 #else
 	#if defined(MTK_PCB_TBAT_FEATURE)
 
-		int ret = 0, data[4], i, ret_value = 0, ret_temp = 0;
+		int data[4], i, ret_value = 0, ret_temp = 0;
 		int Channel = 1;
 
 		if (IMM_IsAdcInitReady() == 0) {
@@ -251,12 +253,14 @@ static signed int read_adc_v_bat_temp(void *data)
 
 	#else
 		pr_debug("[read_adc_v_charger] return PMIC_IMM_GetOneChannelValue(4,times,1);\n");
-		*(signed int *)(data) = PMIC_IMM_GetOneChannelValue(
+		ret = PMIC_IMM_GetOneChannelValue(
 			batt_meter_cust_data.vbattemp_channel_number, *(signed int *)(data), 1);
+
+		*(signed int *)(data) = (ret > 0) ? ret : 0;
 	#endif
 #endif
 
-	return STATUS_OK;
+	return (ret < 0 ? -1 : STATUS_OK);
 }
 
 static signed int read_adc_v_charger(void *data)

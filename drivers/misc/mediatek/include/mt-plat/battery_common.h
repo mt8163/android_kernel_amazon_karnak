@@ -363,6 +363,9 @@ extern bool bat_is_ext_power(void);
 
 extern int g_platform_boot_mode;
 extern bool mt_usb_is_device(void);
+#ifdef CONFIG_POGO_PIN_DOCK
+extern bool mt_usb1_is_dock_with_power(void);
+#endif
 #if defined(CONFIG_USB_MTK_HDRC) || defined(CONFIG_USB_MU3D_DRV)
 extern void mt_usb_connect(void);
 extern void mt_usb_disconnect(void);

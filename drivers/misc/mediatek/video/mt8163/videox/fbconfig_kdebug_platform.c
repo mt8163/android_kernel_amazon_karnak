@@ -599,7 +599,7 @@ static const struct file_operations fbconfig_fops = {
 void PanelMaster_Init(void)
 {
 	ConfigPara_dbgfs = debugfs_create_file("fbconfig",
-					       S_IFREG | S_IRUGO, NULL, (void *)0, &fbconfig_fops);
+					       S_IFREG | S_IRUSR, NULL, (void *)0, &fbconfig_fops);
 
 	INIT_LIST_HEAD(&head_list.list);
 }
