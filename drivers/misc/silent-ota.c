@@ -266,14 +266,16 @@ static int silent_ota_psy_notification(struct notifier_block *nb,
 	struct power_supply *psy = (struct power_supply*)data;
 	char *psy_list[] = {"ac", "usb"};
 	int i = 0;
+	int array_len = ARRAY_SIZE(psy_list);
 
-	if (silent_ota_inst.is_silent && psy){
-		while (i++ < sizeof(psy_list)) {
+	if (silent_ota_inst.is_silent && event == PSY_EVENT_PROP_CHANGED && psy && psy->name) {
+		while (i < array_len) {
 			if (!strncmp(psy->name, psy_list[i], strlen(psy_list[i]))) {
 				silent_ota_inst.curr_psy = psy;
 				queue_work(system_highpri_wq, &silent_ota_psy_work);
 				break;
 			}
+			i++;
 		}
 	}
 	return NOTIFY_OK;

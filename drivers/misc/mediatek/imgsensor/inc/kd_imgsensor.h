@@ -214,6 +214,7 @@ NSFeature :  : RAWSensorInfo < _id >  :  : getFlickerPara \
 /*GC*/
 #define GC2375MIPI_CHXT_REAR_SENSOR_ID          0x2375
 #define GC2375MIPI_BLX_FRONT_SENSOR_ID          0x2376
+#define GC2375MIPI_LYI_FRONT_SENSOR_ID          0x2377
 #define GC2385MIPI_CHXT_REAR_SENSOR_ID          0x2385
 #define GC2385MIPI_CHXT_FRONT_SENSOR_ID         0x2386
 #define GC2375_SENSOR_ID                        0x2375
@@ -230,6 +231,7 @@ NSFeature :  : RAWSensorInfo < _id >  :  : getFlickerPara \
 /*SP*/
 #define SP2509MIPI_BLX_REAR_SENSOR_ID                    0x2509
 #define SP2509MIPI_CHXT_FRONT_SENSOR_ID                  0x250A
+#define SP2509MIPI_LYI_REAR_SENSOR_ID                    0x250B
 #define SP0A09_SENSOR_ID                        0x0a09
 #define SP2509_SENSOR_ID                        0x2509
 #define SP0A19_YUV_SENSOR_ID                    0xA6
@@ -364,6 +366,7 @@ NSFeature :  : RAWSensorInfo < _id >  :  : getFlickerPara \
 /*GC*/
 #define SENSOR_DRVNAME_GC2375MIPI_RAW_CHXT_REAR		"gc2375mipi_raw_chxt_rear"
 #define SENSOR_DRVNAME_GC2375MIPI_RAW_BLX_FRONT		"gc2375mipi_raw_blx_front"
+#define SENSOR_DRVNAME_GC2375MIPI_RAW_LYI_FRONT		"gc2375mipi_raw_lyi_front"
 #define SENSOR_DRVNAME_GC2385MIPI_RAW_CHXT_REAR		"gc2385mipi_raw_chxt_rear"
 #define SENSOR_DRVNAME_GC2385MIPI_RAW_CHXT_FRONT	"gc2385mipi_raw_chxt_front"
 #define SENSOR_DRVNAME_GC2375_MIPI_RAW          "gc2375mipiraw"
@@ -381,6 +384,7 @@ NSFeature :  : RAWSensorInfo < _id >  :  : getFlickerPara \
 /*SP*/
 #define SENSOR_DRVNAME_SP2509MIPI_RAW_BLX_REAR	"sp2509mipi_raw_blx_rear"
 #define SENSOR_DRVNAME_SP2509MIPI_RAW_CHXT_FRONT "sp2509mipi_raw_chxt_front"
+#define SENSOR_DRVNAME_SP2509MIPI_RAW_LYI_REAR	"sp2509mipi_raw_lyi_rear"
 #define SENSOR_DRVNAME_SP0A09_MIPI_RAW          "sp0a09mipiraw"
 #define SENSOR_DRVNAME_SP2509_MIPI_RAW          "sp2509mipiraw"
 #define SENSOR_DRVNAME_SP0A19_YUV               "sp0a19yuv"

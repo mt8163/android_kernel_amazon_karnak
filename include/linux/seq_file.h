@@ -30,6 +30,7 @@ struct seq_file {
 #ifdef CONFIG_USER_NS
 	struct user_namespace *user_ns;
 #endif
+	const struct file *file;
 	void *private;
 };
 

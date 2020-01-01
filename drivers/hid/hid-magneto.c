@@ -409,8 +409,8 @@ static void pmx_remove(struct hid_device *hdev)
  * Device list that matches this driver
  */
 static const struct hid_device_id pmx_devices[] = {
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126_KB, USB_DEVICE_ID_LAB126_US_KB) },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126_KB, USB_DEVICE_ID_LAB126_UK_KB) },
+	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126, USB_DEVICE_ID_LAB126_US_KB) },
+	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126, USB_DEVICE_ID_LAB126_UK_KB) },
 	{ }	/* Terminating entry */
 };
 MODULE_DEVICE_TABLE(hid, pmx_devices);

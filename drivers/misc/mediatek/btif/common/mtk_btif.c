@@ -2172,7 +2172,7 @@ static int btif_rx_thread(void *p_data)
 
 
 	while (1) {
-#ifdef CONFIG_BISCUIT
+#ifdef CONFIG_abh123
 		wait_for_completion_interruptible(&p_btif->rx_comp);
 #else
 		if (p_btif->enable) {
@@ -2368,7 +2368,7 @@ static int _btif_rx_btm_init(p_mtk_btif p_btif)
 			i_ret = -ENOMEM;
 			goto btm_init_err;
 		}
-#ifdef CONFIG_BISCUIT
+#ifdef CONFIG_abh123
 	{
 		int i_ret = -1;
 		struct sched_param param = {

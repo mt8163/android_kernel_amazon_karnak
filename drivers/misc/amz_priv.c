@@ -364,7 +364,7 @@ int amz_priv_mute_cb(void *data, int value)
 int amz_priv_kickoff(struct device *dev)
 {
 	priv_dis = false;
-#if defined(CONFIG_roc123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
+#if defined(CONFIG_abe123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT) {
 		priv_dis = true;
 		return 0;

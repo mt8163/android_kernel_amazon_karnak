@@ -171,7 +171,7 @@ void __spm_set_wakeup_event(const struct pwr_ctrl *pwrctrl)
 	else
 		val = pwrctrl->timer_val_cust;
 
-#if defined(CONFIG_roc123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
+#if defined(CONFIG_abe123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT)
 		spm_write(SPM_PCM_CON1, spm_read(SPM_PCM_CON1) | CON1_CFG_KEY);
 	else

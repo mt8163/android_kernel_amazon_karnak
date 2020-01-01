@@ -43,7 +43,7 @@
 #define LOG_INF(format, args...)    pr_debug("[%s] " format, __FUNCTION__, ##args)
 
 static DEFINE_SPINLOCK(imgsensor_drv_lock);
-kal_bool GC2375_Front_DuringTestPattern = KAL_FALSE;
+kal_bool GC2375_BLX_Front_DuringTestPattern = KAL_FALSE;
 
 static imgsensor_info_struct imgsensor_info = {
 	.sensor_id = GC2375MIPI_BLX_FRONT_SENSOR_ID,	//record sensor id defined in Kd_imgsensor.h
@@ -738,7 +738,7 @@ static kal_uint32 open(void)
 	imgsensor.test_pattern = KAL_FALSE;
 	imgsensor.current_fps = imgsensor_info.pre.max_framerate;
 	spin_unlock(&imgsensor_drv_lock);
-	GC2375_Front_DuringTestPattern = KAL_FALSE;
+	GC2375_BLX_Front_DuringTestPattern = KAL_FALSE;
 
 	return ERROR_NONE;
 }				/*    open  */

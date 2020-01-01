@@ -702,11 +702,11 @@ int g_u4P2POnOffing = 0;
 #define IDME_OF_MAC_ADDR        "/idme/mac_addr"
 #define IDME_OF_WIFI_MFG        "/idme/wifi_mfg"
 #define IDME_OF_BOARD_ID	"/idme/board_id"
-#define BOARD_ID_abc123_STR "0031"
-#define BOARD_ID_BISCUIT_STR "0110"
-#define BOARD_ID_COOKIE_STR "0110"
-#define BOARD_ID_rbc123_STR "0120"
-#define BOARD_ID_DOUGLAS_STR "0032"
+#define BOARD_ID_abf123_STR "0031"
+#define BOARD_ID_abh123_STR "0110"
+#define BOARD_ID_abc123_STR "0110"
+#define BOARD_ID_abd123_STR "0120"
+#define BOARD_ID_abg123_STR "0032"
 #define BOARD_ID_KARNAK_STR "0033"
 char idme_board_id[16];
 
@@ -1146,7 +1146,7 @@ static COUNTRY_POWER_TABLE asCountryPwrTbl[] = {
 		},
 };
 
-static COUNTRY_POWER_TABLE power_table_abc123[] = {
+static COUNTRY_POWER_TABLE power_table_abf123[] = {
 		{
 			{'W', 'W',}, /*country code*/
 			{/*tx power*/
@@ -1364,7 +1364,7 @@ static COUNTRY_POWER_TABLE power_table_karnak[] = {
 };
 
 
-static COUNTRY_POWER_TABLE power_table_biscuit[] = {
+static COUNTRY_POWER_TABLE power_table_abh123[] = {
 		{
 			{'W', 'W',}, /*country code*/
 			{/*tx power*/
@@ -1451,7 +1451,7 @@ static COUNTRY_POWER_TABLE power_table_biscuit[] = {
 		},
 };
 
-static COUNTRY_POWER_TABLE power_table_rbc123[] = {
+static COUNTRY_POWER_TABLE power_table_abd123[] = {
 		{
 			{'W', 'W',}, /*country code*/
 			{/*tx power*/
@@ -1543,7 +1543,7 @@ static COUNTRY_POWER_TABLE power_table_rbc123[] = {
 		},
 };
 
-static COUNTRY_POWER_TABLE power_table_douglas[] = {
+static COUNTRY_POWER_TABLE power_table_abg123[] = {
 		{
 			{'W', 'W',}, /*country code*/
 			{/*tx power*/
@@ -1632,11 +1632,11 @@ static COUNTRY_POWER_TABLE power_table_douglas[] = {
 
 struct board_id_power_table_map board_id_power_table_list[] = {
 	{BOARD_ID_KARNAK_STR, power_table_karnak, ARRAY_SIZE(power_table_karnak)},
-	{BOARD_ID_abc123_STR, power_table_abc123, ARRAY_SIZE(power_table_abc123)},
-	{BOARD_ID_BISCUIT_STR, power_table_biscuit, ARRAY_SIZE(power_table_biscuit)},
-	{BOARD_ID_COOKIE_STR, power_table_biscuit, ARRAY_SIZE(power_table_biscuit)},
-	{BOARD_ID_rbc123_STR, power_table_rbc123, ARRAY_SIZE(power_table_rbc123)},
-	{BOARD_ID_DOUGLAS_STR, power_table_douglas, ARRAY_SIZE(power_table_douglas)},
+	{BOARD_ID_abf123_STR, power_table_abf123, ARRAY_SIZE(power_table_abf123)},
+	{BOARD_ID_abh123_STR, power_table_abh123, ARRAY_SIZE(power_table_abh123)},
+	{BOARD_ID_abc123_STR, power_table_abh123, ARRAY_SIZE(power_table_abh123)},
+	{BOARD_ID_abd123_STR, power_table_abd123, ARRAY_SIZE(power_table_abd123)},
+	{BOARD_ID_abg123_STR, power_table_abg123, ARRAY_SIZE(power_table_abg123)},
 };
 
 static const struct ieee80211_iface_limit iface_limits_mcc[] = {
@@ -3688,7 +3688,7 @@ static void wlanCopyIdmeWifiMfg(P_REG_INFO_T prRegInfo)
 	}
 
 	/* RSSI compensation */
-	if ((kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "abc123", 4) == 0 || kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "karnak", 6) == 0) && (prRegInfo->fgRssiCompensationValidbit == FALSE)) {
+	if ((kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "abf123", 4) == 0 || kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "karnak", 6) == 0) && (prRegInfo->fgRssiCompensationValidbit == FALSE)) {
 		prRegInfo->uc2GRssiCompensation = 4;
 		prRegInfo->uc5GRssiCompensation = 4;
 		prRegInfo->fgRssiCompensationValidbit = TRUE;

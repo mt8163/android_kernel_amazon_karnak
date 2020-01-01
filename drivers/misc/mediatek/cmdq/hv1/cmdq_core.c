@@ -1839,6 +1839,201 @@ static void cmdq_core_reorder_task_array(struct ThreadStruct *pThread, int32_t p
 	CMDQ_VERBOSE("WAIT: nextcookie minus %d.\n", reorderCount);
 }
 
+/* check the dma buffer addr is valid or not */
+static bool cmdq_core_check_dma_addr_valid(struct TaskStruct *pTask, u32 pa)
+{
+	struct list_head *p = NULL;
+	struct WriteAddrStruct *pWriteAddr = NULL;
+	int32_t offset = 0;
+	bool is_valid = false;
+
+	if (pa % 4 != 0)
+		return false;
+
+	/* seach for the entry */
+	mutex_lock(&gCmdqWriteAddrMutex);
+	list_for_each(p, &gCmdqContext.writeAddrList) {
+		pWriteAddr = list_entry(p, struct WriteAddrStruct, list_node);
+		if (NULL == pWriteAddr)
+			continue;
+
+
+		offset = pa - pWriteAddr->pa;
+
+		if (offset >= 0 && offset < (pWriteAddr->count * sizeof(uint32_t))) {
+			is_valid = true;
+			break;
+		}
+	}
+	mutex_unlock(&gCmdqWriteAddrMutex);
+
+	if (!is_valid)
+		CMDQ_ERR("invalid dma addr:0x%x regResultsMVA:0x%x size:0x%x\n",
+			pa,
+			(u32)(pTask->regResultsMVA),
+			(u32)(pTask->regCount * sizeof(pTask->regResults[0])));
+
+	return is_valid;
+}
+
+static bool cmdq_core_check_subsys_id_valid(u32 subsys_id)
+{
+	switch (subsys_id) {
+	case 1: /* 0x1400XXXX */
+	case 2: /* 0x1401XXXX */
+	case 4: /* 0x1500XXXX */
+		return true;
+	default:
+		/* check error */
+		CMDQ_ERR("subsys ID:%d check error\n", subsys_id);
+	}
+	return false;
+}
+
+static bool cmdq_core_check_value_gpr_valid(u32 value_gpr)
+{
+	switch (value_gpr) {
+	case CMDQ_DATA_REG_JPEG:
+	case CMDQ_DATA_REG_PQ_COLOR:
+	case CMDQ_DATA_REG_2D_SHARPNESS_0:
+	case CMDQ_DATA_REG_2D_SHARPNESS_1:
+	case CMDQ_DATA_REG_DEBUG:
+		return true;
+	default:
+		return false;
+	}
+	return false;
+}
+
+static bool cmdq_core_check_addr_gpr_valid(u32 addr_gpr)
+{
+	switch (addr_gpr) {
+	case CMDQ_DATA_REG_JPEG_DST:
+	case CMDQ_DATA_REG_PQ_COLOR_DST:
+	case CMDQ_DATA_REG_2D_SHARPNESS_0_DST:
+	case CMDQ_DATA_REG_2D_SHARPNESS_1_DST:
+	case CMDQ_DATA_REG_DEBUG_DST:
+		return true;
+	default:
+		return false;
+	}
+	return false;
+}
+
+static bool cmdq_core_check_instruction_valid(struct TaskStruct *pTask,
+							u64 instruction)
+{
+	u32 op = instruction >> 56;	/* 56 ~ 63 */
+	u32 option = (instruction >> 53) & 0x7; /* 53 ~ 55 */
+	u32 argA = (instruction >> 32) & 0x001FFFFF; /* 32 ~ 52 */
+	u32 argB = instruction & 0xFFFFFFFF; /* 0 ~ 31 */
+	u32 subsys_id = argA >> 16; /* 48 ~ 52 */
+	/* u32 offset = (argA & 0xFFFF); */ /* 32 ~ 47 */
+
+
+	switch (op) {
+	case CMDQ_CODE_READ:
+		/* only allow read register value to value GPR.
+		** option = 0x2
+		** argA = subsysID + offset: subsysID should in MDP valid register base
+		** argB: GPR index = value GPR
+		*/
+		if ((option == 0x02) &&
+			cmdq_core_check_subsys_id_valid(subsys_id) &&
+			cmdq_core_check_value_gpr_valid(argB)) {
+			/* check OK */
+			return true;
+		}
+		break;
+	case CMDQ_CODE_MOVE:
+		/* only allow move dma addr(cmdq allocated) to addr GPR.
+		** option = 0x4
+		** argA = shoud be addr GPR
+		** argB = dma_addr
+		*/
+		if ((option == 0x04) &&
+			cmdq_core_check_addr_gpr_valid((argA >> 16) & 0x1F) &&
+			cmdq_core_check_dma_addr_valid(pTask, argB)) {
+			/* check OK */
+			return true;
+		}
+
+		/* allow mask instruction
+		** option = 0x0
+		** argA = 0
+		** argB: no limit.
+		*/
+		if ((option == 0x00) && (argA == 0)) {
+			/* check OK */
+			return true;
+		}
+
+		break;
+	case CMDQ_CODE_WRITE:
+		/* only allow write R0 to P1
+		** option == 0x06
+		** argA = addr GPR
+		** argB = value GPR
+		*/
+		if ((option == 0x06) &&
+			cmdq_core_check_value_gpr_valid(argB) &&
+			cmdq_core_check_addr_gpr_valid((argA >> 16) & 0x1F)) {
+			/* check OK */
+			return true;
+		}
+
+		/* allow write value to mdp related subsys register
+		** option = 0x0
+		** argA = subsysID + offset: subsysID should valid (mdp related subsys ID).
+		** argB: not limit.
+		*/
+		if ((option == 0x0) && cmdq_core_check_subsys_id_valid(subsys_id)) {
+			/* check OK */
+			return true;
+		}
+		break;
+	case CMDQ_CODE_JUMP:
+		/* only allow JUMP + 8
+		** argA = 0
+		** argB = 8
+		*/
+		if ((argA == 0) && (argB == 8))
+			return true;
+		break;
+	case CMDQ_CODE_POLL:
+	case CMDQ_CODE_WFE:
+	case CMDQ_CODE_EOC:
+		return true;
+	default:
+		return false;
+	}
+
+	CMDQ_ERR("check fail: op[0x%x] option[0x%x] argA[0x%x] argB[0x%x]\n", op, option, argA, argB);
+	return false;
+}
+
+
+/*
+** return true for valid. false for invalid
+*/
+static bool cmdq_core_check_command_valid(struct TaskStruct *pTask,
+						u32 *pVaBase, u32 commandSize)
+{
+	u32 i = 0; /* scan inst buffer bytes */
+	u64 *pBase = (u64 *)pVaBase;
+
+	if (commandSize % 8 != 0) {
+		CMDQ_ERR("commandSize: %d not 8 align\n", commandSize);
+		return false;
+	}
+
+	for (i = 0; (i * 8) < commandSize; i++) {
+		if (!cmdq_core_check_instruction_valid(pTask, pBase[i]))
+			return false;
+	}
+	return true;
+}
+
 static int32_t cmdq_core_insert_read_reg_command(struct TaskStruct *pTask,
 						       struct cmdqCommandStruct *pCommandDesc)
 {
@@ -1984,6 +2179,30 @@ static int32_t cmdq_core_insert_read_reg_command(struct TaskStruct *pTask,
 
 	CMDQ_VERBOSE("test %d, CMDEnd=%p, base=%p, cmdSize=%d\n", __LINE__, pTask->pCMDEnd,
 		     pTask->pVABase, pTask->commandSize);
+
+	/* check instruction valid, only instr from MDP need to check. */
+	if (userSpaceRequest) {
+		int i = 0;
+
+		if (!cmdq_core_check_command_valid(pTask, pTask->pVABase, pTask->commandSize)) {
+			CMDQ_ERR("check inst fail\n");
+			return -1;
+		}
+
+		/* check backup register addr. should only back mdp register. */
+		for (i = 0; i < pTask->regCount; i++) {
+			u32 backup_reg = CMDQ_U32_PTR(pCommandDesc->regRequest.regAddresses)[i];
+			bool is_mdp_reg = (backup_reg >= CMDQ_MDP_DUMP_REG_START) &&
+					(backup_reg < CMDQ_MDP_DUMP_REG_END);
+			bool is_cmdq_reg = (backup_reg >= CMDQ_GCE_DUMP_REG_START) &&
+					(backup_reg < CMDQ_GCE_DUMP_REG_END);
+
+			if (!is_mdp_reg && !is_cmdq_reg) {
+				CMDQ_ERR("dump invalid reg:0x%x\n", backup_reg);
+				return -1;
+			}
+		}
+	}
 
 	/* if no read request, no post-process needed. */
 	if (0 == pTask->regCount && extraBufferSize == 0)

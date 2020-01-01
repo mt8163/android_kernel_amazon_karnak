@@ -766,7 +766,7 @@ static int rtc_ops_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 	/* disable alarm and clear Power-On Alarm bit */
 	hal_rtc_clear_alarm(tm);
 
-#if defined(CONFIG_roc123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
+#if defined(CONFIG_abe123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 	if (get_boot_mode() != KERNEL_POWER_OFF_CHARGING_BOOT)
 		if (alm->enabled)
 			hal_rtc_set_alarm(tm);

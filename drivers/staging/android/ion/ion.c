@@ -1843,7 +1843,7 @@ void ion_device_add_heap(struct ion_device *dev, struct ion_heap *heap)
 	   the list later attempt higher id numbers first */
 	plist_node_init(&heap->node, -heap->id);
 	plist_add(&heap->node, &dev->heaps);
-	debug_file = debugfs_create_file(heap->name, 0660,
+	debug_file = debugfs_create_file(heap->name, 0664,
 					dev->heaps_debug_root, heap,
 					&debug_heap_fops);
 

@@ -897,7 +897,7 @@ static irqreturn_t pwrkey_int_handler(int irq, void *dev_id)
 		chip->pressed = 1;
 		pr_notice("[pwrkey_int_handler] Press pwrkey\n");
 #if defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
-		#if defined(CONFIG_roc123)
+		#if defined(CONFIG_abe123)
 		if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT) {
 			pr_notice
 				("Power Key Pressed during kernel power off charging, reboot OS\r\n");

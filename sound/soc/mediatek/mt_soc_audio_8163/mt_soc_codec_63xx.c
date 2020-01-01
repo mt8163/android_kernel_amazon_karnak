@@ -104,6 +104,13 @@ static bool mSpeaker_Ocflag;
 static const int mDcOffsetTrimChannel = 9;
 static bool mInitCodec;
 
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+void *get_auido_codec_data(void)
+{
+	return mCodec_data;
+}
+#endif
+
 static void Audio_Amp_Change(int channels, bool enable);
 static void SavePowerState(void)
 {
@@ -3361,11 +3368,22 @@ void InitCodecDefault(void)
 	    AUDIO_ANALOG_AUDIOANALOG_INPUT_PREAMP;
 }
 
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+static int mt6323_codec_status = -1;
+int get_mt6323_codec_status(void)
+{
+	return mt6323_codec_status;
+}
+#endif
+
 static int mt6323_codec_probe(struct snd_soc_codec *codec)
 {
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
 
 	pr_debug("%s()\n", __func__);
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	mt6323_codec_status = 3;
+#endif
 	if (mInitCodec == true)
 		return 0;
 	snd_soc_dapm_new_controls(dapm, mt6323_dapm_widgets, ARRAY_SIZE(mt6323_dapm_widgets));
@@ -3391,6 +3409,12 @@ static int mt6323_codec_probe(struct snd_soc_codec *codec)
 		return -ENOMEM;
 	}
 	*/
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	if (mCodec_data)
+		mt6323_codec_status = 0;
+	else
+		mt6323_codec_status = -6;
+#endif
 
 	snd_soc_codec_set_drvdata(codec, mCodec_data);
 	memset((void *)mCodec_data, 0, sizeof(mt6323_Codec_Data_Priv));
@@ -3441,15 +3465,23 @@ static struct snd_soc_codec_driver soc_mtk_codec = {
 
 static int mtk_mt6323_codec_dev_probe(struct platform_device *pdev)
 {
+	int ret = 0;
 	pdev->dev.coherent_dma_mask = DMA_BIT_MASK(64);
 	if (pdev->dev.dma_mask == NULL)
 		pdev->dev.dma_mask = &pdev->dev.coherent_dma_mask;
 	if (pdev->dev.of_node)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_CODEC_NAME);
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
-	return snd_soc_register_codec(&pdev->dev,
+	ret =  snd_soc_register_codec(&pdev->dev,
 				      &soc_mtk_codec, mtk_6323_dai_codecs,
 				      ARRAY_SIZE(mtk_6323_dai_codecs));
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	if (ret)
+		mt6323_codec_status = -5;
+	else
+		mt6323_codec_status = 3;
+#endif
+	return ret;
 }
 
 static int mtk_mt6323_codec_dev_remove(struct platform_device *pdev)
@@ -3552,24 +3584,43 @@ static int __init mtk_mt6323_codec_init(void)
 	int ret = 0;
 
 	pr_debug("%s\n", __func__);
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	mt6323_codec_status = 1;
+#endif
 #ifdef CONFIG_OF
 	/* Auddrv_getGPIO_info(); */
 #else
 	soc_mtk_codec6323_dev = platform_device_alloc(MT_SOC_CODEC_NAME, -1);
-	if (!soc_mtk_codec6323_dev)
+	if (!soc_mtk_codec6323_dev) {
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+		mt6323_codec_status = -1;
+#endif
 		return -ENOMEM;
+	}
 	ret = platform_device_add(soc_mtk_codec6323_dev);
 	if (ret != 0) {
 		platform_device_put(soc_mtk_codec6323_dev);
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+		mt6323_codec_status = -2;
+#endif
 		return ret;
 	}
 #endif
 	if( mt_soc_get_dts_config() < 0 ) {
 		pr_err("%s: Can't get dts config !!!\n", __FUNCTION__);
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+		mt6323_codec_status = -3;
+#endif
 		return -EINVAL;
 	}
 
 	ret = platform_driver_register(&mtk_codec_6323_driver);
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	if (ret)
+		mt6323_codec_status = -4;
+	else
+		mt6323_codec_status = 2;
+#endif
 	return ret;
 }
 module_init(mtk_mt6323_codec_init);

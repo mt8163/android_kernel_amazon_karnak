@@ -838,7 +838,7 @@ static INT32 wmtd_thread(void *pvData)
 	}
 	WMT_INFO_FUNC("wmtd thread starts\n");
 
-#ifdef CONFIG_BISCUIT
+#ifdef CONFIG_abh123
 	{
 		int i_ret = -1;
 		struct sched_param param = {

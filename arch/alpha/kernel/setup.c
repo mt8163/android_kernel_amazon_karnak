@@ -765,7 +765,7 @@ static char systype_names[][16] = {
 	"0",
 	"ADU", "Cobra", "Ruby", "Flamingo", "Mannequin", "Jensen",
 	"Pelican", "Morgan", "Sable", "Medulla", "Noname",
-	"Turbolaser", "Avanti", "abc123", "Alcor", "Tradewind",
+	"Turbolaser", "Avanti", "Mustang", "Alcor", "Tradewind",
 	"Mikasa", "EB64", "EB66", "EB64+", "AlphaBook1",
 	"Rawhide", "K2", "Lynx", "XL", "EB164", "Noritake",
 	"Cortex", "29", "Miata", "XXM", "Takara", "Yukon",
@@ -829,7 +829,7 @@ get_sysvec(unsigned long type, unsigned long variation, unsigned long cpu)
 		&noname_mv,
 		NULL,		/* Turbolaser */
 		&avanti_mv,
-		NULL,		/* abc123 */
+		NULL,		/* Mustang */
 		NULL,		/* Alcor, Bret, Maverick. HWRPB inaccurate? */
 		NULL,		/* Tradewind */
 		NULL,		/* Mikasa -- see below.  */

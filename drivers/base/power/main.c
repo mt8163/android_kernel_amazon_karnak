@@ -1524,6 +1524,12 @@ static int device_suspend(struct device *dev)
 	return __device_suspend(dev, pm_transition, false);
 }
 
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+extern void *get_auido_codec_data(void);
+extern int get_machine_init_status(void);
+extern int get_mt6323_codec_status(void);
+#endif
+
 /**
  * dpm_suspend - Execute "suspend" callbacks for all non-sysdev devices.
  * @state: PM transition of the system being carried out.
@@ -1532,6 +1538,17 @@ int dpm_suspend(pm_message_t state)
 {
 	ktime_t starttime = ktime_get();
 	int error = 0;
+
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	void *paudio_codec_data = get_auido_codec_data();
+	void *pcur_audio_codec_data;
+	int audio_codec_data_is_valid = 1;
+	pr_info("Before dpm_suspend, paudio_codec_data = %p\n", paudio_codec_data);
+	pr_info("machine_init_status = %d, mt6323_codec_status = %d\n",
+		get_machine_init_status(), get_mt6323_codec_status());
+	if (!paudio_codec_data)
+		audio_codec_data_is_valid = 0;
+#endif
 
 	trace_suspend_resume(TPS("dpm_suspend"), state.event, true);
 	might_sleep();
@@ -1548,7 +1565,17 @@ int dpm_suspend(pm_message_t state)
 		mutex_unlock(&dpm_list_mtx);
 
 		error = device_suspend(dev);
-
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+		pcur_audio_codec_data = get_auido_codec_data();
+		if ((pcur_audio_codec_data == NULL || pcur_audio_codec_data != paudio_codec_data)
+		 	&& audio_codec_data_is_valid) {
+			device_lock(dev);
+			pr_info("pcur_audio_codec_data = %p, dev_name = %s\n",
+				pcur_audio_codec_data, dev_name(dev));
+			device_unlock(dev);
+			audio_codec_data_is_valid = 0;
+		}
+#endif
 		mutex_lock(&dpm_list_mtx);
 		if (error) {
 			pm_dev_err(dev, state, "", error);

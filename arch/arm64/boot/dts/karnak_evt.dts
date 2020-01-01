@@ -114,7 +114,7 @@
 		polling_delay = <1000>;
 		governor_name = "virtual_sensor";
 		num_tbps = <3>;
-		temp = <44500 44833 45167 45500 49000 52000 54000 46000 47000 48000 49000 50000>;
+		temp = <44500 44833 45167 45500 49000 52000 56000 56000 56000 56000 56000 56000>;
 		type = <0 0 0 0 0 0 3 3 3 3 3 3>;
 		hyst = <0 0 0 0 0 0 0 0 0 0 0 0>;
 		num_cdevs = <3>;
@@ -128,7 +128,7 @@
 		polling_delay = <1000>;
 		governor_name = "virtual_sensor";
 		num_tbps = <3>;
-		temp = <44500 44833 45167 45500 49000 52000 54000 46000 47000 48000 49000 50000>;
+		temp = <49500 49833 50167 50500 53000 56000 60000 60000 60000 60000 60000 60000>;
 		type = <0 0 0 0 0 0 3 3 3 3 3 3>;
 		hyst = <0 0 0 0 0 0 0 0 0 0 0 0>;
 		num_cdevs = <3>;
@@ -325,8 +325,8 @@
 	accdet-plugout-debounce = <1000>;
 	/*1:ACC mode, 2:low cost without in bias, 6:low cost with in bias*/
 	accdet-mic-mode = <1>;
-	/*0:micbias1 is controlled by reg 0x710, for douglas & abc123 & old projects*/
-	/*1:micbias1 is controlled by both reg 0x710 & 0x77A, for karnak & mustang*/
+	/*0:micbias1 is controlled by reg 0x710, for abg123 & abf123 & old projects*/
+	/*1:micbias1 is controlled by both reg 0x710 & 0x77A, for karnak & abc123*/
 	accdet-micbias1-ind-ctl = <1>;
 	/*0--MD_MAX--UP_MAX--DW_MAX*/
 	headset-three-key-threshold = <0 100 220 500>;

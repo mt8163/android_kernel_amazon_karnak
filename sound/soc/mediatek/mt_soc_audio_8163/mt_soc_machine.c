@@ -1028,6 +1028,13 @@ static struct snd_soc_card snd_soc_card_mt = {
 };
 
 static struct platform_device *mt_snd_device;
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+static int machine_init_status = 1;
+int get_machine_init_status(void)
+{
+	return machine_init_status;
+}
+#endif
 
 static int __init mt_soc_snd_init(void)
 {
@@ -1038,10 +1045,16 @@ static int __init mt_soc_snd_init(void)
 #endif
 
 	pr_debug("mt_soc_snd_init card addr = %p\n", card);
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	machine_init_status = 2;
+#endif
 
 	mt_snd_device = platform_device_alloc("soc-audio", -1);
 	if (!mt_snd_device) {
 		pr_err("mt6589_probe  platform_device_alloc fail\n");
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+		machine_init_status = -1;
+#endif
 		return -ENOMEM;
 	}
 	platform_set_drvdata(mt_snd_device, &snd_soc_card_mt);
@@ -1055,10 +1068,13 @@ static int __init mt_soc_snd_init(void)
 
 	if (ret != 0) {
 		pr_err("mt_soc_snd_init goto put_device fail\n");
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	machine_init_status = -2;
+#endif
 		goto put_device;
 	}
 
-	pr_debug("mt_soc_snd_init dai_link = %p\n", snd_soc_card_mt.dai_link);
+	pr_info("mt_soc_snd_init dai_link = %p\n", snd_soc_card_mt.dai_link);
 
 	pr_debug("mt_soc_snd_init dai_link -----\n");
 	/* create debug file */
@@ -1074,6 +1090,9 @@ static int __init mt_soc_snd_init(void)
 						   &mtaudio_ana_debug_ops);
 	mt_soc_get_dts_data();
 
+#ifdef CONFIG_MTK_AUDIO_DEBUG_KERNEL_PANIC
+	machine_init_status = 0;
+#endif
 	return 0;
 put_device:
 	platform_device_put(mt_snd_device);

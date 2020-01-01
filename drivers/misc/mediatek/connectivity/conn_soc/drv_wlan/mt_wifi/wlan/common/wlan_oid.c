@@ -7199,9 +7199,9 @@ wlanoidSet802dot11PowerSaveProfile(IN P_ADAPTER_T prAdapter,
 	}
 
 
-	if (kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "biscuit", 7) == 0 ||
-		kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "cookie", 6) == 0 ||
-		kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "radar", 5) == 0)
+	if (kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "abh123", 7) == 0 ||
+		kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "abc123", 6) == 0 ||
+		kalStrnCmp(CONFIG_ARCH_MTK_PROJECT, "abd123", 5) == 0)
 		ePowerMode = Param_PowerModeCAM;
 
 	status = nicConfigPowerSaveProfile(prAdapter, NETWORK_TYPE_AIS_INDEX, ePowerMode, TRUE);

@@ -44,7 +44,7 @@ config TOUCHSCREEN_MTK_GT5668
 
 config TOUCHSCREEN_SET_INTERRUPT_TO_INPUT
 	bool "Set Interrupt pin to input manually"
-	depends on roc123
+	depends on abe123
 	default n
 	help
 	Set to ensure interrupt pin on touch panel is set

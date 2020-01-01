@@ -37,7 +37,7 @@ obj-$(CONFIG_INTEL_SOC_DTS_THERMAL)	+= intel_soc_dts_thermal.o
 obj-$(CONFIG_TI_SOC_THERMAL)	+= ti-soc-thermal/
 obj-$(CONFIG_INT340X_THERMAL)  += int340x_thermal/
 obj-$(CONFIG_ST_THERMAL)	+= st/
-ifeq ($(CONFIG_roc123), y)
+ifeq ($(CONFIG_abe123), y)
 obj-$(CONFIG_CPU_THERMAL)    += virtual_sensor_cpufreq_cooling.o
 obj-$(CONFIG_THERMAL)    += virtual_sensor_thermal.o
 else
