@@ -25,6 +25,7 @@
 
 extern struct list_lru binder_alloc_lru;
 struct binder_transaction;
+#define BINDER_MIN_ALLOC (1 * PAGE_SIZE)
 
 /**
  * struct binder_buffer - buffer used for binder transactions
@@ -50,8 +51,7 @@ struct binder_buffer {
 	unsigned free:1;
 	unsigned allow_user_free:1;
 	unsigned async_transaction:1;
-	unsigned free_in_progress:1;
-	unsigned debug_id:28;
+	unsigned debug_id:29;
 
 	struct binder_transaction *transaction;
 
@@ -92,6 +92,7 @@ struct binder_lru_page {
  * @pages:              array of binder_lru_page
  * @buffer_size:        size of address space specified via mmap
  * @pid:                pid for associated binder_proc (invariant after init)
+ * @pages_high:         high watermark of offset in @pages
  *
  * Bookkeeping structure for per-proc address space management for binder
  * buffers. It is normally initialized during binder_init() and binder_mmap()
@@ -112,6 +113,7 @@ struct binder_alloc {
 	size_t buffer_size;
 	uint32_t buffer_free;
 	int pid;
+	size_t pages_high;
 };
 
 #ifdef CONFIG_ANDROID_BINDER_IPC_SELFTEST
