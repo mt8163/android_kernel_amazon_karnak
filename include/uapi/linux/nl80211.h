@@ -1989,6 +1989,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_ADMITTED_TIME,
 
 	NL80211_ATTR_SMPS_MODE,
+	
+	NL80211_ATTR_EXT_FEATURES,
+
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -4071,6 +4074,20 @@ enum nl80211_feature_flags {
 	NL80211_FEATURE_STATIC_SMPS			= 1 << 24,
 	NL80211_FEATURE_DYNAMIC_SMPS			= 1 << 25,
 };
+
+/**
+ * enum nl80211_ext_feature_index - bit index of extended features.
+ *
+ * @NUM_NL80211_EXT_FEATURES: number of extended features.
+ * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
+ */
+enum nl80211_ext_feature_index {
+
+	/* add new features before the definition below */
+	NUM_NL80211_EXT_FEATURES,
+	MAX_NL80211_EXT_FEATURES = NUM_NL80211_EXT_FEATURES - 1
+};
+
 
 /**
  * enum nl80211_probe_resp_offload_support_attr - optional supported
