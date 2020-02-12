@@ -130,6 +130,7 @@ static int disp_gamma_set_lut(const DISP_GAMMA_LUT_T __user *user_gamma_lut, voi
 	}
 
 	if (copy_from_user(gamma_lut, user_gamma_lut, sizeof(DISP_GAMMA_LUT_T)) != 0) {
+		GAMMA_ERR("disp_gamma_set_lut: cannot copy from user mem");
 		ret = -EFAULT;
 		kfree(gamma_lut);
 	} else {
@@ -148,7 +149,9 @@ static int disp_gamma_set_lut(const DISP_GAMMA_LUT_T __user *user_gamma_lut, voi
 				kfree(old_lut);
 
 			disp_gamma_trigger_refresh(id);
-		} else {
+	}
+
+	if (!ret) {
 			GAMMA_ERR("disp_gamma_set_lut: invalid ID = %d\n", id);
 			ret = -EFAULT;
 		}
