@@ -669,6 +669,24 @@ typedef enum _ENUM_AGPS_EVENT {
 BOOLEAN kalIndicateAgpsNotify(P_ADAPTER_T prAdapter, UINT_8 cmd, PUINT_8 data, UINT_16 dataLen);
 #endif
 
+#if CFG_RX_BA_REORDERING_ENHANCEMENT
+typedef enum _ENUM_PKT_TYPE_T {
+	ENUM_PKT_802_11,	/* 802.11 or non-802.11 */
+	ENUM_PKT_802_3,		/* 802.3 or ethernetII */
+	ENUM_PKT_1X,		/* 1x frame or not */
+	ENUM_PKT_PROTECTED_1X,	/* prtected 1x frame */
+	ENUM_PKT_WPI_1X,	/* WAPI */
+	ENUM_PKT_VLAN_EXIST,	/* VLAN tag exist */
+	ENUM_PKT_DHCP,		/* DHCP frame */
+	ENUM_PKT_ARP,		/* ARP */
+	ENUM_PKT_ICMP,		/* ICMP */
+	ENUM_PKT_TDLS,		/* TDLS */
+	ENUM_PKT_DNS,		/* DNS */
+
+	ENUM_PKT_FLAG_NUM
+} ENUM_PKT_TYPE_T;
+#endif
+
 /*******************************************************************************
 *                            P U B L I C   D A T A
 ********************************************************************************
@@ -1524,6 +1542,9 @@ UINT_64 kalGetBootTime(void);
 
 INT_32 kalReadToFile(const PUINT_8 pucPath, PUINT_8 pucData, UINT_32 u4Size, PUINT_32 pu4ReadSize);
 
+#if CFG_RX_BA_REORDERING_ENHANCEMENT
+UINT_8 kalGetPktEtherType(IN PUINT_8 pucPkt);
+#endif
 #if CFG_SUPPORT_SCAN_CHANNEL_REQUEST
 UINT_32 kalGetScanRequestChannelNum (IN P_GLUE_INFO_T prGlueInfo);
 

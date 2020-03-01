@@ -34,11 +34,11 @@ config THERMAL_abc123
 	help
 	  For abc123 specific configurations for thermal related.
 
-config THERMAL_abc123
-	bool "THERMAL_abc123"
+config THERMAL_abm123
+	bool "THERMAL_abm123"
 	default n
 	help
-	  For abc123 specific configurations for thermal related.
+	  For abm123 specific configurations for thermal related.
 
 config THERMAL_WIFI_COOLER
 	bool "Wifi cooler"

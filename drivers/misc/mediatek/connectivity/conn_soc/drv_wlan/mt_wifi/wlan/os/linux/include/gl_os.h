@@ -482,6 +482,7 @@
 #define UDP_PORT_DHCPS							0x43
 #define UDP_PORT_DHCPC							0x44
 
+#define UDP_PORT_DNS							0x35
 #define IPVH_VERSION_OFFSET                     4	/* For Little-Endian */
 #define IPVH_VERSION_MASK                       0xF0
 #define IPTOS_PREC_OFFSET                       5
