@@ -56,8 +56,8 @@ struct mtkts_bts_channel_param {
 #include "inc/mtk_ts_board_karnak.h"
 #elif defined (CONFIG_THERMAL_abc123)
 #include "inc/mtk_ts_board_abc123.h"
-#elif defined (CONFIG_THERMAL_abc123)
-#include "inc/mtk_ts_board_abc123.h"
+#elif defined (CONFIG_THERMAL_abm123)
+#include "inc/mtk_ts_board_abm123.h"
 #else
 #include "inc/mtk_ts_board_abf123.h"
 #endif

@@ -1100,6 +1100,10 @@ typedef struct _WIFI_VAR_T {
 #if CFG_AUTO_CHANNEL_SEL_SUPPORT
 	PARAM_GET_CHN_LOAD rChnLoadInfo;
 #endif
+#if CFG_RX_BA_REORDERING_ENHANCEMENT
+	BOOLEAN fgEnableReportIndependentPkt;
+#endif
+
 #if CFG_SUPPORT_802_11K
 	struct RADIO_MEASUREMENT_REQ_PARAMS rRmReqParams;
 	struct RADIO_MEASUREMENT_REPORT_PARAMS rRmRepParams;
@@ -1396,6 +1400,9 @@ struct _ADAPTER_T {
 	UINT_32 u4AirDelayTotal;	/*  dbg privilege power mode, always keep in active */
 	unsigned char dtim_skip_count;
 
+#if CFG_RX_BA_REORDERING_ENHANCEMENT
+	UINT_32 u4QmRxBaMissTimeout;
+#endif
 
 };				/* end of _ADAPTER_T */
 

@@ -200,7 +200,7 @@
  *
  * 04 08 2011 cp.wu
  * [WCXRP00000540] [MT5931][Driver] Add eHPI8/eHPI16 support to Linux Glue Layer
- * glBusFreeIrq() should use the same pvabc123 as glBusSetIrq() or request_irq()/free_irq() won't work as a pair.
+ * glBusFreeIrq() should use the same pvCookie as glBusSetIrq() or request_irq()/free_irq() won't work as a pair.
  *
  * 04 08 2011 eddie.chen
  * [WCXRP00000617] [MT6620 Wi-Fi][DRV/FW] Fix for sigma

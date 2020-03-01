@@ -4389,6 +4389,103 @@ VOID kalSchedScanStopped(IN P_GLUE_INFO_T prGlueInfo)
 
 }
 
+#if CFG_RX_BA_REORDERING_ENHANCEMENT
+/*----------------------------------------------------------------------------*/
+/*!
+* \brief decode ethernet type from package head
+*
+* \param[in]
+*           none
+*
+* \return
+*           none
+*/
+/*----------------------------------------------------------------------------*/
+
+UINT_8 kalGetPktEtherType(IN PUINT_8 pucPkt)
+{
+	UINT_16 u2EtherType;
+	PUINT_8 pucEthBody;
+	UINT_8 ucResult = ENUM_PKT_FLAG_NUM;
+
+	if (pucPkt == NULL) {
+		DBGLOG(INIT, WARN, "kalGetPktEtherType pucPkt is null!\n");
+		return ucResult;
+	}
+
+	u2EtherType = (pucPkt[ETH_TYPE_LEN_OFFSET] << 8) | (pucPkt[ETH_TYPE_LEN_OFFSET + 1]);
+	pucEthBody = &pucPkt[ETH_HLEN];
+
+	switch (u2EtherType) {
+	case ETH_P_ARP:
+	{
+		DBGLOG(INIT, LOUD, "kalGetPktEtherType : ARP\n");
+		ucResult = ENUM_PKT_ARP;
+		break;
+	}
+	case ETH_P_IP:
+	{
+		UINT_8 ucIpProto = pucEthBody[9]; /* IP header without options */
+
+		switch (ucIpProto) {
+		case IP_PRO_ICMP:
+		{
+			DBGLOG(INIT, LOUD, "kalGetPktEtherType : ICMP\n");
+			ucResult = ENUM_PKT_ICMP;
+			break;
+		}
+		case IP_PRO_UDP:
+		{
+			PUINT_8 pucUdp = &pucEthBody[20];
+			UINT_16 u2UdpSrcPort;
+			UINT_16 u2UdpDstPort;
+
+			u2UdpDstPort = (pucUdp[2] << 8) | pucUdp[3];
+			u2UdpSrcPort = (pucUdp[0] << 8) | pucUdp[1];
+
+			if ((u2UdpDstPort == UDP_PORT_DHCPS) || (u2UdpDstPort == UDP_PORT_DHCPC)) {
+				DBGLOG(INIT, LOUD, "kalGetPktEtherType : DHCP\n");
+				ucResult = ENUM_PKT_DHCP;
+				break;
+			} else if (u2UdpSrcPort == UDP_PORT_DNS) {
+				DBGLOG(INIT, LOUD, "kalGetPktEtherType : DNS\n");
+				ucResult = ENUM_PKT_DNS;
+				break;
+			}
+		}
+		}
+			break;
+	}
+	case ETH_P_PRE_1X:
+	{
+		ucResult = ENUM_PKT_PROTECTED_1X;
+		break;
+	}
+	case ETH_P_1X:
+	{
+		ucResult = ENUM_PKT_1X;
+		break;
+	}
+	case TDLS_FRM_PROT_TYPE:
+	{
+		ucResult = ENUM_PKT_TDLS;
+		break;
+	}
+	case ETH_WPI_1X:
+	{
+		ucResult = ENUM_PKT_WPI_1X;
+		break;
+
+	}
+	default:
+		DBGLOG(INIT, LOUD, "unSupport pkt type:u2EtherType:0x%x\n"
+			, u2EtherType);
+		break;
+	}
+
+	return ucResult;
+}
+#endif
 
 #if CFG_SUPPORT_SCAN_CHANNEL_REQUEST
 UINT_32 kalGetScanRequestChannelNum (IN P_GLUE_INFO_T prGlueInfo)
