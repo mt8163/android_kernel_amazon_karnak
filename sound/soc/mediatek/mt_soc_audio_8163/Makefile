@@ -11,6 +11,7 @@ ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/base/power/$(MTK_PLATFOR
 ccflags-y += -D_WCN_SUPPORT
 ccflags-y += -DAUDIO_USING_WRAP_DRIVER
 ccflags-y += -D_MT_IDLE_HEADER
+ccflags-y += $(call cc-option,-Wno-frame-larger-than=)
 
 EXTRA_CFLAGS := -I$(src)/../common
 obj-$(CONFIG_MT_SND_SOC_8163) += AudDrv_Afe.o AudDrv_Ana.o AudDrv_Clk.o AudDrv_Gpio.o

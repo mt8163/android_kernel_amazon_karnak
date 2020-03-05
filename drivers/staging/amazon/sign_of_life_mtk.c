@@ -432,7 +432,7 @@ void sysrq_trigger_lcr_test(int act)
 			;
 		break;
 	default:
-		*(int *)NULL = 0;
+		*(volatile int *)NULL = 0;
 		break;
 	}
 }

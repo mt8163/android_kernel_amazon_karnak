@@ -1,6 +1,6 @@
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat
-
+subdir-ccflags-y += -Wno-typedef-redefinition
 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 ifneq ($(CONFIG_MTK_COMBO),)
 	ifeq ($(CONFIG_MTK_CONN_LTE_IDC_SUPPORT),y)

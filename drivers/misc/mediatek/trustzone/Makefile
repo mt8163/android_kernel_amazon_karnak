@@ -14,6 +14,7 @@
 # TZ KREE driver makefile.
 
 ccflags-y += -I$(srctree)/include -I$(srctree)/include/trustzone -Werror
+ccflags-y += -Wno-typedef-redefinition -Wno-enum-conversion
 
 # Build as module
 #obj-m += tz_module.o

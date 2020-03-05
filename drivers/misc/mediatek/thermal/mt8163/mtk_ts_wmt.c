@@ -570,7 +570,7 @@ static int wmt_cl_set_cur_state(struct thermal_cooling_device *cool_dev, unsigne
 #ifndef CONFIG_ARM64
 		BUG();
 #else
-		*(unsigned int *)0x0 = 0xdead;	/* To trigger data abort to reset the system for thermal protection. */
+		*(volatile unsigned int *)0x0 = 0xdead;	/* To trigger data abort to reset the system for thermal protection. */
 #endif
 
 	}

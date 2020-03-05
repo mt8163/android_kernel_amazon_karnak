@@ -1100,7 +1100,7 @@ static struct kbase_va_region *kbase_mem_from_umm(struct kbase_context *kctx, in
 
 	/* no read or write permission given on import, only on run do we give the right permissions */
 
-	reg->gpu_alloc->type = BASE_MEM_IMPORT_TYPE_UMM;
+	reg->gpu_alloc->type = KBASE_MEM_TYPE_IMPORTED_UMM;
 	reg->gpu_alloc->imported.umm.sgt = NULL;
 	reg->gpu_alloc->imported.umm.dma_buf = dma_buf;
 	reg->gpu_alloc->imported.umm.dma_attachment = dma_attachment;

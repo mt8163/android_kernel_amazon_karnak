@@ -10,7 +10,7 @@
 #define MVA_BLOCK_SIZE      (1<<MVA_BLOCK_SIZE_ORDER)	/* 0x40000 */
 #define MVA_BLOCK_ALIGN_MASK (MVA_BLOCK_SIZE-1)	/* 0x3ffff */
 #define MVA_BLOCK_NR_MASK   (MVA_MAX_BLOCK_NR)	/* 0xfff */
-#define MVA_BUSY_MASK       (1<<15)	/* 0x8000 */
+#define MVA_BUSY_MASK       (u8)(1<<15)	/* 0x8000 */
 
 #define MVA_IS_BUSY(index) ((mvaGraph[index]&MVA_BUSY_MASK) != 0)
 #define MVA_SET_BUSY(index) (mvaGraph[index] |= MVA_BUSY_MASK)

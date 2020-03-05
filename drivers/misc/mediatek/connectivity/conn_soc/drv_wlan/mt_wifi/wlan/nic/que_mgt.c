@@ -3149,7 +3149,7 @@ VOID qmInsertFallWithinReorderPkt(IN P_SW_RFB_T prSwRfb, IN P_RX_BA_ENTRY_T prRe
 	else {
 		do {
 			/* Case 1: Terminate. A duplicate packet */
-			if (((prExaminedQueuedSwRfb->u2SSN) == (prSwRfb->u2SSN))) {
+			if ((prExaminedQueuedSwRfb->u2SSN) == (prSwRfb->u2SSN)) {
 				prSwRfb->eDst = RX_PKT_DESTINATION_NULL;
 				QUEUE_INSERT_TAIL(prReturnedQue, (P_QUE_ENTRY_T) prSwRfb);
 				return;

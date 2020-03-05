@@ -1079,7 +1079,7 @@ static int battery_set_property(struct power_supply *psy,
 		/*last state = current state*/
 		data->cool_dev->state = \
 		(val->intval > data->cool_dev->max_state) ? data->cool_dev->max_state : val->intval;
-		switch (bcct_enable) {
+		switch ((int)(bcct_enable)) {
 		case bcct_false:
 			level = data->cool_dev->levels[data->cool_dev->state - 1];
 			set_bat_charging_current_limit(level/100);

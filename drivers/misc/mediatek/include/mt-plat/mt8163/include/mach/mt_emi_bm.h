@@ -1,5 +1,5 @@
-#ifndef __MT_EMI_BM_H__
-#define __MT_EMI_BW_H__
+#ifndef __MTK_EMI_BM_H__
+#define __MTK_EMI_BM_H__
 
 #define EMI_CONM    (EMI_BASE_ADDR + 0x060)
 #define EMI_ARBA    (EMI_BASE_ADDR + 0x100)
@@ -172,4 +172,4 @@ extern unsigned int DRAMC_GetIdleCount(void);
 extern unsigned int ucDram_Register_Read(unsigned long u4reg_addr);
 extern void *mt_emi_base_get(void);
 
-#endif				/* !__MT_EMI_BW_H__ */
+#endif				/* !__MTK_EMI_BW_H__ */

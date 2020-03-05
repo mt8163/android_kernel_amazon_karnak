@@ -327,8 +327,6 @@ static struct work_struct          g_aee_work;
 static int g_aee_called = 0;
 static void aee_Handle(struct work_struct *_psWork)
 {
-    /* avoid the build warnning */
-    _psWork = _psWork;
 
 #ifdef MTK_MT6797_DEBUG
     {
@@ -359,8 +357,6 @@ static struct work_struct          g_pa_work;
 static u64 g_pa;
 static void pa_Handle(struct work_struct *_psWork)
 {
-    /* avoid the build warnning */
-    _psWork = _psWork;
 
 #if 0
     {

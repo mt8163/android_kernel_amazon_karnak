@@ -644,7 +644,7 @@ static int hwmsen_enable(struct hwmdev_object *obj, int sensor, int enable)
 
 		}
 
-	} else if ((enable == 0)) {
+	} else if (enable == 0) {
 
 
 		obj->active_data_sensor &= ~sensor_type;
