@@ -630,16 +630,6 @@ config AMZ_PRIV
        help
          This option enables the kernel to support Amazon Privacy Mode
 
-config SILENT_OTA
-	tristate "Key to turn on backlight for silent ota"
-	default n
-	depends on INPUT
-	select INPUT_KEYCOMBO
-	---help---
-	  Say Y here if you want to turn on backlight when some keys are pressed;
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called.
 config MEMORY_STATE_TIME
 	tristate "Memory freq/bandwidth time statistics"
 	depends on PROFILING
