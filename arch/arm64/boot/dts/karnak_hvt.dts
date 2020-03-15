@@ -259,13 +259,6 @@
 		reg-lcm-supply = <&mt6323_vgp3_reg>;
 	};
 
-	keysilent-ota {
-		compatible = "amzn,silent-ota";
-		keys_down = "KEY_POWER";
-		keys_down_delay = <0>;
-		status = "okay";
-	};
-
 	integrity-module {
 		compatible = "amzn,integrity-module";
 		status = "okay";

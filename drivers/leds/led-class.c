@@ -74,49 +74,8 @@ static const struct attribute_group led_trigger_group = {
 };
 #endif
 
-#ifdef CONFIG_SILENT_OTA
-struct led_classdev* led_get_device_by_name(char *name)
-{
-	struct led_classdev *led_cdev = NULL;
-	down_write(&leds_list_lock);
-	list_for_each_entry(led_cdev, &leds_list, node) {
-		if (!strcmp(led_cdev->name, name))
-			break;
-	}
-	up_write(&leds_list_lock);
-	return led_cdev;
-}
-
-extern int silent_ota_bl_is_silent(void);
-static ssize_t silent_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%d\n", silent_ota_bl_is_silent());
-}
-
-static DEVICE_ATTR(silent, 0444, silent_show, NULL);
-
-static ssize_t power_status_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	struct led_classdev *led_cdev = dev_get_drvdata(dev);
-	int silent = silent_ota_bl_is_silent();
-	int is_on = !silent;
-
-	if (!silent) {
-		is_on = led_cdev->brightness;
-	}
-	return sprintf(buf, "%d\n", !!is_on);
-}
-static DEVICE_ATTR(power_status, 0444, power_status_show, NULL);
-#endif
-
 static struct attribute *led_class_attrs[] = {
 	&dev_attr_brightness.attr,
-#ifdef CONFIG_SILENT_OTA
-	&dev_attr_silent.attr,
-	&dev_attr_power_status.attr,
-#endif
 	&dev_attr_max_brightness.attr,
 	NULL,
 };

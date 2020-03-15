@@ -66,7 +66,6 @@ obj-$(CONFIG_ALS_ISL29034) += isl29034.o
 obj-$(CONFIG_ALS_TSL2583) += tsl2583.o
 obj-$(CONFIG_SENSORS_TSL2540)	+= ams_tsl2540.o ams_tsl2540_als.o ams_i2c.o
 obj-$(CONFIG_AMZ_PRIV)          += amz_priv.o
-obj-$(CONFIG_SILENT_OTA)	+= silent-ota.o
 obj-$(CONFIG_MEDIATEK_SOLUTION)	+= mediatek/
 obj-$(CONFIG_IDME) += idme.o
 obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o

@@ -17,23 +17,12 @@
 #include <linux/rwsem.h>
 #include <linux/leds.h>
 
-
-#ifdef CONFIG_SILENT_OTA
-extern int silent_ota_bl_is_silent(void);
-#endif
 static inline void __led_set_brightness(struct led_classdev *led_cdev,
 					enum led_brightness value)
 {
 	if (value > led_cdev->max_brightness)
 		value = led_cdev->max_brightness;
 	led_cdev->brightness = value;
-
-#ifdef CONFIG_SILENT_OTA
-	if (silent_ota_bl_is_silent()) {
-		pr_info("%s: ignore brightness %d in silent mode\n", __func__, value);
-		return;
-	}
-#endif
 
 	if (!(led_cdev->flags & LED_SUSPENDED))
 		led_cdev->brightness_set(led_cdev, value);
