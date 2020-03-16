@@ -23,12 +23,6 @@ config COMMON_CLK
 menu "Common Clock Framework"
 	depends on COMMON_CLK
 
-config AMAZON_DEBUG_CLK
-	tristate "Amazon Debug Clock"
-	depends on COMMON_CLK
-	---help---
-	  Support to debug importment clock information.
-
 config COMMON_CLK_WM831X
 	tristate "Clock driver for WM831x/2x PMICs"
 	depends on MFD_WM831X
