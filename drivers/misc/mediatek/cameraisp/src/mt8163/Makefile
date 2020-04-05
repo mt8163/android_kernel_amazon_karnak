@@ -12,5 +12,3 @@ obj-y += cameraisp_dummy2.o
 obj-y += camera_isp.o
 obj-y += camera_sysram.o
 obj-y += camera_pipe_mgr.o
-
-$(info cameraisp drv by platform $(platform_drv))
