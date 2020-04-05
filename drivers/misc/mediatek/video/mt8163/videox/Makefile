@@ -1,5 +1,6 @@
 # drivers/video/mtk/Makefile
 
+ccflags-y += -Wno-null-dereference -Wno-error
 
 obj-$(CONFIG_MTK_FB) += mtkfb_console.o        \
 						disp_assert_layer.o    \

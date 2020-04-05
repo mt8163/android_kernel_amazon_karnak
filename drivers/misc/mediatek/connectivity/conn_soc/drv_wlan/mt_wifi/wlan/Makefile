@@ -2,6 +2,8 @@
 # Compile Options
 # ---------------------------------------------------
 ccflags-y += -DLINUX -DMT6628
+ccflags-y += -Wno-enum-conversion
+ccflags-y += -Wno-everything
 
 ccflags-y += -DCFG_SUPPORT_AGPS_ASSIST=1
 

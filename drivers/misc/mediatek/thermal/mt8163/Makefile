@@ -3,6 +3,8 @@ ccflags-y  += -I$(THERMAL_CHIP_DRIVER_DIR)/inc
 ccflags-y  += -I$(srctree)/drivers/misc/mediatek/base/power/$(MTK_PLATFORM)
 ccflags-y  += -I$(srctree)/drivers/misc/mediatek/gpu/hal/
 ccflags-y  += -I$(srctree)/drivers/misc/mediatek/thermal/fakeHeader/
+ccflags-y  += -Wno-invalid-source-encoding
+ccflags-y += -Wno-null-dereference -Wno-error
 obj-  := dummy.o
 
 ifeq ($(CONFIG_THERMAL), y)

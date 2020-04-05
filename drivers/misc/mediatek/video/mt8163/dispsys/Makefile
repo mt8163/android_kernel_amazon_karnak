@@ -1,4 +1,5 @@
 # drivers/dispsys
+ccflags-y += -Wno-switch -Wno-error
 
 #for build
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/     \
