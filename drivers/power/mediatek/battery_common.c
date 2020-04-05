@@ -303,7 +303,6 @@ static struct timespec charging_96_93_time;
 static struct timespec charging_15_20_time;
 static struct timespec charging_0_20_time;
 
-extern unsigned long get_virtualsensor_temp(void);
 #endif
 /*extern BOOL bat_spm_timeout;
 extern unsigned int _g_bat_sleep_total_time;*/
@@ -343,7 +342,6 @@ void metrics_charger(bool connect)
 	char buf[256] = {0};
 	long elaps_sec;
 	struct timespec diff;
-	unsigned long virtual_temp = get_virtualsensor_temp();
 
 	if (connect == true) {
 		init_charging_vol = BMT_status.bat_vol;
@@ -358,7 +356,7 @@ void metrics_charger(bool connect)
 				"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
 				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 				BMT_status.charger_exist, elaps_sec,init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-				BMT_status.SOC, BMT_status.temperature, virtual_temp, gFG_battery_cycle);
+				BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
 			log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 			memset(buf, 0, sizeof(buf));
@@ -383,7 +381,7 @@ void metrics_charger(bool connect)
 				"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
 				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 				BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-				BMT_status.SOC, BMT_status.temperature, virtual_temp, gFG_battery_cycle);
+				BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
 			log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 			memset(buf, 0, sizeof(buf));
@@ -2807,7 +2805,6 @@ static void battery_update(struct battery_data *bat_data)
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	char buf[256] = {0};
 	unsigned char charger_fault_type;
-	unsigned long virtual_temp = get_virtualsensor_temp();
 	long elaps_sec;
 	long elaps_msec;
 	struct timespec diff;
@@ -2841,7 +2838,7 @@ static void battery_update(struct battery_data *bat_data)
 					"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
 					"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 					BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-					BMT_status.SOC, BMT_status.temperature, virtual_temp, gFG_battery_cycle);
+					BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
 				log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 				memset(buf, 0, sizeof(buf));
@@ -2909,7 +2906,7 @@ static void battery_update(struct battery_data *bat_data)
 			"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
 			"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 			BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-			BMT_status.SOC, BMT_status.temperature, virtual_temp, gFG_battery_cycle);
+			BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
 		log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 		memset(buf, 0, sizeof(buf));
@@ -4386,7 +4383,6 @@ void BAT_thread(void)
 	unsigned long total_time_plug_in;
 #ifdef CONFIG_AMAZON_METRICS_LOG
 	char buf[256] = {0};
-	unsigned long virtual_temp = get_virtualsensor_temp();
 #endif
 
 	pr_debug("BAT_thread() called!\n");
@@ -4432,7 +4428,7 @@ void BAT_thread(void)
 				"Bat_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Temp=%d;CT;1,"
 				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_count=%d;CT;1:NA",
 				1, total_time_plug_in, BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
-				virtual_temp, gFG_battery_cycle);
+				 gFG_battery_cycle);
 
 				log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 				memset(buf, 0, sizeof(buf));
@@ -4452,7 +4448,7 @@ void BAT_thread(void)
 				"Bat_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Temp=%d;CT;1,"
 				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 				g_custom_charging_mode, total_time_plug_in, BMT_status.bat_vol, BMT_status.UI_SOC,
-				BMT_status.SOC, BMT_status.temperature, virtual_temp, gFG_battery_cycle);
+				BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
 			log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 		}
