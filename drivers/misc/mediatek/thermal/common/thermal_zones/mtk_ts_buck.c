@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -11,7 +24,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include "mt-plat/mtk_thermal_monitor.h"
-#include "mach/mt_typedefs.h"
 #include "mach/mt_thermal.h"
 /* #include <mach/pmic_mt6329_hw_bank1.h> */
 /* #include <mach/pmic_mt6329_sw_bank1.h> */
@@ -26,6 +38,7 @@
 
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
+static DEFINE_SEMAPHORE(sem_mutex);
 
 static unsigned int interval;	/* seconds, 0 : no auto polling */
 static unsigned int trip_temp[10] = { 120000, 110000, 100000, 90000, 80000, 70000, 65000, 60000, 55000, 50000 };
@@ -70,23 +83,23 @@ do {									\
 } while (0)
 
 /* Cali */
-static kal_int32 g_o_vts;
-static kal_int32 g_degc_cali;
-static kal_int32 g_adc_cali_en;
-static kal_int32 g_o_slope;
-static kal_int32 g_o_slope_sign;
-static kal_int32 g_id;
-static kal_int32 g_slope1;
-static kal_int32 g_slope2;
-static kal_int32 g_intercept;
+static __s32 g_o_vts;
+static __s32 g_degc_cali;
+static __s32 g_adc_cali_en;
+static __s32 g_o_slope;
+static __s32 g_o_slope_sign;
+static __s32 g_id;
+static __s32 g_slope1;
+static __s32 g_slope2;
+static __s32 g_intercept;
 #define y_pmic_repeat_times	1
 
 void tsbuck_read_6332_efuse(void)
 {
-	U32 ret = 0;
-	U32 reg_val = 0;
+	__u32 ret = 0;
+	__u32 reg_val = 0;
 	int i = 0, j = 0;
-	U32 efusevalue[2];
+	__u32 efusevalue[2];
 
 	pr_debug("[tsbuck_read_6332_efuse] start\n");
 
@@ -203,7 +216,7 @@ static void tsbuck_cali_prepare(void)
 
 static void tsbuck_cali_prepare2(void)
 {
-	kal_int32 vbe_t;
+	__s32 vbe_t;
 
 	g_slope1 = (100 * 1000);	/* 1000 is for 0.001 degree */
 	if (g_o_slope_sign == 0)
@@ -224,10 +237,10 @@ static void tsbuck_cali_prepare2(void)
 
 }
 
-static kal_int32 pmic_raw_to_temp(kal_uint32 ret)
+static __s32 pmic_raw_to_temp(__u32 ret)
 {
-	kal_int32 y_curr = ret;
-	kal_int32 t_current;
+	__s32 y_curr = ret;
+	__s32 t_current;
 
 	t_current = g_intercept + ((g_slope1 * y_curr) / (g_slope2));
 	/* tsbuck_dprintk("[pmic_raw_to_temp] t_current=%d\n",t_current); */
@@ -454,7 +467,7 @@ static int tspmic_sysrst_set_cur_state(struct thermal_cooling_device *cdev, unsi
 
 /* BUG(); */
 		/* arch_reset(0,NULL); */
-		*(unsigned int *)0x0 = 0xdead;	/* To trigger data abort to reset the system for thermal protection. */
+		BUG();	/* To trigger data abort to reset the system for thermal protection. */
 	}
 	return 0;
 }
@@ -508,11 +521,12 @@ static ssize_t tsbuck_write(struct file *file, const char __user *buffer, size_t
 
 	if (sscanf
 	    (desc,
-	     "%d %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d",
+	     "%d %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d",
 	     &num_trip, &trip[0], &t_type[0], bind0, &trip[1], &t_type[1], bind1, &trip[2],
 	     &t_type[2], bind2, &trip[3], &t_type[3], bind3, &trip[4], &t_type[4], bind4, &trip[5],
 	     &t_type[5], bind5, &trip[6], &t_type[6], bind6, &trip[7], &t_type[7], bind7, &trip[8],
 	     &t_type[8], bind8, &trip[9], &t_type[9], bind9, &time_msec) == 32) {
+		down(&sem_mutex);
 		tsbuck_dprintk("[tsbuck_write] tsbuck_unregister_thermal\n");
 		tsbuck_unregister_thermal();
 
@@ -560,6 +574,7 @@ static ssize_t tsbuck_write(struct file *file, const char __user *buffer, size_t
 
 		tsbuck_dprintk("[tsbuck_write] tsbuck_register_thermal\n");
 		tsbuck_register_thermal();
+		up(&sem_mutex);
 
 		return count;
 	}

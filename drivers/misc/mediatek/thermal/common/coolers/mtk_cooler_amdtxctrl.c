@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/types.h>
@@ -547,15 +560,15 @@ int amdtxctrl_pid_read(char *buf, char **start, off_t offset, int count, int *eo
 	return ret;
 }
 
-ssize_t amdtxctrl_pid_write(struct file *filp, const char __user *buf, unsigned long len,
+ssize_t amdtxctrl_pid_write(struct file *filp, const char __user *buf, unsigned long count,
 			    void *data)
 {
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
-
-	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
+	int len = 0;
 
 	/* write data to the buffer */
+	len = (count < (sizeof(tmp) - 1)) ? count : (sizeof(tmp) - 1);
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
 

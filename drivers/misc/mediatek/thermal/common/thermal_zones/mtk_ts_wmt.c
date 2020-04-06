@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/thermal.h>
 #include <linux/proc_fs.h>
@@ -14,7 +27,7 @@
 #include <mt-plat/aee.h>
 #include "mach/mt_thermal.h"
 #include <linux/uidgid.h>
-
+#include <linux/slab.h>
 /*=============================================================
  *Weak functions
  *=============================================================*/
@@ -27,6 +40,8 @@ mtk_wcn_cmb_stub_query_ctrl(void)
 /*=============================================================*/
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
+static DEFINE_SEMAPHORE(sem_mutex);
+static int isTimerCancelled;
 
 static int wmt_tm_debug_log;
 #define wmt_tm_dprintk(fmt, args...)   \
@@ -260,7 +275,13 @@ static unsigned long set_adaptive_wifi_tput_limit(unsigned int cur_tput, unsigne
 			limit_upper_bound = cur_tput;
 		}
 		limit_tput = (prev_limit_tput * limit_ratio) / init_wifi_tput_ratio;
-		limit_tput = clamp(limit_tput, min_wifi_tput, limit_upper_bound);
+
+		if (limit_upper_bound >= min_wifi_tput)
+			limit_tput = clamp(limit_tput, min_wifi_tput, limit_upper_bound);
+		else
+			limit_tput = -1;
+
+
 		prev_limit_tput = limit_tput;
 	}
 
@@ -704,7 +725,7 @@ static int wmt_cl_set_cur_state(struct thermal_cooling_device *cool_dev, unsigne
 		wmt_tm_printk("wmt_cl_set_cur_state = 1\n");
 		/* the temperature is over than the critical, system reboot. */
 /* BUG(); */
-		*(unsigned int *)0x0 = 0xdead;	/* To trigger data abort to reset the system for thermal protection. */
+		BUG();	/* To trigger data abort to reset the system for thermal protection. */
 	}
 
 	return 0;
@@ -973,11 +994,13 @@ static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *cool_dev, uns
 	if (0 == wifi_throttle_version) {
 		wmt_tm_dprintk("[%s] %lu\n", __func__, v);
 
-		if (pg_wmt_tm)
+		if (pg_wmt_tm) {
 			p_linux_if = &pg_wmt_tm->linux_if;
-		else
-			ret = -1;
-
+			if (p_linux_if == NULL)
+				return -1;
+		} else {
+			return -1;
+		}
 /* cl_pa1_dev_state = (unsigned int)v; */
 
 		if (cl_pa1_dev_state == 1)
@@ -1025,10 +1048,13 @@ static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *cool_dev, uns
 	if (0 == wifi_throttle_version) {
 		wmt_tm_dprintk("[%s] %lu\n", __func__, v);
 
-		if (pg_wmt_tm)
+		if (pg_wmt_tm) {
 			p_linux_if = &pg_wmt_tm->linux_if;
-		else
-			ret = -1;
+			if (p_linux_if == NULL)
+				return -1;
+		} else {
+			return -1;
+		}
 
 		cl_pa2_dev_state = (unsigned int)v;
 
@@ -1212,8 +1238,7 @@ ssize_t wmt_tm_wfd_write(struct file *filp, const char __user *buf, size_t len, 
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
 
-	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
-
+	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
@@ -1253,8 +1278,7 @@ ssize_t wmt_wifi_in_soc_write(struct file *filp, const char __user *buf, size_t 
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
 
-	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
-
+	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
@@ -1321,8 +1345,7 @@ ssize_t wmt_tm_pid_write(struct file *filp, const char __user *buf, size_t len, 
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
 
-	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
-
+	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
@@ -1401,15 +1424,24 @@ static int wmt_tm_open(struct inode *inode, struct file *file)
 static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t count, loff_t *data)
 {
 	int i = 0;
-	int len = 0, time_msec = 0;
-	int trip_temp[COOLER_NUM] = { 0 };
-	int thermal_trip[COOLER_NUM] = { 0 };
-
-	char desc[512];
-	char bind0[20], bind1[20], bind2[20], bind3[20], bind4[20];
-	char bind5[20], bind6[20], bind7[20], bind8[20], bind9[20];
+	int len = 0;
+	struct tm_data {
+		int trip_temp[COOLER_NUM];
+		int thermal_trip[COOLER_NUM];
+		char bind0[20], bind1[20], bind2[20], bind3[20], bind4[20];
+		char bind5[20], bind6[20], bind7[20], bind8[20], bind9[20];
+		int time_msec;
+		char desc[512];
+	};
 
 	struct linux_thermal_ctrl_if *p_linux_if = 0;
+
+	struct tm_data *ptr_tm_data = kmalloc(sizeof(*ptr_tm_data), GFP_KERNEL);
+
+	if (ptr_tm_data == NULL) {
+		/* wmt_tm_printk("[%s] kmalloc fail\n\n", __func__); */
+		return -ENOMEM;
+	}
 
 	wmt_tm_printk("[%s]\n", __func__);
 
@@ -1418,54 +1450,74 @@ static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t co
 		p_linux_if = &pg_wmt_tm->linux_if;
 	} else {
 		wmt_tm_info("[wmt_thz_write] fail!\n");
+		kfree(ptr_tm_data);
 		return -EINVAL;
 	}
 
-	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
+	len = (count < (sizeof(ptr_tm_data->desc) - 1)) ? count : (sizeof(ptr_tm_data->desc) - 1);
 
-	if (copy_from_user(desc, buf, len))
+	if (copy_from_user(ptr_tm_data->desc, buf, len)) {
+		kfree(ptr_tm_data);
 		return 0;
+	}
 
-	desc[len] = '\0';
+	ptr_tm_data->desc[len] = '\0';
 
 	if (sscanf
-	    (desc,
-	     "%d %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d",
-	     &g_num_trip, &trip_temp[0], &thermal_trip[0], bind0, &trip_temp[1], &thermal_trip[1],
-	     bind1, &trip_temp[2], &thermal_trip[2], bind2, &trip_temp[3], &thermal_trip[3], bind3,
-	     &trip_temp[4], &thermal_trip[4], bind4, &trip_temp[5], &thermal_trip[5], bind5,
-	     &trip_temp[6], &thermal_trip[6], bind6, &trip_temp[7], &thermal_trip[7], bind7,
-	     &trip_temp[8], &thermal_trip[8], bind8, &trip_temp[9], &thermal_trip[9], bind9,
-	     &time_msec) == 32) {
+	    (ptr_tm_data->desc,
+	     "%d %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d",
+	     &g_num_trip, &ptr_tm_data->trip_temp[0], &ptr_tm_data->thermal_trip[0], ptr_tm_data->bind0,
+	     &ptr_tm_data->trip_temp[1], &ptr_tm_data->thermal_trip[1], ptr_tm_data->bind1,
+	     &ptr_tm_data->trip_temp[2], &ptr_tm_data->thermal_trip[2], ptr_tm_data->bind2,
+	     &ptr_tm_data->trip_temp[3], &ptr_tm_data->thermal_trip[3], ptr_tm_data->bind3,
+	     &ptr_tm_data->trip_temp[4], &ptr_tm_data->thermal_trip[4], ptr_tm_data->bind4,
+	     &ptr_tm_data->trip_temp[5], &ptr_tm_data->thermal_trip[5], ptr_tm_data->bind5,
+	     &ptr_tm_data->trip_temp[6], &ptr_tm_data->thermal_trip[6], ptr_tm_data->bind6,
+	     &ptr_tm_data->trip_temp[7], &ptr_tm_data->thermal_trip[7], ptr_tm_data->bind7,
+	     &ptr_tm_data->trip_temp[8], &ptr_tm_data->thermal_trip[8], ptr_tm_data->bind8,
+	     &ptr_tm_data->trip_temp[9], &ptr_tm_data->thermal_trip[9], ptr_tm_data->bind9,
+	     &ptr_tm_data->time_msec) == 32) {
+
 		/* unregister */
+		down(&sem_mutex);
+		wmt_tm_dprintk("[%s] mtktswmt unregister thermal\n", __func__);
 		if (p_linux_if->thz_dev) {
 			mtk_thermal_zone_device_unregister(p_linux_if->thz_dev);
 			p_linux_if->thz_dev = NULL;
 		}
 
+		if (g_num_trip < 0 || g_num_trip > 10) {
+			aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, "wmt_tm_write",
+					"Bad argument");
+			wmt_tm_info("[%s] bad argument = %s\n", __func__, ptr_tm_data->desc);
+			kfree(ptr_tm_data);
+			up(&sem_mutex);
+			return -EINVAL;
+		}
+
 		for (i = 0; i < g_num_trip; i++)
-			g_thermal_trip[i] = thermal_trip[i];
+			g_thermal_trip[i] = ptr_tm_data->thermal_trip[i];
 
 		g_bind0[0] = g_bind1[0] = g_bind2[0] = g_bind3[0] = g_bind4[0] = '\0';
 		g_bind5[0] = g_bind6[0] = g_bind7[0] = g_bind8[0] = g_bind9[0] = '\0';
 
 		for (i = 0; i < 20; i++) {
-			g_bind0[i] = bind0[i];
-			g_bind1[i] = bind1[i];
-			g_bind2[i] = bind2[i];
-			g_bind3[i] = bind3[i];
-			g_bind4[i] = bind4[i];
-			g_bind5[i] = bind5[i];
-			g_bind6[i] = bind6[i];
-			g_bind7[i] = bind7[i];
-			g_bind8[i] = bind8[i];
-			g_bind9[i] = bind9[i];
+			g_bind0[i] = ptr_tm_data->bind0[i];
+			g_bind1[i] = ptr_tm_data->bind1[i];
+			g_bind2[i] = ptr_tm_data->bind2[i];
+			g_bind3[i] = ptr_tm_data->bind3[i];
+			g_bind4[i] = ptr_tm_data->bind4[i];
+			g_bind5[i] = ptr_tm_data->bind5[i];
+			g_bind6[i] = ptr_tm_data->bind6[i];
+			g_bind7[i] = ptr_tm_data->bind7[i];
+			g_bind8[i] = ptr_tm_data->bind8[i];
+			g_bind9[i] = ptr_tm_data->bind9[i];
 		}
 
 		for (i = 0; i < g_num_trip; i++)
-			g_trip_temp[i] = trip_temp[i];
+			g_trip_temp[i] = ptr_tm_data->trip_temp[i];
 
-		p_linux_if->interval = time_msec;
+		p_linux_if->interval = ptr_tm_data->time_msec;
 
 		wmt_tm_dprintk
 		    ("[wmt_tm_write] g_trip_temp [0]=%d, [1]=%d, [2]=%d, [3]=%d, [4]=%d\n",
@@ -1484,12 +1536,12 @@ static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t co
 			       g_bind5, g_bind6, g_bind7, g_bind8, g_bind9);
 
 		wmt_tm_dprintk("[wmt_tm_write] trip_temp [0]=%d, [1]=%d, [2]=%d, [3]=%d, [4]=%d\n",
-			       trip_temp[0], trip_temp[1], trip_temp[2], trip_temp[3],
-			       trip_temp[4]);
+			       ptr_tm_data->trip_temp[0], ptr_tm_data->trip_temp[1], ptr_tm_data->trip_temp[2],
+			       ptr_tm_data->trip_temp[3], ptr_tm_data->trip_temp[4]);
 
 		wmt_tm_dprintk("[wmt_tm_write] trip_temp [5]=%d, [6]=%d, [7]=%d, [8]=%d, [9]=%d\n",
-			       trip_temp[5], trip_temp[6], trip_temp[7], trip_temp[8],
-			       trip_temp[9]);
+			       ptr_tm_data->trip_temp[5], ptr_tm_data->trip_temp[6], ptr_tm_data->trip_temp[7],
+			       ptr_tm_data->trip_temp[8], ptr_tm_data->trip_temp[9]);
 
 		wmt_tm_dprintk("[wmt_tm_write] polling time=%d\n", p_linux_if->interval);
 
@@ -1498,17 +1550,24 @@ static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t co
 		/* thermal_zone_device_update(p_linux_if->thz_dev); */
 
 		/* register */
+		wmt_tm_dprintk("[%s] mtktswmt register thermal\n", __func__);
 		p_linux_if->thz_dev = mtk_thermal_zone_device_register("mtktswmt", g_num_trip, NULL,
 								       &wmt_thz_dev_ops, 0, 0, 0,
 								       p_linux_if->interval);
 
+		up(&sem_mutex);
+
 		wmt_tm_dprintk("[wmt_tm_write] time_ms=%d\n", p_linux_if->interval);
+
+		kfree(ptr_tm_data);
 
 		return count;
 	}
 
-	wmt_tm_info("[%s] bad argument = %s\n", __func__, desc);
-
+	wmt_tm_info("[%s] bad argument = %s\n", __func__, ptr_tm_data->desc);
+	aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, "wmt_tm_write",
+			"Bad argument");
+	kfree(ptr_tm_data);
 	return -EINVAL;
 }
 
@@ -1525,12 +1584,19 @@ void mtkts_wmt_cancel_thermal_timer(void)
 	else
 		return;
 
-	/* cancel timer */
 	/* pr_debug("mtkts_wmt_cancel_thermal_timer\n"); */
 
 	/* stop thermal framework polling when entering deep idle */
-	if (p_linux_if->thz_dev)
+
+	if (down_trylock(&sem_mutex))
+		return;
+
+	if (p_linux_if->thz_dev) {
 		cancel_delayed_work(&(p_linux_if->thz_dev->poll_queue));
+		isTimerCancelled = 1;
+	}
+
+	up(&sem_mutex);
 }
 
 void mtkts_wmt_start_thermal_timer(void)
@@ -1546,9 +1612,20 @@ void mtkts_wmt_start_thermal_timer(void)
 
 	/* pr_debug("mtkts_wmt_start_thermal_timer\n"); */
 	/* resume thermal framework polling when leaving deep idle */
-	if (p_linux_if->thz_dev != NULL && p_linux_if->interval != 0)
+
+	if (!isTimerCancelled)
+		return;
+
+	if (down_trylock(&sem_mutex))
+		return;
+
+	if (p_linux_if->thz_dev != NULL && p_linux_if->interval != 0) {
 		mod_delayed_work(system_freezable_wq, &(p_linux_if->thz_dev->poll_queue),
-				 round_jiffies(msecs_to_jiffies(2000)));
+			round_jiffies(msecs_to_jiffies(2000)));
+		isTimerCancelled = 0;
+	}
+
+	up(&sem_mutex);
 }
 
 static const struct file_operations _wmt_tm_fops = {
@@ -1626,10 +1703,8 @@ static int wmt_tm_proc_register(void)
 	if (!wmt_thro_proc_dir) {
 		wmt_tm_printk("[wmt_tm_proc_register]: mkdir /proc/wmt_tm failed\n");
 	} else {
-		entry =
-		    proc_create("tx_thro", S_IRUGO | S_IWUSR, wmt_thro_proc_dir, &_tx_thro_fops);
-		entry =
-		    proc_create("tx_thro_limit", S_IRUGO | S_IWUSR, wmt_thro_proc_dir,
+		proc_create("tx_thro", S_IRUGO | S_IWUSR, wmt_thro_proc_dir, &_tx_thro_fops);
+		proc_create("tx_thro_limit", S_IRUGO | S_IWUSR, wmt_thro_proc_dir,
 				&_tx_thro_limit_fops);
 	}
 
@@ -1819,7 +1894,7 @@ static int __init wmt_tm_init(void)
 	wmt_stats_info.pre_time = 0;
 	wmt_stats_info.pre_tx_bytes = 0;
 
-	init_timer(&wmt_stats_timer);
+	init_timer_deferrable(&wmt_stats_timer);
 	wmt_stats_timer.function = (void *)&wmt_cal_stats;
 	wmt_stats_timer.data = (unsigned long)&wmt_stats_info;
 	wmt_stats_timer.expires = jiffies + 1 * HZ;

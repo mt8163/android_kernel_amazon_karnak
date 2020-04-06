@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -19,7 +32,7 @@
 #define mtk_cooler_kshutdown_dprintk(fmt, args...)
 #endif
 
-#define MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN  3
+#define MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN  8
 
 static struct thermal_cooling_device *cl_kshutdown_dev[MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN] = { 0 };
 static unsigned long cl_kshutdown_state[MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN] = { 0 };

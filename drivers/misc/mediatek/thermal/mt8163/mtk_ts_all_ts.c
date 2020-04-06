@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -13,7 +26,7 @@
 #include <linux/seq_file.h>
 #include <linux/uidgid.h>
 #include "mt-plat/mtk_thermal_monitor.h"
-#include "mach/mt_typedefs.h"
+#include "mtk_thermal_typedefs.h"
 #include "mach/mt_thermal.h"
 #include "inc/mtk_ts_cpu.h"
 
@@ -435,12 +448,6 @@ static int tsallts_get_trip_temp(struct thermal_zone_device *thermal, int trip, 
 	return 0;
 }
 
-static int tsallts_set_trip_temp(struct thermal_zone_device *thermal, int trip, unsigned long temp)
-{
-	trip_temp[trip] = temp;
-	return 0;
-}
-
 static int tsallts_get_crit_temp(struct thermal_zone_device *thermal, unsigned long *temperature)
 {
 	*temperature = TSALLTS_TEMP_CRIT;
@@ -456,7 +463,6 @@ static struct thermal_zone_device_ops tsallts_dev_ops1 = {
 	.set_mode = tsallts_set_mode,
 	.get_trip_type = tsallts_get_trip_type,
 	.get_trip_temp = tsallts_get_trip_temp,
-	.set_trip_temp = tsallts_set_trip_temp,
 	.get_crit_temp = tsallts_get_crit_temp,
 };
 

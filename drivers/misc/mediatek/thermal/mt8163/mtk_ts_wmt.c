@@ -1,9 +1,21 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/thermal.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <asm/uaccess.h>
-#include <linux/platform_data/mtk_thermal.h>
 /* #include "wmt_tm.h" */
 #include "mt-plat/mtk_thermal_monitor.h"
 #include <linux/timer.h>
@@ -13,20 +25,9 @@
 #include <linux/uidgid.h>
 /* For using net dev - */
 #include <mt-plat/mtk_wcn_cmb_stub.h>
-#include "inc/mtk_ts_wmt.h"
 
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
-
-/*=============================================================
- *Weak functions
- *=============================================================*/
-int __attribute__ ((weak))
-mtk_wcn_cmb_stub_query_ctrl(void)
-{
-	pr_debug("E_WF: %s doesn't exist\n", __func__);
-	return 0;
-}
 
 static int wmt_tm_debug_log;
 #define wmt_tm_dprintk(fmt, args...)   \
@@ -146,13 +147,10 @@ static int wmt_thz_get_mode(struct thermal_zone_device *, enum thermal_device_mo
 static int wmt_thz_set_mode(struct thermal_zone_device *, enum thermal_device_mode);
 static int wmt_thz_get_trip_type(struct thermal_zone_device *, int, enum thermal_trip_type *);
 static int wmt_thz_get_trip_temp(struct thermal_zone_device *, int, unsigned long *);
-static int wmt_thz_set_trip_temp(struct thermal_zone_device *, int, unsigned long);
 static int wmt_thz_get_crit_temp(struct thermal_zone_device *, unsigned long *);
 static int wmt_cl_get_max_state(struct thermal_cooling_device *, unsigned long *);
 static int wmt_cl_get_cur_state(struct thermal_cooling_device *, unsigned long *);
 static int wmt_cl_set_cur_state(struct thermal_cooling_device *, unsigned long);
-static int mtktswmt_thermal_notify(struct thermal_zone_device *thermal,
-					int trip, enum thermal_trip_type type);
 
 static int wmt_cl_pa1_get_max_state(struct thermal_cooling_device *, unsigned long *);
 static int wmt_cl_pa1_get_cur_state(struct thermal_cooling_device *, unsigned long *);
@@ -176,9 +174,7 @@ static struct thermal_zone_device_ops wmt_thz_dev_ops = {
 	.set_mode = wmt_thz_set_mode,
 	.get_trip_type = wmt_thz_get_trip_type,
 	.get_trip_temp = wmt_thz_get_trip_temp,
-	.set_trip_temp = wmt_thz_set_trip_temp,
 	.get_crit_temp = wmt_thz_get_crit_temp,
-	.notify = mtktswmt_thermal_notify,
 };
 
 static struct thermal_cooling_device_ops mtktspa_cooling_sysrst_ops = {
@@ -368,20 +364,6 @@ static int wmt_thz_unbind(struct thermal_zone_device *thz_dev,
 	return 0;
 }
 
-int wmt_thz_hw_get_temp(void)
-{
-	int temp = 0;
-
-#ifndef CONFIG_MTK_COMBO_CHIP_MT76x2
-	temp = mtk_wcn_cmb_stub_query_ctrl();
-#endif /* CONFIG_MTK_COMBO_CHIP_MT76x2 */
-	if (temp >= 255)	/* dummy values */
-		temp = -127;
-
-	temp = temp * 1000;
-	return temp;
-}
-
 static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, unsigned long *pv)
 {
 	/* struct wmt_thermal_ctrl_ops *p_des; */
@@ -393,9 +375,8 @@ static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, unsigned long *
 	{
 		/* p_des = &pg_wmt_tm->wmt_if.ops; */
 		/* temp = p_des->query_temp(); */
-#ifndef CONFIG_MTK_COMBO_CHIP_MT76x2
 		temp = mtk_wcn_cmb_stub_query_ctrl();
-#endif /* CONFIG_MTK_COMBO_CHIP_MT76x2 */
+
 		if (temp >= 255)	/* dummy values */
 			temp = -127;
 
@@ -467,24 +448,15 @@ static int wmt_thz_set_mode(struct thermal_zone_device *thz_dev, enum thermal_de
 static int wmt_thz_get_trip_type(struct thermal_zone_device *thz_dev, int trip,
 				 enum thermal_trip_type *type)
 {
-	wmt_tm_dprintk("[wmt_thz_get_trip_type] %d\n", trip);
+	wmt_tm_dprintk("[mtktspa_get_trip_type] %d\n", trip);
 	*type = g_thermal_trip[trip];
 	return 0;
 }
 
 static int wmt_thz_get_trip_temp(struct thermal_zone_device *thz_dev, int trip, unsigned long *pv)
 {
-	wmt_tm_dprintk("[wmt_thz_get_trip_temp] %d\n", trip);
+	wmt_tm_dprintk("[mtktspa_get_trip_temp] %d\n", trip);
 	*pv = g_trip_temp[trip];
-	return 0;
-}
-
-static int wmt_thz_set_trip_temp(struct thermal_zone_device *thermal,
-				  int trip,
-				  unsigned long t)
-{
-	wmt_tm_dprintk("[wmt_thz_set_trip_temp] %d\n", trip);
-	g_trip_temp[trip] = t;
 	return 0;
 }
 
@@ -494,18 +466,6 @@ static int wmt_thz_get_crit_temp(struct thermal_zone_device *thz_dev, unsigned l
 #define WMT_TM_TEMP_CRIT 85000	/* 85.000 degree Celsius */
 	*pv = WMT_TM_TEMP_CRIT;
 
-	return 0;
-}
-
-#define PREFIX "thermaltswmt:def"
-static int mtktswmt_thermal_notify(struct thermal_zone_device *thermal,
-					int trip, enum thermal_trip_type type)
-{
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_err("%s: thermal_shutdown notify\n", __func__);
-		last_kmsg_thermal_shutdown();
-		pr_err("%s: thermal_shutdown notify end\n", __func__);
-	}
 	return 0;
 }
 
@@ -1006,9 +966,7 @@ ssize_t wmt_tm_wfd_write(struct file *filp, const char __user *buf, size_t len, 
 {
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
-
-	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
-
+	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
@@ -1045,9 +1003,7 @@ ssize_t wmt_tm_pid_write(struct file *filp, const char __user *buf, size_t len, 
 {
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
-
-	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
-
+	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;

@@ -25,11 +25,10 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/uidgid.h>
-#include <linux/platform_data/mtk_thermal.h>
 
 /*#include <mach/system.h>*/
 #include "mt-plat/mtk_thermal_monitor.h"
-#include "mach/mt_typedefs.h"
+#include "mtk_thermal_typedefs.h"
 #include "mach/mt_thermal.h"
 
 /* #include <mach/pmic_mt6329_hw_bank1.h> */
@@ -37,12 +36,10 @@
 /* #include <mach/pmic_mt6329_hw.h> */
 /* #include <mach/pmic_mt6329_sw.h> */
 /*#include <mach/upmu_common_sw.h>*/
-#include <mt-plat/upmu_common.h>
 #include <mach/upmu_hw.h>
 /*#include <mach/upmu_sw.h>*/
 #include <mt-plat/mt_pmic_wrap.h>
 #include "inc/mtk_ts_cpu.h"
-
 
 struct proc_dir_entry *mtk_thermal_get_proc_drv_therm_dir_entry(void);
 
@@ -95,6 +92,12 @@ static kal_int32 g_slope1;
 static kal_int32 g_slope2;
 static kal_int32 g_intercept;
 
+unsigned int __attribute__ ((weak))
+upmu_get_cid(void)
+{
+	return 0x2023;
+}
+
 #define y_pmic_repeat_times	1
 static u16 pmic_read(u16 addr)
 {
@@ -119,14 +122,14 @@ static void pmic_cali_prepare(void)
 	g_o_slope_sign = (temp1 >> 5) & 0x0001;
 
 	/*
-	   CHIP ID -- use E2 only
+	   CHIP ID
 	   E1 : 16'h1023
 	   E2 : 16'h2023
 	   E3 : 16'h3023
 	 */
 	if (upmu_get_cid() == 0x1023) {
-		g_id = (temp1>>12) & 0x0001;
-		g_o_slope = (temp1>>6) & 0x003f;
+		g_id = (temp1 >> 12) & 0x0001;
+		g_o_slope = (temp1 >> 6) & 0x003f;
 	} else {
 		g_id = (temp1 >> 14) & 0x0001;
 		g_o_slope = (((temp1 >> 11) & 0x0007) << 3) + ((temp1 >> 6) & 0x007);
@@ -193,7 +196,7 @@ static kal_int32 pmic_raw_to_temp(kal_uint32 ret)
 /* int ts_pmic_at_boot_time=0; */
 static DEFINE_MUTEX(TSPMIC_lock);
 static int pre_temp1 = 0, PMIC_counter;
-int mtktspmic_get_hw_temp(void)
+static int mtktspmic_get_hw_temp(void)
 {
 	int temp = 0, temp1 = 0;
 	/* int temp3=0; */
@@ -363,28 +366,9 @@ static int mtktspmic_get_trip_temp(struct thermal_zone_device *thermal, int trip
 	return 0;
 }
 
-static int mtktspmic_set_trip_temp(struct thermal_zone_device *thermal, int trip,
-				   unsigned long temp)
-{
-	trip_temp[trip] = temp;
-	return 0;
-}
-
 static int mtktspmic_get_crit_temp(struct thermal_zone_device *thermal, unsigned long *temperature)
 {
 	*temperature = mtktspmic_TEMP_CRIT;
-	return 0;
-}
-
-#define PREFIX "thermaltspmic:def"
-static int mtktspmic_thermal_notify(struct thermal_zone_device *thermal,
-				int trip, enum thermal_trip_type type)
-{
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_err("%s: thermal_shutdown notify\n", __func__);
-		last_kmsg_thermal_shutdown();
-		pr_err("%s: thermal_shutdown notify end\n", __func__);
-	}
 	return 0;
 }
 
@@ -397,9 +381,7 @@ static struct thermal_zone_device_ops mtktspmic_dev_ops = {
 	.set_mode = mtktspmic_set_mode,
 	.get_trip_type = mtktspmic_get_trip_type,
 	.get_trip_temp = mtktspmic_get_trip_temp,
-	.set_trip_temp = mtktspmic_set_trip_temp,
 	.get_crit_temp = mtktspmic_get_crit_temp,
-	.notify = mtktspmic_thermal_notify,
 };
 
 static int tspmic_sysrst_get_max_state(struct thermal_cooling_device *cdev, unsigned long *state)
@@ -423,8 +405,7 @@ static int tspmic_sysrst_set_cur_state(struct thermal_cooling_device *cdev, unsi
 		pr_debug("*****************************************");
 		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
-		/* BUG(); */
-		*(unsigned int *)0x0 = 0xdead;
+		BUG();
 		/* arch_reset(0,NULL); */
 	}
 	return 0;

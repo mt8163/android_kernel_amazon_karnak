@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -20,17 +33,12 @@
 #include "mt-plat/mtk_mdm_monitor.h"
 #include <mt-plat/mt_boot_common.h>
 #include <linux/uidgid.h>
+#include <linux/slab.h>
 
 #if defined(CONFIG_MTK_THERMAL_PA_VIA_ATCMD)
-#define MTK_TS_PA_THPUT_VIA_CCCI    (0)
 #define MTK_TS_PA_THPUT_VIA_ATCMD   (1)
 #else
-#define MTK_TS_PA_THPUT_VIA_CCCI    (0)
 #define MTK_TS_PA_THPUT_VIA_ATCMD   (0)
-#endif
-
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-#include <mach/mtk_ccci_helper.h>
 #endif
 
 #define mtk_mdm_debug_log 0
@@ -69,9 +77,6 @@ static kgid_t gid = KGIDT_INIT(1000);
 #endif
 
 static bool mdm_sw;
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-static struct timer_list txpwr_timer;
-#endif
 static int mtk_mdm_enable(void);
 static int mtk_mdm_disable(void);
 static int signal_period = 60;	/* 1s */
@@ -83,24 +88,12 @@ static int mdinfoex_threshold[MAX_MDINFOEX_OPCODE] = { 0 };
 
 struct md_info g_pinfo_list[6] = { {"TXPWR_MD1", -127, "db", -127, 0},
 {"TXPWR_MD2", -127, "db", -127, 1},
-{"RFTEMP_2G_MD1", -127000, "m¢XC", -127000, 2},
-{"RFTEMP_2G_MD2", -127000, "m¢XC", -127000, 3},
-{"RFTEMP_3G_MD1", -127000, "m¢XC", -127000, 4},
-{"RFTEMP_3G_MD2", -127000, "m¢XC", -127000, 5}
+{"RFTEMP_2G_MD1", -127000, "mC", -127000, 2},
+{"RFTEMP_2G_MD2", -127000, "mC", -127000, 3},
+{"RFTEMP_3G_MD1", -127000, "mC", -127000, 4},
+{"RFTEMP_3G_MD2", -127000, "mC", -127000, 5}
 };
 
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-/* #ifdef CONFIG_MTK_ENABLE_MD1 */
-DEFINE_MDM_CB(0)
-DEFINE_MDM_CB(2)
-DEFINE_MDM_CB(4)
-/* #endif */
-/* #ifdef CONFIG_MTK_ENABLE_MD2 */
-DEFINE_MDM_CB(1)
-DEFINE_MDM_CB(3)
-DEFINE_MDM_CB(5)
-/* #endif */
-#endif
 int mtk_mdm_get_tx_power(void)
 {
 	return 0;
@@ -238,98 +231,16 @@ int mtk_mdm_set_md2_signal_period(int second)
 }
 EXPORT_SYMBOL(mtk_mdm_set_md2_signal_period);
 
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-static int send_get_md_all_msg(void)
-{
 
-	char mode[1];
-
-	if (!(is_meta_mode() | is_advanced_meta_mode())) {
-		mode[0] = MTK_THERMAL_GET_TX_POWER;
-/* #ifdef CONFIG_MTK_ENABLE_MD1 */
-		if (get_modem_is_enabled(0))
-			exec_ccci_kern_func_by_md_id(0, ID_GET_TXPOWER, mode, 0);
-/* #endif */
-/* #ifdef CONFIG_MTK_ENABLE_MD2 */
-		if (get_modem_is_enabled(1))
-			exec_ccci_kern_func_by_md_id(1, ID_GET_TXPOWER, mode, 0);
-/* #endif */
-	}
-	mode[0] = MTK_THERMAL_GET_RF_TEMP_2G;
-/* #ifdef CONFIG_MTK_ENABLE_MD1 */
-	if (get_modem_is_enabled(0))
-		exec_ccci_kern_func_by_md_id(0, ID_GET_TXPOWER, mode, 0);
-/* #endif */
-/* #ifdef CONFIG_MTK_ENABLE_MD2 */
-	if (get_modem_is_enabled(1))
-		exec_ccci_kern_func_by_md_id(1, ID_GET_TXPOWER, mode, 0);
-/* #endif */
-	mode[0] = MTK_THERMAL_GET_RF_TEMP_3G;
-/* #ifdef CONFIG_MTK_ENABLE_MD1 */
-	if (get_modem_is_enabled(0))
-		exec_ccci_kern_func_by_md_id(0, ID_GET_TXPOWER, mode, 0);
-/* #endif */
-/* #ifdef CONFIG_MTK_ENABLE_MD2 */
-	if (get_modem_is_enabled(1))
-		exec_ccci_kern_func_by_md_id(1, ID_GET_TXPOWER, mode, 0);
-/* #endif */
-
-	return 0;
-}
-#endif
-
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-static int mtk_stats_txpwr(unsigned long data)
-{
-
-	txpwr_timer.expires = jiffies + signal_period * HZ;
-	send_get_md_all_msg();
-	add_timer(&txpwr_timer);
-
-	mtk_mdm_dprintk("mtk_stats_txpwr\n");
-
-	return 0;
-}
-#endif
 
 static int mtk_mdm_enable(void)
 {
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-	/* Register the data send back function */
-	/* MD will receive the data by cb */
-/* #ifdef  CONFIG_MTK_ENABLE_MD1 */
-	if (get_modem_is_enabled(0)) {
-		if (!(is_meta_mode() | is_advanced_meta_mode()))
-			register_ccci_sys_call_back(0, ID_REG_TXPOWER_CB, MDM_CB(0));
-
-		register_ccci_sys_call_back(0, ID_REG_RFTEMP_CB, MDM_CB(2));
-		register_ccci_sys_call_back(0, ID_REG_RFTEMP_3G_CB, MDM_CB(4));
-	}
-/* #endif */
-/* #ifdef  CONFIG_MTK_ENABLE_MD2 */
-	if (get_modem_is_enabled(1)) {
-		if (!(is_meta_mode() | is_advanced_meta_mode()))
-			register_ccci_sys_call_back(1, ID_REG_TXPOWER_CB, MDM_CB(1));
-
-		register_ccci_sys_call_back(1, ID_REG_RFTEMP_CB, MDM_CB(3));
-		register_ccci_sys_call_back(1, ID_REG_RFTEMP_3G_CB, MDM_CB(5));
-	}
-/* #endif */
-	init_timer(&txpwr_timer);
-	txpwr_timer.function = (void *)&mtk_stats_txpwr;
-	/* txpwr_timer.data = (unsigned long) &wmt_stats_info; */
-	txpwr_timer.expires = jiffies + signal_period * HZ;
-	add_timer(&txpwr_timer);
-#endif
 	mtk_mdm_dprintk("ENABLE MDM_TxPower Function\n");
 	return 0;
 }
 
 static int mtk_mdm_disable(void)
 {
-#if MTK_TS_PA_THPUT_VIA_CCCI == 1
-	del_timer(&txpwr_timer);
-#endif
 	mtk_mdm_dprintk("DISABLE MDM_TxPower Function\n");
 	return 0;
 }
@@ -371,22 +282,32 @@ static int mtk_mdm_sw_read(struct seq_file *m, void *v)
 static ssize_t mtk_mdm_sw_write(struct file *file, const char __user *buf, size_t len,
 				loff_t *data)
 {
-	char desc[MAX_LEN] = { 0 };
-	char temp[MAX_LEN] = { 0 };
+	struct mtktsmdm_data {
+		char desc[MAX_LEN];
+		char temp[MAX_LEN];
+	};
 
-	len = (len < (sizeof(desc) - 1)) ? len : (sizeof(desc) - 1);
+	struct mtktsmdm_data *ptr_mtktsmdm_data = kmalloc(sizeof(*ptr_mtktsmdm_data), GFP_KERNEL);
+
+	if (ptr_mtktsmdm_data == NULL)
+		return -ENOMEM;
+
+	len = (len < (sizeof(ptr_mtktsmdm_data->desc) - 1)) ? len : (sizeof(ptr_mtktsmdm_data->desc) - 1);
 
 	/* write data to the buffer */
-	if (copy_from_user(desc, buf, len))
+	if (copy_from_user(ptr_mtktsmdm_data->desc, buf, len)) {
+		kfree(ptr_mtktsmdm_data);
 		return -EFAULT;
+	}
 
-	if (sscanf(desc, "%s", temp) == 1) {
-		if (strncmp(temp, "on", 2) == 0 || strncmp(temp, "1", 1) == 0)
+	if (sscanf(ptr_mtktsmdm_data->desc, "%255s", ptr_mtktsmdm_data->temp) == 1) {
+		if (strncmp(ptr_mtktsmdm_data->temp, "on", 2) == 0 || strncmp(ptr_mtktsmdm_data->temp, "1", 1) == 0)
 			mdm_sw = true;
-		else if (strncmp(temp, "off", 3) == 0 || strncmp(temp, "0", 1) == 0)
+		else if (strncmp(ptr_mtktsmdm_data->temp, "off", 3) == 0 ||
+			strncmp(ptr_mtktsmdm_data->temp, "0", 1) == 0)
 			mdm_sw = false;
 		else
-			mtk_mdm_dprintk("[%s] bad argument:%s\n", __func__, temp);
+			mtk_mdm_dprintk("[%s] bad argument:%s\n", __func__, ptr_mtktsmdm_data->temp);
 
 		if (mdm_sw)
 			mtk_mdm_enable();
@@ -394,10 +315,12 @@ static ssize_t mtk_mdm_sw_write(struct file *file, const char __user *buf, size_
 			mtk_mdm_disable();
 
 
+		kfree(ptr_mtktsmdm_data);
 		return len;
 	}
 
 	mtk_mdm_dprintk("[%s] bad argument\n", __func__);
+	kfree(ptr_mtktsmdm_data);
 	return -EINVAL;
 }
 
