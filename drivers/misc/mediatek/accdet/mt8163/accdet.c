@@ -11,9 +11,6 @@
 #ifdef CONFIG_SND_HEADSET_TS3A225E
 #include <linux/ts3a225e.h>
 #endif
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#endif
 
 #ifdef CONFIG_ACCDET_USE_VCAMAF_POWER
 #if !defined(CONFIG_MTK_LEGACY)
@@ -125,14 +122,6 @@ char *accdet_report_string[4] = {
 	/*"HEADSET_illegal",*/
 	/* "Double_check"*/
 };
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-static char *accdet_metrics_cable_string[3] = {
-	"NOTHING",
-	"HEADSET",
-	"HEADPHONES"
-};
-#endif
 
 /****************************************************************/
 /***        export function                                                                        **/
@@ -283,9 +272,6 @@ static inline void headset_plug_out(void)
 #ifdef CONFIG_SND_HEADSET_TS3A225E
 	int result;
 #endif
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[128];
-#endif
 	accdet_status = PLUG_OUT;
 	cable_type = NO_DEVICE;
 
@@ -295,11 +281,6 @@ static inline void headset_plug_out(void)
 		ACCDET_DEBUG(" [accdet] headset_plug_out send key = %d release\n", cur_key);
 		cur_key = 0;
 	}
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	snprintf(buf, sizeof(buf),
-		"%s:jack:unplugged=1;CT;1:NR", __func__);
-	log_to_metrics(ANDROID_LOG_INFO, "AudioJackEvent", buf);
-#endif
 	switch_set_state((struct switch_dev *)&accdet_data, cable_type);
 	ACCDET_DEBUG(" [accdet] set state in cable_type = NO_DEVICE\n");
 
@@ -866,55 +847,28 @@ static int key_check(int b)
 #endif
 static void send_key_event(int keycode, int flag)
 {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[128];
-	char *string = NULL;
-#endif
 	switch (keycode) {
 	case DW_KEY:
 		input_report_key(kpd_accdet_dev, KEY_VOLUMEDOWN, flag);
 		input_sync(kpd_accdet_dev);
 		ACCDET_DEBUG("[accdet]KEY_VOLUMEDOWN %d\n", flag);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		string = "KEY_VOLUMEDOWN";
-#endif
 		break;
 	case UP_KEY:
 		input_report_key(kpd_accdet_dev, KEY_VOLUMEUP, flag);
 		input_sync(kpd_accdet_dev);
 		ACCDET_DEBUG("[accdet]KEY_VOLUMEUP %d\n", flag);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		string = "KEY_VOLUMEUP";
-#endif
 		break;
 	case MD_KEY:
 		input_report_key(kpd_accdet_dev, KEY_PLAYPAUSE, flag);
 		input_sync(kpd_accdet_dev);
 		ACCDET_DEBUG("[accdet]KEY_PLAYPAUSE %d\n", flag);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		string = "KEY_PLAYPAUSE";
-#endif
 		break;
 	case AS_KEY:
 		input_report_key(kpd_accdet_dev, KEY_VOICECOMMAND, flag);
 		input_sync(kpd_accdet_dev);
 		ACCDET_DEBUG("[accdet]KEY_VOICECOMMAND %d\n", flag);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		string = "KEY_VOICECOMMAND";
-#endif
 		break;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	default:
-		string = "NOKEY";
-#endif
 	}
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	snprintf(buf, sizeof(buf),
-		"%s:jack:key=%s;CT;1,state=%d;CT;1:NR",
-			__func__, string, flag);
-	log_to_metrics(ANDROID_LOG_INFO, "AudioJackEvent", buf);
-#endif
 }
 
 static void multi_key_detection(int current_status)
@@ -1258,9 +1212,6 @@ static inline void check_cable_type(void)
 
 static void accdet_work_callback(struct work_struct *work)
 {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[128];
-#endif
 	wake_lock(&accdet_irq_lock);
 	check_cable_type();
 
@@ -1276,14 +1227,6 @@ static void accdet_work_callback(struct work_struct *work)
 #endif
 	mutex_lock(&accdet_eint_irq_sync_mutex);
 	if (1 == eint_accdet_sync_flag) {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		if (pre_status == PLUG_OUT) {
-			snprintf(buf, sizeof(buf),
-				"%s:jack:plugged=1;CT;1,state_%s=1;CT;1:NR",
-					__func__, accdet_metrics_cable_string[cable_type]);
-			log_to_metrics(ANDROID_LOG_INFO, "AudioJackEvent", buf);
-		}
-#endif
 		switch_set_state((struct switch_dev *)&accdet_data, cable_type);
 	} else
 		ACCDET_DEBUG("[Accdet] Headset has plugged out don't set accdet state\n");

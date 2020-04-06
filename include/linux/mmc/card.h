@@ -376,14 +376,6 @@ struct mmc_card {
 #ifdef MTK_BKOPS_IDLE_MAYA
 	struct mmc_bkops_info bkops_info;
 #endif
-#ifdef CONFIG_AMAZON_METRICS_LOG                /* for attribute */
-	unsigned int minReservedBlocks;
-	unsigned int maxEraseCountMLC;
-	unsigned int avgEraseCountMLC;
-	unsigned int maxEraseCountSLC;
-	unsigned int avgEraseCountSLC;
-#endif /* CONFIG_AMAZON_METRICS_LOG */
-
 };
 
 /*

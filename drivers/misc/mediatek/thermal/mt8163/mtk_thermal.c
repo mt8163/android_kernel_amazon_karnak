@@ -24,21 +24,12 @@
 
 #include "inc/mtk_ts_cpu.h"
 
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
-
 #ifdef CONFIG_OF
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
 #endif
 #define __MT_MTK_TS_CPU_C__
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#define TSCPU_METRICS_STR_LEN 128
-#endif
 
 #include <linux/thermal_framework.h>
 #include <linux/platform_data/mtk_thermal.h>
@@ -1576,28 +1567,6 @@ static int tscpu_set_trip_hyst(struct thermal_zone_device *thermal,
 static int tscpu_thermal_notify(struct thermal_zone_device *thermal,
 				int trip, enum thermal_trip_type type)
 {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char buf[TSCPU_METRICS_STR_LEN];
-#endif
-
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-	if (type == THERMAL_TRIP_CRITICAL) {
-		tscpu_printk("[%s] Thermal shutdown CPU, temp=%d, trip=%d\n",
-				__func__, thermal->temperature, trip);
-		life_cycle_set_thermal_shutdown_reason(
-						THERMAL_SHUTDOWN_REASON_SOC);
-	}
-#endif
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (type == THERMAL_TRIP_CRITICAL) {
-		snprintf(buf, TSCPU_METRICS_STR_LEN,
-			"%s:tscpumonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
-			PREFIX, thermal->temperature, trip);
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-	}
-#endif
-
 	return 0;
 }
 

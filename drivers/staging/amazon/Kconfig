@@ -29,26 +29,6 @@ config AMAZON_LOGD
     ---help---
       device uses logd for logging
 
-config AMAZON_SIGN_OF_LIFE
-	bool "Amazon Sign of Life"
-	help
-	enable the life cycle metrics to log device boot and shutdown information
-
-config AMAZON_SIGN_OF_LIFE_MTK
-	bool "Amazon Sign of Life MTK platform implementation"
-	help
-	enable the life cycle metrics to log device boot and shutdown information on MTK Platform
-
-config AMAZON_SIGN_OF_LIFE
-	bool "Amazon Sign of Life"
-	help
-	enable the life cycle metrics to log device boot and shutdown information
-
-config AMAZON_SIGN_OF_LIFE_MTK
-	bool "Amazon Sign of Life MTK platform implementation"
-	help
-	enable the life cycle metrics to log device boot and shutdown information on MTK Platform
-
 config AMAZON_POWEROFF_LOG
 	bool "Long press key power off log"
 	default N
