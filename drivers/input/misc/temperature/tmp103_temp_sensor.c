@@ -46,11 +46,6 @@
 #include <linux/input/tmp103_temp_sensor.h>
 #include <linux/thermal_framework.h>
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#define TMP103_METRICS_STR_LEN 128
-#endif
-
 #define	TMP103_TEMP_REG			0x00
 #define	TMP103_CONF_REG			0x01
 
@@ -152,22 +147,11 @@ static int tmp103_get_temp(struct thermal_dev *tdev)
 	static int saved_temp;
 	int count = 1;
 	struct i2c_client *client = tmp103->iclient;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	char *tmp103_metric_prefix = "thermalsensor:def";
-	char buf[TMP103_METRICS_STR_LEN];
-#endif
 	static int fail_count;
 
 	current_temp = tmp103_read_current_temp(tdev->dev);
 
 	if (unlikely(current_temp >= TMP103_MAX_TEMP)) {
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		/* Log in metrics */
-		snprintf(buf, TMP103_METRICS_STR_LEN, "%s:abnormal_temp=%d;CT;1:NR",
-			 tmp103_metric_prefix,
-			 current_temp);
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-#endif
 		pr_info("TMP103 reads abnormal temperature %d", current_temp);
 
 		/* switch to shutdown mode, then swtich back to previous mode ( contious conversion mode) */
@@ -177,13 +161,6 @@ static int tmp103_get_temp(struct thermal_dev *tdev)
 		/* retry */
 		do {
 			current_temp = tmp103_read_current_temp(tdev->dev);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-			/* Log in metrics */
-			snprintf(buf, TMP103_METRICS_STR_LEN,
-				 "%s:pcbtemp=%d;CT;1,retry=%d;CT;1:NR",
-				 tmp103_metric_prefix, current_temp, count);
-			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-#endif
 			pr_info("TMP103 reads temperature %d, retrying... %d ", current_temp,
 				count);
 		} while ((count++ < MAX_RETRY)
@@ -198,13 +175,6 @@ static int tmp103_get_temp(struct thermal_dev *tdev)
 			return tmp103->therm_fw->current_temp;
 		}
 		current_temp = saved_temp;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		/* Log in metrics */
-		snprintf(buf, TMP103_METRICS_STR_LEN,
-			 "%s:saved_temp=%d;CT;1,use_saved_temp=1;CT;1:NR",
-			 tmp103_metric_prefix, saved_temp);
-		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
-#endif
 		pr_info("WARNING: TMP103 retry failed, return last saved temperature %d",
 			saved_temp);
 	} else {		/* less than TMP103_MAX_TEMP read */

@@ -24,9 +24,6 @@
 #include <linux/init.h>
 #include <linux/nmi.h>
 #include <linux/crash_notes.h>
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-#include <linux/sign_of_life.h>
-#endif
 #ifdef CONFIG_MTK_RTC
 #include "../drivers/misc/mediatek/include/mt-plat/mtk_rtc.h"
 #endif
@@ -116,9 +113,6 @@ void panic(const char *fmt, ...)
  #ifdef CONFIG_MTK_RTC
 	if (rtc_get_reboot_reason() != RTC_REBOOT_REASON_SW_WDT)
 		rtc_mark_reboot_reason(RTC_REBOOT_REASON_PANIC);
-#endif
-#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
-	life_cycle_set_boot_reason(WARMBOOT_BY_KERNEL_PANIC);
 #endif
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	/*

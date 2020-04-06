@@ -47,9 +47,6 @@ struct clk *usb_clk;
 #endif
 #endif
 /*#include <mach/mt_boot_common.h>*/
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#endif
 
 /*extern BOOTMODE g_boot_mode;*/
 static DEFINE_SEMAPHORE(power_clock_lock);
@@ -294,21 +291,6 @@ static void mt_usb_disable(struct musb *musb)
 }
 
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-void usb_log_metrics(char *usbmsg)
-{
-	struct timespec ts = current_kernel_time();
-	char buf[512];
-	snprintf(buf, sizeof(buf),
-		"usb_connection_status:def:%s=1;CT;1,timestamp=%lu;TI;1:NR",
-		usbmsg,
-		ts.tv_sec * 1000 + ts.tv_nsec / NSEC_PER_MSEC);
-	log_to_metrics(ANDROID_LOG_INFO, "kernel", buf);
-}
-#endif
-
-
-
 /* ================================ */
 /* connect and disconnect functions */
 /* ================================ */
@@ -365,9 +347,6 @@ void mt_usb_connect(void)
 	musb_start(mtk_musb);
 
 	DBG(0, "[MUSB] USB connect\n");
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	usb_log_metrics("usb_connected");
-#endif
 }
 
 void mt_usb_disconnect(void)
@@ -394,9 +373,6 @@ void mt_usb_disconnect(void)
 	spin_unlock(&musb_connect_lock);
 
 	DBG(0, "[MUSB] USB disconnect\n");
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	usb_log_metrics("usb_disconnected");
-#endif
 }
 
 void mt_usb_check_reconnect(void)

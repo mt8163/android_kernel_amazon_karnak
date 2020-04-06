@@ -38,10 +38,6 @@
 
 #include <linux/proc_fs.h>
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#endif
-
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 
@@ -258,9 +254,6 @@
 #define MTK_MMC_AUTOSUSPEND_DELAY	50
 #define CMD_TIMEOUT         (HZ/10 * 5)	/* 100ms x5 */
 #define DAT_TIMEOUT         (HZ   * 10) /* 1000ms x10 */
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#define METRICS_DELAY       HZ
-#endif
 
 #define PAD_DELAY_MAX	32 /* PAD delay cells */
 /*--------------------------------------------------------------------------*/
@@ -376,21 +369,6 @@ struct msdc_host {
 	u32 pc_count;	/* total power cycle count */
 	u32 pc_suspend;	/* suspend/resume count */
 	u32 cmd19_fail; /* cmd19 tune failed count */
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	struct delayed_work metrics_work;
-	bool metrics_enable;
-	u32 crc_count_p;	/* reported crc count */
-	u32 crc_invalid_count_p;	/* reported crc invalid count eg CMD19 */
-	u32 req_count_p; /* reported request count */
-	u32 datatimeout_count_p; /* reported data timeout count */
-	u32 cmdtimeout_count_p; /* reported cmd timeout count */
-	u32 reqtimeout_count_p; /* reported req timeout count */
-	u32 pc_count_p;	/* reported power cycle count */
-	u32 pc_suspend_p;	/* reported suspend/resume count */
-	u32 cmd19_fail_p; /* reported cmd19 tune failed count */
-	u32 inserted_p; /* reported card detection count */
-	u32 inserted; /* total card detection cound */
-#endif
 	u32 first_tune; /* / flag defined for emmc window */
 };
 
@@ -400,18 +378,6 @@ struct msdc_host {
 #define MMC_TUNE_FLAG_DAT 0x2
 char mmc_tune_fops_buf[MMC_TUNE_FOPS_BUFLEN];
 int mmc_tune_proc_created = 0;
-#endif
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#define MSDC_LOG_COUNTER_TO_VITALS(name, value) \
-	do { \
-		if (value != value##_p) { \
-			log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel", \
-				((host->mmc) && (host->mmc->caps & MMC_CAP_SD_HIGHSPEED)) ? "SD" : "EMMC", \
-				#name, value - value##_p, "count", NULL, VITALS_NORMAL); \
-			value##_p = value; \
-		} \
-	} while (0)
 #endif
 
 #define FILTER_INVALIDCMD(opcode) \
@@ -486,24 +452,6 @@ static void msdc_remove_device_attrs(struct msdc_host *host, struct device_attri
 	for (i = 0; attrs[i]; ++i)
 		device_remove_file(host->dev, attrs[i]);
 }
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-static void msdc_metrics_work(struct work_struct *work)
-{
-	struct msdc_host *host = container_of(work, struct msdc_host, metrics_work.work);
-
-	MSDC_LOG_COUNTER_TO_VITALS(crc, host->crc_count);
-	MSDC_LOG_COUNTER_TO_VITALS(crc_invalid, host->crc_invalid_count);
-	MSDC_LOG_COUNTER_TO_VITALS(req, host->req_count);
-	MSDC_LOG_COUNTER_TO_VITALS(datato, host->datatimeout_count);
-	MSDC_LOG_COUNTER_TO_VITALS(cmdto, host->cmdtimeout_count);
-	MSDC_LOG_COUNTER_TO_VITALS(reqto, host->reqtimeout_count);
-	MSDC_LOG_COUNTER_TO_VITALS(pc_count, host->pc_count);
-	MSDC_LOG_COUNTER_TO_VITALS(pc_suspend, host->pc_suspend);
-	MSDC_LOG_COUNTER_TO_VITALS(cmd19_fail, host->cmd19_fail);
-	MSDC_LOG_COUNTER_TO_VITALS(inserted, host->inserted);
-}
-#endif
 
 static const struct mt81xx_mmc_compatible mt8135_compat = {
 	.clk_div_bits = 8,
@@ -1111,10 +1059,6 @@ static bool msdc_cmd_done(struct msdc_host *host, int events,
 			host->error |= REQ_CMD_TMO;
 			host->cmdtimeout_count++;
 		}
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		if (host->metrics_enable)
-			mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
-#endif
 	}
 	if (cmd->error)
 		dev_dbg(host->dev,
@@ -1361,10 +1305,6 @@ static bool msdc_data_xfer_done(struct msdc_host *host, u32 events,
 				else
 					host->crc_count++;
 			}
-#ifdef CONFIG_AMAZON_METRICS_LOG
-			if (host->metrics_enable)
-				mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
-#endif
 
 			if (mrq->cmd->opcode != MMC_SEND_TUNING_BLOCK &&
 			    mrq->cmd->opcode != MMC_SEND_TUNING_BLOCK_HS200) {
@@ -1653,10 +1593,6 @@ static void msdc_ops_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 			regulator_disable(mmc->supply.vqmmc);
 			host->vqmmc_enabled = false;
 			host->pc_count++;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-			if (host->metrics_enable)
-				mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
-#endif
 			dev_info(host->dev, "crc/total %d/%d invalcrc %d datato %d cmdto %d reqto %d total_pc %d pc_sus %d\n",
 				host->crc_count, host->req_count, host->crc_invalid_count, host->datatimeout_count,
 				host->cmdtimeout_count, host->reqtimeout_count, host->pc_count, host->pc_suspend);
@@ -1965,10 +1901,6 @@ out:
 
 	if (ret) {
 		host->cmd19_fail++;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-		if (host->metrics_enable)
-			mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
-#endif
 	}
 	pm_runtime_mark_last_busy(host->dev);
 	pm_runtime_put_autosuspend(host->dev);
@@ -1992,16 +1924,6 @@ static void msdc_hw_reset(struct mmc_host *mmc)
 	sdr_clr_bits(host->base + EMMC_IOCON, 1);
 }
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-static void msdc_cd_irq(struct mmc_host *mmc)
-{
-	struct msdc_host *host = mmc_priv(mmc);
-
-	host->inserted++;
-	if (host->metrics_enable)
-		mod_delayed_work(system_wq, &host->metrics_work, METRICS_DELAY);
-}
-#endif
 
 static struct mmc_host_ops mt_msdc_ops = {
 	.post_req = msdc_post_req,
@@ -2014,9 +1936,6 @@ static struct mmc_host_ops mt_msdc_ops = {
 	.execute_tuning = msdc_execute_tuning,
 	.prepare_hs400_tuning = msdc_prepare_hs400_tuning,
 	.hw_reset = msdc_hw_reset,
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	.cd_irq = msdc_cd_irq,
-#endif
 };
 
 #ifdef CONFIG_MMC_TUNE_WINDOW_LOGS
@@ -2178,10 +2097,6 @@ static int msdc_drv_probe(struct platform_device *pdev)
 	msdc_init_gpd_bd(host, &host->dma);
 	INIT_DELAYED_WORK(&host->req_timeout, msdc_request_timeout);
 	spin_lock_init(&host->lock);
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	host->metrics_enable = true;
-	INIT_DELAYED_WORK(&host->metrics_work, msdc_metrics_work);
-#endif
 
 	platform_set_drvdata(pdev, mmc);
 	msdc_ungate_clock(host);

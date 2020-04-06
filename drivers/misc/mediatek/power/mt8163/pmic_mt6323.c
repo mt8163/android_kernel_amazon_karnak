@@ -52,10 +52,6 @@
 #include <mt_pmic_wrap.h>
 #include "pmic_mt6323.h"
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#include <linux/metricslog.h>
-#endif
-
 #define PMIC6323_E1_CID_CODE    0x1023
 #define PMIC6323_E2_CID_CODE    0x2023
 
@@ -77,12 +73,6 @@ static bool long_pwrkey_press;
 static unsigned long timer_pre;
 static unsigned long timer_pos;
 #define LONG_PWRKEY_PRESS_TIME	500000000
-#endif
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-static struct work_struct metrics_work;
-static bool pwrkey_press;
-static void pwrkey_log_to_metrics(struct work_struct *data);
 #endif
 
 static atomic_t pmic_suspend;
@@ -851,22 +841,6 @@ static irqreturn_t watchdog_int_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-#define PWRKEY_METRICS_STR_LEN 128
-static void pwrkey_log_to_metrics(struct work_struct *data)
-{
-	char *action;
-	char buf[PWRKEY_METRICS_STR_LEN];
-
-	action = (pwrkey_press) ? "press" : "release";
-	snprintf(buf, PWRKEY_METRICS_STR_LEN,
-		"%s:powi%c:report_action_is_%s=1;CT;1:NR", __func__,
-		action[0], action);
-	log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
-
-}
-#endif
-
 static irqreturn_t pwrkey_int_handler(int irq, void *dev_id)
 {
 	struct mt6323_chip_priv *chip = (struct mt6323_chip_priv *)dev_id;
@@ -922,14 +896,6 @@ static irqreturn_t pwrkey_int_handler(int irq, void *dev_id)
 		kpd_pwrkey_pmic_handler(0x1);
 		upmu_set_rg_pwrkey_int_sel(1);
 	}
-
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (chip->pressed == 1)
-		pwrkey_press = true;
-	else
-		pwrkey_press = false;
-	schedule_work(&metrics_work);
-#endif
 
 	return IRQ_HANDLED;
 }
@@ -1674,9 +1640,6 @@ static int pmic_mt6323_probe(struct platform_device *dev)
 
 	hrtimer_init(&chip->check_pwrkey_release_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	chip->check_pwrkey_release_timer.function = check_pwrkey_release_timer_func;
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	INIT_WORK(&metrics_work, pwrkey_log_to_metrics);
-#endif
 
 	atomic_set(&pmic_suspend, 0);
 
