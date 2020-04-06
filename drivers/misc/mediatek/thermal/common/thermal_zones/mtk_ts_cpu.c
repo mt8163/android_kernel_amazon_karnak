@@ -1,3 +1,17 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
+#define DEBUG 1
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -14,18 +28,17 @@
 #include "mt-plat/mtk_thermal_monitor.h"
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include "mach/mt_typedefs.h"
+#include <linux/ktime.h>
 #include "mach/mt_thermal.h"
-#include "mt_gpufreq.h"
 
 #if defined(CONFIG_MTK_CLKMGR)
 #include <mach/mt_clkmgr.h>
 #else
 #include <linux/clk.h>
 #endif
-
-#include <mt_spm.h>
+#if !defined(CONFIG_ARCH_MT6757)
 #include <mt_ptp.h>
+#endif
 /* #include <mach/mt_wtd.h> */
 #include <mach/wd_api.h>
 #include <mtk_gpu_utility.h>
@@ -45,30 +58,40 @@
 #include <linux/kthread.h>
 #endif
 
-#if defined(CONFIG_ARCH_MT6755)
+#if defined(ATM_USES_PPM)
 #include "mach/mt_ppm_api.h"
 #else
 #include "mt_cpufreq.h"
 #endif
 
 #include <linux/uidgid.h>
+#include "mt_auxadc.h"
+#include <ap_thermal_limit.h>
 
 /*=============================================================
  *Local variable definition
  *=============================================================*/
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
+static DEFINE_SEMAPHORE(sem_mutex);
+static int isTimerCancelled;
 
 #if !defined(CONFIG_MTK_CLKMGR)
 struct clk *therm_main;		/* main clock for Thermal */
 #endif
+
+void __iomem  *therm_clk_infracfg_ao_base;
 
 #ifdef CONFIG_OF
 u32 thermal_irq_number = 0;
 void __iomem *thermal_base;
 void __iomem *auxadc_ts_base;
 void __iomem *infracfg_ao_base;
+#if defined(CONFIG_ARCH_MT6755) || defined(CONFIG_ARCH_MT6757)
+void __iomem *th_apmixed_base;
+#else
 void __iomem *apmixed_base;
+#endif
 void __iomem *INFRACFG_AO_base;
 
 int thermal_phy_base;
@@ -77,15 +100,10 @@ int apmixed_phy_base;
 int pericfg_phy_base;
 #endif
 
+#if defined(TZCPU_SET_INIT_CFG)
+static unsigned int interval = TZCPU_INITCFG_INTERVAL;	/* mseconds, 0 : no auto polling */
+#else
 static unsigned int interval = 1000;	/* mseconds, 0 : no auto polling */
-#if MTKTSCPU_FAST_POLLING
-/* Combined fast_polling_trip_temp and fast_polling_factor,
-it means polling_delay will be 1/5 of original interval
-after mtktscpu reports > 65C w/o exit point */
-static int fast_polling_trip_temp = 60000;
-static int fast_polling_factor = 2;
-int tscpu_cur_fp_factor = 1;
-static int tscpu_next_fp_factor = 1;
 #endif
 
 int tscpu_g_curr_temp = 0;
@@ -98,26 +116,61 @@ static int thermal5A_TH = 55000;
 static int thermal5A_status;
 #endif
 
+#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+int thermal_6353_5A_status = 0;
+int thermal_5A_limit_H = 85000; /*85C*/
+int thermal_5A_limit_L = 83000; /*83C*/
+#endif
+
 static int tc_mid_trip = -275000;
 /* trip_temp[0] must be initialized to the thermal HW protection point. */
+#if defined(TZCPU_SET_INIT_CFG)
+static int trip_temp[10] = {
+	TZCPU_INITCFG_TRIP_0_TEMP,
+	TZCPU_INITCFG_TRIP_1_TEMP,
+	TZCPU_INITCFG_TRIP_2_TEMP,
+	TZCPU_INITCFG_TRIP_3_TEMP,
+	TZCPU_INITCFG_TRIP_4_TEMP,
+	TZCPU_INITCFG_TRIP_5_TEMP,
+	TZCPU_INITCFG_TRIP_6_TEMP,
+	TZCPU_INITCFG_TRIP_7_TEMP,
+	TZCPU_INITCFG_TRIP_8_TEMP,
+	TZCPU_INITCFG_TRIP_9_TEMP };
+#else
 static int trip_temp[10] = { 117000, 100000, 85000, 75000, 65000, 55000, 45000, 35000, 25000, 15000 };
+#endif
 int tscpu_read_curr_temp;
 
 static bool talking_flag;
 static int kernelmode;
 static int g_THERMAL_TRIP[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-static int temperature_switch;
 
+
+#if defined(TZCPU_SET_INIT_CFG)
+static int num_trip = TZCPU_INITCFG_NUM_TRIPS;
+#else
 static int num_trip = 5;
+#endif
 static int tscpu_num_opp;
 static struct mtk_cpu_power_info *mtk_cpu_power;
 
 static int g_tc_resume;	/* default=0,read temp */
-static int MA_len_temp;
 static int proc_write_flag;
 
 static struct thermal_zone_device *thz_dev;
+#if defined(TZCPU_SET_INIT_CFG)
+static char g_bind0[20] = TZCPU_INITCFG_TRIP_0_COOLER;
+static char g_bind1[20] = TZCPU_INITCFG_TRIP_1_COOLER;
+static char g_bind2[20] = TZCPU_INITCFG_TRIP_2_COOLER;
+static char g_bind3[20] = TZCPU_INITCFG_TRIP_3_COOLER;
+static char g_bind4[20] = TZCPU_INITCFG_TRIP_4_COOLER;
+static char g_bind5[20] = TZCPU_INITCFG_TRIP_5_COOLER;
+static char g_bind6[20] = TZCPU_INITCFG_TRIP_6_COOLER;
+static char g_bind7[20] = TZCPU_INITCFG_TRIP_7_COOLER;
+static char g_bind8[20] = TZCPU_INITCFG_TRIP_8_COOLER;
+static char g_bind9[20] = TZCPU_INITCFG_TRIP_9_COOLER;
+#else
 static char g_bind0[20] = "mtktscpu-sysrst";
 static char g_bind1[20] = "cpu02";
 static char g_bind2[20] = "cpu15";
@@ -128,8 +181,9 @@ static char g_bind6[20] = "";
 static char g_bind7[20] = "";
 static char g_bind8[20] = "";
 static char g_bind9[20] = "";
+#endif
 
-struct mtk_gpu_power_info *mtk_gpu_power = NULL;
+struct mt_gpufreq_power_table_info *mtk_gpu_power = NULL;
 #if 0
 int Num_of_GPU_OPP = 1;		/* Set this value =1 for non-DVS GPU */
 #else				/* DVFS GPU */
@@ -148,6 +202,8 @@ static void _mt_thermal_aee_init(void)
 	aee_rr_rec_thermal_temp4(0xFF);
 	aee_rr_rec_thermal_temp5(0xFF);
 	aee_rr_rec_thermal_status(0xFF);
+	aee_rr_rec_thermal_ATM_status(0xFF);
+	aee_rr_rec_thermal_ktime(0xFFFFFFFFFFFFFFFF);
 }
 #endif
 static int tscpu_thermal_probe(struct platform_device *dev);
@@ -179,6 +235,9 @@ void tscpu_met_unlock(unsigned long *flags)
 EXPORT_SYMBOL(tscpu_met_unlock);
 
 #endif
+static int g_is_temp_valid;
+static void temp_valid_lock(unsigned long *flags);
+static void temp_valid_unlock(unsigned long *flags);
 /*=============================================================
  *Weak functions
  *=============================================================*/
@@ -188,7 +247,8 @@ IMM_IsAdcInitReady(void)
 	pr_err("E_WF: %s doesn't exist\n", __func__);
 	return 0;
 }
-#if defined(CONFIG_ARCH_MT6755)
+#if 0
+#if defined(ATM_USES_PPM)
 void __attribute__ ((weak))
 mt_ppm_cpu_thermal_protect(unsigned int limited_power)
 {
@@ -200,6 +260,7 @@ mt_cpufreq_thermal_protect(unsigned int limited_power)
 {
 	pr_err("E_WF: %s doesn't exist\n", __func__);
 }
+#endif
 #endif
 
 bool __attribute__ ((weak))
@@ -257,6 +318,14 @@ mt_cpufreq_thermal_5A_limit(bool enable)
 	pr_err("E_WF: %s doesn't exist\n", __func__);
 }
 /*=============================================================*/
+long long thermal_get_current_time_us(void)
+{
+	struct timeval t;
+
+	do_gettimeofday(&t);
+	return ((t.tv_sec & 0xFFF) * 1000000 + t.tv_usec);
+}
+
 static void tscpu_fast_initial_sw_workaround(void)
 {
 	int i = 0;
@@ -265,15 +334,19 @@ static void tscpu_fast_initial_sw_workaround(void)
 
 	/* tscpu_thermal_clock_on(); */
 
-	mt_ptp_lock(&flags);
 
 	for (i = 0; i < TS_LEN_ARRAY(tscpu_g_bank); i++) {
+		mt_ptp_lock(&flags);
+
 		tscpu_switch_bank(i);
 		tscpu_thermal_fast_init();
+
+		mt_ptp_unlock(&flags);
 	}
 
-	mt_ptp_unlock(&flags);
-
+	temp_valid_lock(&flags);
+	g_is_temp_valid = 0;
+	temp_valid_unlock(&flags);
 }
 
 void tscpu_thermal_tempADCPNP(int adc, int order)
@@ -283,19 +356,19 @@ void tscpu_thermal_tempADCPNP(int adc, int order)
 
 	switch (order) {
 	case 0:
-		THERMAL_WRAP_WR32(adc, TEMPADCPNP0);
+		mt_reg_sync_writel(adc, TEMPADCPNP0);
 		break;
 	case 1:
-		THERMAL_WRAP_WR32(adc, TEMPADCPNP1);
+		mt_reg_sync_writel(adc, TEMPADCPNP1);
 		break;
 	case 2:
-		THERMAL_WRAP_WR32(adc, TEMPADCPNP2);
+		mt_reg_sync_writel(adc, TEMPADCPNP2);
 		break;
 	case 3:
-		THERMAL_WRAP_WR32(adc, TEMPADCPNP3);
+		mt_reg_sync_writel(adc, TEMPADCPNP3);
 		break;
 	default:
-		THERMAL_WRAP_WR32(adc, TEMPADCPNP0);
+		mt_reg_sync_writel(adc, TEMPADCPNP0);
 		break;
 	}
 }
@@ -325,10 +398,14 @@ static int max_temperature_in_bank(thermal_bank_name bank)
 	int max_in_bank = 0;
 
 	for (j = 0; j < tscpu_g_bank[bank].ts_number; j++) {
-		if (tscpu_bank_ts[bank][tscpu_g_bank[bank].ts[j].type] > max_in_bank)
+		if (j == 0) {
 			max_in_bank = tscpu_bank_ts[bank][tscpu_g_bank[bank].ts[j].type];
-		tscpu_dprintk("tscpu_get_temp CPU bank%d T%d=%d\n", bank, j,
-			      tscpu_bank_ts[bank][tscpu_g_bank[bank].ts[j].type]);
+		} else {
+			if (tscpu_bank_ts[bank][tscpu_g_bank[bank].ts[j].type] > max_in_bank)
+				max_in_bank = tscpu_bank_ts[bank][tscpu_g_bank[bank].ts[j].type];
+			tscpu_dprintk("tscpu_get_temp CPU bank%d T%d=%d\n", bank, j,
+				tscpu_bank_ts[bank][tscpu_g_bank[bank].ts[j].type]);
+		}
 	}
 
 	return max_in_bank;
@@ -343,12 +420,14 @@ int tscpu_max_temperature(void)
 
 	tscpu_dprintk("tscpu_get_temp %s, %d\n", __func__, __LINE__);
 	for (i = 0; i < TS_LEN_ARRAY(tscpu_g_bank); i++) {
-
-		max_in_bank = max_temperature_in_bank(i);
-		if (max_in_bank > max)
-			max = max_in_bank;
+		if (i == 0) {
+			max = max_temperature_in_bank(i);
+		} else {
+			max_in_bank = max_temperature_in_bank(i);
+			if (max_in_bank > max)
+				max = max_in_bank;
+		}
 	}
-
 	return max;
 }
 
@@ -382,7 +461,7 @@ int mtk_gpufreq_register(struct mt_gpufreq_power_table_info *freqs, int num)
 	int i = 0;
 
 	tscpu_dprintk("mtk_gpufreq_register\n");
-	mtk_gpu_power = kzalloc((num) * sizeof(struct mtk_gpu_power_info), GFP_KERNEL);
+	mtk_gpu_power = kzalloc((num) * sizeof(struct mt_gpufreq_power_table_info), GFP_KERNEL);
 	if (mtk_gpu_power == NULL)
 		return -ENOMEM;
 
@@ -442,7 +521,7 @@ static int tscpu_bind(struct thermal_zone_device *thermal, struct thermal_coolin
 	}
 
 	if (mtk_thermal_zone_bind_cooling_device(thermal, table_val, cdev)) {
-		tscpu_printk("tscpu_bind error binding cooling dev\n");
+		tscpu_warn("tscpu_bind error binding cooling dev\n");
 		return -EINVAL;
 	}
 
@@ -491,7 +570,7 @@ static int tscpu_unbind(struct thermal_zone_device *thermal, struct thermal_cool
 
 
 	if (thermal_zone_unbind_cooling_device(thermal, table_val, cdev)) {
-		tscpu_printk("tscpu_unbind error unbinding cooling dev\n");
+		tscpu_warn("tscpu_unbind error unbinding cooling dev\n");
 		return -EINVAL;
 	}
 
@@ -534,25 +613,34 @@ static int tscpu_get_temp(struct thermal_zone_device *thermal, unsigned long *t)
 {
 	int ret = 0;
 	int curr_temp;
+#if ENALBE_SW_FILTER
 	int temp_temp;
 	static int last_cpu_real_temp;
+#endif
 
+#ifdef FAST_RESPONSE_ATM
+	curr_temp = tscpu_get_curr_max_ts_temp();
+#else
 	curr_temp = tscpu_get_curr_temp();
-	tscpu_dprintk("tscpu_get_temp CPU Max T=%d\n", curr_temp);
+#endif
+	tscpu_dprintk("%s CPU T=%d\n", __func__, curr_temp);
 
-	if ((curr_temp > (trip_temp[0] - 15000)) || (curr_temp < -30000) || (curr_temp > 85000))
-		tscpu_printk("CPU T=%d\n", curr_temp);
+	if ((curr_temp > (trip_temp[0] - 15000)) || (curr_temp < -30000) || (curr_temp > 85000)) {
+		printk_ratelimited(TSCPU_LOG_TAG " %u %u CPU T=%d\n",
+			apthermolmt_get_cpu_power_limit(), apthermolmt_get_gpu_power_limit(), curr_temp);
+	}
 
+#if ENALBE_SW_FILTER
 	temp_temp = curr_temp;
 	if (curr_temp != 0) {/* not resumed from suspensio... */
 		if ((curr_temp > 150000) || (curr_temp < -20000)) {	/* invalid range */
-			tscpu_printk("CPU temp invalid=%d\n", curr_temp);
+			tscpu_warn("CPU temp invalid=%d\n", curr_temp);
 			temp_temp = 50000;
 			ret = -1;
 		} else if (last_cpu_real_temp != 0) {
 			if ((curr_temp - last_cpu_real_temp > 40000) || (last_cpu_real_temp - curr_temp > 40000)) {
 				/* delta 40C, invalid change */
-				tscpu_printk("CPU temp float hugely temp=%d, lasttemp=%d\n",
+				tscpu_warn("CPU temp float hugely temp=%d, lasttemp=%d\n",
 					     curr_temp, last_cpu_real_temp);
 				/* tscpu_printk("RAW_TS2 = %d,RAW_TS3 = %d,RAW_TS4 = %d\n",RAW_TS2,RAW_TS3,RAW_TS4); */
 				temp_temp = 50000;
@@ -563,6 +651,7 @@ static int tscpu_get_temp(struct thermal_zone_device *thermal, unsigned long *t)
 
 	last_cpu_real_temp = curr_temp;
 	curr_temp = temp_temp;
+#endif
 
 	tscpu_read_curr_temp = curr_temp;
 	*t = (unsigned long)curr_temp;
@@ -610,6 +699,19 @@ static int tscpu_get_temp(struct thermal_zone_device *thermal, unsigned long *t)
 	}
 #endif
 
+
+#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+	if (curr_temp >= thermal_5A_limit_H && thermal_6353_5A_status == 0) {
+		mt_ppm_set_5A_limit_throttle(1);
+		thermal_6353_5A_status = 1;
+		/*tscpu_warn("mt_ppm_set_5A_limit_throttle(1)\n");*/
+	} else if (curr_temp < thermal_5A_limit_L && thermal_6353_5A_status == 1) {
+		mt_ppm_set_5A_limit_throttle(0);
+		thermal_6353_5A_status = 0;
+		/*tscpu_warn("mt_ppm_set_5A_limit_throttle(0)\n");*/
+	}
+#endif
+
 	g_max_temp = curr_temp;
 
 	return ret;
@@ -633,7 +735,7 @@ static int tscpu_read_Tj_out(struct seq_file *m, void *v)
 	int ts_con0 = 0;
 
 	/*      TS_CON0[19:16] = 0x8: Tj sensor Analog signal output via HW pin */
-	ts_con0 = DRV_Reg32(TS_CON0_TM);
+	ts_con0 = readl(TS_CON0_TM);
 
 	seq_printf(m, "TS_CON0:0x%x\n", ts_con0);
 
@@ -658,10 +760,10 @@ static ssize_t tscpu_write_Tj_out(struct file *file, const char __user *buffer, 
 	if (kstrtoint(desc, 10, &lv_Tj_out_flag) == 0) {
 		if (lv_Tj_out_flag == 1) {
 			/*      TS_CON0[19:16] = 0x8: Tj sensor Analog signal output via HW pin */
-			THERMAL_WRAP_WR32(DRV_Reg32(TS_CON0_TM) | 0x00010000, TS_CON0_TM);
+			mt_reg_sync_writel(readl(TS_CON0_TM) | 0x00010000, TS_CON0_TM);
 		} else {
 			/*      TS_CON0[19:16] = 0x8: Tj sensor Analog signal output via HW pin */
-			THERMAL_WRAP_WR32(DRV_Reg32(TS_CON0_TM) & 0xfffeffff, TS_CON0_TM);
+			mt_reg_sync_writel(readl(TS_CON0_TM) & 0xfffeffff, TS_CON0_TM);
 		}
 
 		tscpu_dprintk("tscpu_write_Tj_out lv_Tj_out_flag=%d\n", lv_Tj_out_flag);
@@ -697,9 +799,9 @@ void tscpu_set_GPIO_toggle_for_monitor(void)
 			g_GPIO_out_enable = 0;	/* only can enter once */
 			g_GPIO_already_set = 1;
 
-			lv_GPIO118_MODE = thermal_readl(GPIO118_MODE);
-			lv_GPIO118_DIR = thermal_readl(GPIO118_DIR);
-			lv_GPIO118_DOUT = thermal_readl(GPIO118_DOUT);
+			lv_GPIO118_MODE = readl(GPIO118_MODE);
+			lv_GPIO118_DIR = readl(GPIO118_DIR);
+			lv_GPIO118_DOUT = readl(GPIO118_DOUT);
 
 			tscpu_printk("tscpu_set_GPIO_toggle_for_monitor:lv_GPIO118_MODE=0x%x,", lv_GPIO118_MODE);
 			tscpu_printk("lv_GPIO118_DIR=0x%x,lv_GPIO118_DOUT=0x%x,\n", lv_GPIO118_DIR, lv_GPIO118_DOUT);
@@ -714,9 +816,6 @@ void tscpu_set_GPIO_toggle_for_monitor(void)
 			if (g_GPIO_already_set == 1) {
 				/* restore */
 				g_GPIO_already_set = 0;
-				/* thermal_writel(GPIO118_MODE,lv_GPIO118_MODE); */
-				/* thermal_writel(GPIO118_DIR, lv_GPIO118_DIR); */
-				/* thermal_writel(GPIO118_DOUT,lv_GPIO118_DOUT); */
 				thermal_clrl(GPIO118_DOUT, 0x00000040);	/* set GPIO118_DOUT[6]=0 Low */
 
 			}
@@ -772,7 +871,7 @@ static ssize_t tscpu_write_GPIO_out(struct file *file, const char __user *buffer
 
 	desc[len] = '\0';
 
-	if (sscanf(desc, "%s %d %s %d ", TEMP, &valTEMP, ENABLE, &valENABLE) == 4) {
+	if (sscanf(desc, "%9s %d %9s %d ", TEMP, &valTEMP, ENABLE, &valENABLE) == 4) {
 		/* tscpu_printk("XXXXXXXXX\n"); */
 
 		if (!strcmp(TEMP, "TEMP")) {
@@ -792,8 +891,8 @@ static ssize_t tscpu_write_GPIO_out(struct file *file, const char __user *buffer
 			return -EINVAL;
 		}
 
-		lv_GPIO118_MODE = thermal_readl(GPIO118_MODE);
-		lv_GPIO118_DIR = thermal_readl(GPIO118_DIR);
+		lv_GPIO118_MODE = readl(GPIO118_MODE);
+		lv_GPIO118_DIR = readl(GPIO118_DIR);
 
 		/* clear GPIO118_MODE[11:9],GPIO118_MODE = 0 (change to GPIO mode) */
 		thermal_clrl(GPIO118_MODE, 0x00000E00);
@@ -810,24 +909,22 @@ static ssize_t tscpu_write_GPIO_out(struct file *file, const char __user *buffer
 
 static int tscpu_read_opp(struct seq_file *m, void *v)
 {
-
 	unsigned int cpu_power, gpu_power;
 	unsigned int gpu_loading = 0;
 
-	cpu_power = MIN(adaptive_cpu_power_limit, static_cpu_power_limit);
-
-	gpu_power = MIN(adaptive_gpu_power_limit, static_gpu_power_limit);
+	cpu_power = apthermolmt_get_cpu_power_limit();
+	gpu_power = apthermolmt_get_gpu_power_limit();
 
 #if CPT_ADAPTIVE_AP_COOLER
 
 	if (!mtk_get_gpu_loading(&gpu_loading))
 		gpu_loading = 0;
 
-	seq_printf(m, "%d,%d,%d,%d\n",
+	seq_printf(m, "%d,%d,%d,%d,%d\n",
 		   (int)((cpu_power != 0x7FFFFFFF) ? cpu_power : 0),
 		   (int)((gpu_power != 0x7FFFFFFF) ? gpu_power : 0),
 		   /* ((NULL == mtk_thermal_get_gpu_loading_fp) ? 0 : mtk_thermal_get_gpu_loading_fp()), */
-		   (int)gpu_loading, (int)mt_gpufreq_get_cur_freq());
+		   (int)gpu_loading, (int)mt_gpufreq_get_cur_freq(), get_target_tj());
 
 #else
 	seq_printf(m, "%d,%d,0,%d\n",
@@ -835,7 +932,6 @@ static int tscpu_read_opp(struct seq_file *m, void *v)
 		   (int)((gpu_power != 0x7FFFFFFF) ? gpu_power : 0),
 		   (int)mt_gpufreq_get_cur_freq());
 #endif
-
 
 	return 0;
 }
@@ -871,21 +967,26 @@ static ssize_t tscpu_talking_flag_write(struct file *file, const char __user *bu
 	return -EINVAL;
 }
 
-static int tscpu_set_temperature_read(struct seq_file *m, void *v)
+
+
+
+
+#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+static int tscpu_pmic_current_limit_read(struct seq_file *m, void *v)
 {
-
-
-	seq_printf(m, "%d\n", temperature_switch);
-
+	seq_printf(m, "H:%d L:%d T:%d\n",
+		thermal_5A_limit_H , thermal_5A_limit_L , fast_polling_trip_temp);
 	return 0;
 }
 
 
-static ssize_t tscpu_set_temperature_write(struct file *file, const char __user *buffer,
+static ssize_t tscpu_pmic_current_limit_write(struct file *file, const char __user *buffer,
 					   size_t count, loff_t *data)
 {
 	char desc[32];
-	int lv_tempe_switch;
+	int lv_thermal_5A_limit_H;
+	int lv_thermal_5A_limit_L;
+	int lv_fast_polling_trip_temp;
 	int len = 0;
 
 	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
@@ -894,20 +995,28 @@ static ssize_t tscpu_set_temperature_write(struct file *file, const char __user 
 
 	desc[len] = '\0';
 
-	tscpu_dprintk("tscpu_set_temperature_write\n");
+	tscpu_dprintk("tscpu_pmic_current_limit_write\n");
 
-	if (kstrtoint(desc, 10, &lv_tempe_switch) == 0) {
-		temperature_switch = lv_tempe_switch;
 
-		tscpu_config_all_tc_hw_protect(temperature_switch, tc_mid_trip);
+	if (sscanf(desc, "%d %d %d", &lv_thermal_5A_limit_H , &lv_thermal_5A_limit_L ,
+		&lv_fast_polling_trip_temp) == 3) {
+		thermal_5A_limit_H = lv_thermal_5A_limit_H;
+		thermal_5A_limit_L = lv_thermal_5A_limit_L;
+		fast_polling_trip_temp = lv_fast_polling_trip_temp;
 
-		tscpu_dprintk("tscpu_set_temperature_write temperature_switch=%d\n",
-			      temperature_switch);
+
+		tscpu_dprintk("5A_limit_H=%d,5A_limit_L=%d,Fast polling_trip_temp=%d\n",
+		thermal_5A_limit_H, thermal_5A_limit_L, fast_polling_trip_temp);
+
 		return count;
 	}
-	tscpu_printk("tscpu_set_temperature_write bad argument\n");
+
+	tscpu_warn("tscpu_pmic_current_limit_write bad argument\n");
+
 	return -EINVAL;
 }
+#endif
+
 
 static int tscpu_read_log(struct seq_file *m, void *v)
 {
@@ -982,7 +1091,7 @@ static ssize_t tscpu_write_log(struct file *file, const char __user *buffer, siz
 		return count;
 	}
 
-	tscpu_printk("tscpu_write_log bad argument\n");
+	tscpu_warn("tscpu_write_log bad argument\n");
 	return -EINVAL;
 }
 
@@ -1032,54 +1141,85 @@ static ssize_t tscpu_write_fastpoll(struct file *file, const char __user *buffer
 static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t count,
 			   loff_t *data)
 {
-	int len = 0, time_msec = 0;
-	int trip[10] = { 0 };
-	int t_type[10] = { 0 };
+	int len = 0;
 	int i;
-	char bind0[20], bind1[20], bind2[20], bind3[20], bind4[20];
-	char bind5[20], bind6[20], bind7[20], bind8[20], bind9[20];
-	char desc[512];
+	struct mtktscpu_data {
+		int trip[10];
+		int t_type[10];
+		char bind0[20], bind1[20], bind2[20], bind3[20], bind4[20];
+		char bind5[20], bind6[20], bind7[20], bind8[20], bind9[20];
+		int time_msec;
+		char desc[512];
+	};
 
-	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
-	if (copy_from_user(desc, buffer, len))
-		return 0;
+	struct mtktscpu_data *ptr_mtktscpu_data = kmalloc(sizeof(*ptr_mtktscpu_data), GFP_KERNEL);
 
-	desc[len] = '\0';
+	if (ptr_mtktscpu_data == NULL) {
+		pr_warn("[%s] kmalloc fail\n\n", __func__);
+		return -ENOMEM;
+	}
+
+	len = (count < (sizeof(ptr_mtktscpu_data->desc) - 1)) ? count : (sizeof(ptr_mtktscpu_data->desc) - 1);
+	if (copy_from_user(ptr_mtktscpu_data->desc, buffer, len)) {
+		kfree(ptr_mtktscpu_data);
+		return -ENOMEM;
+	}
+
+	ptr_mtktscpu_data->desc[len] = '\0';
 
 	if (sscanf
-	    (desc,
-	     "%d %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d",
-	     &num_trip, &trip[0], &t_type[0], bind0, &trip[1], &t_type[1], bind1, &trip[2],
-	     &t_type[2], bind2, &trip[3], &t_type[3], bind3, &trip[4], &t_type[4], bind4, &trip[5],
-	     &t_type[5], bind5, &trip[6], &t_type[6], bind6, &trip[7], &t_type[7], bind7, &trip[8],
-	     &t_type[8], bind8, &trip[9], &t_type[9], bind9, &time_msec, &MA_len_temp) == 33) {
-
-		tscpu_dprintk("tscpu_write tscpu_unregister_thermal MA_len_temp=%d\n", MA_len_temp);
-
+	    (ptr_mtktscpu_data->desc,
+	     "%d %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d",
+	     &num_trip,
+	     &ptr_mtktscpu_data->trip[0], &ptr_mtktscpu_data->t_type[0], ptr_mtktscpu_data->bind0,
+	     &ptr_mtktscpu_data->trip[1], &ptr_mtktscpu_data->t_type[1], ptr_mtktscpu_data->bind1,
+	     &ptr_mtktscpu_data->trip[2], &ptr_mtktscpu_data->t_type[2], ptr_mtktscpu_data->bind2,
+	     &ptr_mtktscpu_data->trip[3], &ptr_mtktscpu_data->t_type[3], ptr_mtktscpu_data->bind3,
+	     &ptr_mtktscpu_data->trip[4], &ptr_mtktscpu_data->t_type[4], ptr_mtktscpu_data->bind4,
+	     &ptr_mtktscpu_data->trip[5], &ptr_mtktscpu_data->t_type[5], ptr_mtktscpu_data->bind5,
+	     &ptr_mtktscpu_data->trip[6], &ptr_mtktscpu_data->t_type[6], ptr_mtktscpu_data->bind6,
+	     &ptr_mtktscpu_data->trip[7], &ptr_mtktscpu_data->t_type[7], ptr_mtktscpu_data->bind7,
+	     &ptr_mtktscpu_data->trip[8], &ptr_mtktscpu_data->t_type[8], ptr_mtktscpu_data->bind8,
+	     &ptr_mtktscpu_data->trip[9], &ptr_mtktscpu_data->t_type[9], ptr_mtktscpu_data->bind9,
+	     &ptr_mtktscpu_data->time_msec) == 32) {
 		/*      modify for PTPOD, if disable Thermal,
 		   PTPOD still need to use this function for getting temperature
 		 */
 
+#if defined(CONFIG_ARCH_MT6797)
+		apthermolmt_set_general_cpu_power_limit(900);
+#endif
+		down(&sem_mutex);
+		tscpu_dprintk("tscpu_write tscpu_unregister_thermal\n");
 		tscpu_unregister_thermal();
 
+		if (num_trip < 0 || num_trip > 10) {
+			aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, "tscpu_write",
+					"Bad argument");
+			tscpu_dprintk("tscpu_write bad argument\n");
+			kfree(ptr_mtktscpu_data);
+			up(&sem_mutex);
+			return -EINVAL;
+		}
 
 		for (i = 0; i < num_trip; i++)
-			g_THERMAL_TRIP[i] = t_type[i];
+			g_THERMAL_TRIP[i] =  ptr_mtktscpu_data->t_type[i];
+
 
 		g_bind0[0] = g_bind1[0] = g_bind2[0] = g_bind3[0] = g_bind4[0] = g_bind5[0] =
 		    g_bind6[0] = g_bind7[0] = g_bind8[0] = g_bind9[0] = '\0';
 
 		for (i = 0; i < 20; i++) {
-			g_bind0[i] = bind0[i];
-			g_bind1[i] = bind1[i];
-			g_bind2[i] = bind2[i];
-			g_bind3[i] = bind3[i];
-			g_bind4[i] = bind4[i];
-			g_bind5[i] = bind5[i];
-			g_bind6[i] = bind6[i];
-			g_bind7[i] = bind7[i];
-			g_bind8[i] = bind8[i];
-			g_bind9[i] = bind9[i];
+			g_bind0[i] = ptr_mtktscpu_data->bind0[i];
+			g_bind1[i] = ptr_mtktscpu_data->bind1[i];
+			g_bind2[i] = ptr_mtktscpu_data->bind2[i];
+			g_bind3[i] = ptr_mtktscpu_data->bind3[i];
+			g_bind4[i] = ptr_mtktscpu_data->bind4[i];
+			g_bind5[i] = ptr_mtktscpu_data->bind5[i];
+			g_bind6[i] = ptr_mtktscpu_data->bind6[i];
+			g_bind7[i] = ptr_mtktscpu_data->bind7[i];
+			g_bind8[i] = ptr_mtktscpu_data->bind8[i];
+			g_bind9[i] = ptr_mtktscpu_data->bind9[i];
 		}
 
 #if CPT_ADAPTIVE_AP_COOLER
@@ -1087,35 +1227,55 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 		for (i = 0; i < MAX_CPT_ADAPTIVE_COOLERS; i++)
 			TARGET_TJS[i] = 117000;
 
-		if (!strncmp(bind0, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind0[13] - '0')] = trip[0];
+		if (!strncmp(&ptr_mtktscpu_data->bind0[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind0[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind0[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind0[13] - '0')] = ptr_mtktscpu_data->trip[0];
 
-		if (!strncmp(bind1, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind1[13] - '0')] = trip[1];
+		if (!strncmp(&ptr_mtktscpu_data->bind1[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind1[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind1[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind1[13] - '0')] = ptr_mtktscpu_data->trip[1];
 
-		if (!strncmp(bind2, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind2[13] - '0')] = trip[2];
+		if (!strncmp(&ptr_mtktscpu_data->bind2[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind2[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind2[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind2[13] - '0')] = ptr_mtktscpu_data->trip[2];
 
-		if (!strncmp(bind3, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind3[13] - '0')] = trip[3];
+		if (!strncmp(&ptr_mtktscpu_data->bind3[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind3[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind3[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind3[13] - '0')] = ptr_mtktscpu_data->trip[3];
 
-		if (!strncmp(bind4, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind4[13] - '0')] = trip[4];
+		if (!strncmp(&ptr_mtktscpu_data->bind4[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind4[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind4[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind4[13] - '0')] = ptr_mtktscpu_data->trip[4];
 
-		if (!strncmp(bind5, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind5[13] - '0')] = trip[5];
+		if (!strncmp(&ptr_mtktscpu_data->bind5[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind5[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind5[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind5[13] - '0')] = ptr_mtktscpu_data->trip[5];
 
-		if (!strncmp(bind6, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind6[13] - '0')] = trip[6];
+		if (!strncmp(&ptr_mtktscpu_data->bind6[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind6[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind6[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind6[13] - '0')] = ptr_mtktscpu_data->trip[6];
 
-		if (!strncmp(bind7, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind7[13] - '0')] = trip[7];
+		if (!strncmp(&ptr_mtktscpu_data->bind7[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind7[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind7[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind7[13] - '0')] = ptr_mtktscpu_data->trip[7];
 
-		if (!strncmp(bind8, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind8[13] - '0')] = trip[8];
+		if (!strncmp(&ptr_mtktscpu_data->bind8[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind8[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind8[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind8[13] - '0')] = ptr_mtktscpu_data->trip[8];
 
-		if (!strncmp(bind9, adaptive_cooler_name, 13))
-			TARGET_TJS[(bind9[13] - '0')] = trip[9];
+		if (!strncmp(&ptr_mtktscpu_data->bind9[0], adaptive_cooler_name, 13))
+			if ((ptr_mtktscpu_data->bind9[13] - '0') >= 0 &&
+					(ptr_mtktscpu_data->bind9[13] - '0') < MAX_CPT_ADAPTIVE_COOLERS)
+				TARGET_TJS[(ptr_mtktscpu_data->bind9[13] - '0')] = ptr_mtktscpu_data->trip[9];
 
 		tscpu_dprintk("tscpu_write TTJ0=%d, TTJ1=%d, TTJ2=%d\n", TARGET_TJS[0],
 			      TARGET_TJS[1], TARGET_TJS[2]);
@@ -1133,10 +1293,11 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 		tscpu_dprintk("cooldev5=%s,cooldev6=%s,cooldev7=%s,cooldev8=%s,cooldev9=%s\n",
 			g_bind5, g_bind6, g_bind7, g_bind8, g_bind9);
 
-		for (i = 0; i < num_trip; i++)
-			trip_temp[i] = trip[i];
 
-		interval = time_msec;
+		for (i = 0; i < num_trip; i++)
+			trip_temp[i] = ptr_mtktscpu_data->trip[i];
+
+		interval = ptr_mtktscpu_data->time_msec;
 
 		tscpu_dprintk("tscpu_write trip_0_temp=%d,trip_1_temp=%d,trip_2_temp=%d,trip_3_temp=%d,trip_4_temp=%d,",
 			trip_temp[0], trip_temp[1], trip_temp[2], trip_temp[3], trip_temp[4]);
@@ -1163,13 +1324,19 @@ static ssize_t tscpu_write(struct file *file, const char __user *buffer, size_t 
 		 */
 		tscpu_dprintk("tscpu_write tscpu_register_thermal\n");
 		tscpu_register_thermal();
-
+		up(&sem_mutex);
+#if defined(CONFIG_ARCH_MT6797)
+		apthermolmt_set_general_cpu_power_limit(0);
+#endif
 		proc_write_flag = 1;
-
+		kfree(ptr_mtktscpu_data);
 		return count;
 	}
 
 	tscpu_dprintk("tscpu_write bad argument\n");
+	aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, "tscpu_write",
+			"Bad argument");
+	kfree(ptr_mtktscpu_data);
 	return -EINVAL;
 }
 
@@ -1202,21 +1369,19 @@ static void thermal_pause_all_periodoc_temp_sensing(void)
 	int i = 0;
 	unsigned long flags;
 	int temp;
-
 	/* tscpu_printk("thermal_pause_all_periodoc_temp_sensing\n"); */
-
-	mt_ptp_lock(&flags);
 
 	/*config bank0,1,2 */
 	for (i = 0; i < TS_LEN_ARRAY(tscpu_g_bank); i++) {
+		mt_ptp_lock(&flags);
+
 		tscpu_switch_bank(i);
-		temp = DRV_Reg32(TEMPMSRCTL1);
+		temp = readl(TEMPMSRCTL1);
 		/* set bit8=bit1=bit2=bit3=1 to pause sensing point 0,1,2,3 */
-		DRV_WriteReg32(TEMPMSRCTL1, (temp | 0x10E));
+		mt_reg_sync_writel((temp | 0x10E), TEMPMSRCTL1);
+
+		mt_ptp_unlock(&flags);
 	}
-
-	mt_ptp_unlock(&flags);
-
 }
 
 
@@ -1229,18 +1394,17 @@ static void thermal_release_all_periodoc_temp_sensing(void)
 
 	/* tscpu_printk("thermal_release_all_periodoc_temp_sensing\n"); */
 
-	mt_ptp_lock(&flags);
-
 	/*config bank0,1,2 */
 	for (i = 0; i < TS_LEN_ARRAY(tscpu_g_bank); i++) {
+		mt_ptp_lock(&flags);
+
 		tscpu_switch_bank(i);
-		temp = DRV_Reg32(TEMPMSRCTL1);
+		temp = readl(TEMPMSRCTL1);
 		/* set bit1=bit2=bit3=0 to release sensing point 0,1,2 */
-		DRV_WriteReg32(TEMPMSRCTL1, ((temp & (~0x10E))));
+		mt_reg_sync_writel(((temp & (~0x10E))), TEMPMSRCTL1);
+
+		mt_ptp_unlock(&flags);
 	}
-
-	mt_ptp_unlock(&flags);
-
 }
 
 void tscpu_thermal_enable_all_periodoc_sensing_point(thermal_bank_name bank_num)
@@ -1249,15 +1413,15 @@ void tscpu_thermal_enable_all_periodoc_sensing_point(thermal_bank_name bank_num)
 	switch (tscpu_g_bank[bank_num].ts_number) {
 	case 1:
 		/* enable periodoc temperature sensing point 0 */
-		THERMAL_WRAP_WR32(0x00000001, TEMPMONCTL0);
+		mt_reg_sync_writel(0x00000001, TEMPMONCTL0);
 		break;
 	case 2:
 		/* enable periodoc temperature sensing point 0,1 */
-		THERMAL_WRAP_WR32(0x00000003, TEMPMONCTL0);
+		mt_reg_sync_writel(0x00000003, TEMPMONCTL0);
 		break;
 	case 3:
 		/* enable periodoc temperature sensing point 0,1,2 */
-		THERMAL_WRAP_WR32(0x00000007, TEMPMONCTL0);
+		mt_reg_sync_writel(0x00000007, TEMPMONCTL0);
 		break;
 	default:
 		tscpu_printk("Error at %s\n", __func__);
@@ -1270,19 +1434,18 @@ static void thermal_disable_all_periodoc_temp_sensing(void)
 {
 	int i = 0;
 	unsigned long flags;
-
 	/* tscpu_printk("thermal_disable_all_periodoc_temp_sensing\n"); */
-
-	mt_ptp_lock(&flags);
 
 	/*config bank0,1,2 */
 	for (i = 0; i < TS_LEN_ARRAY(tscpu_g_bank); i++) {
+		mt_ptp_lock(&flags);
+
 		tscpu_switch_bank(i);
 		/* tscpu_printk("thermal_disable_all_periodoc_temp_sensing:Bank_%d\n",i); */
-		THERMAL_WRAP_WR32(0x00000000, TEMPMONCTL0);
-	}
+		mt_reg_sync_writel(0x00000000, TEMPMONCTL0);
 
-	mt_ptp_unlock(&flags);
+		mt_ptp_unlock(&flags);
+	}
 
 }
 
@@ -1324,30 +1487,38 @@ static int tscpu_thermal_suspend(struct platform_device *dev, pm_message_t state
 		aee_rr_rec_thermal_status(TSCPU_SUSPEND);
 #endif
 
-		while (cnt < 50) {
-			temp = (DRV_Reg32(THAHBST0) >> 16);
-			if (cnt > 10)
-				pr_debug("THAHBST0 = 0x%x,cnt=%d, %d\n", temp, cnt,
-				       __LINE__);
-			if (temp == 0x0) {
-				/* pause all periodoc temperature sensing point 0~2 */
-				thermal_pause_all_periodoc_temp_sensing();	/* TEMPMSRCTL1 */
-				break;
-			}
-			udelay(2);
-			cnt++;
-		}
-
+#if defined(CONFIG_ARCH_MT6797)
 		/* disable periodic temp measurement on sensor 0~2 */
 		thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
 
+		do {
+			temp = (readl(THAHBST0) >> 16);
+			if ((cnt + 1) % 10 == 0)
+				pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
 
+			udelay(50);
+			cnt++;
+		} while (temp != 0x0 && cnt < 50);
+#else
+		thermal_pause_all_periodoc_temp_sensing();	/* TEMPMSRCTL1 */
 
+		do {
+			temp = (readl(THAHBST0) >> 16);
+			if ((cnt + 1) % 10 == 0)
+				pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+			udelay(2);
+			cnt++;
+		} while (temp != 0x0 && cnt < 50);
+
+		/* disable periodic temp measurement on sensor 0~2 */
+		thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
+#endif
 		/* tscpu_thermal_clock_off(); */
 
 		/*TSCON1[5:4]=2'b11, Buffer off */
 		/* turn off the sensor buffer to save power */
-		THERMAL_WRAP_WR32(DRV_Reg32(TS_CONFIGURE) | TS_TURN_OFF, TS_CONFIGURE);
+		mt_reg_sync_writel(readl(TS_CONFIGURE) | TS_TURN_OFF, TS_CONFIGURE);
 	}
 #if THERMAL_PERFORMANCE_PROFILE
 	do_gettimeofday(&end);
@@ -1375,44 +1546,58 @@ static int tscpu_thermal_resume(struct platform_device *dev)
 #endif
 
 		tscpu_reset_thermal();
-
-		temp = DRV_Reg32(TS_CONFIGURE);
+		/*
+		   TS_CON1 default is 0x30, this is buffer off
+		   we should turn on this buffer berore we use thermal sensor,
+		   or this buffer off will let TC read a very small value from auxadc
+		   and this small value will trigger thermal reboot
+		 */
+		temp = readl(TS_CONFIGURE);
 		temp &= ~(TS_TURN_OFF);	/* TS_CON1[5:4]=2'b00,   00: Buffer on, TSMCU to AUXADC */
-		THERMAL_WRAP_WR32(temp, TS_CONFIGURE);	/* read abb need */
+		mt_reg_sync_writel(temp, TS_CONFIGURE);	/* read abb need */
 		/* RG_TS2AUXADC < set from 2'b11 to 2'b00
 		when resume.wait 100uS than turn on thermal controller. */
 		udelay(200);
 
+		BUG_ON((readl(TS_CONFIGURE) & TS_TURN_OFF) != 0x0);
 
-		/*add this function to read all temp first to avoid
+		/*Add this function to read all temp first to avoid
 		   write TEMPPROTTC first time will issue an fake signal to RGU */
 		tscpu_fast_initial_sw_workaround();
 
-		while (cnt < 50) {
-			temp = (DRV_Reg32(THAHBST0) >> 16);
-			if (cnt > 10)
-				pr_debug("THAHBST0 = 0x%x,cnt=%d, %d\n", temp, cnt, __LINE__);
-			if (temp == 0x0) {
-				/* pause all periodoc temperature sensing point 0~2 */
-				thermal_pause_all_periodoc_temp_sensing();	/* TEMPMSRCTL1 */
-				break;
-			}
-			udelay(2);
-			cnt++;
-		}
+#if defined(CONFIG_ARCH_MT6797)
+		/* disable periodic temp measurement on sensor 0~2 */
 		thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
 
+		do {
+			temp = (readl(THAHBST0) >> 16);
+			if ((cnt + 1) % 10 == 0)
+				pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+			udelay(50);
+			cnt++;
+		} while (temp != 0x0 && cnt < 50);
+#else
+		thermal_pause_all_periodoc_temp_sensing();	/* TEMPMSRCTL1 */
+
+		do {
+			temp = (readl(THAHBST0) >> 16);
+			if ((cnt + 1) % 10 == 0)
+				pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+			udelay(2);
+			cnt++;
+		} while (temp != 0x0 && cnt < 50);
+
+		thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
+#endif
 		tscpu_thermal_initial_all_bank();
 
 		thermal_release_all_periodoc_temp_sensing();	/* must release before start */
 
-
-
 		tscpu_clear_all_temp();
 
 		tscpu_config_all_tc_hw_protect(trip_temp[0], tc_mid_trip);
-
-
 	}
 
 	g_tc_resume = 2;	/* set "2", resume finish,can read temp */
@@ -1468,53 +1653,49 @@ static int ktp_thread(void *arg)
 		bank0_T = tscpu_max_temperature();
 		max_temp = bank0_T;
 
-		tscpu_printk("ktp_thread temp=%d\n", max_temp);
+		tscpu_warn("ktp_thread temp=%d\n", max_temp);
 
 		if ((temp_tc_mid_trip > -275000) && (max_temp >= (temp_tc_mid_trip - 5000))) {
 			/* trip_temp[1] should be shutdown point... */
 			/* Do what ever we want */
-			tscpu_printk("ktp_thread overheat %d\n", max_temp);
+			tscpu_dprintk("ktp_thread overheat %d\n", max_temp);
 
 			/* freq/volt down or cpu down or backlight down or charging down... */
-#if defined(CONFIG_ARCH_MT6755)
-			mt_ppm_cpu_thermal_protect(600);	/*D1 max~1600mW,min~600 */
-#else
-			mt_cpufreq_thermal_protect(600);	/*D1 max~1600mW,min~600 */
-#endif
-			mt_gpufreq_thermal_protect(600);	/*D1 max~900mW,min~600mW */
+			apthermolmt_set_general_cpu_power_limit(600);
+			apthermolmt_set_general_gpu_power_limit(600);
 
 			ktp_limited = temp_tc_mid_trip;
 
 			msleep(20 * 1000);
 		} else if ((temp_ktp_limited > -275000) && (max_temp < temp_ktp_limited)) {
+			/*
 			unsigned int final_limit;
 
 			final_limit = MIN(static_cpu_power_limit, adaptive_cpu_power_limit);
-			tscpu_printk("ktp_thread unlimit cpu=%d\n", final_limit);
+			tscpu_dprintk("ktp_thread unlimit cpu=%d\n", final_limit);
+			*/
+			apthermolmt_set_general_cpu_power_limit(0);
 
-#if defined(CONFIG_ARCH_MT6755)
-			mt_ppm_cpu_thermal_protect((final_limit != 0x7FFFFFFF) ? final_limit : 0);
-#else
-			mt_cpufreq_thermal_protect((final_limit != 0x7FFFFFFF) ? final_limit : 0);
-#endif
-
+			/*
 			final_limit = MIN(static_gpu_power_limit, adaptive_gpu_power_limit);
-			tscpu_printk("ktp_thread unlimit gpu=%d\n", final_limit);
+			tscpu_dprintk("ktp_thread unlimit gpu=%d\n", final_limit);
 			mt_gpufreq_thermal_protect((final_limit != 0x7FFFFFFF) ? final_limit : 0);
+			*/
+			apthermolmt_set_general_gpu_power_limit(0);
 
 			ktp_limited = -275000;
 
 			set_current_state(TASK_INTERRUPTIBLE);
 			schedule();
 		} else {
-			tscpu_printk("ktp_thread else temp=%d, trip=%d, ltd=%d\n", max_temp,
+			tscpu_dprintk("ktp_thread else temp=%d, trip=%d, ltd=%d\n", max_temp,
 				     temp_tc_mid_trip, temp_ktp_limited);
 			set_current_state(TASK_INTERRUPTIBLE);
 			schedule();
 		}
 	}
 
-	tscpu_printk("ktp_thread stopped\n");
+	tscpu_dprintk("ktp_thread stopped\n");
 
 	return 0;
 }
@@ -1682,20 +1863,22 @@ static const struct file_operations mtktscpu_read_temperature_fops = {
 };
 
 
-static int tscpu_set_temperature_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, tscpu_set_temperature_read, NULL);
-}
 
-static const struct file_operations mtktscpu_set_temperature_fops = {
+
+#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+static int tscpu_pmic_current_limit_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, tscpu_pmic_current_limit_read, NULL);
+}
+static const struct file_operations mtktscpu_pmic_current_limit_fops = {
 	.owner = THIS_MODULE,
-	.open = tscpu_set_temperature_open,
+	.open = tscpu_pmic_current_limit_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
-	.write = tscpu_set_temperature_write,
+	.write = tscpu_pmic_current_limit_write,
 	.release = single_release,
 };
-
+#endif
 
 static int tscpu_talking_flag_open(struct inode *inode, struct file *file)
 {
@@ -1728,11 +1911,57 @@ static const struct file_operations mtktscpu_fastpoll_fops = {
 };
 #endif
 
+static int tscpu_read_ttpct(struct seq_file *m, void *v)
+{
+	unsigned int cpu_power, gpu_power, max_cpu_pwr, max_gpu_pwr;
+
+#ifdef ATM_USES_PPM
+	max_cpu_pwr = mt_ppm_thermal_get_max_power() + 1;
+#else
+	max_cpu_pwr = 3000;
+#endif
+	max_gpu_pwr = mt_gpufreq_get_max_power() + 1;
+	cpu_power = apthermolmt_get_cpu_power_limit();
+	gpu_power = apthermolmt_get_gpu_power_limit();
+	cpu_power = (cpu_power == 0x7FFFFFFF || cpu_power == 0) ? max_cpu_pwr:cpu_power;
+	cpu_power = (cpu_power < max_cpu_pwr) ? cpu_power : max_cpu_pwr;
+	gpu_power = (gpu_power == 0x7FFFFFFF || gpu_power == 0) ? max_gpu_pwr:gpu_power;
+	gpu_power = (gpu_power < max_gpu_pwr) ? gpu_power : max_gpu_pwr;
+
+	if (max_cpu_pwr != 0)
+		cpu_power = (max_cpu_pwr - cpu_power)*100/max_cpu_pwr;
+	else
+		seq_printf(m, "ERROR: max_cpu_pwr = %d\n", max_cpu_pwr);
+
+	if (max_gpu_pwr != 0)
+		gpu_power = (max_gpu_pwr - gpu_power)*100/max_gpu_pwr;
+	else
+		seq_printf(m, "ERROR: max_gpu_pwr = %d\n", max_gpu_pwr);
+
+	seq_printf(m, "%d,%d\n", cpu_power, gpu_power);
+
+	return 0;
+}
+
+static int tscpu_ttpct_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, tscpu_read_ttpct, NULL);
+}
+
+static const struct file_operations mtktscpu_ttpct_fops = {
+	.owner = THIS_MODULE,
+	.open = tscpu_ttpct_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+
 #if THERMAL_DRV_UPDATE_TEMP_DIRECT_TO_MET
 int tscpu_get_cpu_temp_met(MTK_THERMAL_SENSOR_CPU_ID_MET id)
 {
 	unsigned long flags;
-	int ret = a_tscpu_all_temp[id];
+	int ret;
 
 	if (id < 0 || id >= MTK_THERMAL_SENSOR_CPU_COUNT)
 		return -127000;
@@ -1748,12 +1977,176 @@ int tscpu_get_cpu_temp_met(MTK_THERMAL_SENSOR_CPU_ID_MET id)
 		tscpu_met_unlock(&flags);
 		return -127000;
 	}
-
+ret = a_tscpu_all_temp[id];
 	tscpu_met_unlock(&flags);
 	return ret;
 }
 EXPORT_SYMBOL(tscpu_get_cpu_temp_met);
 #endif
+
+#if defined(CONFIG_ARCH_MT6755)
+#if 0
+static int thermal_auxadc_get_data(int times, int channel)
+{
+	int ret = 0, data[4], i, ret_value = 0, ret_temp = 0;
+
+	pr_err("Thermal_auxadc_get_data\n");
+
+	if (IMM_IsAdcInitReady() == 0) {
+		pr_err("[thermal_auxadc_get_data]: AUXADC is not ready\n");
+		return 0;
+	}
+
+	for (i = 0; i < times; i++) {
+		ret_value = IMM_GetOneChannelValue(channel, data, &ret_temp);
+		pr_err("[thermal_auxadc_get_data]: raw%d= %d\n", i, ret_temp);
+		ret += ret_temp;
+	}
+
+	ret = ret / times;
+	return ret;
+}
+#endif
+/*Patch to pause thermal controller and turn off auxadc GC.
+  For mt6755 only*/
+static void tscpu_thermal_pause(void)
+{
+	int cnt = 0;
+	int temp = 0;
+
+	aee_rr_rec_thermal_status(TSCPU_PAUSE);
+
+#if defined(CONFIG_ARCH_MT6797)
+	/* disable periodic temp measurement on sensor 0~2 */
+	thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
+
+	do {
+		temp = (readl(THAHBST0) >> 16);
+		if ((cnt + 1) % 10 == 0)
+			pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+		udelay(50);
+		cnt++;
+	} while (temp != 0x0 && cnt < 50);
+#else
+	thermal_pause_all_periodoc_temp_sensing();	/* TEMPMSRCTL1 */
+
+	do {
+		temp = (readl(THAHBST0) >> 16);
+		if ((cnt + 1) % 10 == 0)
+			pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+		udelay(2);
+		cnt++;
+	} while (temp != 0x0 && cnt < 50);
+#endif
+	/* disable periodic temp measurement on sensor 0~2 */
+	thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
+}
+
+static void tscpu_thermal_release(void)
+{
+	int temp = 0;
+	int cnt = 0;
+
+	aee_rr_rec_thermal_status(TSCPU_RELEASE);
+
+	BUG_ON((~__raw_readl((infracfg_ao_base + 0x0094)) & 0x400) != 0x400);
+	/*
+	   TS_CON1 default is 0x30, this is buffer off
+	   we should turn on this buffer berore we use thermal sensor,
+	   or this buffer off will let TC read a very small value from auxadc
+	   and this small value will trigger thermal reboot
+	 */
+	temp = readl(TS_CONFIGURE);
+	temp &= ~(TS_TURN_OFF);	/* TS_CON1[5:4]=2'b00,   00: Buffer on, TSMCU to AUXADC */
+	mt_reg_sync_writel(temp, TS_CONFIGURE);	/* read abb need */
+	/* RG_TS2AUXADC < set from 2'b11 to 2'b00
+	when resume.wait 100uS than turn on thermal controller.*/
+	udelay(200);
+
+	BUG_ON((readl(TS_CONFIGURE) & TS_TURN_OFF) != 0x0);
+
+	/*thermal_auxadc_get_data(2, 11);*/
+	thermal_release_all_periodoc_temp_sensing();	/* must release before start */
+
+	tscpu_fast_initial_sw_workaround();
+
+#if defined(CONFIG_ARCH_MT6797)
+	/* disable periodic temp measurement on sensor 0~2 */
+	thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
+
+	do {
+		temp = (readl(THAHBST0) >> 16);
+		if ((cnt + 1) % 10 == 0)
+			pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+		udelay(50);
+		cnt++;
+	} while (temp != 0x0 && cnt < 50);
+#else
+	thermal_pause_all_periodoc_temp_sensing();	/* TEMPMSRCTL1 */
+
+	do {
+		temp = (readl(THAHBST0) >> 16);
+		if ((cnt + 1) % 10 == 0)
+			pr_err("THAHBST0 = 0x%x, cnt = %d, %d\n", temp, cnt, __LINE__);
+
+		udelay(2);
+		cnt++;
+	} while (temp != 0x0 && cnt < 50);
+
+	thermal_disable_all_periodoc_temp_sensing();	/* TEMPMONCTL0 */
+#endif
+
+	tscpu_thermal_initial_all_bank();
+
+	thermal_release_all_periodoc_temp_sensing();	/* must release before start */
+}
+#endif
+
+static DEFINE_SPINLOCK(temp_valid_spinlock);
+static void temp_valid_lock(unsigned long *flags)
+{
+	spin_lock_irqsave(&temp_valid_spinlock, *flags);
+}
+
+static void temp_valid_unlock(unsigned long *flags)
+{
+	spin_unlock_irqrestore(&temp_valid_spinlock, *flags);
+}
+
+static void check_all_temp_valid(void)
+{
+	int i, j, raw;
+
+	for (i = 0; i < ARRAY_SIZE(tscpu_g_bank); i++) {
+		for (j = 0; j < tscpu_g_bank[i].ts_number; j++) {
+			raw = tscpu_bank_ts_r[i][tscpu_g_bank[i].ts[j].type];
+
+			if (raw == THERMAL_INIT_VALUE)
+				return;	/* The temperature is not valid. */
+		}
+	}
+
+	g_is_temp_valid = 1;
+}
+
+int tscpu_is_temp_valid(void)
+{
+	int is_valid = 0;
+	unsigned long flags;
+
+	temp_valid_lock(&flags);
+	if (g_is_temp_valid == 0)
+		check_all_temp_valid();
+
+	is_valid = g_is_temp_valid;
+	temp_valid_unlock(&flags);
+
+	return is_valid;
+}
+
 
 static void read_all_bank_temperature(void)
 {
@@ -1761,23 +2154,25 @@ static void read_all_bank_temperature(void)
 	int j = 0;
 	unsigned long flags;
 
-	mt_ptp_lock(&flags);
-
 	for (i = 0; i < TS_LEN_ARRAY(tscpu_g_bank); i++) {
+		mt_ptp_lock(&flags);
+
 		tscpu_switch_bank(i);
 		for (j = 0; j < tscpu_g_bank[i].ts_number; j++)
 			tscpu_thermal_read_bank_temp(i, tscpu_g_bank[i].ts[j].type, j);
+
+		mt_ptp_unlock(&flags);
 	}
 
-
-	mt_ptp_unlock(&flags);
-
+	tscpu_is_temp_valid();
 }
 
 void tscpu_update_tempinfo(void)
 {
 	unsigned long flags;
+	ktime_t now;
 
+	now = ktime_get();
 	if (g_tc_resume == 0)
 		read_all_bank_temperature();
 	else if (g_tc_resume == 2) /* resume ready */
@@ -1790,6 +2185,7 @@ void tscpu_update_tempinfo(void)
 	aee_rr_rec_thermal_temp4(get_immediate_ts4_wrap() / 1000);
 	aee_rr_rec_thermal_temp5(get_immediate_tsabb_wrap() / 1000);
 	aee_rr_rec_thermal_status(TSCPU_NORMAL);
+	aee_rr_rec_thermal_ktime(ktime_to_us(now));
 #endif
 
 #if THERMAL_DRV_UPDATE_TEMP_DIRECT_TO_MET
@@ -1825,23 +2221,111 @@ void tscpu_update_tempinfo(void)
 #endif
 }
 
+#ifdef FAST_RESPONSE_ATM
+DEFINE_SPINLOCK(timer_lock);
+int is_worktimer_en = 1;
+#endif
+
+void tscpu_workqueue_cancel_timer(void)
+{
+#ifdef FAST_RESPONSE_ATM
+	if (down_trylock(&sem_mutex))
+		return;
+
+	if (is_worktimer_en && thz_dev) {
+		cancel_delayed_work(&(thz_dev->poll_queue));
+		isTimerCancelled = 1;
+		spin_lock(&timer_lock);
+		is_worktimer_en = 0;
+		spin_unlock(&timer_lock);
+		tscpu_dprintk("[tTimer] workqueue stopped\n");
+	}
+
+	up(&sem_mutex);
+#else
+	if (down_trylock(&sem_mutex))
+		return;
+
+	if (thz_dev) {
+		cancel_delayed_work(&(thz_dev->poll_queue));
+		isTimerCancelled = 1;
+	}
+
+	up(&sem_mutex);
+#endif
+}
+
+void tscpu_workqueue_start_timer(void)
+{
+#ifdef FAST_RESPONSE_ATM
+	if (!isTimerCancelled)
+		return;
+
+	if (down_trylock(&sem_mutex))
+		return;
+
+	if (!is_worktimer_en && thz_dev != NULL && interval != 0) {
+		mod_delayed_work(system_freezable_wq, &(thz_dev->poll_queue), 0);
+		isTimerCancelled = 0;
+		spin_lock(&timer_lock);
+		is_worktimer_en = 1;
+		spin_unlock(&timer_lock);
+		tscpu_dprintk("[tTimer] workqueue started\n");
+	}
+
+	up(&sem_mutex);
+#else
+	if (!isTimerCancelled)
+		return;
+
+	if (down_trylock(&sem_mutex))
+		return;
+
+	/* resume thermal framework polling when leaving deep idle */
+	if (thz_dev != NULL && interval != 0) {
+		mod_delayed_work(system_freezable_wq, &(thz_dev->poll_queue),
+			round_jiffies(msecs_to_jiffies(1000)));
+		isTimerCancelled = 0;
+	}
+
+	up(&sem_mutex);
+#endif
+}
+
 void tscpu_cancel_thermal_timer(void)
 {
 	/* stop thermal framework polling when entering deep idle */
-	if (thz_dev)
-		cancel_delayed_work(&(thz_dev->poll_queue));
+
+#ifdef FAST_RESPONSE_ATM
+	atm_cancel_hrtimer();
+#endif
+	tscpu_workqueue_cancel_timer();
+
+#if defined(CONFIG_ARCH_MT6755)
+	/*Patch to pause thermal controller and turn off auxadc GC.
+		For mt6755 only*/
+	tscpu_thermal_pause();
+#endif
 }
 
 
 void tscpu_start_thermal_timer(void)
 {
-	/* resume thermal framework polling when leaving deep idle */
-	if (thz_dev != NULL && interval != 0)
-		mod_delayed_work(system_freezable_wq, &(thz_dev->poll_queue), round_jiffies(msecs_to_jiffies(1000)));
+#ifdef FAST_RESPONSE_ATM
+	atm_restart_hrtimer();
+#else
+	tscpu_workqueue_start_timer();
+#endif
+
+#if defined(CONFIG_ARCH_MT6755)
+/*Patch to pause thermal controller and turn off auxadc GC.
+  For mt6755 only*/
+	tscpu_thermal_release();
+#endif
 }
 
 #ifdef CONFIG_OF
-const long tscpu_dev_alloc_module_base_by_name(const char *name)
+long tscpu_dev_alloc_module_base_by_name(const char *name)
 {
 	unsigned long VA;
 	struct device_node *node = NULL;
@@ -1886,24 +2370,24 @@ static void init_thermal(void)
 	   or this buffer off will let TC read a very small value from auxadc
 	   and this small value will trigger thermal reboot
 	 */
-	temp = DRV_Reg32(TS_CONFIGURE);
+	temp = readl(TS_CONFIGURE);
 	temp &= ~(TS_TURN_OFF);	/* TS_CON1[5:4]=2'b00,   00: Buffer on, TSMCU to AUXADC */
-	THERMAL_WRAP_WR32(temp, TS_CONFIGURE);	/* read abb need */
+	mt_reg_sync_writel(temp, TS_CONFIGURE);	/* read abb need */
 	/* RG_TS2AUXADC < set from 2'b11 to 2'b00
 	when resume.wait 100uS than turn on thermal controller.*/
 	udelay(200);
 
-	BUG_ON((DRV_Reg32(TS_CONFIGURE) & TS_TURN_OFF) != 0x0);
+	BUG_ON((readl(TS_CONFIGURE) & TS_TURN_OFF) != 0x0);
 
-	/*BUG_ON(IMM_IsAdcInitReady() != 1); Mark for build pass*/
+	BUG_ON(IMM_IsAdcInitReady() != 1);
 
 	/*add this function to read all temp first to avoid
 	   write TEMPPROTTC first will issue an fake signal to RGU */
 	tscpu_fast_initial_sw_workaround();
 
 	while (cnt < 50) {
-		temp = (DRV_Reg32(THAHBST0) >> 16);
-		if (cnt > 10)
+		temp = (readl(THAHBST0) >> 16);
+		if ((cnt + 1) % 10 == 0)
 			pr_debug("THAHBST0 = 0x%x,cnt=%d, %d\n", temp, cnt, __LINE__);
 		if (temp == 0x0) {
 			/* pause all periodoc temperature sensing point 0~2 */
@@ -1954,15 +2438,13 @@ static void tscpu_create_fs(void)
 
 		entry = proc_create("thermlmt", S_IRUGO, NULL, &mtktscpu_opp_fops);
 
+		entry = proc_create("ttpct", S_IRUGO, NULL, &mtktscpu_ttpct_fops);
+
 		entry = proc_create("tzcpu_cal", S_IRUSR, mtktscpu_dir, &mtktscpu_cal_fops);
 
 		entry =
 		    proc_create("tzcpu_read_temperature", S_IRUGO, mtktscpu_dir,
 				&mtktscpu_read_temperature_fops);
-
-		entry =
-		    proc_create("tzcpu_set_temperature", S_IRUGO | S_IWUSR, mtktscpu_dir,
-				&mtktscpu_set_temperature_fops);
 
 		entry =
 		    proc_create("tzcpu_talking_flag", S_IRUGO | S_IWUSR, mtktscpu_dir,
@@ -1987,6 +2469,15 @@ static void tscpu_create_fs(void)
 				&mtktscpu_GPIO_out_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
+#endif
+#if defined(CONFIG_MTK_PMIC_CHIP_MT6353)
+
+		entry =
+		    proc_create("pmic_current_limit", S_IRUGO | S_IWUSR, mtktscpu_dir,
+				&mtktscpu_pmic_current_limit_fops);
+		if (entry)
+			proc_set_user(entry, uid, gid);
+
 #endif
 	}
 }
@@ -2014,7 +2505,7 @@ static int tscpu_thermal_probe(struct platform_device *dev)
 		tscpu_printk("cannot get thermal clock.\n");
 		return PTR_ERR(therm_main);
 	}
-	tscpu_printk("therm-main Ptr=%p", therm_main);
+	tscpu_dprintk("therm-main Ptr=%p", therm_main);
 #endif
 
 	tscpu_thermal_clock_on();
@@ -2022,7 +2513,7 @@ static int tscpu_thermal_probe(struct platform_device *dev)
 
 #if MTK_TS_CPU_RT
 	{
-		tscpu_printk("tscpu_register_thermal creates kthermp\n");
+		tscpu_dprintk("tscpu_register_thermal creates kthermp\n");
 		ktp_thread_handle = kthread_create(ktp_thread, (void *)NULL, "kthermp");
 		if (IS_ERR(ktp_thread_handle)) {
 			ktp_thread_handle = NULL;
@@ -2038,17 +2529,20 @@ static int tscpu_thermal_probe(struct platform_device *dev)
 	    request_irq(thermal_irq_number, tscpu_thermal_all_bank_interrupt_handler,
 			IRQF_TRIGGER_LOW, THERMAL_NAME, NULL);
 	if (err)
-		tscpu_printk("tscpu_init IRQ register fail\n");
+		tscpu_warn("tscpu_init IRQ register fail\n");
 #else
 	err =
 	    request_irq(THERM_CTRL_IRQ_BIT_ID, tscpu_thermal_all_bank_interrupt_handler,
 			IRQF_TRIGGER_LOW, THERMAL_NAME, NULL);
 	if (err)
-		tscpu_printk("tscpu_init IRQ register fail\n");
+		tscpu_warn("tscpu_init IRQ register fail\n");
 #endif
 
 	tscpu_config_all_tc_hw_protect(trip_temp[0], tc_mid_trip);
 
+#if THERMAL_GET_AHB_BUS_CLOCK
+	thermal_get_AHB_clk_info();
+#endif
 	return err;
 }
 
@@ -2086,13 +2580,13 @@ static int __init tscpu_init(void)
 
 	err = platform_driver_register(&mtk_thermal_driver);
 	if (err) {
-		tscpu_printk("thermal driver callback register failed..\n");
+		tscpu_warn("thermal driver callback register failed..\n");
 		return err;
 	}
 
 	err = tscpu_register_thermal();
 	if (err) {
-		tscpu_printk("tscpu_register_thermal fail\n");
+		tscpu_warn("tscpu_register_thermal fail\n");
 		goto err_unreg;
 	}
 

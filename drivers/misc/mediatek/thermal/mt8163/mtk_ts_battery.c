@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -14,15 +27,13 @@
 #include <linux/writeback.h>
 #include <linux/uidgid.h>
 #include <asm/uaccess.h>
-#include "mt-plat/battery_meter.h"
 #include "mt-plat/mtk_thermal_monitor.h"
-#include "mach/mt_typedefs.h"
+#include "mtk_thermal_typedefs.h"
 #include "mach/mt_thermal.h"
 #include "inc/mtk_ts_cpu.h"
-#include "inc/mtk_ts_battery.h"
-#include <linux/platform_data/mtk_thermal.h>
 
 struct proc_dir_entry *mtk_thermal_get_proc_drv_therm_dir_entry(void);
+
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
 static unsigned int interval;	/* seconds, 0 : no auto polling */
@@ -54,17 +65,10 @@ static char g_bind9[20] = { 0 };
  * else if cur_temp >= polling_trip_temp2 && curr_temp < polling_trip_temp1, use interval*polling_factor1
  * else, use interval*polling_factor2
  */
-static int polling_trip_temp_high = 50000;
 static int polling_trip_temp1 = 40000;
 static int polling_trip_temp2 = 20000;
 static int polling_factor1 = 5000;
 static int polling_factor2 = 10000;
-
-/* shutdown point: 58C */
-#define BATTERY_TEMP_CRIT 58000
-
-/* Invalid value for getting temperature: 999C  */
-#define INVALID_TEMP_VALUE 999000
 
 /* static int battery_write_flag=0; */
 
@@ -149,7 +153,7 @@ static int get_hw_battery_temp(void)
 
 static DEFINE_MUTEX(Battery_lock);
 int ts_battery_at_boot_time = 0;
-int mtktsbattery_get_hw_temp(void)
+static int mtktsbattery_get_hw_temp(void)
 {
 	int t_ret = 0;
 	static int battery[60] = { 0 };
@@ -184,33 +188,7 @@ int mtktsbattery_get_hw_temp(void)
 
 static int mtktsbattery_get_temp(struct thermal_zone_device *thermal, unsigned long *t)
 {
-	static atomic64_t temp = ATOMIC64_INIT(INVALID_TEMP_VALUE);
-	int check_count;
-
-	if (INVALID_TEMP_VALUE == atomic64_read(&temp)) {
-		*t = mtktsbattery_get_hw_temp();
-		goto check_temp;
-	}
-
-	if (atomic64_read(&temp) >= polling_trip_temp_high) {
-		*t = battery_meter_get_battery_temperature();
-		*t = (*t) * 1000;
-	}
-	else
-		*t = mtktsbattery_get_hw_temp();
-
-check_temp:
-	/* recheck 3 times for critical temperature */
-	for (check_count = 0; check_count < 3; check_count++) {
-		if (*t >= BATTERY_TEMP_CRIT) {
-			*t = battery_meter_get_battery_temperature();
-			*t = (*t) * 1000;
-			pr_warn("recheck battery temperature result: %ld\n", *t);
-			msleep(20);
-			continue;
-		} else
-			break;
-	}
+	*t = mtktsbattery_get_hw_temp();
 
 	if ((int)*t >= polling_trip_temp1)
 		thermal->polling_delay = interval * 1000;
@@ -218,8 +196,6 @@ check_temp:
 		thermal->polling_delay = interval * polling_factor2;
 	else
 		thermal->polling_delay = interval * polling_factor1;
-
-	atomic64_set(&temp, *t);
 
 	return 0;
 }
@@ -346,29 +322,10 @@ static int mtktsbattery_get_trip_temp(struct thermal_zone_device *thermal, int t
 	return 0;
 }
 
-static int mtktsbattery_set_trip_temp(struct thermal_zone_device *thermal, int trip,
-				      unsigned long temp)
-{
-	trip_temp[trip] = temp;
-	return 0;
-}
-
 static int mtktsbattery_get_crit_temp(struct thermal_zone_device *thermal,
 				      unsigned long *temperature)
 {
 	*temperature = mtktsbattery_TEMP_CRIT;
-	return 0;
-}
-
-#define PREFIX "thermaltsbattery:def"
-static int mtktsbattery_thermal_notify(struct thermal_zone_device *thermal,
-				int trip, enum thermal_trip_type type)
-{
-	if (type == THERMAL_TRIP_CRITICAL) {
-		pr_err("%s: thermal_shutdown notify\n", __func__);
-		last_kmsg_thermal_shutdown();
-		pr_err("%s: thermal_shutdown notify end\n", __func__);
-	}
 	return 0;
 }
 
@@ -381,9 +338,7 @@ static struct thermal_zone_device_ops mtktsbattery_dev_ops = {
 	.set_mode = mtktsbattery_set_mode,
 	.get_trip_type = mtktsbattery_get_trip_type,
 	.get_trip_temp = mtktsbattery_get_trip_temp,
-	.set_trip_temp = mtktsbattery_set_trip_temp,
 	.get_crit_temp = mtktsbattery_get_crit_temp,
-	.notify = mtktsbattery_thermal_notify,
 };
 
 /*

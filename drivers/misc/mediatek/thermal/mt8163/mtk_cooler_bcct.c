@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -279,12 +292,8 @@ static ssize_t _cl_bcct_write(struct file *filp, const char __user *buf, size_t 
 	/* int ret = 0; */
 	char tmp[128] = { 0 };
 	int klog_on, limit0, limit1, limit2;
-
-	len = (len < (128-1)) ? len : (128-1);
-
+	len = (len < (128 - 1)) ? len : (128 - 1);
 	/* write data to the buffer */
-	if (len > 127)
-		len = 127;
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
 

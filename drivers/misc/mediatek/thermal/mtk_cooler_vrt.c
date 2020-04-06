@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
@@ -35,8 +48,7 @@ static ssize_t _cl_vrt_write(struct file *filp, const char __user *buf, size_t l
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
 
-	len = min(len, (unsigned long) (MAX_LEN-1));
-
+	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <asm/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -17,7 +30,7 @@
 #include <linux/bug.h>
 #include <linux/workqueue.h>
 #include <mt-plat/mtk_thermal_platform.h>
-#include <mach/mt_typedefs.h>
+#include "mtk_thermal_typedefs.h"
 
 #include <mt-plat/mtk_mdm_monitor.h>
 #include <mach/mt_thermal.h>
