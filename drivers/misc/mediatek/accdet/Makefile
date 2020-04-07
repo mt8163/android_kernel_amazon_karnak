@@ -4,5 +4,3 @@ subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
 obj-$(CONFIG_MTK_ACCDET) := accdet_drv.o
 obj-$(CONFIG_MTK_ACCDET) += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 
-obj-$(CONFIG_MTK_AMZN_ACCDET) := accdet_drv.o
-obj-$(CONFIG_MTK_AMZN_ACCDET) += $(subst ",,$(CONFIG_MTK_PLATFORM))/

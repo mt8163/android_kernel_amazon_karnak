@@ -1,15 +1,15 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- */
+* Copyright (C) 2016 MediaTek Inc.
+*
+* This program is free software; you can redistribute it and/or modify
+* it under the terms of the GNU General Public License version 2 as
+* published by the Free Software Foundation.
+*
+* This program is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+*/
 
 #include "accdet.h"
 #ifdef CONFIG_ACCDET_EINT
@@ -37,17 +37,14 @@ int gpiopin;
 unsigned int headsetdebounce;
 unsigned int accdet_eint_type;
 struct headset_mode_settings *cust_headset_settings;
-#define ACCDET_DEBUG(format, args...)	pr_debug(format, ##args)
-#define ACCDET_INFO(format, args...)	pr_info(format, ##args)
-#define ACCDET_ERROR(format, args...)	pr_info(format, ##args)
-
+#define ACCDET_DEBUG(format, args...) pr_debug(format, ##args)
+#define ACCDET_INFO(format, args...) pr_warn(format, ##args)
+#define ACCDET_ERROR(format, args...) pr_err(format, ##args)
 #define JUST_INPUT_NO_SWITCH  0
 #if JUST_INPUT_NO_SWITCH
 static struct switch_dev accdet_data;
 #endif
 static void send_accdet_status_event(int cable_type, int status);
-
-static struct switch_dev accdet_data;
 
 static struct input_dev *kpd_accdet_dev;
 static struct cdev *accdet_cdev;
@@ -224,7 +221,6 @@ static void accdet_FSA8049_disable(void)
 static inline void headset_plug_out(void)
 {
 	send_accdet_status_event(cable_type, 0);
-
 	accdet_status = PLUG_OUT;
 	cable_type = NO_DEVICE;
 	/*update the cable_type*/
@@ -234,9 +230,8 @@ static inline void headset_plug_out(void)
 		cur_key = 0;
 	}
 #if JUST_INPUT_NO_SWITCH
-		switch_set_state((struct switch_dev *)&accdet_data, cable_type);
+	switch_set_state((struct switch_dev *)&accdet_data, cable_type);
 #endif
-
 	ACCDET_DEBUG(" [accdet] set state in cable_type = NO_DEVICE\n");
 
 }
@@ -440,9 +435,8 @@ static inline int accdet_setup_eint(struct platform_device *accdet_device)
 		ret = PTR_ERR(pins_eint_int);
 		dev_err(&accdet_device->dev, "fwq Cannot find accdet pinctrl state_eint_int!\n");
 		return ret;
-	} else {
-		ACCDET_INFO("have find accdet pinctrl state_eint_int\n");
 	}
+	ACCDET_INFO("have find accdet pinctrl state_eint_int\n");
 
 	pinctrl_select_state(accdet_pinctrl1, pins_eint_int);
 	ACCDET_INFO("select pinctrl state done\n");
@@ -525,6 +519,7 @@ static int key_check(int b)
 
 #endif
 
+
 static void send_accdet_status_event(int cable_type, int status)
 {
 	switch (cable_type) {
@@ -542,7 +537,7 @@ static void send_accdet_status_event(int cable_type, int status)
 		ACCDET_DEBUG("[Accdet]HEADSET_MIC(4-pole) %s\n", status?"PlugIn":"PlugOut");
 		break;
 	default:
-		ACCDET_DEBUG("[accdet][send_accdet_status_Inputevent]Invalid cableType\n");
+		ACCDET_DEBUG("[Accdet]Invalid cableType\n");
 	}
 }
 
@@ -1056,8 +1051,6 @@ static ssize_t accdet_store_call_state(struct device_driver *ddri, const char *b
 
 	case CALL_ACTIVE:
 		ACCDET_DEBUG("[Accdet]accdet call: active or hold state!\n");
-		ACCDET_DEBUG("[Accdet]accdet_ioctl : Button_Status=%d (state:%d)\n", button_status, accdet_data.state);
-		/*return button_status;*/
 		break;
 
 	default:
@@ -1182,7 +1175,6 @@ static DRIVER_ATTR(set_headset_mode, S_IWUSR | S_IRUGO, NULL, store_accdet_set_h
 static DRIVER_ATTR(start_debug, S_IWUSR | S_IRUGO, NULL, store_accdet_start_debug_thread);
 
 static DRIVER_ATTR(state, S_IWUSR | S_IRUGO, show_accdet_state, NULL);
-
 
 /*----------------------------------------------------------------------------*/
 static struct driver_attribute *accdet_attr_list[] = {
@@ -1422,9 +1414,9 @@ void mt_accdet_pm_restore_noirq(void)
 		send_accdet_status_event(cable_type, 1);
 		break;
 	case 3:		/*AB=3*/
-		send_accdet_status_event(cable_type, 0);
 		cable_type = NO_DEVICE;
 		accdet_status = PLUG_OUT;
+		send_accdet_status_event(cable_type, 0);
 		break;
 	default:
 		ACCDET_DEBUG("[Accdet]accdet_pm_restore_noirq: accdet current status error!\n");
@@ -1466,7 +1458,6 @@ long mt_accdet_unlocked_ioctl(unsigned int cmd, unsigned long arg)
 		ACCDET_DEBUG("[Accdet]accdet_ioctl : CALL_STATE=%d\n", call_status);
 		break;
 	case GET_BUTTON_STATUS:
-		ACCDET_DEBUG("[Accdet]accdet_ioctl : Button_Status=%d (state:%d)\n", button_status, accdet_data.state);
 		return button_status;
 	default:
 		ACCDET_DEBUG("[Accdet]accdet_ioctl : default\n");
