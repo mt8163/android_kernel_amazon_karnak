@@ -1,8 +1,18 @@
-#include <accdet.h>
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 
-#ifdef CONFIG_COMPAT
-#include <linux/compat.h>
-#endif
+
+#include <accdet.h>
 
 static struct platform_driver accdet_driver;
 
@@ -12,26 +22,6 @@ static long accdet_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 {
 	return mt_accdet_unlocked_ioctl(cmd, arg);
 }
-
-#ifdef CONFIG_COMPAT
-static long accdet_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-	long ret;
-
-	switch (cmd) {
-	case ACCDET_INIT:
-	case SET_CALL_STATE:
-	case GET_BUTTON_STATUS:
-		 return mt_accdet_unlocked_ioctl(cmd, arg);
-		 break;
-	default:
-		ACCDET_DEBUG_DRV("[Accdet]accdet_ioctl : default!\n");
-		ret = -1;
-		break;
-	}
-	return ret;
-}
-#endif
 
 static int accdet_open(struct inode *inode, struct file *file)
 {
@@ -46,9 +36,6 @@ static int accdet_release(struct inode *inode, struct file *file)
 static const struct file_operations accdet_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = accdet_unlocked_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl = accdet_compat_ioctl,
-#endif
 	.open = accdet_open,
 	.release = accdet_release,
 };
@@ -60,12 +47,7 @@ const struct file_operations *accdet_get_fops(void)
 
 static int accdet_probe(struct platform_device *dev)
 {
-#ifdef CONFIG_MTK_AMZN_ACCDET
 	return mt_accdet_probe(dev);
-#else
-	mt_accdet_probe(dev);
-	return 0;
-#endif
 }
 
 static int accdet_remove(struct platform_device *dev)
@@ -74,21 +56,19 @@ static int accdet_remove(struct platform_device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int accdet_suspend(struct device *device)
 {				/* wake up */
-#ifndef CONFIG_MTK_AMZN_ACCDET
 	mt_accdet_suspend();
-#endif
 	return 0;
 }
 
 static int accdet_resume(struct device *device)
 {				/* wake up */
-#ifndef CONFIG_MTK_AMZN_ACCDET
 	mt_accdet_resume();
-#endif
 	return 0;
 }
+#endif
 
 /**********************************************************************
 //add for IPO-H need update headset state when resume
@@ -100,14 +80,6 @@ static int accdet_pm_restore_noirq(struct device *device)
 	mt_accdet_pm_restore_noirq();
 	return 0;
 }
-struct of_device_id accdet_of_match[] = {
-	{ .compatible = "mediatek,mt6735-accdet", },
-	{ .compatible = "mediatek,mt6755-accdet", },
-	{ .compatible = "mediatek,mt6580-accdet", },
-	{ .compatible = "mediatek,mt8173-accdet", },
-	{ .compatible = "mediatek,mt8163-accdet", },
-	{},
-};
 
 static const struct dev_pm_ops accdet_pm_ops = {
 	.suspend = accdet_suspend,
@@ -116,6 +88,20 @@ static const struct dev_pm_ops accdet_pm_ops = {
 };
 #endif
 
+struct of_device_id accdet_of_match[] = {
+	{ .compatible = "mediatek,mt6735-accdet", },
+	{ .compatible = "mediatek,mt6755-accdet", },
+	{ .compatible = "mediatek,mt6757-accdet", },
+	{ .compatible = "mediatek,mt6570-accdet", },
+	{ .compatible = "mediatek,mt6580-accdet", },
+	{ .compatible = "mediatek,mt8173-accdet", },
+	{ .compatible = "mediatek,mt8163-accdet", },
+	{ .compatible = "mediatek,mt8127-accdet", },
+	{ .compatible = "mediatek,mt6797-accdet", },
+	{ .compatible = "mediatek,elbrus-accdet", },
+	{},
+};
+
 static struct platform_driver accdet_driver = {
 	.probe = accdet_probe,
 	/* .suspend = accdet_suspend, */
@@ -123,10 +109,8 @@ static struct platform_driver accdet_driver = {
 	.remove = accdet_remove,
 	.driver = {
 			.name = "Accdet_Driver",
-#ifndef CONFIG_MTK_AMZN_ACCDET
 #ifdef CONFIG_PM
 			.pm = &accdet_pm_ops,
-#endif
 #endif
 			.of_match_table = accdet_of_match,
 		   },
@@ -161,7 +145,6 @@ static void accdet_mod_exit(void)
 	ACCDET_DEBUG_DRV("[Accdet]accdet_mod_exit Done!\n");
 }
 
-#ifndef CONFIG_MTK_AMZN_ACCDET
 /*Patch for CR ALPS00804150 & ALPS00804802 PMIC temp not correct issue*/
 int accdet_cable_type_state(void)
 {
@@ -170,7 +153,6 @@ int accdet_cable_type_state(void)
 }
 EXPORT_SYMBOL(accdet_cable_type_state);
 /*Patch for CR ALPS00804150 & ALPS00804802 PMIC temp not correct issue*/
-#endif
 
 module_init(accdet_mod_init);
 module_exit(accdet_mod_exit);
