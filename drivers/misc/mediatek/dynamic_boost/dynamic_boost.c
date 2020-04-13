@@ -33,7 +33,7 @@
 #include <linux/spinlock.h>
 #include <mt_hotplug_strategy.h>
 #include <mt_hotplug_strategy_internal.h>
-#include <linux/cpufreq_interactive_boost.h>
+#include "mt_cpufreq.h"
 #include <linux/input.h>
 #include <linux/workqueue.h>
 #include "dynamic_boost.h"
@@ -120,7 +120,7 @@ EXPORT_SYMBOL(set_dynamic_boost);
 
 static int dboost_dvfs_hotplug_thread(void *ptr)
 {
-	int max_freq, cores_to_set_b, cores_to_set_l, cores_to_set_sum;
+	int max_freq, cores_to_set_b, cores_to_set_l;
 	unsigned long flags;
 
 	set_user_nice(current, -10);
@@ -231,13 +231,9 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		interactive_boost_cpu(max_freq);
 		if (!cores_to_set_l)
 			cores_to_set_l = 1;
-		cores_to_set_sum = cores_to_set_b + cores_to_set_l;
-		if (cores_to_set_sum > num_possible_cpus())
-			cores_to_set_sum = num_possible_cpus();
-
-		hps_set_cpu_num_base(BASE_PERF_SERV, cores_to_set_sum, 0);
-		/* printk("dynamic boost: Mode=%d cores_to_set_sum=%d\n",
-					set_mode, cores_to_set_sum); */
+		hps_set_cpu_num_base(BASE_PERF_SERV, cores_to_set_l, cores_to_set_b);
+		/* printk("dynamic boost: Mode=%d cpu_min_num_big=%d cpu_min_num_little=%d\n",
+					set_mode, cores_to_set_b, cores_to_set_l);*/
 
 		dboost.last_req_mode = set_mode;
 
@@ -322,7 +318,6 @@ static struct platform_driver dynamic_boost_driver = {
 };
 
 #ifdef CONFIG_TOUCH_BOOST
-static bool flag; /* flasg to filter botton event */
 /******************************************************************************
  *                         Handle touch boost                                 *
  ******************************************************************************/
@@ -331,29 +326,9 @@ static void dboost_input_event(struct input_handle *handle, unsigned int type,
 {
 	struct dboost_input_handle *in = container_of(handle, struct dboost_input_handle, handle);
 
-	if (type == EV_KEY && code == BTN_TOUCH) {
-		flag = true;
-		if (value == 1) /** for touch down */
-			goto boost_on;
-		else
-			goto boost_off;
-	}
-	if (!flag && type == EV_ABS && code == ABS_MT_TRACKING_ID) {
-		if (value != -1)
-			goto boost_on;
-		else
-			goto boost_off;
-	}
-
-	return;
-
-boost_on:
-	set_dynamic_boost(ON, in->prio_mode);
-	return;
-boost_off:
-	set_dynamic_boost(OFF, in->prio_mode);
-	set_dynamic_boost(in->duration, in->prio_mode);
-	return;
+	if ((type == EV_KEY && code == BTN_TOUCH) ||
+				(type == EV_ABS && code == ABS_MT_TRACKING_ID && value != 0))
+		set_dynamic_boost(in->duration, in->prio_mode);
 }
 
 static int dboost_input_connect(struct input_handler *handler,
