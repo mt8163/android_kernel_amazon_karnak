@@ -1,5 +1,0 @@
-
-config CUSTOM_KERNEL_PDR_SENSOR
-	bool "CUSTOM_KERNEL_PDR_SENSOR"
-	help
-	  Kernel space PDR sensor driver.
