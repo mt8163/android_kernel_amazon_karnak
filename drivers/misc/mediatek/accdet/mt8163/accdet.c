@@ -41,7 +41,7 @@ struct headset_mode_settings *cust_headset_settings;
 #define ACCDET_INFO(format, args...)	pr_info(format, ##args)
 #define ACCDET_ERROR(format, args...)	pr_info(format, ##args)
 
-#define JUST_INPUT_NO_SWITCH  0
+#define JUST_INPUT_NO_SWITCH  1
 #if JUST_INPUT_NO_SWITCH
 static struct switch_dev accdet_data;
 #endif
