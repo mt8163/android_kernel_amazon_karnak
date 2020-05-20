@@ -35,6 +35,8 @@
 #include <mt-plat/sync_write.h>
 
 #include "md32_irq.h"
+#include "md32_firmware.h"
+
 
 #define TIMEOUT 5000
 /* #define LOG_TO_AP_UART */
@@ -522,11 +524,11 @@ int reboot_load_md32(void)
 {
 	int i;
 	int ret = 0;
-	int d_sz, p_sz;
+	//int d_sz, p_sz;
 	int d_num, p_num;
 	unsigned int sw_rstn;
-	unsigned char *md32_data_image;
-	unsigned char *md32_program_image;
+	//unsigned char *md32_data_image;
+	//unsigned char *md32_program_image;
 	unsigned int reg;
 
 	sw_rstn = readl(MD32_BASE);
@@ -545,7 +547,7 @@ int reboot_load_md32(void)
 		reg &= ~(0x1 << i);
 		mt_reg_sync_writel(reg, MD32_CLK_CTRL_BASE+0x02C);
 	}
-
+	/*
 	d_sz = get_md32_img_sz(MD32_DATA_IMAGE_PATH);
 	if (d_sz < 0) {
 		pr_err("[MD32] MD32 boot up failed --> can not get data image size\n");
@@ -559,7 +561,6 @@ int reboot_load_md32(void)
 		ret = -1;
 		goto err_get_data;
 	}
-
 	ret = load_md32(MD32_DATA_IMAGE_PATH, md32_data_image, d_sz);
 	if (ret < 0) {
 		pr_err("[MD32] MD32 boot up failed --> load data image failed!\n");
@@ -568,9 +569,9 @@ int reboot_load_md32(void)
 
 	if (d_sz > MD32_DTCM_SIZE)
 		d_sz = MD32_DTCM_SIZE;
-
-	memcpy_to_md32((void *)MD32_DTCM, (const void *)md32_data_image, d_sz);
-
+	*/
+	memcpy_to_md32((void *)MD32_DTCM, (const void *)md32_firmware_d, md32_firmware_d_len);
+	/*
 	p_sz = get_md32_img_sz(MD32_PROGRAM_IMAGE_PATH);
 	if (p_sz < 0) {
 		pr_err("[MD32] MD32 boot up failed --> can not get program image size\n");
@@ -584,7 +585,7 @@ int reboot_load_md32(void)
 		ret = -2;
 		goto err_get_program;
 	}
-
+	
 	ret = load_md32(MD32_PROGRAM_IMAGE_PATH, md32_program_image, p_sz);
 	if (ret < 0) {
 		pr_err("[MD32] MD32 boot up failed --> load program image failed!\n");
@@ -593,11 +594,11 @@ int reboot_load_md32(void)
 
 	if (p_sz > MD32_PTCM_SIZE)
 		p_sz = MD32_PTCM_SIZE;
-
-	memcpy_to_md32((void *)MD32_PTCM, (const void *)md32_program_image, p_sz);
+	*/
+	memcpy_to_md32((void *)MD32_PTCM, (const void *)md32_firmware_p, md32_firmware_p_len);
 
 	/* Turn on the power of ptcm block. 32K for one block */
-	p_num = (p_sz / (32*1024)) + 1;
+	p_num = (md32_firmware_p_len / (32*1024)) + 1;
 	reg = readl(MD32_CLK_CTRL_BASE+0x02C);
 	for (i = p_num; i < 3; ++i) {
 		reg |= (0x1 << i);
@@ -605,7 +606,7 @@ int reboot_load_md32(void)
 	}
 
 	/* Turn on the power of dtcm block.  32K for one block */
-	d_num = (d_sz / (32*1024)) + 1;
+	d_num = (md32_firmware_d_len / (32*1024)) + 1;
 	reg = readl(MD32_CLK_CTRL_BASE+0x02C);
 	for (i = 6-d_num; i > 2; --i) {
 		reg |= (0x1 << i);
@@ -614,14 +615,14 @@ int reboot_load_md32(void)
 
 	/* boot up MD32 */
 	md32_boot_up();
-
+/*
 err_load_program:
-	vfree(md32_program_image);
+	//vfree(md32_program_image);
 err_get_program:
 err_load_data:
-	vfree(md32_data_image);
+	//vfree(md32_data_image);
 err_get_data:
-
+*/
 	return ret;
 }
 
@@ -946,4 +947,3 @@ static struct platform_driver md32_driver = {
 };
 
 module_platform_driver(md32_driver);
-
