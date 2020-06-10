@@ -2,7 +2,8 @@
 
 #for build
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/     \
-             -I$(srctree)/drivers/misc/mediatek/video/common/
+             -I$(srctree)/drivers/misc/mediatek/video/common/ \
+             -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/dispsys
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/videox/ \
              -I$(srctree)/drivers/misc/mediatek/cmdq/hv1/$(MTK_PLATFORM)/ \

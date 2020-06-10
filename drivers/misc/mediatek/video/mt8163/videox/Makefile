@@ -18,7 +18,8 @@ obj-$(CONFIG_MTK_FB) += mtkfb_console.o        \
 
 #debug
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/     \
-             -I$(srctree)/drivers/misc/mediatek/video/common/
+             -I$(srctree)/drivers/misc/mediatek/video/common/ \
+             -I$(srctree)/drivers/misc/mediatek/video/mt8163/videox/
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/dispsys/   \
              -I$(srctree)/drivers/misc/mediatek/m4u/       \
