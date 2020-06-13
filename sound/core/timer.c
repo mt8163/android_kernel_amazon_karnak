@@ -473,6 +473,10 @@ static int snd_timer_start_slave(struct snd_timer_instance *timeri,
 	unsigned long flags;
 
 	spin_lock_irqsave(&slave_active_lock, flags);
+	if (timeri->flags & SNDRV_TIMER_IFLG_RUNNING) {
+		spin_unlock_irqrestore(&slave_active_lock, flags);
+		return -EBUSY;
+	}
 	timeri->flags |= SNDRV_TIMER_IFLG_RUNNING;
 	if (timeri->master && timeri->timer) {
 		spin_lock(&timeri->timer->lock);
