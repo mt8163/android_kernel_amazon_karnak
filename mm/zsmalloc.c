@@ -772,7 +772,7 @@ static void init_zspage(struct page *first_page, struct size_class *class)
 		 */
 		next_page = get_next_page(page);
 		link->next = location_to_obj(next_page, 0);
-		kunmap_atomic(vaddr);
+		kunmap_atomic(link);
 		page = next_page;
 		off %= PAGE_SIZE;
 	}
