@@ -29,12 +29,6 @@ config AMAZON_LOGD
     ---help---
       device uses logd for logging
 
-config AMAZON_POWEROFF_LOG
-	bool "Long press key power off log"
-	default N
-	help
-	enable Long press key power off log
-
 config abh123
 	bool "abh123 MTK platform project"
 	help
