@@ -347,11 +347,12 @@ void metrics_charger(bool connect)
 
 		if (elaps_sec > 60) {
 			snprintf(buf, sizeof(buf),
-				"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%d;CT;1,"
-				"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
-				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
-				BMT_status.charger_exist, elaps_sec,init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-				BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
+				"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%u;CT;1,"
+				"Final_Bal_Vol=%u;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
+				"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
+				BMT_status.charger_exist, elaps_sec, init_charging_vol,
+				BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
+				BMT_status.temperatureV, gFG_battery_cycle);
 
 			log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 			memset(buf, 0, sizeof(buf));
@@ -372,11 +373,12 @@ void metrics_charger(bool connect)
 
 		if (elaps_sec > 60) {
 			snprintf(buf,sizeof(buf),
-				"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%d;CT;1,"
-				"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
-				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
-				BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-				BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
+				"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%u;CT;1,"
+				"Final_Bal_Vol=%u;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
+				"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
+				BMT_status.charger_exist, elaps_sec, init_charging_vol,
+				BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
+				BMT_status.temperatureV, gFG_battery_cycle);
 
 			log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 			memset(buf, 0, sizeof(buf));
@@ -2826,11 +2828,12 @@ static void battery_update(struct battery_data *bat_data)
 				elaps_sec = diff.tv_sec + diff.tv_nsec/NSEC_PER_SEC;
 
 				snprintf(buf,sizeof(buf),
-					"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%d;CT;1,"
-					"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
-					"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
-					BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-					BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
+					"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%u;CT;1,"
+					"Final_Bal_Vol=%u;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
+					"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
+					BMT_status.charger_exist, elaps_sec, init_charging_vol,
+					BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
+					BMT_status.temperatureV, gFG_battery_cycle);
 
 				log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 				memset(buf, 0, sizeof(buf));
@@ -4412,10 +4415,11 @@ void BAT_thread(void)
 				bat_14days_flag = true;
 				snprintf(buf, sizeof(buf),
 				"bq24297:def:Charging_Over_14days=%d;CT;1,Total_Plug_Time=%ld;CT;1,"
-				"Bat_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Temp=%d;CT;1,"
-				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_count=%d;CT;1:NA",
-				1, total_time_plug_in, BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
-				gFG_battery_cycle);
+				"Bat_Vol=%u;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Temp=%d;CT;1,"
+				"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_count=%d;CT;1:NA",
+				1, total_time_plug_in,
+				BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
+				BMT_status.temperatureV, gFG_battery_cycle);
 
 				log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 				memset(buf, 0, sizeof(buf));
@@ -4431,11 +4435,12 @@ void BAT_thread(void)
 		if (g_custom_charging_mode == 1 && !bat_demo_flag) {
 			bat_demo_flag = true;
 			snprintf(buf, sizeof(buf),
-				"bq24297:def:Store_Demo_Mode=%d;CT;1,Total_Plug_Time=%ld;CT;1,"
-				"Bat_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Temp=%d;CT;1,"
-				"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
-				g_custom_charging_mode, total_time_plug_in, BMT_status.bat_vol, BMT_status.UI_SOC,
-				BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
+				"bq24297:def:Store_Demo_Mode=%u;CT;1,Total_Plug_Time=%lu;CT;1,"
+				"Bat_Vol=%u;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Temp=%d;CT;1,"
+				"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
+				g_custom_charging_mode, total_time_plug_in,
+				BMT_status.bat_vol, BMT_status.UI_SOC, BMT_status.SOC, BMT_status.temperature,
+				BMT_status.temperatureV, gFG_battery_cycle);
 
 			log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 		}
