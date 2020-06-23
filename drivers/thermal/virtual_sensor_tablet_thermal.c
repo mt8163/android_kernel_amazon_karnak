@@ -545,7 +545,7 @@ static void virtual_sensor_thermal_parse_node_string_index(const struct device_n
 		pr_notice("Get %s failed\n", node_name);
 }
 
-static void virtual_sensor_thermal_init_tbp(struct thermal_zone_params *tzp, struct platform_device *pdev)
+static int virtual_sensor_thermal_init_tbp(struct thermal_zone_params *tzp, struct platform_device *pdev)
 {
 	int i;
 	struct thermal_bind_params *tbp;
@@ -561,6 +561,8 @@ static void virtual_sensor_thermal_init_tbp(struct thermal_zone_params *tzp, str
 		tbp[i].match = match;
 	}
 	tzp->tbp = tbp;
+
+	return 0;
 }
 
 static int virtual_sensor_thermal_init_cust_data_from_dt(struct platform_device *dev)
@@ -597,7 +599,7 @@ static int virtual_sensor_thermal_init_cust_data_from_dt(struct platform_device 
 		i++;
 	}
 
-	virtual_sensor_thermal_init_tbp(&p_virtual_sensor_thermal_data->tzp, dev);
+	ret = virtual_sensor_thermal_init_tbp(&p_virtual_sensor_thermal_data->tzp, dev);
 
 	return ret;
 }
@@ -640,7 +642,8 @@ static int virtual_sensor_thermal_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 	pr_notice("virtual_sensor thermal custom init by DTS!\n");
-	virtual_sensor_thermal_init_cust_data_from_dt(pdev);
+	if ((ret = virtual_sensor_thermal_init_cust_data_from_dt(pdev)) != 0)
+		return ret;
 #endif
 	if (pdev->id < VIRTUAL_SENSOR_NUM_MAX)
 		pdata = &virtual_sensor_thermal_data[pdev->id];
