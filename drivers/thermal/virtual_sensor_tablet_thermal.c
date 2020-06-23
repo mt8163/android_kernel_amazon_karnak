@@ -617,9 +617,9 @@ static void test_data(void)
 		pr_debug("governor_name %s\n", virtual_sensor_thermal_data[i].tzp.governor_name);
 		pr_debug("num_tbps %d\n", virtual_sensor_thermal_data[i].tzp.num_tbps);
 		while (j < THERMAL_MAX_TRIPS) {
-			pr_debug("trips[%d] %d\n", j, virtual_sensor_thermal_data[i].trips[j].temp);
+			pr_debug("trips[%d] %lu\n", j, virtual_sensor_thermal_data[i].trips[j].temp);
 			pr_debug("type[%d] %d\n", j, virtual_sensor_thermal_data[i].trips[j].type);
-			pr_debug("hyst[%d] %d\n", j, virtual_sensor_thermal_data[i].trips[j].hyst);
+			pr_debug("hyst[%d] %lu\n", j, virtual_sensor_thermal_data[i].trips[j].hyst);
 			j++;
 		}
 		j = 0;
