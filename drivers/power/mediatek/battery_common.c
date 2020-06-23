@@ -2899,7 +2899,7 @@ static void battery_update(struct battery_data *bat_data)
 		snprintf(buf, sizeof(buf),
 			"bq24297:def:Charger_Exist=%d;CT;1,Elaps_Sec=%ld;CT;1,Initial_Bat_Vol=%d;CT;1,"
 			"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
-			"Vir_Avg_Temp=%ld;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
+			"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 			BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
 			BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
