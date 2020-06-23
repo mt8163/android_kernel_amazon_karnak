@@ -581,7 +581,7 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 				mss->swap_pss += (u64)PAGE_SIZE << PSS_SHIFT;
 			}
 #endif
-			entry = pte_to_swp_entry(ptent);
+			entry = pte_to_swp_entry(*pte);
 			if (non_swap_entry(entry))
 				return;
 			p = swap_info_get(entry);
@@ -591,7 +591,7 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 				if (swapcount == 0)
 					swapcount = 1;
 
-				mss->pswap += (ptent_size << PSS_SHIFT) / swapcount;
+				mss->pswap += (PAGE_SIZE << PSS_SHIFT) / swapcount;
 				swap_info_unlock(p);
 			}
 #endif /* CONFIG_SWAP*/
