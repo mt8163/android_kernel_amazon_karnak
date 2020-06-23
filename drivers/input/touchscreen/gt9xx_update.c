@@ -806,7 +806,7 @@ static u8 gup_check_update_file(struct i2c_client *client, st_fw_head *fw_head, 
 	got_file_flag = 0x00;
 
 	if (path) {
-		GTP_DEBUG("Update File path:%s, %d", path, strlen(path));
+		GTP_DEBUG("Update File path:%s, %lu", path, strlen(path));
 		update_msg.file = filp_open(path, O_RDONLY, 0);
 
 		if (IS_ERR(update_msg.file)) {
@@ -826,7 +826,7 @@ static u8 gup_check_update_file(struct i2c_client *client, st_fw_head *fw_head, 
 						GT9XX_FW_NAME, ret);
 			return FAIL;
 		}
-		GTP_INFO("Firmware size: %d", update_msg.fw->size);
+		GTP_INFO("Firmware size: %lu", update_msg.fw->size);
 		if (update_msg.fw->size <
 		     (FW_HEAD_LENGTH + FW_SECTION_LENGTH * 4 +
 		     FW_DSP_ISP_LENGTH + FW_DSP_LENGTH + FW_BOOT_LENGTH)) {
