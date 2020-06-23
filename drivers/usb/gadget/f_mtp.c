@@ -1721,17 +1721,18 @@ static int mtp_open(struct inode *ip, struct file *fp)
 
 static int mtp_release(struct inode *ip, struct file *fp)
 {
-    unsigned long flags;
+	unsigned long flags;
 
 	printk(KERN_INFO "mtp_release\n");
 
-    spin_lock_irqsave(&_mtp_dev->lock, flags);
+  spin_lock_irqsave(&_mtp_dev->lock, flags);
 
-    if (!_mtp_dev->dev_disconnected) {
-        spin_unlock_irqrestore(&_mtp_dev->lock, flags);
-        mtp_send_devicereset_event(_mtp_dev);
-    } else
-        spin_unlock_irqrestore(&_mtp_dev->lock, flags);
+	if (!_mtp_dev->dev_disconnected) {
+		spin_unlock_irqrestore(&_mtp_dev->lock, flags);
+		mtp_send_devicereset_event(_mtp_dev);
+	} else {
+		spin_unlock_irqrestore(&_mtp_dev->lock, flags);
+	}
 
 	mtp_unlock(&_mtp_dev->open_excl);
 	return 0;

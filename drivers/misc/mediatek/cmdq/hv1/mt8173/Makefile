@@ -1,7 +1,5 @@
 # drivers/cmdq
 
-ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/hv1
-
 # Enable MET
 # ccflags-y += -DMET_USER_EVENT_SUPPORT
 

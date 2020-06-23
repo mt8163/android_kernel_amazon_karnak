@@ -366,7 +366,7 @@ static void handle_non_critical_trips(struct thermal_zone_device *tz,
 static void handle_critical_trips(struct thermal_zone_device *tz,
 				int trip, enum thermal_trip_type trip_type)
 {
-	long trip_temp;
+	unsigned long trip_temp;
 
 	tz->ops->get_trip_temp(tz, trip, &trip_temp);
 
@@ -644,7 +644,7 @@ trip_point_temp_show(struct device *dev, struct device_attribute *attr,
 {
 	struct thermal_zone_device *tz = to_thermal_zone(dev);
 	int trip, ret;
-	long temperature;
+	unsigned long temperature;
 
 	if (!tz->ops->get_trip_temp)
 		return -EPERM;

@@ -1373,10 +1373,10 @@ int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id, unsigned int *volt_tbl, int n
 	for (i = 0; i < nr_volt_tbl; i++)
 		p->opp_tbl[i].cpufreq_volt = PMIC_VAL_TO_VOLT(volt_tbl[i]);
 
-		/* set volt */
-		ret = _set_cur_volt_locked(p,
-		   TURBO_MODE_VOLT(get_turbo_mode(p, cpu_dvfs_get_cur_freq(p)),
-		   cpu_dvfs_get_cur_volt(p)));
+	/* set volt */
+	ret = _set_cur_volt_locked(p,
+	   TURBO_MODE_VOLT(get_turbo_mode(p, cpu_dvfs_get_cur_freq(p)),
+	   cpu_dvfs_get_cur_volt(p)));
 
 	cpufreq_unlock(flags);
 
