@@ -1438,7 +1438,7 @@ static s32 gtp_init_panel(struct goodix_ts_data *ts)
 static ssize_t gt91xx_fw_version_read_proc(struct file *file, char __user *page, size_t size, loff_t *ppos)
 {
 	int ret;
-	int version_info;
+	u16 version_info;
 	char *ptr = page;
 
 	if (*ppos)
@@ -1491,10 +1491,10 @@ static ssize_t gt91xx_config_read_proc(struct file *file, char __user *page, siz
 static ssize_t gt91xx_config_write_proc(struct file *filp, const char __user *buffer, size_t count, loff_t *off)
 {
 	s32 ret = 0;
-	GTP_DEBUG("write count %d\n", count);
+	GTP_DEBUG("write count %lu\n", count);
 
 	if (count > GTP_CONFIG_MAX_LENGTH) {
-		GTP_ERROR("size not match [%d:%d]\n", GTP_CONFIG_MAX_LENGTH, count);
+		GTP_ERROR("size not match [%d:%lu]\n", GTP_CONFIG_MAX_LENGTH, count);
 		return -EFAULT;
 	}
 
