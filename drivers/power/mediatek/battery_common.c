@@ -2901,7 +2901,7 @@ static void battery_update(struct battery_data *bat_data)
 			"Final_Bal_Vol=%d;CT;1,UI_SOC=%d;CT;1,SOC=%d;CT;1,Bat_Avg_Temp=%d;CT;1,"
 			"Vir_Avg_Temp=%d;CT;1,Bat_Cycle_Count=%d;CT;1:NA",
 			BMT_status.charger_exist, elaps_sec, init_charging_vol, BMT_status.bat_vol, BMT_status.UI_SOC,
-			BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
+			BMT_status.temperatureV, BMT_status.SOC, BMT_status.temperature, gFG_battery_cycle);
 
 		log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
 		memset(buf, 0, sizeof(buf));
