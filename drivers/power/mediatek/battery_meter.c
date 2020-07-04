@@ -3832,8 +3832,11 @@ signed int battery_meter_get_charging_current(void)
 	int ret = 0;
 	int val = 1;
 
+	/*
+	 * BPH: breakage for current_now traced back here
 	if (batt_meter_cust_data.swchr_power_path)
 		return 0;
+	*/
 
 	for (i = 0; i < repeat; i++) {
 		val = 1;	/* set avg times */
