@@ -4,7 +4,7 @@ subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 subdir-ccflags-y += -Wno-error=format
-#subdir-ccflags-y += $(call cc-option, -Wno-error=switch-bool)
+subdir-ccflags-y += $(call cc-option, -Wno-error=switch-bool)
 ifeq ($(CONFIG_MTK_SMART_BATTERY),y)
 	obj-$(CONFIG_MTK_SMART_BATTERY) += battery_meter.o battery_common.o switch_charging.o
 endif
