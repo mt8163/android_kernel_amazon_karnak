@@ -1742,18 +1742,6 @@ unsigned int get_random_int(void)
 }
 EXPORT_SYMBOL(get_random_int);
 
-unsigned long get_random_long(void)
-{
-	unsigned long ret;
-
-	ret = get_random_int();
-	ret <<= 32;
-	ret |= get_random_int();
-
-	return ret;
-}
-EXPORT_SYMBOL(get_random_long);
-
 /*
  * Same as get_random_int(), but returns unsigned long.
  */
