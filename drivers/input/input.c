@@ -668,7 +668,6 @@ EXPORT_SYMBOL(input_close_device);
  */
 static void input_dev_release_keys(struct input_dev *dev)
 {
-	bool need_sync = false;
 	int code;
 	bool need_sync = false;
 
