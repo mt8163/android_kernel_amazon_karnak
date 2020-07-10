@@ -1590,7 +1590,6 @@ static long ion_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		ion_handle_put_nolock(handle);
 		mutex_unlock(&client->lock);
 		if (data.fd.fd < 0)
->>>>>>> d82ad70e8aff... staging: android: ion: fix ION_IOC_{MAP,SHARE} use-after-free
 			ret = data.fd.fd;
 		}
 		break;
@@ -2032,7 +2031,9 @@ struct ion_handle *ion_drv_get_handle(struct ion_client *client, int user_handle
 		ion_handle_get(handle);
 		mutex_unlock(&client->lock);
 	} else {
-		handle = ion_handle_get_by_id(client, user_handle);
+		mutex_lock(&client->lock);
+		handle = ion_handle_get_by_id_nolock(client, user_handle);
+		mutex_unlock(&client->lock);
 		if (!handle) {
 			IONMSG("%s handle invalid, handle_id=%d\n", __func__, user_handle);
 			return ERR_PTR(-EINVAL);
