@@ -5184,6 +5184,20 @@ void intel_cleanup_gt_powersave(struct drm_device *dev)
 		valleyview_cleanup_gt_powersave(dev);
 }
 
+static void gen6_suspend_rps(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	flush_delayed_work(&dev_priv->rps.delayed_resume_work);
+
+	/*
+	 * TODO: disable RPS interrupts on GEN9+ too once RPS support
+	 * is added for it.
+	 */
+	if (INTEL_INFO(dev)->gen < 9)
+		gen6_disable_rps_interrupts(dev);
+}
+
 /**
  * intel_suspend_gt_powersave - suspend PM work and helper threads
  * @dev: drm device
@@ -5291,8 +5305,11 @@ void intel_reset_gt_powersave(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
+	if (INTEL_INFO(dev)->gen < 6)
+		return;
+
+	gen6_suspend_rps(dev);
 	dev_priv->rps.enabled = false;
-	intel_enable_gt_powersave(dev);
 }
 
 static void ibx_init_clock_gating(struct drm_device *dev)

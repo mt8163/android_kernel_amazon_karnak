@@ -458,10 +458,7 @@ void mdp5_crtc_set_intf(struct drm_crtc *crtc, int intf,
 	/* now that we know what irq's we want: */
 	mdp5_crtc->err.irqmask = intf2err(intf);
 	mdp5_crtc->vblank.irqmask = intf2vblank(intf);
-
-	/* when called from modeset_init(), skip the rest until later: */
-	if (!mdp5_kms)
-		return;
+	mdp_irq_update(&mdp5_kms->base);
 
 	intf_sel = mdp5_read(mdp5_kms, REG_MDP5_DISP_INTF_SEL);
 
