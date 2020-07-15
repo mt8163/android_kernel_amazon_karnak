@@ -82,7 +82,6 @@ static struct cpuidle_driver mt8163_cpuidle_driver = {
 		.enter            = mt_dpidle_enter,
 		.exit_latency     = 2000,            /* 2 ms */
 		.target_residency = 1,
-		.flags            = CPUIDLE_FLAG_TIME_VALID,
 		.name             = "dpidle",
 		.desc             = "deepidle",
 	},
@@ -90,7 +89,6 @@ static struct cpuidle_driver mt8163_cpuidle_driver = {
 		.enter            = mt_soidle_enter,
 		.exit_latency     = 2000,            /* 2 ms */
 		.target_residency = 1,
-		.flags            = CPUIDLE_FLAG_TIME_VALID,
 		.name             = "SODI",
 		.desc             = "SODI",
 	},
@@ -98,7 +96,6 @@ static struct cpuidle_driver mt8163_cpuidle_driver = {
 		.enter            = mt_mcidle_enter,
 		.exit_latency     = 2000,            /* 2 ms */
 		.target_residency = 1,
-		.flags            = CPUIDLE_FLAG_TIME_VALID,
 		.name             = "MCDI",
 		.desc             = "MCDI",
 	},
@@ -106,7 +103,6 @@ static struct cpuidle_driver mt8163_cpuidle_driver = {
 		.enter            = mt_slidle_enter,
 		.exit_latency     = 2000,            /* 2 ms */
 		.target_residency = 1,
-		.flags            = CPUIDLE_FLAG_TIME_VALID,
 		.name             = "slidle",
 		.desc             = "slidle",
 	},
@@ -114,7 +110,6 @@ static struct cpuidle_driver mt8163_cpuidle_driver = {
 		.enter            = mt_rgidle_enter,
 		.exit_latency     = 2000,            /* 2 ms */
 		.target_residency = 1,
-		.flags            = CPUIDLE_FLAG_TIME_VALID,
 		.name             = "rgidle",
 		.desc             = "WFI",
 	},
