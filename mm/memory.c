@@ -3021,26 +3021,6 @@ static int do_shared_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 }
 
 /*
- * This is like a special single-page "expand_downwards()",
- * except we must first make sure that 'address-PAGE_SIZE'
- * doesn't hit another vma.
- *
- * The "find_vma()" will do the right thing even if we wrap
- */
-static inline int check_stack_guard_page(struct vm_area_struct *vma, unsigned long address)
-{
-	address &= PAGE_MASK;
-	if ((vma->vm_flags & VM_GROWSDOWN) && address == vma->vm_start) {
-		address -= PAGE_SIZE;
-		if (find_vma(vma->vm_mm, address) != vma)
-			return -ENOMEM;
-
-		expand_stack(vma, address);
-	}
-	return 0;
-}
-
-/*
  * We enter with non-exclusive mmap_sem (to exclude vma changes,
  * but allow concurrent faults).
  * The mmap_sem may have been released depending on flags and our
