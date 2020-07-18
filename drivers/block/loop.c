@@ -146,13 +146,13 @@ static int xor_init(struct loop_device *lo, const struct loop_info64 *info)
 static struct loop_func_table none_funcs = {
 	.number = LO_CRYPT_NONE,
 	.transfer = transfer_none,
-}; 	
+};
 
 static struct loop_func_table xor_funcs = {
 	.number = LO_CRYPT_XOR,
 	.transfer = transfer_xor,
 	.init = xor_init
-}; 	
+};
 
 /* xfer_funcs[0] is special - its release function is never called */
 static struct loop_func_table *xfer_funcs[MAX_LO_CRYPT] = {
@@ -599,7 +599,7 @@ static int loop_flush(struct loop_device *lo)
 	/* loop not yet configured, no running thread, nothing to flush */
 	if (lo->lo_state != Lo_bound)
 		return 0;
-	
+
 	return loop_switch(lo, NULL);
 }
 
@@ -655,37 +655,6 @@ static void do_loop_switch(struct loop_device *lo, struct switch_request *p)
 	mapping_set_gfp_mask(mapping, lo->old_gfp_mask & ~(__GFP_IO|__GFP_FS));
 out:
 	complete(&p->wait);
-}
-
-
-static inline int is_loop_device(struct file *file)
-{
-	struct inode *i = file->f_mapping->host;
-
-	return i && S_ISBLK(i->i_mode) && MAJOR(i->i_rdev) == LOOP_MAJOR;
-}
-
-static int loop_validate_file(struct file *file, struct block_device *bdev)
-{
-	struct inode	*inode = file->f_mapping->host;
-	struct file	*f = file;
-
-	/* Avoid recursion */
-	while (is_loop_device(f)) {
-		struct loop_device *l;
-
-		if (f->f_mapping->host->i_bdev == bdev)
-			return -EBADF;
-
-		l = f->f_mapping->host->i_bdev->bd_disk->private_data;
-		if (l->lo_state == Lo_unbound) {
-			return -EINVAL;
-		}
-		f = l->lo_backing_file;
-	}
-	if (!S_ISREG(inode->i_mode) && !S_ISBLK(inode->i_mode))
-		return -EINVAL;
-	return 0;
 }
 
 /*
@@ -1187,7 +1156,7 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
 		memcpy(lo->lo_encrypt_key, info->lo_encrypt_key,
 		       info->lo_encrypt_key_size);
 		lo->lo_key_owner = uid;
-	}	
+	}
 
 	return 0;
 }
