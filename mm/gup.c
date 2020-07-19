@@ -375,6 +375,13 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 	return 0;
 }
 
+static inline int stack_guard_page(struct vm_area_struct *vma, unsigned long addr)
+{
+	return (vma->vm_flags & VM_GROWSDOWN) &&
+		(vma->vm_start == addr) &&
+		!vma_stack_continue(vma->vm_prev, addr);
+}
+
 /**
  * __get_user_pages() - pin user pages in memory
  * @tsk:	task_struct of target task
@@ -474,6 +481,13 @@ long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
 
 			if (!vma || check_vma_flags(vma, gup_flags))
 				return i ? : -EFAULT;
+
+		/*
+		 * For mlock, just skip the stack guard page.
+		 */
+		if ((gup_flags & FOLL_MLOCK) && stack_guard_page(vma, start))
+			goto next_page;
+
 			if (is_vm_hugetlb_page(vma)) {
 				i = follow_hugetlb_page(mm, vma, pages, vmas,
 						&start, &nr_pages, i,

@@ -331,6 +331,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 	/* We don't show the stack guard page in /proc/maps */
 	start = vma->vm_start;
+	if (!vma_stack_continue(vma->vm_prev, vma->vm_start))
+		start += PAGE_SIZE;
 	end = vma->vm_end;
 
 	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
