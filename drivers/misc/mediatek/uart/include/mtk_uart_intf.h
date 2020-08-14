@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MTK_UART_INTF_H__
 #define __MTK_UART_INTF_H__
 
@@ -13,11 +26,11 @@ irqreturn_t mt_debug_signal_irq(int irq, void *dev_id);
 int mt_fiq_init(void *arg);
 /*---------------------------------------------------------------------------*/
 struct mtk_uart_setting *get_uart_default_settings(int idx);
-#ifdef CONFIG_OF
+
 void *get_apdma_uart0_base(void);
 unsigned int get_uart_vfifo_irq_id(int idx);
 void set_uart_default_settings(int idx);
-#endif
+
 unsigned long get_uart_evt_mask(int idx);
 void mtk_uart_switch_tx_to_gpio(struct mtk_uart *uart);
 void mtk_uart_switch_to_tx(struct mtk_uart *uart);

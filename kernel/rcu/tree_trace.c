@@ -1,5 +1,5 @@
 /*
- * Read-Copy Update tracing for classic implementation
+ * Read-Copy Update tracing for hierarchical implementation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
  * http://www.gnu.org/licenses/gpl-2.0.html.
  *
  * Copyright IBM Corporation, 2008
+ * Author: Paul E. McKenney
  *
  * Papers:  http://www.rdrop.com/users/paulmck/RCU
  *
@@ -33,18 +34,23 @@
 #include <linux/sched.h>
 #include <linux/atomic.h>
 #include <linux/bitops.h>
-#include <linux/module.h>
 #include <linux/completion.h>
-#include <linux/moduleparam.h>
 #include <linux/percpu.h>
 #include <linux/notifier.h>
 #include <linux/cpu.h>
 #include <linux/mutex.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/vmalloc.h>
 
 #define RCU_TREE_NONCORE
 #include "tree.h"
+
+#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+#include <linux/exm_driver.h>
+#endif
+
+DECLARE_PER_CPU_SHARED_ALIGNED(unsigned long, rcu_qs_ctr);
 
 static int r_open(struct inode *inode, struct file *file,
 					const struct seq_operations *op)
@@ -79,9 +85,9 @@ static void r_stop(struct seq_file *m, void *v)
 static int show_rcubarrier(struct seq_file *m, void *v)
 {
 	struct rcu_state *rsp = (struct rcu_state *)m->private;
-	seq_printf(m, "bcc: %d nbd: %lu\n",
+	seq_printf(m, "bcc: %d bseq: %lu\n",
 		   atomic_read(&rsp->barrier_cpu_count),
-		   rsp->n_barrier_done);
+		   rsp->barrier_sequence);
 	return 0;
 }
 
@@ -115,11 +121,13 @@ static void print_one_rcu_data(struct seq_file *m, struct rcu_data *rdp)
 
 	if (!rdp->beenonline)
 		return;
-	seq_printf(m, "%3d%cc=%ld g=%ld pq=%d qp=%d",
+	seq_printf(m, "%3d%cc=%ld g=%ld cnq=%d/%d:%d",
 		   rdp->cpu,
 		   cpu_is_offline(rdp->cpu) ? '!' : ' ',
 		   ulong2long(rdp->completed), ulong2long(rdp->gpnum),
-		   rdp->passed_quiesce, rdp->qs_pending);
+		   rdp->cpu_no_qs.b.norm,
+		   rdp->rcu_qs_ctr_snap == per_cpu(rcu_qs_ctr, rdp->cpu),
+		   rdp->core_needs_qs);
 	seq_printf(m, " dt=%d/%llx/%d df=%lu",
 		   atomic_read(&rdp->dynticks->dynticks),
 		   rdp->dynticks->dynticks_nesting,
@@ -179,20 +187,23 @@ static const struct file_operations rcudata_fops = {
 
 static int show_rcuexp(struct seq_file *m, void *v)
 {
+	int cpu;
 	struct rcu_state *rsp = (struct rcu_state *)m->private;
+	struct rcu_data *rdp;
+	unsigned long s0 = 0, s1 = 0, s2 = 0, s3 = 0;
 
-	seq_printf(m, "s=%lu d=%lu w=%lu tf=%lu wd1=%lu wd2=%lu n=%lu sc=%lu dt=%lu dl=%lu dx=%lu\n",
-		   atomic_long_read(&rsp->expedited_start),
-		   atomic_long_read(&rsp->expedited_done),
-		   atomic_long_read(&rsp->expedited_wrap),
-		   atomic_long_read(&rsp->expedited_tryfail),
-		   atomic_long_read(&rsp->expedited_workdone1),
-		   atomic_long_read(&rsp->expedited_workdone2),
+	for_each_possible_cpu(cpu) {
+		rdp = per_cpu_ptr(rsp->rda, cpu);
+		s0 += atomic_long_read(&rdp->exp_workdone0);
+		s1 += atomic_long_read(&rdp->exp_workdone1);
+		s2 += atomic_long_read(&rdp->exp_workdone2);
+		s3 += atomic_long_read(&rdp->exp_workdone3);
+	}
+	seq_printf(m, "s=%lu wd0=%lu wd1=%lu wd2=%lu wd3=%lu n=%lu enq=%d sc=%lu\n",
+		   rsp->expedited_sequence, s0, s1, s2, s3,
 		   atomic_long_read(&rsp->expedited_normal),
-		   atomic_long_read(&rsp->expedited_stoppedcpus),
-		   atomic_long_read(&rsp->expedited_done_tries),
-		   atomic_long_read(&rsp->expedited_done_lost),
-		   atomic_long_read(&rsp->expedited_done_exit));
+		   atomic_read(&rsp->expedited_need_qs),
+		   rsp->expedited_sequence / 2);
 	return 0;
 }
 
@@ -267,20 +278,20 @@ static void print_one_rcu_state(struct seq_file *m, struct rcu_state *rsp)
 	gpnum = rsp->gpnum;
 	seq_printf(m, "c=%ld g=%ld s=%d jfq=%ld j=%x ",
 		   ulong2long(rsp->completed), ulong2long(gpnum),
-		   rsp->fqs_state,
+		   rsp->gp_state,
 		   (long)(rsp->jiffies_force_qs - jiffies),
 		   (int)(jiffies & 0xffff));
 	seq_printf(m, "nfqs=%lu/nfqsng=%lu(%lu) fqlh=%lu oqlen=%ld/%ld\n",
 		   rsp->n_force_qs, rsp->n_force_qs_ngp,
 		   rsp->n_force_qs - rsp->n_force_qs_ngp,
-		   ACCESS_ONCE(rsp->n_force_qs_lh), rsp->qlen_lazy, rsp->qlen);
+		   READ_ONCE(rsp->n_force_qs_lh), rsp->qlen_lazy, rsp->qlen);
 	for (rnp = &rsp->node[0]; rnp - &rsp->node[0] < rcu_num_nodes; rnp++) {
 		if (rnp->level != level) {
 			seq_puts(m, "\n");
 			level = rnp->level;
 		}
-		seq_printf(m, "%lx/%lx %c%c>%c %d:%d ^%d    ",
-			   rnp->qsmask, rnp->qsmaskinit,
+		seq_printf(m, "%lx/%lx->%lx %c%c>%c %d:%d ^%d    ",
+			   rnp->qsmask, rnp->qsmaskinit, rnp->qsmaskinitnext,
 			   ".G"[rnp->gp_tasks != NULL],
 			   ".E"[rnp->exp_tasks != NULL],
 			   ".T"[!list_empty(&rnp->blkd_tasks)],
@@ -318,9 +329,9 @@ static void show_one_rcugp(struct seq_file *m, struct rcu_state *rsp)
 	unsigned long gpmax;
 	struct rcu_node *rnp = &rsp->node[0];
 
-	raw_spin_lock_irqsave(&rnp->lock, flags);
-	completed = ACCESS_ONCE(rsp->completed);
-	gpnum = ACCESS_ONCE(rsp->gpnum);
+	raw_spin_lock_irqsave_rcu_node(rnp, flags);
+	completed = READ_ONCE(rsp->completed);
+	gpnum = READ_ONCE(rsp->gpnum);
 	if (completed == gpnum)
 		gpage = 0;
 	else
@@ -360,7 +371,7 @@ static void print_one_rcu_pending(struct seq_file *m, struct rcu_data *rdp)
 		   cpu_is_offline(rdp->cpu) ? '!' : ' ',
 		   rdp->n_rcu_pending);
 	seq_printf(m, "qsp=%ld rpq=%ld cbr=%ld cng=%ld ",
-		   rdp->n_rp_qs_pending,
+		   rdp->n_rp_core_needs_qs,
 		   rdp->n_rp_report_qs,
 		   rdp->n_rp_cb_ready,
 		   rdp->n_rp_cpu_needs_gp);
@@ -419,6 +430,207 @@ static const struct file_operations rcutorture_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+#ifdef CONFIG_MTK_RCU_MONITOR
+DEFINE_PER_CPU(struct rcu_callback_log, rcu_callback_log_head);
+DEFINE_PER_CPU(struct rcu_invoke_log, rcu_invoke_callback_log);
+
+struct rcu_callback_log_entry *rcu_callback_log_add(void)
+{
+	struct rcu_callback_log *log;
+	struct rcu_callback_log_entry *e;
+
+	log = &__raw_get_cpu_var(rcu_callback_log_head);
+
+	if (log->entry == NULL)
+		return NULL;
+
+	e = &log->entry[log->next];
+	memset(e, 0, sizeof(*e));
+
+	log->next++;
+	if (log->next == log->size) {
+		log->next = 0;
+		log->full = 1;
+	}
+	return e;
+}
+
+struct rcu_invoke_log_entry *rcu_invoke_log_add(void)
+{
+	struct rcu_invoke_log *log;
+	struct rcu_invoke_log_entry *e;
+
+	log = &__raw_get_cpu_var(rcu_invoke_callback_log);
+
+	if (log->entry == NULL)
+		return NULL;
+
+	e = &log->entry[log->next];
+	memset(e, 0, sizeof(*e));
+
+	log->next++;
+	if (log->next == log->size) {
+		log->next = 0;
+		log->full = 1;
+	}
+	return e;
+}
+
+static void print_rcu_callback_log_entry(struct seq_file *m, struct
+					       rcu_callback_log_entry * e)
+{
+	seq_puts(m, "callrcu:");
+	if (__is_kfree_rcu_offset(e->func)) {
+		seq_printf(m, "kreercu %s rhp=%p func=%ld caller:%s ",
+			e->rcuname, (void *)e->rhp, e->func, e->comm);
+		seq_printf(m, "qlen=%ld gpnum=%lu (%pf) time:%lld us\n",
+			e->qlen, e->gpnum, (void *)e->ip, ktime_to_us(e->time));
+	} else {
+		seq_printf(m, "callback %s rhp=%p func=%pf caller:%s ",
+			e->rcuname, (void *)e->rhp, (void *)e->func, e->comm);
+		seq_printf(m, "qlen=%ld gpnum=%lu (%pf) time:%lld us\n",
+			e->qlen, e->gpnum, (void *)e->ip, ktime_to_us(e->time));
+	}
+}
+
+static void print_rcu_invoke_log_entry(struct seq_file *m, struct
+					       rcu_invoke_log_entry * e)
+{
+	seq_puts(m, "invoke:");
+	if (__is_kfree_rcu_offset(e->func)) {
+		seq_printf(m, "kreercu %s rhp=%p func=%ld ",
+			e->rcuname, (void *)e->rhp, e->func);
+		seq_printf(m, "qlen=%ld gpnum=%lu time:%lld us ",
+			e->qlen, e->gpnum, ktime_to_us(e->timestamp));
+	} else {
+		seq_printf(m, "callback %s rhp=%p func=%pf ",
+			e->rcuname, (void *)e->rhp, (void *)e->func);
+		seq_printf(m, "qlen=%ld gpnum=%lu time:%lld us ",
+			e->qlen, e->gpnum, ktime_to_us(e->timestamp));
+	}
+	if (e->time_dur)
+		seq_printf(m, "dur_time:%lld us start:%lld us",
+		e->time_dur, ktime_to_us(e->time_start));
+	seq_puts(m, "\n");
+}
+
+static int rcu_callback_log_show(struct seq_file *m, void *unused)
+{
+	struct rcu_callback_log *rcu_log;
+	struct rcu_invoke_log *invoke_log;
+	int i, cpu;
+
+	for_each_possible_cpu(cpu) {
+		if (!per_cpu(rcu_callback_log_head, cpu).entry)
+			return 0;
+	}
+
+	seq_puts(m, "========================");
+	seq_puts(m, "RCU CALLBACK LIST");
+	seq_puts(m, "========================\n");
+
+	for_each_possible_cpu(cpu) {
+		rcu_log = &per_cpu(rcu_callback_log_head, cpu);
+		seq_printf(m, "CPU%d\n", cpu);
+		if (rcu_log->full) {
+			for (i = rcu_log->next; i < rcu_log->size; i++) {
+				seq_printf(m, "%d ", cpu);
+				print_rcu_callback_log_entry(m,
+					 &rcu_log->entry[i]);
+			}
+		}
+		for (i = 0; i < rcu_log->next; i++) {
+			seq_printf(m, "%d ", cpu);
+			print_rcu_callback_log_entry(m, &rcu_log->entry[i]);
+		}
+	}
+
+	for_each_possible_cpu(cpu) {
+		if (!per_cpu(rcu_invoke_callback_log, cpu).entry)
+			return 0;
+	}
+
+	seq_puts(m, "========================");
+	seq_puts(m, "RCU INVOKE CALLBACK LIST");
+	seq_puts(m, "========================\n");
+
+	for_each_possible_cpu(cpu) {
+		invoke_log = &per_cpu(rcu_invoke_callback_log, cpu);
+		seq_printf(m, "CPU%d\n", cpu);
+		if (invoke_log->full) {
+			for (i = invoke_log->next; i < invoke_log->size; i++) {
+				seq_printf(m, "%d ", cpu);
+				print_rcu_invoke_log_entry(m,
+					 &invoke_log->entry[i]);
+			}
+		}
+		for (i = 0; i < invoke_log->next; i++) {
+			seq_printf(m, "%d ", cpu);
+			print_rcu_invoke_log_entry(m, &invoke_log->entry[i]);
+		}
+	}
+
+	return 0;
+}
+
+static int rcu_callback_log_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, rcu_callback_log_show, NULL);
+}
+
+static const struct file_operations rcu_callback_log_fops = {
+	.owner = THIS_MODULE,
+	.open = rcu_callback_log_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static void alloc_rcu_log_entry(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+#ifdef CONFIG_MTK_USE_RESERVED_EXT_MEM
+		per_cpu(rcu_callback_log_head, cpu).entry =
+		extmem_malloc_page_align(sizeof(struct rcu_callback_log_entry)
+					* MAX_RCU_BUFF_LEN);
+		per_cpu(rcu_callback_log_head, cpu).size = MAX_RCU_BUFF_LEN;
+
+		if (per_cpu(rcu_callback_log_head, cpu).entry == NULL) {
+			pr_info("%s[%s] ext emory alloc failed!!!\n",
+				__FILE__, __func__);
+			per_cpu(rcu_callback_log_head, cpu).entry =
+				vmalloc(sizeof(struct rcu_callback_log_entry) *
+							MAX_RCU_BUFF_LEN);
+		}
+
+		per_cpu(rcu_invoke_callback_log, cpu).entry =
+		extmem_malloc_page_align(sizeof(struct rcu_invoke_log_entry)
+						* MAX_RCU_BUFF_LEN);
+		per_cpu(rcu_invoke_callback_log, cpu).size = MAX_RCU_BUFF_LEN;
+
+		if (per_cpu(rcu_invoke_callback_log, cpu).entry == NULL) {
+			pr_info("%s[%s] ext emory alloc failed!!!\n",
+				__FILE__, __func__);
+			per_cpu(rcu_invoke_callback_log, cpu).entry =
+				vmalloc(sizeof(struct rcu_invoke_log_entry) *
+							MAX_RCU_BUFF_LEN);
+		}
+#else
+		per_cpu(rcu_callback_log_head, cpu).entry =
+			vmalloc(sizeof(struct rcu_callback_log_entry)
+				 * MAX_RCU_BUFF_LEN);
+		per_cpu(rcu_callback_log_head, cpu).size = MAX_RCU_BUFF_LEN;
+
+		per_cpu(rcu_invoke_callback_log, cpu).entry =
+			vmalloc(sizeof(struct rcu_invoke_log_entry)
+				 * MAX_RCU_BUFF_LEN);
+		per_cpu(rcu_invoke_callback_log, cpu).size = MAX_RCU_BUFF_LEN;
+#endif
+	}
+}
+#endif
 
 static struct dentry *rcudir;
 
@@ -427,6 +639,10 @@ static int __init rcutree_trace_init(void)
 	struct rcu_state *rsp;
 	struct dentry *retval;
 	struct dentry *rspdir;
+
+#ifdef CONFIG_MTK_RCU_MONITOR
+	alloc_rcu_log_entry();
+#endif
 
 	rcudir = debugfs_create_dir("rcu", NULL);
 	if (!rcudir)
@@ -479,6 +695,10 @@ static int __init rcutree_trace_init(void)
 
 	retval = debugfs_create_file("rcutorture", 0444, rcudir,
 						NULL, &rcutorture_fops);
+#ifdef CONFIG_MTK_RCU_MONITOR
+	retval = debugfs_create_file("rcu_callback_log", 0444, rcudir,
+						NULL, &rcu_callback_log_fops);
+#endif
 	if (!retval)
 		goto free_out;
 	return 0;
@@ -486,16 +706,4 @@ free_out:
 	debugfs_remove_recursive(rcudir);
 	return 1;
 }
-
-static void __exit rcutree_trace_cleanup(void)
-{
-	debugfs_remove_recursive(rcudir);
-}
-
-
-module_init(rcutree_trace_init);
-module_exit(rcutree_trace_cleanup);
-
-MODULE_AUTHOR("Paul E. McKenney");
-MODULE_DESCRIPTION("Read-Copy Update tracing for hierarchical implementation");
-MODULE_LICENSE("GPL");
+device_initcall(rcutree_trace_init);

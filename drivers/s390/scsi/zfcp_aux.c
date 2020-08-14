@@ -275,16 +275,16 @@ static void zfcp_free_low_mem_buffers(struct zfcp_adapter *adapter)
  */
 int zfcp_status_read_refill(struct zfcp_adapter *adapter)
 {
-	while (atomic_add_unless(&adapter->stat_miss, -1, 0))
+	while (atomic_read(&adapter->stat_miss) > 0)
 		if (zfcp_fsf_status_read(adapter->qdio)) {
-			atomic_inc(&adapter->stat_miss); /* undo add -1 */
 			if (atomic_read(&adapter->stat_miss) >=
 			    adapter->stat_read_buf_num) {
 				zfcp_erp_adapter_reopen(adapter, 0, "axsref1");
 				return 1;
 			}
 			break;
-		}
+		} else
+			atomic_dec(&adapter->stat_miss);
 	return 0;
 }
 
@@ -310,7 +310,7 @@ static int zfcp_setup_adapter_work_queue(struct zfcp_adapter *adapter)
 
 	snprintf(name, sizeof(name), "zfcp_q_%s",
 		 dev_name(&adapter->ccw_device->dev));
-	adapter->work_queue = create_singlethread_workqueue(name);
+	adapter->work_queue = alloc_ordered_workqueue(name, WQ_MEM_RECLAIM);
 
 	if (adapter->work_queue)
 		return 0;
@@ -353,8 +353,10 @@ struct zfcp_adapter *zfcp_adapter_enqueue(struct ccw_device *ccw_device)
 	adapter->ccw_device = ccw_device;
 
 	INIT_WORK(&adapter->stat_work, _zfcp_status_read_scheduler);
-	INIT_WORK(&adapter->scan_work, zfcp_fc_scan_ports);
+	INIT_DELAYED_WORK(&adapter->scan_work, zfcp_fc_scan_ports);
 	INIT_WORK(&adapter->ns_up_work, zfcp_fc_sym_name_update);
+
+	adapter->next_port_scan = jiffies;
 
 	adapter->erp_action.adapter = adapter;
 
@@ -422,7 +424,7 @@ void zfcp_adapter_unregister(struct zfcp_adapter *adapter)
 {
 	struct ccw_device *cdev = adapter->ccw_device;
 
-	cancel_work_sync(&adapter->scan_work);
+	cancel_delayed_work_sync(&adapter->scan_work);
 	cancel_work_sync(&adapter->stat_work);
 	cancel_work_sync(&adapter->ns_up_work);
 	zfcp_destroy_adapter_work_queue(adapter);
@@ -532,7 +534,7 @@ struct zfcp_port *zfcp_port_enqueue(struct zfcp_adapter *adapter, u64 wwpn,
 	list_add_tail(&port->list, &adapter->port_list);
 	write_unlock_irq(&adapter->port_list_lock);
 
-	atomic_set_mask(status | ZFCP_STATUS_COMMON_RUNNING, &port->status);
+	atomic_or(status | ZFCP_STATUS_COMMON_RUNNING, &port->status);
 
 	return port;
 

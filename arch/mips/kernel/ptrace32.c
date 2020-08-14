@@ -69,8 +69,8 @@ long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
 		if (get_user(addrOthers, (u32 __user * __user *) (unsigned long) addr) != 0)
 			break;
 
-		copied = access_process_vm(child, (u64)addrOthers, &tmp,
-				sizeof(tmp), 0);
+		copied = ptrace_access_vm(child, (u64)addrOthers, &tmp,
+				sizeof(tmp), FOLL_FORCE);
 		if (copied != sizeof(tmp))
 			break;
 		ret = put_user(tmp, (u32 __user *) (unsigned long) data);
@@ -140,7 +140,7 @@ long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
 				goto out;
 			}
 			dregs = __get_dsp_regs(child);
-			tmp = dregs[addr - DSP_BASE];
+			tmp = (unsigned long) (dregs[addr - DSP_BASE]);
 			break;
 		}
 		case DSP_CONTROL:
@@ -178,8 +178,9 @@ long compat_arch_ptrace(struct task_struct *child, compat_long_t request,
 		if (get_user(addrOthers, (u32 __user * __user *) (unsigned long) addr) != 0)
 			break;
 		ret = 0;
-		if (access_process_vm(child, (u64)addrOthers, &data,
-					sizeof(data), 1) == sizeof(data))
+		if (ptrace_access_vm(child, (u64)addrOthers, &data,
+					sizeof(data),
+					FOLL_FORCE | FOLL_WRITE) == sizeof(data))
 			break;
 		ret = -EIO;
 		break;

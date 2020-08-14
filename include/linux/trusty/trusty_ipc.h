@@ -14,6 +14,8 @@
 #ifndef __LINUX_TRUSTY_TRUSTY_IPC_H
 #define __LINUX_TRUSTY_TRUSTY_IPC_H
 
+#include <linux/device.h>
+
 struct tipc_chan;
 
 struct tipc_msg_buf {
@@ -83,6 +85,12 @@ static inline void *mb_get_data(struct tipc_msg_buf *mb, size_t len)
 	mb->rpos += len;
 	return pos;
 }
+
+typedef void *tipc_k_handle;
+int tipc_k_connect(tipc_k_handle *h, const char *port);
+int tipc_k_disconnect(tipc_k_handle h);
+ssize_t tipc_k_read(tipc_k_handle h, void *buf, size_t buf_len, unsigned int flags);
+ssize_t tipc_k_write(tipc_k_handle h, void *buf, size_t len, unsigned int flags);
 
 #endif /* __LINUX_TRUSTY_TRUSTY_IPC_H */
 

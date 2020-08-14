@@ -85,9 +85,9 @@
 						(n << 2))
 
 /* Transmit Buffer for Serializer n */
-#define DAVINCI_MCASP_TXBUF_REG		0x200
+#define DAVINCI_MCASP_TXBUF_REG(n)	(0x200 + (n << 2))
 /* Receive Buffer for Serializer n */
-#define DAVINCI_MCASP_RXBUF_REG		0x280
+#define DAVINCI_MCASP_RXBUF_REG(n)	(0x280 + (n << 2))
 
 /* McASP FIFO Registers */
 #define DAVINCI_MCASP_V2_AFIFO_BASE	(0x1010)
@@ -215,7 +215,10 @@
  * DAVINCI_MCASP_XRSRCTL_BASE_REG -  Serializer Control Register Bits
  */
 #define MODE(val)	(val)
-#define DISMOD		(val)(val<<2)
+#define DISMOD_3STATE	(0x0)
+#define DISMOD_LOW	(0x2 << 2)
+#define DISMOD_HIGH	(0x3 << 2)
+#define DISMOD_MASK	DISMOD_HIGH
 #define TXSTATE		BIT(4)
 #define RXSTATE		BIT(5)
 #define SRMOD_MASK	3
@@ -253,6 +256,13 @@
 #define TXFSRST		BIT(12)	/* Frame Sync Generator Reset */
 
 /*
+ * DAVINCI_MCASP_TXSTAT_REG - Transmitter Status Register Bits
+ * DAVINCI_MCASP_RXSTAT_REG - Receiver Status Register Bits
+ */
+#define XRERR		BIT(8) /* Transmit/Receive error */
+#define XRDATA		BIT(5) /* Transmit/Receive data ready */
+
+/*
  * DAVINCI_MCASP_AMUTE_REG -  Mute Control Register Bits
  */
 #define MUTENA(val)	(val)
@@ -279,11 +289,26 @@
 #define TXDATADMADIS	BIT(0)
 
 /*
+ * DAVINCI_MCASP_EVTCTLR_REG - Receiver Interrupt Control Register Bits
+ */
+#define ROVRN		BIT(0)
+
+/*
+ * DAVINCI_MCASP_EVTCTLX_REG - Transmitter Interrupt Control Register Bits
+ */
+#define XUNDRN		BIT(0)
+
+/*
  * DAVINCI_MCASP_W[R]FIFOCTL - Write/Read FIFO Control Register bits
  */
 #define FIFO_ENABLE	BIT(16)
 #define NUMEVT_MASK	(0xFF << 8)
 #define NUMEVT(x)	(((x) & 0xFF) << 8)
 #define NUMDMA_MASK	(0xFF)
+
+/* clock divider IDs */
+#define MCASP_CLKDIV_AUXCLK		0 /* HCLK divider from AUXCLK */
+#define MCASP_CLKDIV_BCLK		1 /* BCLK divider from HCLK */
+#define MCASP_CLKDIV_BCLK_FS_RATIO	2 /* to set BCLK FS ration */
 
 #endif	/* DAVINCI_MCASP_H */

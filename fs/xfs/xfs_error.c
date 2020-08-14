@@ -20,8 +20,6 @@
 #include "xfs_fs.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
-#include "xfs_sb.h"
-#include "xfs_ag.h"
 #include "xfs_mount.h"
 #include "xfs_error.h"
 
@@ -57,11 +55,14 @@ xfs_error_test(int error_tag, int *fsidp, char *expression,
 }
 
 int
-xfs_errortag_add(int error_tag, xfs_mount_t *mp)
+xfs_errortag_add(unsigned int error_tag, xfs_mount_t *mp)
 {
 	int i;
 	int len;
 	int64_t fsid;
+
+	if (error_tag >= XFS_ERRTAG_MAX)
+		return -EINVAL;
 
 	memcpy(&fsid, mp->m_fixedfsid, sizeof(xfs_fsid_t));
 
@@ -129,11 +130,11 @@ xfs_error_report(
 	struct xfs_mount	*mp,
 	const char		*filename,
 	int			linenum,
-	inst_t			*ra)
+	void			*ra)
 {
 	if (level <= xfs_error_level) {
 		xfs_alert_tag(mp, XFS_PTAG_ERROR_REPORT,
-		"Internal error %s at line %d of file %s.  Caller %pF",
+		"Internal error %s at line %d of file %s.  Caller %pS",
 			    tag, linenum, filename, ra);
 
 		xfs_stack_trace();
@@ -148,7 +149,7 @@ xfs_corruption_error(
 	void			*p,
 	const char		*filename,
 	int			linenum,
-	inst_t			*ra)
+	void			*ra)
 {
 	if (level <= xfs_error_level)
 		xfs_hex_dump(p, 64);
@@ -166,7 +167,7 @@ xfs_verifier_error(
 {
 	struct xfs_mount *mp = bp->b_target->bt_mount;
 
-	xfs_alert(mp, "Metadata %s detected at %pF, %s block 0x%llx",
+	xfs_alert(mp, "Metadata %s detected at %pS, %s block 0x%llx",
 		  bp->b_error == -EFSBADCRC ? "CRC error" : "corruption",
 		  __return_address, bp->b_ops->name, bp->b_bn);
 

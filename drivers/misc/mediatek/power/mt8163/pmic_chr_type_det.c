@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <generated/autoconf.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -9,7 +22,6 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/kthread.h>
-#include <linux/wakelock.h>
 #include <linux/device.h>
 #include <linux/kdev_t.h>
 #include <linux/fs.h>
@@ -20,18 +32,27 @@
 #include <linux/syscalls.h>
 #include <linux/sched.h>
 #include <linux/writeback.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <mt-plat/upmu_common.h>
-#include <mt-plat/mt_pmic_wrap.h>
 #include <mt-plat/battery_common.h>
 #include <linux/time.h>
 
 /* ============================================================*/
 /*extern function*/
 /* ============================================================*/
+void __attribute__((weak)) Charger_Detect_Init(void)
+{
+	pr_notice("[%s] need usb porting\r\n", __func__);
+}
+
+void __attribute__((weak)) Charger_Detect_Release(void)
+{
+	pr_notice("[%s] need usb porting\r\n", __func__);
+}
+
 #if defined(CONFIG_POWER_EXT) || defined(CONFIG_MTK_FPGA)
 
-CHARGER_TYPE hw_charger_type_detection(void)
+enum CHARGER_TYPE hw_charger_type_detection(void)
 {
 	return STANDARD_HOST;
 }
@@ -90,23 +111,6 @@ static unsigned int hw_bc11_DCD(void)
 
 	return wChargerAvail;
 }
-
-/*****
-static unsigned int hw_bc11_stepA1(void)
-{
-unsigned int wChargerAvail = 0;
-
-upmu_set_rg_bc11_ipu_en(0x2);
-upmu_set_rg_bc11_vref_vth(0x2);
-upmu_set_rg_bc11_cmp_en(0x2);
-mdelay(80);
-wChargerAvail = upmu_get_rgs_bc11_cmp_out();
-upmu_set_rg_bc11_ipu_en(0x0);
-upmu_set_rg_bc11_cmp_en(0x0);
-
-return  wChargerAvail;
-}
-*****/
 
 static unsigned int hw_bc11_stepA2(void)
 {
@@ -180,17 +184,17 @@ static void hw_bc11_done(void)
 	Charger_Detect_Release();
 }
 
-CHARGER_TYPE hw_charger_type_detection(void)
+enum CHARGER_TYPE hw_charger_type_detection(void)
 {
-	CHARGER_TYPE ret = CHARGER_UNKNOWN;
+	enum CHARGER_TYPE ret = CHARGER_UNKNOWN;
 
 	hw_bc11_init();
 
-	if (1 == hw_bc11_DCD()) {
-				ret = NONSTANDARD_CHARGER;
-	} else {
-		if (1 == hw_bc11_stepA2()) {
-			if (1 == hw_bc11_stepB2())
+	if (hw_bc11_DCD() == 1)
+		ret = NONSTANDARD_CHARGER;
+	else {
+		if (hw_bc11_stepA2() == 1) {
+			if (hw_bc11_stepB2() == 1)
 				ret = STANDARD_CHARGER;
 			else
 				ret = CHARGING_HOST;

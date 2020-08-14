@@ -1,8 +1,21 @@
-#include <linux/types.h>
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
+ #include <linux/types.h>
 #include <mt-plat/upmu_common.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
-#include <mt-plat/mt_boot.h>
+#include <mt-plat/mtk_boot.h>
 #include <mt-plat/battery_common.h>
 
 #include "bq25601.h"
@@ -12,7 +25,7 @@
 /* ============================================================*/
 #define STATUS_OK	0
 #define STATUS_UNSUPPORTED	-1
-#define GETARRAYNUM(array) (sizeof(array)/sizeof(array[0]))
+#define GETARRAYNUM(array) (ARRAY_SIZE(array))
 
 /*============================================================*/
 /*global variable*/
@@ -55,7 +68,14 @@ static const u32 INPUT_CS_VTH[] = {
 	290000, 300000, 310000, 320000
 };
 
-static const unsigned int VCDT_HV_VTH[] = {
+static const u32 BAT_CCT[] = {
+	60, 120, 180, 240,
+	300, 360, 420, 480,
+	540, 600, 660, 720,
+	780, 840, 900, 960
+};
+
+static const u32 VCDT_HV_VTH[] = {
 	BATTERY_VOLT_04_200000_V,
 	BATTERY_VOLT_04_250000_V,
 	BATTERY_VOLT_04_300000_V,
@@ -74,6 +94,7 @@ static const unsigned int VCDT_HV_VTH[] = {
 	BATTERY_VOLT_10_500000_V
 };
 
+
 /*============================================================*/
 /*function prototype*/
 /*============================================================*/
@@ -88,7 +109,7 @@ static u32 find_closest_in_array(const u32 *arr, u32 len, u32 val)
 {
 	int i, closest = 0;
 
-	pr_debug("%s: vaule: %d\n", __func__, val);
+	pr_debug("%s: value: %d\n", __func__, val);
 	if (len == 0)
 		return closest;
 	for (i = 0; i < len; i++)
@@ -139,7 +160,7 @@ static unsigned int charging_hw_init(void *data)
 #else
 	bq25601_set_iprechg(0x8);	/* Precharge current 540mA */
 #endif
-	bq25601_set_iterm(0x3);		/* Termination current 240mA (C/20)*/
+
 
 #if !defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
 	bq25601_set_vreg(0xB);		/* VREG 4.208V */
@@ -340,7 +361,7 @@ static unsigned int charging_get_charger_det_status(void *data)
 
 static unsigned int charging_get_charger_type(void *data)
 {
-	*(CHARGER_TYPE *) (data) = hw_charger_type_detection();
+	*(unsigned int *) (data) = hw_charger_type_detection();
 	return STATUS_OK;
 }
 
@@ -351,7 +372,7 @@ static unsigned int charging_set_platform_reset(void *data)
 #if defined(CONFIG_POWER_EXT) || defined(CONFIG_MTK_FPGA)
 #else
 	pr_info("%s\n", __func__);
-	orderly_reboot(true);
+	orderly_reboot();
 #endif
 	return status;
 }
@@ -384,9 +405,9 @@ static unsigned int charging_set_ta_current_pattern(void *data)
 	unsigned int charging_status = false;
 
 	#if defined(HIGH_BATTERY_VOLTAGE_SUPPORT)
-	BATTERY_VOLTAGE_ENUM cv_voltage = BATTERY_VOLT_04_340000_V;
+	unsigned int cv_voltage = BATTERY_VOLT_04_340000_V;
 	#else
-	BATTERY_VOLTAGE_ENUM cv_voltage = BATTERY_VOLT_04_200000_V;
+	unsigned int cv_voltage = BATTERY_VOLT_04_200000_V;
 	#endif
 
 	charging_get_charging_status(&charging_status);
@@ -574,10 +595,23 @@ static unsigned int charging_get_vbus_status(void *data)
 	return status;
 }
 
+static unsigned int charging_set_iterm(void *data)
+{
+	unsigned int status = STATUS_OK;
+	int idle = *(unsigned int *)(data);
+	int reg = 0x3;
+
+	if(idle != 0)
+		reg = find_closest_in_array(BAT_CCT, GETARRAYNUM(BAT_CCT), idle);
+	bq25601_set_iterm(reg);
+
+	return status;
+}
+
 
 static unsigned int(*charging_func[CHARGING_CMD_NUMBER]) (void *data);
 
- /*
+/*
  *FUNCTION
  *		bq25601_control_interface
  *
@@ -594,7 +628,7 @@ static unsigned int(*charging_func[CHARGING_CMD_NUMBER]) (void *data);
  * GLOBALS AFFECTED
  *	   None
  */
-signed int bq25601_control_interface(CHARGING_CTRL_CMD cmd, void *data)
+signed int bq25601_control_interface(int cmd, void *data)
 {
 	static signed int init = -1;
 
@@ -646,6 +680,8 @@ signed int bq25601_control_interface(CHARGING_CTRL_CMD cmd, void *data)
 			= charging_get_sw_aicl_support;
 		charging_func[CHARGING_CMD_GET_VBUS_STAT]
 			= charging_get_vbus_status;
+		charging_func[CHARGING_CMD_SET_ITERM]
+			= charging_set_iterm;
 	}
 
 	if (cmd < CHARGING_CMD_NUMBER) {

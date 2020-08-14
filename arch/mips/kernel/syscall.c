@@ -118,6 +118,7 @@ static inline int mips_atomic_set(unsigned long addr, unsigned long new)
 		"2:	sc	%[tmp], (%[addr])			\n"
 		"	beqzl	%[tmp], 1b				\n"
 		"3:							\n"
+		"	.insn						\n"
 		"	.section .fixup,\"ax\"				\n"
 		"4:	li	%[err], %[efault]			\n"
 		"	j	3b					\n"
@@ -136,7 +137,7 @@ static inline int mips_atomic_set(unsigned long addr, unsigned long new)
 		: "memory");
 	} else if (cpu_has_llsc) {
 		__asm__ __volatile__ (
-		"	.set	arch=r4000				\n"
+		"	.set	"MIPS_ISA_ARCH_LEVEL"			\n"
 		"	li	%[err], 0				\n"
 		"1:							\n"
 		user_ll("%[old]", "(%[addr])")
@@ -145,6 +146,7 @@ static inline int mips_atomic_set(unsigned long addr, unsigned long new)
 		user_sc("%[tmp]", "(%[addr])")
 		"	beqz	%[tmp], 4f				\n"
 		"3:							\n"
+		"	.insn						\n"
 		"	.subsection 2					\n"
 		"4:	b	1b					\n"
 		"	.previous					\n"

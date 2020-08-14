@@ -36,6 +36,7 @@ void radeon_gem_object_free(struct drm_gem_object *gobj)
 	if (robj) {
 		if (robj->gem_base.import_attach)
 			drm_prime_gem_destroy(&robj->gem_base, robj->tbo.sg);
+		radeon_mn_unregister(robj);
 		radeon_bo_unref(&robj);
 	}
 }
@@ -219,8 +220,8 @@ int radeon_gem_info_ioctl(struct drm_device *dev, void *data,
 
 	man = &rdev->mman.bdev.man[TTM_PL_VRAM];
 
-	args->vram_size = rdev->mc.real_vram_size;
-	args->vram_visible = (u64)man->size << PAGE_SHIFT;
+	args->vram_size = (u64)man->size << PAGE_SHIFT;
+	args->vram_visible = rdev->mc.visible_vram_size;
 	args->vram_visible -= rdev->vram_pin_size;
 	args->gart_size = rdev->mc.gtt_size;
 	args->gart_size -= rdev->gart_pin_size;
@@ -381,7 +382,7 @@ int radeon_gem_set_domain_ioctl(struct drm_device *dev, void *data,
 	down_read(&rdev->exclusive_lock);
 
 	/* just do a BO wait for now */
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL) {
 		up_read(&rdev->exclusive_lock);
 		return -ENOENT;
@@ -403,7 +404,7 @@ int radeon_mode_dumb_mmap(struct drm_file *filp,
 	struct drm_gem_object *gobj;
 	struct radeon_bo *robj;
 
-	gobj = drm_gem_object_lookup(dev, filp, handle);
+	gobj = drm_gem_object_lookup(filp, handle);
 	if (gobj == NULL) {
 		return -ENOENT;
 	}
@@ -428,22 +429,27 @@ int radeon_gem_mmap_ioctl(struct drm_device *dev, void *data,
 int radeon_gem_busy_ioctl(struct drm_device *dev, void *data,
 			  struct drm_file *filp)
 {
-	struct radeon_device *rdev = dev->dev_private;
 	struct drm_radeon_gem_busy *args = data;
 	struct drm_gem_object *gobj;
 	struct radeon_bo *robj;
 	int r;
 	uint32_t cur_placement = 0;
 
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL) {
 		return -ENOENT;
 	}
 	robj = gem_to_radeon_bo(gobj);
-	r = radeon_bo_wait(robj, &cur_placement, true);
+
+	r = reservation_object_test_signaled_rcu(robj->tbo.resv, true);
+	if (r == 0)
+		r = -EBUSY;
+	else
+		r = 0;
+
+	cur_placement = ACCESS_ONCE(robj->tbo.mem.mem_type);
 	args->domain = radeon_mem_type_to_domain(cur_placement);
 	drm_gem_object_unreference_unlocked(gobj);
-	r = radeon_gem_handle_lockup(rdev, r);
 	return r;
 }
 
@@ -458,7 +464,7 @@ int radeon_gem_wait_idle_ioctl(struct drm_device *dev, void *data,
 	uint32_t cur_placement = 0;
 	long ret;
 
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL) {
 		return -ENOENT;
 	}
@@ -471,6 +477,7 @@ int radeon_gem_wait_idle_ioctl(struct drm_device *dev, void *data,
 		r = ret;
 
 	/* Flush HDP cache via MMIO if necessary */
+	cur_placement = ACCESS_ONCE(robj->tbo.mem.mem_type);
 	if (rdev->asic->mmio_hdp_flush &&
 	    radeon_mem_type_to_domain(cur_placement) == RADEON_GEM_DOMAIN_VRAM)
 		robj->rdev->asic->mmio_hdp_flush(rdev);
@@ -488,7 +495,7 @@ int radeon_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
 	int r = 0;
 
 	DRM_DEBUG("%d \n", args->handle);
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL)
 		return -ENOENT;
 	robj = gem_to_radeon_bo(gobj);
@@ -506,7 +513,7 @@ int radeon_gem_get_tiling_ioctl(struct drm_device *dev, void *data,
 	int r = 0;
 
 	DRM_DEBUG("\n");
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL)
 		return -ENOENT;
 	rbo = gem_to_radeon_bo(gobj);
@@ -518,6 +525,68 @@ int radeon_gem_get_tiling_ioctl(struct drm_device *dev, void *data,
 out:
 	drm_gem_object_unreference_unlocked(gobj);
 	return r;
+}
+
+/**
+ * radeon_gem_va_update_vm -update the bo_va in its VM
+ *
+ * @rdev: radeon_device pointer
+ * @bo_va: bo_va to update
+ *
+ * Update the bo_va directly after setting it's address. Errors are not
+ * vital here, so they are not reported back to userspace.
+ */
+static void radeon_gem_va_update_vm(struct radeon_device *rdev,
+				    struct radeon_bo_va *bo_va)
+{
+	struct ttm_validate_buffer tv, *entry;
+	struct radeon_bo_list *vm_bos;
+	struct ww_acquire_ctx ticket;
+	struct list_head list;
+	unsigned domain;
+	int r;
+
+	INIT_LIST_HEAD(&list);
+
+	tv.bo = &bo_va->bo->tbo;
+	tv.shared = true;
+	list_add(&tv.head, &list);
+
+	vm_bos = radeon_vm_get_bos(rdev, bo_va->vm, &list);
+	if (!vm_bos)
+		return;
+
+	r = ttm_eu_reserve_buffers(&ticket, &list, true, NULL);
+	if (r)
+		goto error_free;
+
+	list_for_each_entry(entry, &list, head) {
+		domain = radeon_mem_type_to_domain(entry->bo->mem.mem_type);
+		/* if anything is swapped out don't swap it in here,
+		   just abort and wait for the next CS */
+		if (domain == RADEON_GEM_DOMAIN_CPU)
+			goto error_unreserve;
+	}
+
+	mutex_lock(&bo_va->vm->mutex);
+	r = radeon_vm_clear_freed(rdev, bo_va->vm);
+	if (r)
+		goto error_unlock;
+
+	if (bo_va->it.start)
+		r = radeon_vm_bo_update(rdev, bo_va, &bo_va->bo->tbo.mem);
+
+error_unlock:
+	mutex_unlock(&bo_va->vm->mutex);
+
+error_unreserve:
+	ttm_eu_backoff_reservation(&ticket, &list);
+
+error_free:
+	drm_free_large(vm_bos);
+
+	if (r && r != -ERESTARTSYS)
+		DRM_ERROR("Couldn't update BO_VA (%d)\n", r);
 }
 
 int radeon_gem_va_ioctl(struct drm_device *dev, void *data,
@@ -579,7 +648,7 @@ int radeon_gem_va_ioctl(struct drm_device *dev, void *data,
 		return -EINVAL;
 	}
 
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL) {
 		args->operation = RADEON_VA_RESULT_ERROR;
 		return -ENOENT;
@@ -594,6 +663,7 @@ int radeon_gem_va_ioctl(struct drm_device *dev, void *data,
 	bo_va = radeon_vm_bo_find(&fpriv->vm, rbo);
 	if (!bo_va) {
 		args->operation = RADEON_VA_RESULT_ERROR;
+		radeon_bo_unreserve(rbo);
 		drm_gem_object_unreference_unlocked(gobj);
 		return -ENOENT;
 	}
@@ -603,6 +673,7 @@ int radeon_gem_va_ioctl(struct drm_device *dev, void *data,
 		if (bo_va->it.start) {
 			args->operation = RADEON_VA_RESULT_VA_EXIST;
 			args->offset = bo_va->it.start * RADEON_GPU_PAGE_SIZE;
+			radeon_bo_unreserve(rbo);
 			goto out;
 		}
 		r = radeon_vm_bo_set_addr(rdev, bo_va, args->offset, args->flags);
@@ -613,12 +684,13 @@ int radeon_gem_va_ioctl(struct drm_device *dev, void *data,
 	default:
 		break;
 	}
+	if (!r)
+		radeon_gem_va_update_vm(rdev, bo_va);
 	args->operation = RADEON_VA_RESULT_OK;
 	if (r) {
 		args->operation = RADEON_VA_RESULT_ERROR;
 	}
 out:
-	radeon_bo_unreserve(rbo);
 	drm_gem_object_unreference_unlocked(gobj);
 	return r;
 }
@@ -631,7 +703,7 @@ int radeon_gem_op_ioctl(struct drm_device *dev, void *data,
 	struct radeon_bo *robj;
 	int r;
 
-	gobj = drm_gem_object_lookup(dev, filp, args->handle);
+	gobj = drm_gem_object_lookup(filp, args->handle);
 	if (gobj == NULL) {
 		return -ENOENT;
 	}

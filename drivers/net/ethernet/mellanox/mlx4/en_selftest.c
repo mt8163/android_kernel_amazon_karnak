@@ -66,7 +66,7 @@ static int mlx4_en_test_loopback_xmit(struct mlx4_en_priv *priv)
 	ethh = (struct ethhdr *)skb_put(skb, sizeof(struct ethhdr));
 	packet	= (unsigned char *)skb_put(skb, packet_size);
 	memcpy(ethh->h_dest, priv->dev->dev_addr, ETH_ALEN);
-	memset(ethh->h_source, 0, ETH_ALEN);
+	eth_zero_addr(ethh->h_source);
 	ethh->h_proto = htons(ETH_P_ARP);
 	skb_set_mac_header(skb, 0);
 	for (i = 0; i < packet_size; ++i)	/* fill our packet */
@@ -81,12 +81,14 @@ static int mlx4_en_test_loopback(struct mlx4_en_priv *priv)
 {
 	u32 loopback_ok = 0;
 	int i;
-
+	bool gro_enabled;
 
         priv->loopback_ok = 0;
 	priv->validate_loopback = 1;
+	gro_enabled = priv->dev->features & NETIF_F_GRO;
 
 	mlx4_en_update_loopback_state(priv->dev, priv->dev->features);
+	priv->dev->features &= ~NETIF_F_GRO;
 
 	/* xmit */
 	if (mlx4_en_test_loopback_xmit(priv)) {
@@ -108,10 +110,37 @@ static int mlx4_en_test_loopback(struct mlx4_en_priv *priv)
 mlx4_en_test_loopback_exit:
 
 	priv->validate_loopback = 0;
+
+	if (gro_enabled)
+		priv->dev->features |= NETIF_F_GRO;
+
 	mlx4_en_update_loopback_state(priv->dev, priv->dev->features);
 	return !loopback_ok;
 }
 
+static int mlx4_en_test_interrupts(struct mlx4_en_priv *priv)
+{
+	struct mlx4_en_dev *mdev = priv->mdev;
+	int err = 0;
+	int i = 0;
+
+	err = mlx4_test_async(mdev->dev);
+	/* When not in MSI_X or slave, test only async */
+	if (!(mdev->dev->flags & MLX4_FLAG_MSI_X) || mlx4_is_slave(mdev->dev))
+		return err;
+
+	/* A loop over all completion vectors of current port,
+	 * for each vector check whether it works by mapping command
+	 * completions to that vector and performing a NOP command
+	 */
+	for (i = 0; i < priv->rx_ring_num; i++) {
+		err = mlx4_test_interrupt(mdev->dev, priv->rx_cq[i]->vector);
+		if (err)
+			break;
+	}
+
+	return err;
+}
 
 static int mlx4_en_test_link(struct mlx4_en_priv *priv)
 {
@@ -129,11 +158,15 @@ static int mlx4_en_test_speed(struct mlx4_en_priv *priv)
 	if (mlx4_en_QUERY_PORT(priv->mdev, priv->port))
 		return -ENOMEM;
 
-	/* The device supports 1G, 10G and 40G speeds */
-	if (priv->port_state.link_speed != 1000 &&
-	    priv->port_state.link_speed != 10000 &&
-	    priv->port_state.link_speed != 40000)
+	/* The device supports 100M, 1G, 10G, 20G, 40G and 56G speed */
+	if (priv->port_state.link_speed != SPEED_100 &&
+	    priv->port_state.link_speed != SPEED_1000 &&
+	    priv->port_state.link_speed != SPEED_10000 &&
+	    priv->port_state.link_speed != SPEED_20000 &&
+	    priv->port_state.link_speed != SPEED_40000 &&
+	    priv->port_state.link_speed != SPEED_56000)
 		return priv->port_state.link_speed;
+
 	return 0;
 }
 
@@ -141,7 +174,6 @@ static int mlx4_en_test_speed(struct mlx4_en_priv *priv)
 void mlx4_en_ex_selftest(struct net_device *dev, u32 *flags, u64 *buf)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
-	struct mlx4_en_dev *mdev = priv->mdev;
 	int i, carrier_ok;
 
 	memset(buf, 0, sizeof(u64) * MLX4_EN_NUM_SELF_TEST);
@@ -167,7 +199,7 @@ void mlx4_en_ex_selftest(struct net_device *dev, u32 *flags, u64 *buf)
 			netif_carrier_on(dev);
 
 	}
-	buf[0] = mlx4_test_interrupts(mdev->dev);
+	buf[0] = mlx4_en_test_interrupts(priv);
 	buf[1] = mlx4_en_test_link(priv);
 	buf[2] = mlx4_en_test_speed(priv);
 

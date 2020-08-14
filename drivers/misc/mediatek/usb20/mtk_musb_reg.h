@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MT_MUSB_REG_H__
 #define __MT_MUSB_REG_H__
 
@@ -326,25 +339,41 @@
 #define OTG20_CSRH	0x731	/* OTG20 Related Control Register H */
 
 /* OTG20 Related Control Register L */
-#define DIS_HSUS	(1<<7)	/* Disable Host mode entering C_OPM_HSUS state before entering suspend */
-#define A_HFS_WHNP	(1<<6)	/* EN: FS idle of A device will transfer to HFS_HSUS state first */
-#define DIS_B_WTDIS	(1<<5)	/* Disables B device entering C_OPM_B_WTDIS states before switching to host mode */
-#define HHS_SUSP_DIS	(1<<4)	/* EN: host-hs-suspend entering OPM_FS_WTCON state first
-								   while receiving disconnect signal */
-#define DIS_CHARGE_VBUS	(1<<3)	/* EN: Disables B device charging VBUS function for OTG2.0 feature */
-#define HSUS_RESUME_INT	(1<<2)	/* EN: hsus mode of host initializing resuming interrupt
-								   while receiving resume K as waiting for HNP */
-#define HSUS_RESUME	(1<<1)	/* EN: hnpsus-mode of host entering host-normal mode as
-							   receiving resume K while waiting for HNP */
+/* Disable Host mode entering C_OPM_HSUS state before entering suspend */
+#define DIS_HSUS	(1<<7)
+/* EN: FS idle of A device will transfer to HFS_HSUS state first */
+#define A_HFS_WHNP	(1<<6)
+/* Disables B device entering C_OPM_B_WTDIS states
+ *before switching to host mode
+ */
+#define DIS_B_WTDIS	(1<<5)
+/* EN: host-hs-suspend entering OPM_FS_WTCON state first
+ *while receiving disconnect signal
+ */
+#define HHS_SUSP_DIS	(1<<4)
+/* EN: Disables B device charging VBUS function for OTG2.0 feature */
+#define DIS_CHARGE_VBUS	(1<<3)
+/* EN: hsus mode of host initializing resuming interrupt
+ *while receiving resume K as waiting for HNP
+ */
+#define HSUS_RESUME_INT	(1<<2)
+/* EN: hnpsus-mode of host entering host-normal mode as
+ * receiving resume K while waiting for HNP
+ */
+#define HSUS_RESUME	(1<<1)
 #define OTG20_EN	(1<<0)	/* Enables OTG 2.0 feature */
 
 /* OTG20 Related Control Register H */
-#define DIS_AUTORST	(1<<1)	/* Informs whether HW sends bus reset automatically
-							   while B-device changes to host with HNP */
-#define CON_DEB_SHORT	(1<<0)	/* EN: to decrease A device connection denounce waiting timing */
+/* Informs whether HW sends bus reset automatically
+ *while B-device changes to host with HNP
+ */
+#define DIS_AUTORST	(1<<1)
+
+/* EN: to decrease A device connection denounce waiting timing */
+#define CON_DEB_SHORT	(1<<0)
 
 /* QMU Registers */
-#ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
+#ifdef MUSB_QMU_SUPPORT
 #define MUSB_QMUBASE	(0x800)
 #define MUSB_QISAR	(0xc00)
 #define MUSB_QIMR	(0xc04)
@@ -411,12 +440,14 @@ static inline u16 musb_read_hwvers(void __iomem *mbase)
 	return musb_readw(mbase, MUSB_HWVERS);
 }
 
-static inline void musb_write_rxfunaddr(void __iomem *mbase, u8 epnum, u8 qh_addr_reg)
+static inline void musb_write_rxfunaddr(void __iomem *mbase, u8 epnum,
+					u8 qh_addr_reg)
 {
 	musb_writew(mbase, MUSB_RXFUNCADDR + 8 * epnum, qh_addr_reg);
 }
 
-static inline void musb_write_rxhubaddr(void __iomem *mbase, u8 epnum, u8 qh_h_addr_reg)
+static inline void musb_write_rxhubaddr(void __iomem *mbase, u8 epnum,
+					u8 qh_h_addr_reg)
 {
 	u16 rx_hub_port_addr = musb_readw(mbase, 0x0486 + 8 * epnum);
 
@@ -425,7 +456,8 @@ static inline void musb_write_rxhubaddr(void __iomem *mbase, u8 epnum, u8 qh_h_a
 	musb_writew(mbase, MUSB_RXHUBADDR + 8 * epnum, rx_hub_port_addr);
 }
 
-static inline void musb_write_rxhubport(void __iomem *mbase, u8 epnum, u8 qh_h_port_reg)
+static inline void musb_write_rxhubport(void __iomem *mbase, u8 epnum,
+					u8 qh_h_port_reg)
 {
 	u16 rx_hub_port_addr = musb_readw(mbase, 0x0486 + 8 * epnum);
 	u16 rx_port_addr = (u16) qh_h_port_reg;
@@ -435,12 +467,14 @@ static inline void musb_write_rxhubport(void __iomem *mbase, u8 epnum, u8 qh_h_p
 	musb_writew(mbase, MUSB_RXHUBADDR + 8 * epnum, rx_hub_port_addr);
 }
 
-static inline void musb_write_txfunaddr(void __iomem *mbase, u8 epnum, u8 qh_addr_reg)
+static inline void musb_write_txfunaddr(void __iomem *mbase, u8 epnum,
+					u8 qh_addr_reg)
 {
 	musb_writew(mbase, MUSB_TXFUNCADDR + 8 * epnum, qh_addr_reg);
 }
 
-static inline void musb_write_txhubaddr(void __iomem *mbase, u8 epnum, u8 qh_h_addr_reg)
+static inline void musb_write_txhubaddr(void __iomem *mbase, u8 epnum,
+					u8 qh_h_addr_reg)
 {
 	u16 tx_hub_port_addr = musb_readw(mbase, 0x0482 + 8 * epnum);
 
@@ -449,7 +483,8 @@ static inline void musb_write_txhubaddr(void __iomem *mbase, u8 epnum, u8 qh_h_a
 	musb_writew(mbase, MUSB_TXHUBADDR + 8 * epnum, tx_hub_port_addr);
 }
 
-static inline void musb_write_txhubport(void __iomem *mbase, u8 epnum, u8 qh_h_port_reg)
+static inline void musb_write_txhubport(void __iomem *mbase, u8 epnum,
+					u8 qh_h_port_reg)
 {
 	u16 tx_hub_port_addr = musb_readw(mbase, 0x0482 + 8 * epnum);
 	u16 tx_port_addr = (u16) qh_h_port_reg;

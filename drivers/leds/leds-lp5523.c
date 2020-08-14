@@ -50,14 +50,15 @@
 #define LP5523_REG_OP_MODE		0x01
 #define LP5523_REG_ENABLE_LEDS_MSB	0x04
 #define LP5523_REG_ENABLE_LEDS_LSB	0x05
+#define LP5523_REG_LED_CTRL_BASE	0x06
 #define LP5523_REG_LED_PWM_BASE		0x16
 #define LP5523_REG_LED_CURRENT_BASE	0x26
 #define LP5523_REG_CONFIG		0x36
 #define LP5523_REG_STATUS		0x3A
-#define LP5523_REG_INTGPO		0x3B
 #define LP5523_REG_RESET		0x3D
 #define LP5523_REG_LED_TEST_CTRL	0x41
 #define LP5523_REG_LED_TEST_ADC		0x42
+#define LP5523_REG_MASTER_FADER_BASE	0x48
 #define LP5523_REG_CH1_PROG_START	0x4C
 #define LP5523_REG_CH2_PROG_START	0x4D
 #define LP5523_REG_CH3_PROG_START	0x4E
@@ -70,12 +71,7 @@
 #define LP5523_PWR_SAVE			0x20
 #define LP5523_PWM_PWR_SAVE		0x04
 #define LP5523_CP_AUTO			0x18
-#define LP5523_CP_1_5			0x10
-#define LP5523_CP_1			0x08
 #define LP5523_AUTO_CLK			0x02
-#define LP5523_INT_EN_GPO		0x04
-#define LP5523_GPO_HIGH		0x1
-#define LP5523_GPO_LOW		0x0
 
 #define LP5523_EN_LEDTEST		0x80
 #define LP5523_LEDTEST_DONE		0x80
@@ -83,8 +79,9 @@
 #define LP5523_ADC_SHORTCIRC_LIM	80
 #define LP5523_EXT_CLK_USED		0x08
 #define LP5523_ENG_STATUS_MASK		0x07
-#define LP5523_PAGE_SIZE		32
-#define LP5523_SRAM_SIZE		(LP5523_PROGRAM_LENGTH * 6)
+
+#define LP5523_FADER_MAPPING_MASK	0xC0
+#define LP5523_FADER_MAPPING_SHIFT	6
 
 /* Memory Page Selection */
 #define LP5523_PAGE_ENG1		0
@@ -102,11 +99,6 @@
 #define LP5523_LOAD_ENG2		0x04
 #define LP5523_LOAD_ENG3		0x01
 
-/* Program Commands */
-#define LP5523_CMD_DISABLE		0x00
-#define LP5523_CMD_LOAD			0x15
-#define LP5523_CMD_RUN			0x2A
-
 #define LP5523_ENG1_IS_LOADING(mode)	\
 	((mode & LP5523_MODE_ENG1_M) == LP5523_LOAD_ENG1)
 #define LP5523_ENG2_IS_LOADING(mode)	\
@@ -122,14 +114,7 @@
 #define LP5523_RUN_ENG2			0x08
 #define LP5523_RUN_ENG3			0x02
 
-#define LP5523_CMD_LOAD			0x15 /* 00010101 */
-#define LP5523_CMD_DISABLED		0x00 /* 00000000 */
-
-#define LP5523_LEDTEST_VDD		0x10
-#define LP5523_LEDTEST_VOUT		0x0F
-
 #define LED_ACTIVE(mux, led)		(!!(mux & (0x0001 << led)))
-#define TO_MILLI_VOLTS(x)		(((x) * 30) - 1478)
 
 enum lp5523_chip_id {
 	LP5523,
@@ -176,14 +161,6 @@ static int lp5523_post_init_device(struct lp55xx_chip *chip)
 	ret = lp55xx_write(chip, LP5523_REG_ENABLE_LEDS_LSB, 0xff);
 	if (ret)
 		return ret;
-
-
-	/* enable gpo */
-	if (chip->pdata->gpo_enable) {
-		ret = lp55xx_write(chip, LP5523_REG_INTGPO, LP5523_INT_EN_GPO);
-		if (ret)
-			return ret;
-	}
 
 	return lp5523_init_program_engine(chip);
 }
@@ -242,52 +219,12 @@ static void lp5523_stop_engine(struct lp55xx_chip *chip)
 	lp5523_wait_opmode_done();
 }
 
-#define BIT_GET(var, pos) ((var) & (1<<(pos)))
-#define BIT_CLR(var, pos) ((var) &= ~(1 << (pos)))
-
-static int lp5523_pwm_write(struct lp55xx_led *led, u8 val)
-{
-	struct lp55xx_chip *chip = led->chip;
-	/* Only write if cache is invalid or new value different from cache */
-	if (BIT_GET(chip->cache_inv, led->chan_nr) || led->brightness != val) {
-		int ret = lp55xx_write(chip, LP5523_REG_LED_PWM_BASE + led->chan_nr, val);
-		if (ret) {
-			return ret;
-		}
-		/* Validate the cache bit and update cache */
-		BIT_CLR(chip->cache_inv, led->chan_nr);
-		led->brightness = val;
-	}
-	return 0;
-}
-
-static int lp5523_pwm_read(struct lp55xx_led *led, u8 *val)
-{
-	struct lp55xx_chip *chip = led->chip;
-
-	/* Only read if cache is invalid */
-	if (BIT_GET(chip->cache_inv, led->chan_nr)) {
-		int ret = lp55xx_read(chip, LP5523_REG_LED_PWM_BASE + led->chan_nr, &led->brightness);
-		if (ret) {
-			return ret;
-		}
-		/* Validate the cache bit */
-		BIT_CLR(chip->cache_inv, led->chan_nr);
-	}
-	/* Copy brightness cache out to caller */
-	if (val) {
-		*val = led->brightness;
-	}
-	return 0;
-}
-
 static void lp5523_turn_off_channels(struct lp55xx_chip *chip)
 {
-	struct lp55xx_led *led = i2c_get_clientdata(chip->cl);
 	int i;
 
 	for (i = 0; i < LP5523_MAX_LEDS; i++)
-		lp5523_pwm_write(&led[i], 0);
+		lp55xx_write(chip, LP5523_REG_LED_PWM_BASE + i, 0);
 }
 
 static void lp5523_run_engine(struct lp55xx_chip *chip, bool start)
@@ -338,24 +275,6 @@ static void lp5523_run_engine(struct lp55xx_chip *chip, bool start)
 	lp55xx_update_bits(chip, LP5523_REG_ENABLE, LP5523_EXEC_M, exec);
 }
 
-static bool lp5523_is_engine_active(struct lp55xx_chip *chip)
-{
-	int ret;
-	u8 mode;
-
-	ret = lp55xx_read(chip, LP5523_REG_OP_MODE, &mode);
-	if (ret) {
-		dev_err(&chip->cl->dev, "error reading mode: %d\n", ret);
-		return false;
-	}
-
-	if (!(mode & LP5523_CMD_RUN))
-		return false;
-
-	/* All engines are running */
-	return true;
-}
-
 static int lp5523_init_program_engine(struct lp55xx_chip *chip)
 {
 	int i;
@@ -399,9 +318,7 @@ static int lp5523_init_program_engine(struct lp55xx_chip *chip)
 
 	/* Let the programs run for couple of ms and check the engine status */
 	usleep_range(3000, 6000);
-	ret = lp55xx_read(chip, LP5523_REG_STATUS, &status);
-	if (ret)
-		return ret;
+	lp55xx_read(chip, LP5523_REG_STATUS, &status);
 	status &= LP5523_ENG_STATUS_MASK;
 
 	if (status != LP5523_ENG_STATUS_MASK) {
@@ -513,10 +430,6 @@ static ssize_t store_engine_mode(struct device *dev,
 
 	chip->engine_idx = nr;
 
-	/* The LED engine modifies these registers independently of our cache,
-	 * effectively making them volatile registers. */
-	chip->cache_inv = 0xFF;
-
 	if (!strncmp(buf, "run", 3)) {
 		lp5523_run_engine(chip, true);
 		engine->mode = LP55XX_ENGINE_RUN;
@@ -570,28 +483,6 @@ static void lp5523_mux_to_array(u16 led_mux, char *array)
 		pos += sprintf(array + pos, "%x", LED_ACTIVE(led_mux, i));
 
 	array[pos] = '\0';
-}
-
-static int lp5523_wait_test_complete(struct lp55xx_chip *chip)
-{
-	u8 status = 0;
-	int ret = -1;
-	int retry = 3; // Wait test retry count
-
-	if (!chip)
-		return ret;
-	/* ADC conversion time is typically 2.7 ms */
-	usleep_range(3000, 6000);
-
-	while (retry--) {
-		ret = lp55xx_read(chip, LP5523_REG_STATUS, &status);
-		if (!(status & LP5523_LEDTEST_DONE))
-			usleep_range(3000, 6000); /* Was not ready. Wait little bit */
-		else
-			break;
-	}
-
-	return ret | !(status & LP5523_LEDTEST_DONE);
 }
 
 static ssize_t show_engine_leds(struct device *dev,
@@ -693,161 +584,6 @@ store_load(1)
 store_load(2)
 store_load(3)
 
-
-static ssize_t show_engine_prog_start(struct device *dev,
-				   struct device_attribute *attr,
-				   char *buf, int nr)
-{
-	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
-	struct lp55xx_chip *chip = led->chip;
-	u8 val = 0;
-	int ret;
-
-	ret = lp55xx_read(chip, LP5523_REG_CH1_PROG_START + nr - 1, &val);
-
-	ret = scnprintf(buf, PAGE_SIZE, "%02hhX\n", val);
-
-	return ret;
-}
-show_prog_start(1)
-show_prog_start(2)
-show_prog_start(3)
-
-static ssize_t store_engine_prog_start(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t len, int nr)
-{
-	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
-	struct lp55xx_chip *chip = led->chip;
-	int ret;
-
-	u8 pc_start = 0;
-	ret = sscanf(buf, "%hhX", &pc_start);
-	if (ret != 1)
-		return -EINVAL;
-
-	lp55xx_write(chip, LP5523_REG_CH1_PROG_START + nr - 1, pc_start);
-
-	return len;
-}
-store_prog_start(1)
-store_prog_start(2)
-store_prog_start(3)
-
-static int test_pattern(struct lp55xx_chip *chip, u8* pattern,
-			unsigned int pattern_size, unsigned int read_wait_us)
-{
-	unsigned int ret, i = 0;
-	unsigned int prog_page = 0;
-	unsigned int offset = 0;
-	u8 data;
-
-	if (!chip || !pattern || pattern_size == 0
-			|| pattern_size > LP5523_SRAM_SIZE)
-		return -1;
-
-	/* Disable running engine */
-	ret = lp55xx_write(chip, LP5523_REG_OP_MODE, LP5523_CMD_DISABLED);
-	if (ret)
-		return -1;
-	/* Set the engine mode to load */
-	ret = lp55xx_write(chip, LP5523_REG_OP_MODE, LP5523_CMD_LOAD);
-	if (ret)
-		return -1;
-
-	/* Write the pattern to SRAM */
-	for (i = 0; i < pattern_size; i++) {
-		/* Write the page select */
-		if (!(i % LP5523_PAGE_SIZE)) {
-			/* Select page to write */
-			lp55xx_write(chip, LP5523_REG_PROG_PAGE_SEL, prog_page);
-			prog_page++;
-			offset = 0;
-		}
-
-		lp55xx_write(chip, LP5523_REG_PROG_MEM + offset, pattern[i]);
-		offset++;
-	}
-
-	/* Reset the page and offset */
-	prog_page = 0;
-	offset = 0;
-
-	if (read_wait_us)
-		usleep_range(read_wait_us, read_wait_us+1000);
-
-	/* Read back the pattern and verify written data */
-	for (i = 0; i < pattern_size; i++) {
-		/* Write the page select */
-		if (!(i % LP5523_PAGE_SIZE)) {
-			/* Select page to write */
-			lp55xx_write(chip, LP5523_REG_PROG_PAGE_SEL, prog_page);
-			prog_page++;
-			offset = 0;
-		}
-
-		ret = lp55xx_read(chip, LP5523_REG_PROG_MEM + offset, &data);
-		if (ret < 0)
-			return ret;
-
-		/* Actual data verification */
-		if (data != pattern[i]) {
-			printk(KERN_ERR " SRAM Pattern [%d] failed @ 0x%x != 0x%x \n",
-					i, data, pattern[i]);
-			return -1;
-		}
-
-		offset++;
-	}
-
-	return 0;
-}
-
-static int sram_selftest(struct lp55xx_chip *chip)
-{
-	u8 pattern[LP5523_SRAM_SIZE];
-	unsigned int ret, i;
-	unsigned int sleep_us = 50000;
-
-	/* Create a checker board pattern */
-	for (i = 0; i < ARRAY_SIZE(pattern); i++) {
-		if (i % 2)
-			pattern[i] = 0x55;
-		else
-			pattern[i] = 0xAA;
-	}
-
-	ret = test_pattern(chip, pattern, ARRAY_SIZE(pattern), sleep_us);
-	if (ret)
-		return ret;
-
-	/* Check for stuck bits with 0 pattern */
-	memset(pattern, 0x0, ARRAY_SIZE(pattern));
-	ret = test_pattern(chip, pattern, ARRAY_SIZE(pattern), sleep_us);
-	if (ret)
-		return ret;
-
-	/* Test with 0xA5 pattern */
-	memset(pattern, 0xA5, ARRAY_SIZE(pattern));
-	ret = test_pattern(chip, pattern, ARRAY_SIZE(pattern), sleep_us);
-	if (ret)
-		return ret;
-
-	/* Test with 0x5A pattern */
-	memset(pattern, 0x5A, ARRAY_SIZE(pattern));
-	ret = test_pattern(chip, pattern, ARRAY_SIZE(pattern), sleep_us);
-	if (ret)
-		return ret;
-
-	/* Check for open bits with 1 pattern */
-	memset(pattern, 0xFF, ARRAY_SIZE(pattern));
-	ret = test_pattern(chip, pattern, ARRAY_SIZE(pattern), sleep_us);
-	if (ret)
-		return ret;
-
-	return 0;
-}
-
 static ssize_t lp5523_selftest(struct device *dev,
 			       struct device_attribute *attr,
 			       char *buf)
@@ -856,9 +592,7 @@ static ssize_t lp5523_selftest(struct device *dev,
 	struct lp55xx_chip *chip = led->chip;
 	struct lp55xx_platform_data *pdata = chip->pdata;
 	int i, ret, pos = 0;
-	u8 status, adc;
-	u8 config_mode = 0;
-	u8 v_in = 0;
+	u8 status, adc, vdd;
 
 	mutex_lock(&chip->lock);
 
@@ -868,17 +602,9 @@ static ssize_t lp5523_selftest(struct device *dev,
 
 	/* Check that ext clock is really in use if requested */
 	if (pdata->clock_mode == LP55XX_CLOCK_EXT) {
-		if ((status & LP5523_EXT_CLK_USED) == 0)
+		if  ((status & LP5523_EXT_CLK_USED) == 0)
 			goto fail;
 	}
-
-	/* By default, the charge pump is in Auto mode. For tests,
-	 * force to 1.5X mode */
-	ret = lp55xx_read(chip, LP5523_REG_CONFIG, &config_mode);
-	if (ret < 0)
-		goto fail;
-	lp55xx_write(chip, LP5523_REG_CONFIG,
-			(config_mode & ~LP5523_CP_AUTO) | LP5523_CP_1_5);
 
 	/* Measure VDD (i.e. VBAT) first (channel 16 corresponds to VDD) */
 	lp55xx_write(chip, LP5523_REG_LED_TEST_CTRL, LP5523_EN_LEDTEST | 16);
@@ -887,180 +613,205 @@ static ssize_t lp5523_selftest(struct device *dev,
 	if (ret < 0)
 		goto fail;
 
-	for (i = 0; i < chip->num_leds && !ret; i++) {
+	if (!(status & LP5523_LEDTEST_DONE))
+		usleep_range(3000, 6000); /* Was not ready. Wait little bit */
+
+	ret = lp55xx_read(chip, LP5523_REG_LED_TEST_ADC, &vdd);
+	if (ret < 0)
+		goto fail;
+
+	vdd--;	/* There may be some fluctuation in measurement */
+
+	for (i = 0; i < LP5523_MAX_LEDS; i++) {
 		/* Skip non-existing channels */
 		if (pdata->led_config[i].led_current == 0)
 			continue;
 
 		/* Set default current */
-		lp55xx_write(chip, LP5523_REG_LED_CURRENT_BASE + i, led->led_current);
+		lp55xx_write(chip, LP5523_REG_LED_CURRENT_BASE + i,
+			pdata->led_config[i].led_current);
 
-		lp5523_pwm_write(&led[i], 0xff);
-		/* let current stabilize 3 - 4ms before measurements start */
-		usleep_range(3000, 4000);
-		lp55xx_write(chip, LP5523_REG_LED_TEST_CTRL, LP5523_EN_LEDTEST | i);
+		lp55xx_write(chip, LP5523_REG_LED_PWM_BASE + i, 0xff);
+		/* let current stabilize 2 - 4ms before measurements start */
+		usleep_range(2000, 4000);
+		lp55xx_write(chip, LP5523_REG_LED_TEST_CTRL,
+			     LP5523_EN_LEDTEST | i);
+		/* ADC conversion time is 2.7 ms typically */
+		usleep_range(3000, 6000);
+		ret = lp55xx_read(chip, LP5523_REG_STATUS, &status);
+		if (ret < 0)
+			goto fail;
 
-		if (lp5523_wait_test_complete(chip))
-			goto restore_config;
+		if (!(status & LP5523_LEDTEST_DONE))
+			usleep_range(3000, 6000);/* Was not ready. Wait. */
 
-		ret |= lp55xx_read(chip, LP5523_REG_LED_TEST_ADC, &adc);
+		ret = lp55xx_read(chip, LP5523_REG_LED_TEST_ADC, &adc);
+		if (ret < 0)
+			goto fail;
 
-		/* Unconditionally print out measurement results */
-		if (i == 6 || i == 7 || i == 8) {
-			/* LEDs 6, 7 & 8 (Red) use Vdd for Vin */
-			/* Measure VDD (i.e. VBAT) first (channel 16 corresponds to VDD) */
-			lp55xx_write(chip, LP5523_REG_LED_TEST_CTRL,
-					LP5523_EN_LEDTEST | LP5523_LEDTEST_VDD);
-			if (lp5523_wait_test_complete(chip))
-				goto restore_config;
+		if (adc >= vdd || adc < LP5523_ADC_SHORTCIRC_LIM)
+			pos += sprintf(buf + pos, "LED %d FAIL\n", i);
 
-			ret |= lp55xx_read(chip, LP5523_REG_LED_TEST_ADC, &v_in);
-		} else {
-			/* All others use Vout of the charge pump */
-			/* Measure VOUT */
-			lp55xx_write(chip, LP5523_REG_LED_TEST_CTRL,
-					LP5523_EN_LEDTEST | LP5523_LEDTEST_VOUT);
-			if (lp5523_wait_test_complete(chip))
-				goto restore_config;
+		lp55xx_write(chip, LP5523_REG_LED_PWM_BASE + i, 0x00);
 
-			ret |= lp55xx_read(chip, LP5523_REG_LED_TEST_ADC, &v_in);
-		}
-
-		pos += sprintf(buf + pos, "LED=%d V-IN=%d V-ADC=%d\n", i + 1,
-				TO_MILLI_VOLTS(v_in), TO_MILLI_VOLTS(adc));
-		adc = 0;
-
-		lp5523_pwm_write(&led[i], 0x00);
-
+		/* Restore current */
+		lp55xx_write(chip, LP5523_REG_LED_CURRENT_BASE + i,
+			led->led_current);
 		led++;
 	}
-	/* Perform SRAM Self Test */
-	ret = sram_selftest(chip);
-	if (ret)
-		pos += sprintf(buf + pos, "SRAM Test=FAIL\n");
-	else
-		pos += sprintf(buf + pos, "SRAM Test=PASS\n");
-
-restore_config:
-	/* Restore the default mode */
-	lp55xx_write(chip, LP5523_REG_CONFIG, config_mode);
-
+	if (pos == 0)
+		pos = sprintf(buf, "OK\n");
+	goto release_lock;
 fail:
-	if (pos == 0 || ret)
-		pos = sprintf(buf, "Failed to run test - %d %d\n", pos, ret);
+	pos = sprintf(buf, "FAIL\n");
 
+release_lock:
 	mutex_unlock(&chip->lock);
 
 	return pos;
 }
 
-static ssize_t lp5523_showGPO(struct device *dev,
-							  struct device_attribute *attr,
-							  char *buf){
-	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
-	struct lp55xx_chip *chip = led->chip;
-	u8 reg;
-
-	mutex_lock(&chip->lock);
-	lp55xx_read(chip, LP5523_REG_INTGPO, &reg);
-	mutex_unlock(&chip->lock);
-	reg &= LP5523_GPO_HIGH;
-	return scnprintf(buf, PAGE_SIZE, "%d\n", reg);
+#define show_fader(nr)						\
+static ssize_t show_master_fader##nr(struct device *dev,	\
+			    struct device_attribute *attr,	\
+			    char *buf)				\
+{								\
+	return show_master_fader(dev, attr, buf, nr);		\
 }
 
-static ssize_t lp5523_storeGPO(struct device *dev,
-							   struct device_attribute *attr,
-							   char *buf, size_t len){
+#define store_fader(nr)						\
+static ssize_t store_master_fader##nr(struct device *dev,	\
+			     struct device_attribute *attr,	\
+			     const char *buf, size_t len)	\
+{								\
+	return store_master_fader(dev, attr, buf, len, nr);	\
+}
+
+static ssize_t show_master_fader(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf, int nr)
+{
 	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
 	struct lp55xx_chip *chip = led->chip;
-	u8 reg;
-	int ret = -EINVAL;
+	int ret;
+	u8 val;
 
-	reg = (buf[0] == '0') ? LP5523_GPO_LOW : LP5523_GPO_HIGH;
 	mutex_lock(&chip->lock);
-	ret = lp55xx_write(chip, LP5523_REG_INTGPO, LP5523_INT_EN_GPO | reg);
+	ret = lp55xx_read(chip, LP5523_REG_MASTER_FADER_BASE + nr - 1, &val);
+	mutex_unlock(&chip->lock);
 
-	if (ret < 0)
-		goto writefail;
+	if (ret == 0)
+		ret = sprintf(buf, "%u\n", val);
 
-	ret = len;
-writefail:
+	return ret;
+}
+show_fader(1)
+show_fader(2)
+show_fader(3)
+
+static ssize_t store_master_fader(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t len, int nr)
+{
+	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
+	struct lp55xx_chip *chip = led->chip;
+	int ret;
+	unsigned long val;
+
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	if (val > 0xff)
+		return -EINVAL;
+
+	mutex_lock(&chip->lock);
+	ret = lp55xx_write(chip, LP5523_REG_MASTER_FADER_BASE + nr - 1,
+			   (u8)val);
+	mutex_unlock(&chip->lock);
+
+	if (ret == 0)
+		ret = len;
+
+	return ret;
+}
+store_fader(1)
+store_fader(2)
+store_fader(3)
+
+static ssize_t show_master_fader_leds(struct device *dev,
+				      struct device_attribute *attr,
+				      char *buf)
+{
+	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
+	struct lp55xx_chip *chip = led->chip;
+	int i, ret, pos = 0;
+	u8 val;
+
+	mutex_lock(&chip->lock);
+
+	for (i = 0; i < LP5523_MAX_LEDS; i++) {
+		ret = lp55xx_read(chip, LP5523_REG_LED_CTRL_BASE + i, &val);
+		if (ret)
+			goto leave;
+
+		val = (val & LP5523_FADER_MAPPING_MASK)
+			>> LP5523_FADER_MAPPING_SHIFT;
+		if (val > 3) {
+			ret = -EINVAL;
+			goto leave;
+		}
+		buf[pos++] = val + '0';
+	}
+	buf[pos++] = '\n';
+	ret = pos;
+leave:
 	mutex_unlock(&chip->lock);
 	return ret;
 }
 
-static ssize_t show_all_leds(struct device *dev,
-				struct device_attribute *attr,
-				char *buf)
+static ssize_t store_master_fader_leds(struct device *dev,
+				       struct device_attribute *attr,
+				       const char *buf, size_t len)
 {
 	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
 	struct lp55xx_chip *chip = led->chip;
-	int i;
+	int i, n, ret;
+	u8 val;
+
+	n = min_t(int, len, LP5523_MAX_LEDS);
 
 	mutex_lock(&chip->lock);
 
-	for (i = 0; i < LP5523_MAX_LEDS; ++i) {
-		lp5523_pwm_read(&led[i], NULL);
+	for (i = 0; i < n; i++) {
+		if (buf[i] >= '0' && buf[i] <= '3') {
+			val = (buf[i] - '0') << LP5523_FADER_MAPPING_SHIFT;
+			ret = lp55xx_update_bits(chip,
+						 LP5523_REG_LED_CTRL_BASE + i,
+						 LP5523_FADER_MAPPING_MASK,
+						 val);
+			if (ret)
+				goto leave;
+		} else {
+			ret = -EINVAL;
+			goto leave;
+		}
 	}
-
+	ret = len;
+leave:
 	mutex_unlock(&chip->lock);
-
-	return scnprintf(buf, PAGE_SIZE,
-			"%hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu\n",
-			led[0].brightness,
-			led[1].brightness,
-			led[2].brightness,
-			led[3].brightness,
-			led[4].brightness,
-			led[5].brightness,
-			led[6].brightness,
-			led[7].brightness,
-			led[8].brightness);
+	return ret;
 }
 
-static ssize_t store_all_leds(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t len)
+static int lp5523_led_brightness(struct lp55xx_led *led)
 {
-	struct lp55xx_led *led = i2c_get_clientdata(to_i2c_client(dev));
 	struct lp55xx_chip *chip = led->chip;
-	u8 vals[LP5523_MAX_LEDS];
-	int ret = 0;
-	int i;
-
-	ret = sscanf(buf, "%hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu",
-			&vals[0],
-			&vals[1],
-			&vals[2],
-			&vals[3],
-			&vals[4],
-			&vals[5],
-			&vals[6],
-			&vals[7],
-			&vals[8]);
-	if (ret != LP5523_MAX_LEDS)
-		return -EINVAL;
+	int ret;
 
 	mutex_lock(&chip->lock);
-
-	for (i = 0; i < LP5523_MAX_LEDS; ++i) {
-		lp5523_pwm_write(&led[i], vals[i]);
-	}
-
+	ret = lp55xx_write(chip, LP5523_REG_LED_PWM_BASE + led->chan_nr,
+		     led->brightness);
 	mutex_unlock(&chip->lock);
-
-	return len;
-}
-
-static void lp5523_led_brightness_work(struct work_struct *work)
-{
-	struct lp55xx_led *led = container_of(work, struct lp55xx_led,
-					      brightness_work);
-	struct lp55xx_chip *chip = led->chip;
-
-	mutex_lock(&chip->lock);
-	lp5523_pwm_write(led, led->brightness_new);
-	mutex_unlock(&chip->lock);
+	return ret;
 }
 
 static LP55XX_DEV_ATTR_RW(engine1_mode, show_engine1_mode, store_engine1_mode);
@@ -1072,15 +823,15 @@ static LP55XX_DEV_ATTR_RW(engine3_leds, show_engine3_leds, store_engine3_leds);
 static LP55XX_DEV_ATTR_WO(engine1_load, store_engine1_load);
 static LP55XX_DEV_ATTR_WO(engine2_load, store_engine2_load);
 static LP55XX_DEV_ATTR_WO(engine3_load, store_engine3_load);
-static LP55XX_DEV_ATTR_RW(
-	engine1_prog_start, show_engine1_prog_start, store_engine1_prog_start);
-static LP55XX_DEV_ATTR_RW(
-	engine2_prog_start, show_engine2_prog_start, store_engine2_prog_start);
-static LP55XX_DEV_ATTR_RW(
-	engine3_prog_start, show_engine3_prog_start, store_engine3_prog_start);
 static LP55XX_DEV_ATTR_RO(selftest, lp5523_selftest);
-static LP55XX_DEV_ATTR_RW(gpo, lp5523_showGPO, lp5523_storeGPO);
-static LP55XX_DEV_ATTR_RW(all_leds, show_all_leds, store_all_leds);
+static LP55XX_DEV_ATTR_RW(master_fader1, show_master_fader1,
+			  store_master_fader1);
+static LP55XX_DEV_ATTR_RW(master_fader2, show_master_fader2,
+			  store_master_fader2);
+static LP55XX_DEV_ATTR_RW(master_fader3, show_master_fader3,
+			  store_master_fader3);
+static LP55XX_DEV_ATTR_RW(master_fader_leds, show_master_fader_leds,
+			  store_master_fader_leds);
 
 static struct attribute *lp5523_attributes[] = {
 	&dev_attr_engine1_mode.attr,
@@ -1089,19 +840,14 @@ static struct attribute *lp5523_attributes[] = {
 	&dev_attr_engine1_load.attr,
 	&dev_attr_engine2_load.attr,
 	&dev_attr_engine3_load.attr,
-	&dev_attr_engine1_prog_start.attr,
-	&dev_attr_engine2_prog_start.attr,
-	&dev_attr_engine3_prog_start.attr,
 	&dev_attr_engine1_leds.attr,
 	&dev_attr_engine2_leds.attr,
 	&dev_attr_engine3_leds.attr,
 	&dev_attr_selftest.attr,
-	&dev_attr_all_leds.attr,
-	NULL,
-};
-
-static struct attribute *gpo_attributes[] = {
-	&dev_attr_gpo.attr,
+	&dev_attr_master_fader1.attr,
+	&dev_attr_master_fader2.attr,
+	&dev_attr_master_fader3.attr,
+	&dev_attr_master_fader_leds.attr,
 	NULL,
 };
 
@@ -1121,11 +867,10 @@ static struct lp55xx_device_config lp5523_cfg = {
 	},
 	.max_channel  = LP5523_MAX_LEDS,
 	.post_init_device   = lp5523_post_init_device,
-	.brightness_work_fn = lp5523_led_brightness_work,
+	.brightness_fn      = lp5523_led_brightness,
 	.set_led_current    = lp5523_set_led_current,
 	.firmware_cb        = lp5523_firmware_loaded,
 	.run_engine         = lp5523_run_engine,
-	.is_engine_active   = lp5523_is_engine_active,
 	.dev_attr_group     = &lp5523_group,
 };
 
@@ -1135,20 +880,19 @@ static int lp5523_probe(struct i2c_client *client,
 	int ret;
 	struct lp55xx_chip *chip;
 	struct lp55xx_led *led;
-	struct lp55xx_platform_data *pdata;
+	struct lp55xx_platform_data *pdata = dev_get_platdata(&client->dev);
 	struct device_node *np = client->dev.of_node;
 
-	if (!dev_get_platdata(&client->dev)) {
+	if (!pdata) {
 		if (np) {
-			ret = lp55xx_of_populate_pdata(&client->dev, np);
-			if (ret < 0)
-				return ret;
+			pdata = lp55xx_of_populate_pdata(&client->dev, np);
+			if (IS_ERR(pdata))
+				return PTR_ERR(pdata);
 		} else {
 			dev_err(&client->dev, "no platform data\n");
 			return -EINVAL;
 		}
 	}
-	pdata = dev_get_platdata(&client->dev);
 
 	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
@@ -1162,7 +906,6 @@ static int lp5523_probe(struct i2c_client *client,
 	chip->cl = client;
 	chip->pdata = pdata;
 	chip->cfg = &lp5523_cfg;
-	chip->cache_inv = 0xFF; /* Invalidate brightness cache */
 
 	mutex_init(&chip->lock);
 
@@ -1182,10 +925,6 @@ static int lp5523_probe(struct i2c_client *client,
 	if (ret) {
 		dev_err(&client->dev, "registering sysfs failed\n");
 		goto err_register_sysfs;
-	}
-
-	if (pdata->gpo_enable) {
-		sysfs_create_files(&client->dev.kobj, &gpo_attributes);
 	}
 
 	return 0;

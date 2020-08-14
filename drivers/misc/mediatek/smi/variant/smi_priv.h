@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __SMI_PRIV_H__
 #define __SMI_PRIV_H__
 
@@ -12,6 +25,7 @@ enum mtk_platform {
 	MTK_PLAT_MT8173,
 	MTK_PLAT_MT8163,
 	MTK_PLAT_MT8127,
+	MTK_PLAT_MT8167,
 	MTK_PLAT_MAX
 };
 
@@ -25,12 +39,14 @@ struct mtk_smi_data {
 	atomic_t larbref[SMI_LARB_NR_MAX];
 
 	/*record the larb port register, please use the max value*/
-	unsigned short int larb_port_backup[SMI_LARB_PORT_NR_MAX * SMI_LARB_NR_MAX];
+	unsigned short int
+		larb_port_backup[SMI_LARB_PORT_NR_MAX * SMI_LARB_NR_MAX];
 };
 
 struct mtk_smi_priv {
 	enum mtk_platform plat;
-	unsigned int larb_port_num[SMI_LARB_NR_MAX]; /* the port number in each larb */
+	/* the port number in each larb */
+	unsigned int larb_port_num[SMI_LARB_NR_MAX];
 	unsigned char larb_vc_setting[SMI_LARB_NR_MAX];
 	void (*init_setting)(struct mtk_smi_data *, bool *,
 				u32 *, unsigned int);
@@ -42,7 +58,6 @@ struct mtk_smi_priv {
 };
 
 extern const struct mtk_smi_priv smi_mt8173_priv;
-extern const struct mtk_smi_priv smi_mt8127_priv;
 extern const struct mtk_smi_priv smi_mt8163_priv;
 
 #endif

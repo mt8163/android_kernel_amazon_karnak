@@ -5,7 +5,6 @@
  *
  */
 #include <linux/seq_file.h>
-#include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/ftrace.h>
@@ -15,7 +14,6 @@
 #include <linux/ctype.h>
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <linux/fs.h>
 
 #include "trace.h"
 
@@ -185,6 +183,12 @@ static inline void format_mod_start(void) { }
 static inline void format_mod_stop(void) { }
 #endif /* CONFIG_MODULES */
 
+static bool __read_mostly trace_printk_enabled = true;
+
+void trace_printk_control(bool enabled)
+{
+	trace_printk_enabled = enabled;
+}
 
 __initdata_or_module static
 struct notifier_block module_trace_bprintk_format_nb = {
@@ -199,7 +203,7 @@ int __trace_bprintk(unsigned long ip, const char *fmt, ...)
 	if (unlikely(!fmt))
 		return 0;
 
-	if (!(trace_flags & TRACE_ITER_PRINTK))
+	if (!trace_printk_enabled)
 		return 0;
 
 	va_start(ap, fmt);
@@ -214,7 +218,7 @@ int __ftrace_vbprintk(unsigned long ip, const char *fmt, va_list ap)
 	if (unlikely(!fmt))
 		return 0;
 
-	if (!(trace_flags & TRACE_ITER_PRINTK))
+	if (!trace_printk_enabled)
 		return 0;
 
 	return trace_vbprintk(ip, fmt, ap);
@@ -226,7 +230,7 @@ int __trace_printk(unsigned long ip, const char *fmt, ...)
 	int ret;
 	va_list ap;
 
-	if (!(trace_flags & TRACE_ITER_PRINTK))
+	if (!trace_printk_enabled)
 		return 0;
 
 	va_start(ap, fmt);
@@ -238,7 +242,7 @@ EXPORT_SYMBOL_GPL(__trace_printk);
 
 int __ftrace_vprintk(unsigned long ip, const char *fmt, va_list ap)
 {
-	if (!(trace_flags & TRACE_ITER_PRINTK))
+	if (!trace_printk_enabled)
 		return 0;
 
 	return trace_vprintk(ip, fmt, ap);
@@ -274,6 +278,7 @@ static const char **find_next(void *v, loff_t *pos)
 	if (*pos < last_index + start_index)
 		return __start___tracepoint_str + (*pos - last_index);
 
+	start_index += last_index;
 	return find_next_mod_format(start_index, v, fmt, pos);
 }
 
@@ -299,7 +304,7 @@ static int t_show(struct seq_file *m, void *v)
 	if (!*fmt)
 		return 0;
 
-	seq_printf(m, "0x%lx : \"", 0L);
+	seq_printf(m, "0x%lx : \"", *(unsigned long *)fmt);
 
 	/*
 	 * Tabs and new lines need to be converted.
@@ -313,7 +318,7 @@ static int t_show(struct seq_file *m, void *v)
 			seq_puts(m, "\\t");
 			break;
 		case '\\':
-			seq_puts(m, "\\");
+			seq_putc(m, '\\');
 			break;
 		case '"':
 			seq_puts(m, "\\\"");
@@ -357,7 +362,7 @@ static __init int init_trace_printk_function_export(void)
 	struct dentry *d_tracer;
 
 	d_tracer = tracing_init_dentry();
-	if (!d_tracer)
+	if (IS_ERR(d_tracer))
 		return 0;
 
 	trace_create_file("printk_formats", 0444, d_tracer,

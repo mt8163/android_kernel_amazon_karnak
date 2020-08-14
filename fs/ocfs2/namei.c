@@ -79,7 +79,8 @@ static int ocfs2_prepare_orphan_dir(struct ocfs2_super *osb,
 				    struct inode **ret_orphan_dir,
 				    u64 blkno,
 				    char *name,
-				    struct ocfs2_dir_lookup_result *lookup);
+				    struct ocfs2_dir_lookup_result *lookup,
+				    bool dio);
 
 static int ocfs2_orphan_add(struct ocfs2_super *osb,
 			    handle_t *handle,
@@ -87,7 +88,8 @@ static int ocfs2_orphan_add(struct ocfs2_super *osb,
 			    struct buffer_head *fe_bh,
 			    char *name,
 			    struct ocfs2_dir_lookup_result *lookup,
-			    struct inode *orphan_dir_inode);
+			    struct inode *orphan_dir_inode,
+			    bool dio);
 
 static int ocfs2_create_symlink_data(struct ocfs2_super *osb,
 				     handle_t *handle,
@@ -196,11 +198,12 @@ bail:
 static struct inode *ocfs2_get_init_inode(struct inode *dir, umode_t mode)
 {
 	struct inode *inode;
+	int status;
 
 	inode = new_inode(dir->i_sb);
 	if (!inode) {
 		mlog(ML_ERROR, "new_inode failed!\n");
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	/* populate as many fields early on as possible - many of
@@ -209,7 +212,10 @@ static struct inode *ocfs2_get_init_inode(struct inode *dir, umode_t mode)
 	if (S_ISDIR(mode))
 		set_nlink(inode, 2);
 	inode_init_owner(inode, dir, mode);
-	dquot_initialize(inode);
+	status = dquot_initialize(inode);
+	if (status)
+		return ERR_PTR(status);
+
 	return inode;
 }
 
@@ -259,7 +265,11 @@ static int ocfs2_mknod(struct inode *dir,
 			  (unsigned long long)OCFS2_I(dir)->ip_blkno,
 			  (unsigned long)dev, mode);
 
-	dquot_initialize(dir);
+	status = dquot_initialize(dir);
+	if (status) {
+		mlog_errno(status);
+		return status;
+	}
 
 	/* get our super block */
 	osb = OCFS2_SB(dir->i_sb);
@@ -306,8 +316,9 @@ static int ocfs2_mknod(struct inode *dir,
 	}
 
 	inode = ocfs2_get_init_inode(dir, mode);
-	if (!inode) {
-		status = -ENOMEM;
+	if (IS_ERR(inode)) {
+		status = PTR_ERR(inode);
+		inode = NULL;
 		mlog_errno(status);
 		goto leave;
 	}
@@ -625,9 +636,18 @@ static int ocfs2_mknod_locked(struct ocfs2_super *osb,
 		return status;
 	}
 
-	return __ocfs2_mknod_locked(dir, inode, dev, new_fe_bh,
+	status = __ocfs2_mknod_locked(dir, inode, dev, new_fe_bh,
 				    parent_fe_bh, handle, inode_ac,
 				    fe_blkno, suballoc_loc, suballoc_bit);
+	if (status < 0) {
+		u64 bg_blkno = ocfs2_which_suballoc_group(fe_blkno, suballoc_bit);
+		int tmp = ocfs2_free_suballoc_bits(handle, inode_ac->ac_inode,
+				inode_ac->ac_bh, suballoc_bit, bg_blkno, 1);
+		if (tmp)
+			mlog_errno(tmp);
+	}
+
+	return status;
 }
 
 static int ocfs2_mkdir(struct inode *dir,
@@ -666,8 +686,8 @@ static int ocfs2_link(struct dentry *old_dentry,
 		      struct dentry *dentry)
 {
 	handle_t *handle;
-	struct inode *inode = old_dentry->d_inode;
-	struct inode *old_dir = old_dentry->d_parent->d_inode;
+	struct inode *inode = d_inode(old_dentry);
+	struct inode *old_dir = d_inode(old_dentry->d_parent);
 	int err;
 	struct buffer_head *fe_bh = NULL;
 	struct buffer_head *old_dir_bh = NULL;
@@ -685,7 +705,11 @@ static int ocfs2_link(struct dentry *old_dentry,
 	if (S_ISDIR(inode->i_mode))
 		return -EPERM;
 
-	dquot_initialize(dir);
+	err = dquot_initialize(dir);
+	if (err) {
+		mlog_errno(err);
+		return err;
+	}
 
 	err = ocfs2_double_lock(osb, &old_dir_bh, old_dir,
 			&parent_fe_bh, dir, 0);
@@ -774,7 +798,7 @@ static int ocfs2_link(struct dentry *old_dentry,
 	}
 
 	inc_nlink(inode);
-	inode->i_ctime = CURRENT_TIME;
+	inode->i_ctime = current_time(inode);
 	ocfs2_set_links_count(fe, inode->i_nlink);
 	fe->i_ctime = cpu_to_le64(inode->i_ctime.tv_sec);
 	fe->i_ctime_nsec = cpu_to_le32(inode->i_ctime.tv_nsec);
@@ -856,7 +880,7 @@ static int ocfs2_unlink(struct inode *dir,
 	int status;
 	int child_locked = 0;
 	bool is_unlinkable = false;
-	struct inode *inode = dentry->d_inode;
+	struct inode *inode = d_inode(dentry);
 	struct inode *orphan_dir = NULL;
 	struct ocfs2_super *osb = OCFS2_SB(dir->i_sb);
 	u64 blkno;
@@ -873,9 +897,13 @@ static int ocfs2_unlink(struct inode *dir,
 			   (unsigned long long)OCFS2_I(dir)->ip_blkno,
 			   (unsigned long long)OCFS2_I(inode)->ip_blkno);
 
-	dquot_initialize(dir);
+	status = dquot_initialize(dir);
+	if (status) {
+		mlog_errno(status);
+		return status;
+	}
 
-	BUG_ON(dentry->d_parent->d_inode != dir);
+	BUG_ON(d_inode(dentry->d_parent) != dir);
 
 	if (inode == osb->root_inode)
 		return -EPERM;
@@ -933,7 +961,8 @@ static int ocfs2_unlink(struct inode *dir,
 	if (ocfs2_inode_is_unlinkable(inode)) {
 		status = ocfs2_prepare_orphan_dir(osb, &orphan_dir,
 						  OCFS2_I(inode)->ip_blkno,
-						  orphan_name, &orphan_insert);
+						  orphan_name, &orphan_insert,
+						  false);
 		if (status < 0) {
 			mlog_errno(status);
 			goto leave;
@@ -971,7 +1000,7 @@ static int ocfs2_unlink(struct inode *dir,
 	ocfs2_set_links_count(fe, inode->i_nlink);
 	ocfs2_journal_dirty(handle, fe_bh);
 
-	dir->i_ctime = dir->i_mtime = CURRENT_TIME;
+	dir->i_ctime = dir->i_mtime = current_time(dir);
 	if (S_ISDIR(inode->i_mode))
 		drop_nlink(dir);
 
@@ -985,7 +1014,7 @@ static int ocfs2_unlink(struct inode *dir,
 
 	if (is_unlinkable) {
 		status = ocfs2_orphan_add(osb, handle, inode, fe_bh,
-				orphan_name, &orphan_insert, orphan_dir);
+				orphan_name, &orphan_insert, orphan_dir, false);
 		if (status < 0)
 			mlog_errno(status);
 	}
@@ -994,17 +1023,17 @@ leave:
 	if (handle)
 		ocfs2_commit_trans(osb, handle);
 
+	if (orphan_dir) {
+		/* This was locked for us in ocfs2_prepare_orphan_dir() */
+		ocfs2_inode_unlock(orphan_dir, 1);
+		inode_unlock(orphan_dir);
+		iput(orphan_dir);
+	}
+
 	if (child_locked)
 		ocfs2_inode_unlock(inode, 1);
 
 	ocfs2_inode_unlock(dir, 1);
-
-	if (orphan_dir) {
-		/* This was locked for us in ocfs2_prepare_orphan_dir() */
-		ocfs2_inode_unlock(orphan_dir, 1);
-		mutex_unlock(&orphan_dir->i_mutex);
-		iput(orphan_dir);
-	}
 
 	brelse(fe_bh);
 	brelse(parent_node_bh);
@@ -1092,8 +1121,6 @@ static int ocfs2_double_lock(struct ocfs2_super *osb,
 	int inode1_is_ancestor, inode2_is_ancestor;
 	struct ocfs2_inode_info *oi1 = OCFS2_I(inode1);
 	struct ocfs2_inode_info *oi2 = OCFS2_I(inode2);
-	struct buffer_head **tmpbh;
-	struct inode *tmpinode;
 
 	trace_ocfs2_double_lock((unsigned long long)oi1->ip_blkno,
 				(unsigned long long)oi2->ip_blkno);
@@ -1124,13 +1151,8 @@ static int ocfs2_double_lock(struct ocfs2_super *osb,
 				(oi1->ip_blkno < oi2->ip_blkno &&
 				inode2_is_ancestor == 0)) {
 			/* switch id1 and id2 around */
-			tmpbh = bh2;
-			bh2 = bh1;
-			bh1 = tmpbh;
-
-			tmpinode = inode2;
-			inode2 = inode1;
-			inode1 = tmpinode;
+			swap(bh2, bh1);
+			swap(inode2, inode1);
 		}
 		/* lock id2 */
 		status = ocfs2_inode_lock_nested(inode2, bh2, 1,
@@ -1181,12 +1203,13 @@ static void ocfs2_double_unlock(struct inode *inode1, struct inode *inode2)
 static int ocfs2_rename(struct inode *old_dir,
 			struct dentry *old_dentry,
 			struct inode *new_dir,
-			struct dentry *new_dentry)
+			struct dentry *new_dentry,
+			unsigned int flags)
 {
 	int status = 0, rename_lock = 0, parents_locked = 0, target_exists = 0;
 	int old_child_locked = 0, new_child_locked = 0, update_dot_dot = 0;
-	struct inode *old_inode = old_dentry->d_inode;
-	struct inode *new_inode = new_dentry->d_inode;
+	struct inode *old_inode = d_inode(old_dentry);
+	struct inode *new_inode = d_inode(new_dentry);
 	struct inode *orphan_dir = NULL;
 	struct ocfs2_dinode *newfe = NULL;
 	char orphan_name[OCFS2_ORPHAN_NAMELEN + 1];
@@ -1206,6 +1229,9 @@ static int ocfs2_rename(struct inode *old_dir,
 	struct ocfs2_dir_lookup_result target_insert = { NULL, };
 	bool should_add_orphan = false;
 
+	if (flags)
+		return -EINVAL;
+
 	/* At some point it might be nice to break this function up a
 	 * bit. */
 
@@ -1213,8 +1239,16 @@ static int ocfs2_rename(struct inode *old_dir,
 			   old_dentry->d_name.len, old_dentry->d_name.name,
 			   new_dentry->d_name.len, new_dentry->d_name.name);
 
-	dquot_initialize(old_dir);
-	dquot_initialize(new_dir);
+	status = dquot_initialize(old_dir);
+	if (status) {
+		mlog_errno(status);
+		goto bail;
+	}
+	status = dquot_initialize(new_dir);
+	if (status) {
+		mlog_errno(status);
+		goto bail;
+	}
 
 	osb = OCFS2_SB(old_dir->i_sb);
 
@@ -1266,6 +1300,11 @@ static int ocfs2_rename(struct inode *old_dir,
 		goto bail;
 	}
 	parents_locked = 1;
+
+	if (!new_dir->i_nlink) {
+		status = -EACCES;
+		goto bail;
+	}
 
 	/* make sure both dirs have bhs
 	 * get an extra ref on old_dir_bh if old==new */
@@ -1421,7 +1460,8 @@ static int ocfs2_rename(struct inode *old_dir,
 		if (S_ISDIR(new_inode->i_mode) || (new_inode->i_nlink == 1)) {
 			status = ocfs2_prepare_orphan_dir(osb, &orphan_dir,
 						OCFS2_I(new_inode)->ip_blkno,
-						orphan_name, &orphan_insert);
+						orphan_name, &orphan_insert,
+						false);
 			if (status < 0) {
 				mlog_errno(status);
 				goto bail;
@@ -1429,7 +1469,7 @@ static int ocfs2_rename(struct inode *old_dir,
 			should_add_orphan = true;
 		}
 	} else {
-		BUG_ON(new_dentry->d_parent->d_inode != new_dir);
+		BUG_ON(d_inode(new_dentry->d_parent) != new_dir);
 
 		status = ocfs2_check_dir_for_entry(new_dir,
 						   new_dentry->d_name.name,
@@ -1488,7 +1528,7 @@ static int ocfs2_rename(struct inode *old_dir,
 		if (should_add_orphan) {
 			status = ocfs2_orphan_add(osb, handle, new_inode,
 					newfe_bh, orphan_name,
-					&orphan_insert, orphan_dir);
+					&orphan_insert, orphan_dir, false);
 			if (status < 0) {
 				mlog_errno(status);
 				goto bail;
@@ -1501,7 +1541,7 @@ static int ocfs2_rename(struct inode *old_dir,
 					 new_dir_bh, &target_insert);
 	}
 
-	old_inode->i_ctime = CURRENT_TIME;
+	old_inode->i_ctime = current_time(old_inode);
 	mark_inode_dirty(old_inode);
 
 	status = ocfs2_journal_access_di(handle, INODE_CACHE(old_inode),
@@ -1526,20 +1566,33 @@ static int ocfs2_rename(struct inode *old_dir,
 	status = ocfs2_find_entry(old_dentry->d_name.name,
 				  old_dentry->d_name.len, old_dir,
 				  &old_entry_lookup);
-	if (status)
+	if (status) {
+		if (!is_journal_aborted(osb->journal->j_journal)) {
+			ocfs2_error(osb->sb, "new entry %.*s is added, but old entry %.*s "
+					"is not deleted.",
+					new_dentry->d_name.len, new_dentry->d_name.name,
+					old_dentry->d_name.len, old_dentry->d_name.name);
+		}
 		goto bail;
+	}
 
 	status = ocfs2_delete_entry(handle, old_dir, &old_entry_lookup);
 	if (status < 0) {
 		mlog_errno(status);
+		if (!is_journal_aborted(osb->journal->j_journal)) {
+			ocfs2_error(osb->sb, "new entry %.*s is added, but old entry %.*s "
+					"is not deleted.",
+					new_dentry->d_name.len, new_dentry->d_name.name,
+					old_dentry->d_name.len, old_dentry->d_name.name);
+		}
 		goto bail;
 	}
 
 	if (new_inode) {
 		drop_nlink(new_inode);
-		new_inode->i_ctime = CURRENT_TIME;
+		new_inode->i_ctime = current_time(new_inode);
 	}
-	old_dir->i_ctime = old_dir->i_mtime = CURRENT_TIME;
+	old_dir->i_ctime = old_dir->i_mtime = current_time(old_dir);
 
 	if (update_dot_dot) {
 		status = ocfs2_update_entry(old_inode, handle,
@@ -1590,33 +1643,32 @@ static int ocfs2_rename(struct inode *old_dir,
 	ocfs2_dentry_move(old_dentry, new_dentry, old_dir, new_dir);
 	status = 0;
 bail:
-	if (rename_lock)
-		ocfs2_rename_unlock(osb);
-
 	if (handle)
 		ocfs2_commit_trans(osb, handle);
-
-	if (parents_locked)
-		ocfs2_double_unlock(old_dir, new_dir);
-
-	if (old_child_locked)
-		ocfs2_inode_unlock(old_inode, 1);
-
-	if (new_child_locked)
-		ocfs2_inode_unlock(new_inode, 1);
 
 	if (orphan_dir) {
 		/* This was locked for us in ocfs2_prepare_orphan_dir() */
 		ocfs2_inode_unlock(orphan_dir, 1);
-		mutex_unlock(&orphan_dir->i_mutex);
+		inode_unlock(orphan_dir);
 		iput(orphan_dir);
 	}
+
+	if (new_child_locked)
+		ocfs2_inode_unlock(new_inode, 1);
+
+	if (old_child_locked)
+		ocfs2_inode_unlock(old_inode, 1);
+
+	if (parents_locked)
+		ocfs2_double_unlock(old_dir, new_dir);
+
+	if (rename_lock)
+		ocfs2_rename_unlock(osb);
 
 	if (new_inode)
 		sync_mapping_buffers(old_inode->i_mapping);
 
-	if (new_inode)
-		iput(new_inode);
+	iput(new_inode);
 
 	ocfs2_free_dir_lookup_result(&target_lookup_res);
 	ocfs2_free_dir_lookup_result(&old_entry_lookup);
@@ -1768,7 +1820,11 @@ static int ocfs2_symlink(struct inode *dir,
 	trace_ocfs2_symlink_begin(dir, dentry, symname,
 				  dentry->d_name.len, dentry->d_name.name);
 
-	dquot_initialize(dir);
+	status = dquot_initialize(dir);
+	if (status) {
+		mlog_errno(status);
+		goto bail;
+	}
 
 	sb = dir->i_sb;
 	osb = OCFS2_SB(sb);
@@ -1813,8 +1869,9 @@ static int ocfs2_symlink(struct inode *dir,
 	}
 
 	inode = ocfs2_get_init_inode(dir, S_IFLNK | S_IRWXUGO);
-	if (!inode) {
-		status = -ENOMEM;
+	if (IS_ERR(inode)) {
+		status = PTR_ERR(inode);
+		inode = NULL;
 		mlog_errno(status);
 		goto bail;
 	}
@@ -1885,6 +1942,7 @@ static int ocfs2_symlink(struct inode *dir,
 	inode->i_rdev = 0;
 	newsize = l - 1;
 	inode->i_op = &ocfs2_symlink_inode_operations;
+	inode_nohighmem(inode);
 	if (l > ocfs2_fast_symlink_chars(sb)) {
 		u32 offset = 0;
 
@@ -2048,11 +2106,11 @@ static int ocfs2_lookup_lock_orphan_dir(struct ocfs2_super *osb,
 		return ret;
 	}
 
-	mutex_lock(&orphan_dir_inode->i_mutex);
+	inode_lock(orphan_dir_inode);
 
 	ret = ocfs2_inode_lock(orphan_dir_inode, &orphan_dir_bh, 1);
 	if (ret < 0) {
-		mutex_unlock(&orphan_dir_inode->i_mutex);
+		inode_unlock(orphan_dir_inode);
 		iput(orphan_dir_inode);
 
 		mlog_errno(ret);
@@ -2069,12 +2127,28 @@ static int __ocfs2_prepare_orphan_dir(struct inode *orphan_dir_inode,
 				      struct buffer_head *orphan_dir_bh,
 				      u64 blkno,
 				      char *name,
-				      struct ocfs2_dir_lookup_result *lookup)
+				      struct ocfs2_dir_lookup_result *lookup,
+				      bool dio)
 {
 	int ret;
 	struct ocfs2_super *osb = OCFS2_SB(orphan_dir_inode->i_sb);
+	int namelen = dio ?
+			(OCFS2_DIO_ORPHAN_PREFIX_LEN + OCFS2_ORPHAN_NAMELEN) :
+			OCFS2_ORPHAN_NAMELEN;
 
-	ret = ocfs2_blkno_stringify(blkno, name);
+	if (dio) {
+		ret = snprintf(name, OCFS2_DIO_ORPHAN_PREFIX_LEN + 1, "%s",
+				OCFS2_DIO_ORPHAN_PREFIX);
+		if (ret != OCFS2_DIO_ORPHAN_PREFIX_LEN) {
+			ret = -EINVAL;
+			mlog_errno(ret);
+			return ret;
+		}
+
+		ret = ocfs2_blkno_stringify(blkno,
+				name + OCFS2_DIO_ORPHAN_PREFIX_LEN);
+	} else
+		ret = ocfs2_blkno_stringify(blkno, name);
 	if (ret < 0) {
 		mlog_errno(ret);
 		return ret;
@@ -2082,7 +2156,7 @@ static int __ocfs2_prepare_orphan_dir(struct inode *orphan_dir_inode,
 
 	ret = ocfs2_prepare_dir_for_insert(osb, orphan_dir_inode,
 					   orphan_dir_bh, name,
-					   OCFS2_ORPHAN_NAMELEN, lookup);
+					   namelen, lookup);
 	if (ret < 0) {
 		mlog_errno(ret);
 		return ret;
@@ -2109,7 +2183,8 @@ static int ocfs2_prepare_orphan_dir(struct ocfs2_super *osb,
 				    struct inode **ret_orphan_dir,
 				    u64 blkno,
 				    char *name,
-				    struct ocfs2_dir_lookup_result *lookup)
+				    struct ocfs2_dir_lookup_result *lookup,
+				    bool dio)
 {
 	struct inode *orphan_dir_inode = NULL;
 	struct buffer_head *orphan_dir_bh = NULL;
@@ -2123,7 +2198,7 @@ static int ocfs2_prepare_orphan_dir(struct ocfs2_super *osb,
 	}
 
 	ret = __ocfs2_prepare_orphan_dir(orphan_dir_inode, orphan_dir_bh,
-					 blkno, name, lookup);
+					 blkno, name, lookup, dio);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out;
@@ -2136,7 +2211,7 @@ out:
 
 	if (ret) {
 		ocfs2_inode_unlock(orphan_dir_inode, 1);
-		mutex_unlock(&orphan_dir_inode->i_mutex);
+		inode_unlock(orphan_dir_inode);
 		iput(orphan_dir_inode);
 	}
 
@@ -2151,12 +2226,16 @@ static int ocfs2_orphan_add(struct ocfs2_super *osb,
 			    struct buffer_head *fe_bh,
 			    char *name,
 			    struct ocfs2_dir_lookup_result *lookup,
-			    struct inode *orphan_dir_inode)
+			    struct inode *orphan_dir_inode,
+			    bool dio)
 {
 	struct buffer_head *orphan_dir_bh = NULL;
 	int status = 0;
 	struct ocfs2_dinode *orphan_fe;
 	struct ocfs2_dinode *fe = (struct ocfs2_dinode *) fe_bh->b_data;
+	int namelen = dio ?
+			(OCFS2_DIO_ORPHAN_PREFIX_LEN + OCFS2_ORPHAN_NAMELEN) :
+			OCFS2_ORPHAN_NAMELEN;
 
 	trace_ocfs2_orphan_add_begin(
 				(unsigned long long)OCFS2_I(inode)->ip_blkno);
@@ -2200,7 +2279,7 @@ static int ocfs2_orphan_add(struct ocfs2_super *osb,
 	ocfs2_journal_dirty(handle, orphan_dir_bh);
 
 	status = __ocfs2_add_entry(handle, orphan_dir_inode, name,
-				   OCFS2_ORPHAN_NAMELEN, inode,
+				   namelen, inode,
 				   OCFS2_I(inode)->ip_blkno,
 				   orphan_dir_bh, lookup);
 	if (status < 0) {
@@ -2208,13 +2287,21 @@ static int ocfs2_orphan_add(struct ocfs2_super *osb,
 		goto rollback;
 	}
 
-	fe->i_flags |= cpu_to_le32(OCFS2_ORPHANED_FL);
-	OCFS2_I(inode)->ip_flags &= ~OCFS2_INODE_SKIP_ORPHAN_DIR;
+	if (dio) {
+		/* Update flag OCFS2_DIO_ORPHANED_FL and record the orphan
+		 * slot.
+		 */
+		fe->i_flags |= cpu_to_le32(OCFS2_DIO_ORPHANED_FL);
+		fe->i_dio_orphaned_slot = cpu_to_le16(osb->slot_num);
+	} else {
+		fe->i_flags |= cpu_to_le32(OCFS2_ORPHANED_FL);
+		OCFS2_I(inode)->ip_flags &= ~OCFS2_INODE_SKIP_ORPHAN_DIR;
 
-	/* Record which orphan dir our inode now resides
-	 * in. delete_inode will use this to determine which orphan
-	 * dir to lock. */
-	fe->i_orphaned_slot = cpu_to_le16(osb->slot_num);
+		/* Record which orphan dir our inode now resides
+		 * in. delete_inode will use this to determine which orphan
+		 * dir to lock. */
+		fe->i_orphaned_slot = cpu_to_le16(osb->slot_num);
+	}
 
 	ocfs2_journal_dirty(handle, fe_bh);
 
@@ -2239,14 +2326,28 @@ int ocfs2_orphan_del(struct ocfs2_super *osb,
 		     handle_t *handle,
 		     struct inode *orphan_dir_inode,
 		     struct inode *inode,
-		     struct buffer_head *orphan_dir_bh)
+		     struct buffer_head *orphan_dir_bh,
+		     bool dio)
 {
-	char name[OCFS2_ORPHAN_NAMELEN + 1];
+	const int namelen = OCFS2_DIO_ORPHAN_PREFIX_LEN + OCFS2_ORPHAN_NAMELEN;
+	char name[namelen + 1];
 	struct ocfs2_dinode *orphan_fe;
 	int status = 0;
 	struct ocfs2_dir_lookup_result lookup = { NULL, };
 
-	status = ocfs2_blkno_stringify(OCFS2_I(inode)->ip_blkno, name);
+	if (dio) {
+		status = snprintf(name, OCFS2_DIO_ORPHAN_PREFIX_LEN + 1, "%s",
+				OCFS2_DIO_ORPHAN_PREFIX);
+		if (status != OCFS2_DIO_ORPHAN_PREFIX_LEN) {
+			status = -EINVAL;
+			mlog_errno(status);
+			return status;
+		}
+
+		status = ocfs2_blkno_stringify(OCFS2_I(inode)->ip_blkno,
+				name + OCFS2_DIO_ORPHAN_PREFIX_LEN);
+	} else
+		status = ocfs2_blkno_stringify(OCFS2_I(inode)->ip_blkno, name);
 	if (status < 0) {
 		mlog_errno(status);
 		goto leave;
@@ -2254,10 +2355,19 @@ int ocfs2_orphan_del(struct ocfs2_super *osb,
 
 	trace_ocfs2_orphan_del(
 	     (unsigned long long)OCFS2_I(orphan_dir_inode)->ip_blkno,
-	     name, OCFS2_ORPHAN_NAMELEN);
+	     name, strlen(name));
+
+	status = ocfs2_journal_access_di(handle,
+					 INODE_CACHE(orphan_dir_inode),
+					 orphan_dir_bh,
+					 OCFS2_JOURNAL_ACCESS_WRITE);
+	if (status < 0) {
+		mlog_errno(status);
+		goto leave;
+	}
 
 	/* find it's spot in the orphan directory */
-	status = ocfs2_find_entry(name, OCFS2_ORPHAN_NAMELEN, orphan_dir_inode,
+	status = ocfs2_find_entry(name, strlen(name), orphan_dir_inode,
 				  &lookup);
 	if (status) {
 		mlog_errno(status);
@@ -2266,15 +2376,6 @@ int ocfs2_orphan_del(struct ocfs2_super *osb,
 
 	/* remove it from the orphan directory */
 	status = ocfs2_delete_entry(handle, orphan_dir_inode, &lookup);
-	if (status < 0) {
-		mlog_errno(status);
-		goto leave;
-	}
-
-	status = ocfs2_journal_access_di(handle,
-					 INODE_CACHE(orphan_dir_inode),
-					 orphan_dir_bh,
-					 OCFS2_JOURNAL_ACCESS_WRITE);
 	if (status < 0) {
 		mlog_errno(status);
 		goto leave;
@@ -2357,7 +2458,8 @@ static int ocfs2_prep_new_orphaned_file(struct inode *dir,
 	}
 
 	ret = __ocfs2_prepare_orphan_dir(orphan_dir, orphan_dir_bh,
-					 di_blkno, orphan_name, orphan_insert);
+					 di_blkno, orphan_name, orphan_insert,
+					 false);
 	if (ret < 0) {
 		mlog_errno(ret);
 		goto out;
@@ -2378,7 +2480,7 @@ out:
 			ocfs2_free_alloc_context(inode_ac);
 
 		/* Unroll orphan dir locking */
-		mutex_unlock(&orphan_dir->i_mutex);
+		inode_unlock(orphan_dir);
 		ocfs2_inode_unlock(orphan_dir, 1);
 		iput(orphan_dir);
 	}
@@ -2423,8 +2525,9 @@ int ocfs2_create_inode_in_orphan(struct inode *dir,
 	}
 
 	inode = ocfs2_get_init_inode(dir, mode);
-	if (!inode) {
-		status = -ENOMEM;
+	if (IS_ERR(inode)) {
+		status = PTR_ERR(inode);
+		inode = NULL;
 		mlog_errno(status);
 		goto leave;
 	}
@@ -2463,7 +2566,7 @@ int ocfs2_create_inode_in_orphan(struct inode *dir,
 
 	di = (struct ocfs2_dinode *)new_di_bh->b_data;
 	status = ocfs2_orphan_add(osb, handle, inode, new_di_bh, orphan_name,
-				  &orphan_insert, orphan_dir);
+				  &orphan_insert, orphan_dir, false);
 	if (status < 0) {
 		mlog_errno(status);
 		goto leave;
@@ -2484,7 +2587,7 @@ leave:
 	if (orphan_dir) {
 		/* This was locked for us in ocfs2_prepare_orphan_dir() */
 		ocfs2_inode_unlock(orphan_dir, 1);
-		mutex_unlock(&orphan_dir->i_mutex);
+		inode_unlock(orphan_dir);
 		iput(orphan_dir);
 	}
 
@@ -2505,6 +2608,158 @@ leave:
 
 	ocfs2_inode_unlock(dir, 1);
 	brelse(parent_di_bh);
+	return status;
+}
+
+int ocfs2_add_inode_to_orphan(struct ocfs2_super *osb,
+	struct inode *inode)
+{
+	char orphan_name[OCFS2_DIO_ORPHAN_PREFIX_LEN + OCFS2_ORPHAN_NAMELEN + 1];
+	struct inode *orphan_dir_inode = NULL;
+	struct ocfs2_dir_lookup_result orphan_insert = { NULL, };
+	struct buffer_head *di_bh = NULL;
+	int status = 0;
+	handle_t *handle = NULL;
+	struct ocfs2_dinode *di = NULL;
+
+	status = ocfs2_inode_lock(inode, &di_bh, 1);
+	if (status < 0) {
+		mlog_errno(status);
+		goto bail;
+	}
+
+	di = (struct ocfs2_dinode *) di_bh->b_data;
+	/*
+	 * Another append dio crashed?
+	 * If so, manually recover it first.
+	 */
+	if (unlikely(di->i_flags & cpu_to_le32(OCFS2_DIO_ORPHANED_FL))) {
+		status = ocfs2_truncate_file(inode, di_bh, i_size_read(inode));
+		if (status < 0) {
+			if (status != -ENOSPC)
+				mlog_errno(status);
+			goto bail_unlock_inode;
+		}
+
+		status = ocfs2_del_inode_from_orphan(osb, inode, di_bh, 0, 0);
+		if (status < 0) {
+			mlog_errno(status);
+			goto bail_unlock_inode;
+		}
+	}
+
+	status = ocfs2_prepare_orphan_dir(osb, &orphan_dir_inode,
+			OCFS2_I(inode)->ip_blkno,
+			orphan_name,
+			&orphan_insert,
+			true);
+	if (status < 0) {
+		mlog_errno(status);
+		goto bail_unlock_inode;
+	}
+
+	handle = ocfs2_start_trans(osb,
+			OCFS2_INODE_ADD_TO_ORPHAN_CREDITS);
+	if (IS_ERR(handle)) {
+		status = PTR_ERR(handle);
+		goto bail_unlock_orphan;
+	}
+
+	status = ocfs2_orphan_add(osb, handle, inode, di_bh, orphan_name,
+			&orphan_insert, orphan_dir_inode, true);
+	if (status)
+		mlog_errno(status);
+
+	ocfs2_commit_trans(osb, handle);
+
+bail_unlock_orphan:
+	ocfs2_inode_unlock(orphan_dir_inode, 1);
+	inode_unlock(orphan_dir_inode);
+	iput(orphan_dir_inode);
+
+	ocfs2_free_dir_lookup_result(&orphan_insert);
+
+bail_unlock_inode:
+	ocfs2_inode_unlock(inode, 1);
+	brelse(di_bh);
+
+bail:
+	return status;
+}
+
+int ocfs2_del_inode_from_orphan(struct ocfs2_super *osb,
+		struct inode *inode, struct buffer_head *di_bh,
+		int update_isize, loff_t end)
+{
+	struct inode *orphan_dir_inode = NULL;
+	struct buffer_head *orphan_dir_bh = NULL;
+	struct ocfs2_dinode *di = (struct ocfs2_dinode *)di_bh->b_data;
+	handle_t *handle = NULL;
+	int status = 0;
+
+	orphan_dir_inode = ocfs2_get_system_file_inode(osb,
+			ORPHAN_DIR_SYSTEM_INODE,
+			le16_to_cpu(di->i_dio_orphaned_slot));
+	if (!orphan_dir_inode) {
+		status = -ENOENT;
+		mlog_errno(status);
+		goto bail;
+	}
+
+	inode_lock(orphan_dir_inode);
+	status = ocfs2_inode_lock(orphan_dir_inode, &orphan_dir_bh, 1);
+	if (status < 0) {
+		inode_unlock(orphan_dir_inode);
+		iput(orphan_dir_inode);
+		mlog_errno(status);
+		goto bail;
+	}
+
+	handle = ocfs2_start_trans(osb,
+			OCFS2_INODE_DEL_FROM_ORPHAN_CREDITS);
+	if (IS_ERR(handle)) {
+		status = PTR_ERR(handle);
+		goto bail_unlock_orphan;
+	}
+
+	BUG_ON(!(di->i_flags & cpu_to_le32(OCFS2_DIO_ORPHANED_FL)));
+
+	status = ocfs2_orphan_del(osb, handle, orphan_dir_inode,
+				inode, orphan_dir_bh, true);
+	if (status < 0) {
+		mlog_errno(status);
+		goto bail_commit;
+	}
+
+	status = ocfs2_journal_access_di(handle,
+			INODE_CACHE(inode),
+			di_bh,
+			OCFS2_JOURNAL_ACCESS_WRITE);
+	if (status < 0) {
+		mlog_errno(status);
+		goto bail_commit;
+	}
+
+	di->i_flags &= ~cpu_to_le32(OCFS2_DIO_ORPHANED_FL);
+	di->i_dio_orphaned_slot = 0;
+
+	if (update_isize) {
+		status = ocfs2_set_inode_size(handle, inode, di_bh, end);
+		if (status)
+			mlog_errno(status);
+	} else
+		ocfs2_journal_dirty(handle, di_bh);
+
+bail_commit:
+	ocfs2_commit_trans(osb, handle);
+
+bail_unlock_orphan:
+	ocfs2_inode_unlock(orphan_dir_inode, 1);
+	inode_unlock(orphan_dir_inode);
+	brelse(orphan_dir_bh);
+	iput(orphan_dir_inode);
+
+bail:
 	return status;
 }
 
@@ -2559,17 +2814,17 @@ int ocfs2_mv_orphaned_inode_to_new(struct inode *dir,
 						       ORPHAN_DIR_SYSTEM_INODE,
 						       osb->slot_num);
 	if (!orphan_dir_inode) {
-		status = -EEXIST;
+		status = -ENOENT;
 		mlog_errno(status);
 		goto leave;
 	}
 
-	mutex_lock(&orphan_dir_inode->i_mutex);
+	inode_lock(orphan_dir_inode);
 
 	status = ocfs2_inode_lock(orphan_dir_inode, &orphan_dir_bh, 1);
 	if (status < 0) {
 		mlog_errno(status);
-		mutex_unlock(&orphan_dir_inode->i_mutex);
+		inode_unlock(orphan_dir_inode);
 		iput(orphan_dir_inode);
 		goto leave;
 	}
@@ -2596,7 +2851,7 @@ int ocfs2_mv_orphaned_inode_to_new(struct inode *dir,
 	}
 
 	status = ocfs2_orphan_del(osb, handle, orphan_dir_inode, inode,
-				  orphan_dir_bh);
+				  orphan_dir_bh, false);
 	if (status < 0) {
 		mlog_errno(status);
 		goto out_commit;
@@ -2631,7 +2886,7 @@ out_commit:
 	ocfs2_commit_trans(osb, handle);
 orphan_unlock:
 	ocfs2_inode_unlock(orphan_dir_inode, 1);
-	mutex_unlock(&orphan_dir_inode->i_mutex);
+	inode_unlock(orphan_dir_inode);
 	iput(orphan_dir_inode);
 leave:
 
@@ -2662,10 +2917,7 @@ const struct inode_operations ocfs2_dir_iops = {
 	.setattr	= ocfs2_setattr,
 	.getattr	= ocfs2_getattr,
 	.permission	= ocfs2_permission,
-	.setxattr	= generic_setxattr,
-	.getxattr	= generic_getxattr,
 	.listxattr	= ocfs2_listxattr,
-	.removexattr	= generic_removexattr,
 	.fiemap         = ocfs2_fiemap,
 	.get_acl	= ocfs2_iop_get_acl,
 	.set_acl	= ocfs2_iop_set_acl,

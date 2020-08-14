@@ -156,6 +156,8 @@ static void dayna_block_output(struct net_device *dev, int count,
 #define memcpy_fromio(a, b, c)	memcpy((a), (void *)(b), (c))
 #define memcpy_toio(a, b, c)	memcpy((void *)(a), (b), (c))
 
+#define memcmp_withio(a, b, c)	memcmp((a), (void *)(b), (c))
+
 /* Slow Sane (16-bit chunk memory read/write) Cabletron uses this */
 static void slow_sane_get_8390_hdr(struct net_device *dev,
 				   struct e8390_pkt_hdr *hdr, int ring_page);
@@ -235,26 +237,19 @@ static enum mac8390_type __init mac8390_ident(struct nubus_dev *dev)
 
 static enum mac8390_access __init mac8390_testio(volatile unsigned long membase)
 {
-	u32 outdata = 0xA5A0B5B0;
-	u32 indata = 0;
-
+	unsigned long outdata = 0xA5A0B5B0;
+	unsigned long indata =  0x00000000;
 	/* Try writing 32 bits */
-	nubus_writel(outdata, membase);
-	/* Now read it back */
-	indata = nubus_readl(membase);
-	if (outdata == indata)
+	memcpy_toio(membase, &outdata, 4);
+	/* Now compare them */
+	if (memcmp_withio(&outdata, membase, 4) == 0)
 		return ACCESS_32;
-
-	outdata = 0xC5C0D5D0;
-	indata = 0;
-
 	/* Write 16 bit output */
 	word_memcpy_tocard(membase, &outdata, 4);
 	/* Now read it back */
 	word_memcpy_fromcard(&indata, membase, 4);
 	if (outdata == indata)
 		return ACCESS_16;
-
 	return ACCESS_UNKNOWN;
 }
 
@@ -459,34 +454,22 @@ MODULE_AUTHOR("David Huggins-Daines <dhd@debian.org> and others");
 MODULE_DESCRIPTION("Macintosh NS8390-based Nubus Ethernet driver");
 MODULE_LICENSE("GPL");
 
-/* overkill, of course */
-static struct net_device *dev_mac8390[15];
-int init_module(void)
+static struct net_device *dev_mac8390;
+
+int __init init_module(void)
 {
-	int i;
-	for (i = 0; i < 15; i++) {
-		struct net_device *dev = mac8390_probe(-1);
-		if (IS_ERR(dev))
-			break;
-		dev_mac890[i] = dev;
-	}
-	if (!i) {
-		pr_notice("No useable cards found, driver NOT installed.\n");
-		return -ENODEV;
+	dev_mac8390 = mac8390_probe(-1);
+	if (IS_ERR(dev_mac8390)) {
+		pr_warn("mac8390: No card found\n");
+		return PTR_ERR(dev_mac8390);
 	}
 	return 0;
 }
 
-void cleanup_module(void)
+void __exit cleanup_module(void)
 {
-	int i;
-	for (i = 0; i < 15; i++) {
-		struct net_device *dev = dev_mac890[i];
-		if (dev) {
-			unregister_netdev(dev);
-			free_netdev(dev);
-		}
-	}
+	unregister_netdev(dev_mac8390);
+	free_netdev(dev_mac8390);
 }
 
 #endif /* MODULE */

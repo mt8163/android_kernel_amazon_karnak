@@ -1070,11 +1070,8 @@ static int smc_open(struct net_device *dev)
     smc->packets_waiting = 0;
 
     smc_reset(dev);
-    init_timer(&smc->media);
-    smc->media.function = media_check;
-    smc->media.data = (u_long) dev;
-    smc->media.expires = jiffies + HZ;
-    add_timer(&smc->media);
+    setup_timer(&smc->media, media_check, (u_long)dev);
+    mod_timer(&smc->media, jiffies + HZ);
 
     return 0;
 } /* smc_open */
@@ -1175,7 +1172,7 @@ static void smc_hardware_send_packet(struct net_device * dev)
 
     smc->saved_skb = NULL;
     dev_kfree_skb_irq(skb);
-    dev->trans_start = jiffies;
+    netif_trans_update(dev);
     netif_start_queue(dev);
 }
 
@@ -1190,7 +1187,7 @@ static void smc_tx_timeout(struct net_device *dev)
 		  inw(ioaddr)&0xff, inw(ioaddr + 2));
     dev->stats.tx_errors++;
     smc_reset(dev);
-    dev->trans_start = jiffies; /* prevent tx timeout */
+    netif_trans_update(dev); /* prevent tx timeout */
     smc->saved_skb = NULL;
     netif_wake_queue(dev);
 }

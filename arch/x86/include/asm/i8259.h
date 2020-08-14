@@ -60,12 +60,18 @@ struct legacy_pic {
 	void (*mask_all)(void);
 	void (*restore_mask)(void);
 	void (*init)(int auto_eoi);
+	int (*probe)(void);
 	int (*irq_pending)(unsigned int irq);
 	void (*make_irq)(unsigned int irq);
 };
 
 extern struct legacy_pic *legacy_pic;
 extern struct legacy_pic null_legacy_pic;
+
+static inline bool has_legacy_pic(void)
+{
+	return legacy_pic != &null_legacy_pic;
+}
 
 static inline int nr_legacy_irqs(void)
 {

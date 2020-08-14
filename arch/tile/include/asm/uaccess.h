@@ -85,7 +85,8 @@ int __range_ok(unsigned long addr, unsigned long size);
  * @addr: User space pointer to start of block to check
  * @size: Size of block to check
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * Checks if a pointer to a block of memory in user space is valid.
  *
@@ -121,14 +122,14 @@ struct exception_table_entry {
 extern int fixup_exception(struct pt_regs *regs);
 
 /*
+ * This is a type: either unsigned long, if the argument fits into
+ * that type, or otherwise unsigned long long.
+ */
+#define __inttype(x) \
+	__typeof__(__builtin_choose_expr(sizeof(x) > sizeof(0UL), 0ULL, 0UL))
+
+/*
  * Support macros for __get_user().
- *
- * Implementation note: The "case 8" logic of casting to the type of
- * the result of subtracting the value from itself is basically a way
- * of keeping all integer types the same, but casting any pointers to
- * ptrdiff_t, i.e. also an integer type.  This way there are no
- * questionable casts seen by the compiler on an ILP32 platform.
- *
  * Note that __get_user() and __put_user() assume proper alignment.
  */
 
@@ -185,7 +186,7 @@ extern int fixup_exception(struct pt_regs *regs);
 			     "9:"					\
 			     : "=r" (ret), "=r" (__a), "=&r" (__b)	\
 			     : "r" (ptr), "i" (-EFAULT));		\
-		(x) = (__typeof(x))(__typeof((x)-(x)))			\
+		(x) = (__force __typeof(x))(__inttype(x))		\
 			(((u64)__hi32(__a, __b) << 32) |		\
 			 __lo32(__a, __b));				\
 	})
@@ -199,7 +200,8 @@ extern int __get_user_bad(void)
  * @x:   Variable to store result.
  * @ptr: Source address, in user space.
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * This macro copies a single simple variable from user space to kernel
  * space.  It supports simple types like char and int, but not larger
@@ -217,14 +219,16 @@ extern int __get_user_bad(void)
 #define __get_user(x, ptr)						\
 	({								\
 		int __ret;						\
+		typeof(x) _x;						\
 		__chk_user_ptr(ptr);					\
 		switch (sizeof(*(ptr))) {				\
-		case 1: __get_user_1(x, ptr, __ret); break;		\
-		case 2: __get_user_2(x, ptr, __ret); break;		\
-		case 4: __get_user_4(x, ptr, __ret); break;		\
-		case 8: __get_user_8(x, ptr, __ret); break;		\
+		case 1: __get_user_1(_x, ptr, __ret); break;		\
+		case 2: __get_user_2(_x, ptr, __ret); break;		\
+		case 4: __get_user_4(_x, ptr, __ret); break;		\
+		case 8: __get_user_8(_x, ptr, __ret); break;		\
 		default: __ret = __get_user_bad(); break;		\
 		}							\
+		(x) = (typeof(*(ptr))) _x;				\
 		__ret;							\
 	})
 
@@ -253,7 +257,7 @@ extern int __get_user_bad(void)
 #define __put_user_4(x, ptr, ret) __put_user_asm(sw, x, ptr, ret)
 #define __put_user_8(x, ptr, ret)					\
 	({								\
-		u64 __x = (__typeof((x)-(x)))(x);			\
+		u64 __x = (__force __inttype(x))(x);			\
 		int __lo = (int) __x, __hi = (int) (__x >> 32);		\
 		asm volatile("1: { sw %1, %2; addi %0, %1, 4 }\n"	\
 			     "2: { sw %0, %3; movei %0, 0 }\n"		\
@@ -279,7 +283,8 @@ extern int __put_user_bad(void)
  * @x:   Value to copy to user space.
  * @ptr: Destination address, in user space.
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * This macro copies a single simple value from kernel space to user
  * space.  It supports simple types like char and int, but not larger
@@ -296,12 +301,13 @@ extern int __put_user_bad(void)
 #define __put_user(x, ptr)						\
 ({									\
 	int __ret;							\
+	typeof(*(ptr)) _x = (x);					\
 	__chk_user_ptr(ptr);						\
 	switch (sizeof(*(ptr))) {					\
-	case 1: __put_user_1(x, ptr, __ret); break;			\
-	case 2: __put_user_2(x, ptr, __ret); break;			\
-	case 4: __put_user_4(x, ptr, __ret); break;			\
-	case 8: __put_user_8(x, ptr, __ret); break;			\
+	case 1: __put_user_1(_x, ptr, __ret); break;			\
+	case 2: __put_user_2(_x, ptr, __ret); break;			\
+	case 4: __put_user_4(_x, ptr, __ret); break;			\
+	case 8: __put_user_8(_x, ptr, __ret); break;			\
 	default: __ret = __put_user_bad(); break;			\
 	}								\
 	__ret;								\
@@ -334,7 +340,8 @@ extern int __put_user_bad(void)
  * @from: Source address, in kernel space.
  * @n:    Number of bytes to copy.
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * Copy data from kernel space to user space.  Caller must check
  * the specified block with access_ok() before calling this function.
@@ -370,7 +377,8 @@ copy_to_user(void __user *to, const void *from, unsigned long n)
  * @from: Source address, in user space.
  * @n:    Number of bytes to copy.
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * Copy data from user space to kernel space.  Caller must check
  * the specified block with access_ok() before calling this function.
@@ -408,14 +416,13 @@ _copy_from_user(void *to, const void __user *from, unsigned long n)
 	return n;
 }
 
-#ifdef CONFIG_DEBUG_STRICT_USER_COPY_CHECKS
-/*
- * There are still unprovable places in the generic code as of 2.6.34, so this
- * option is not really compatible with -Werror, which is more useful in
- * general.
- */
-extern void copy_from_user_overflow(void)
-	__compiletime_warning("copy_from_user() size is not provably correct");
+extern void __compiletime_error("usercopy buffer size is too small")
+__bad_copy_user(void);
+
+static inline void copy_user_overflow(int size, unsigned long count)
+{
+	WARN(1, "Buffer overflow detected (%d < %lu)!\n", size, count);
+}
 
 static inline unsigned long __must_check copy_from_user(void *to,
 					  const void __user *from,
@@ -425,14 +432,13 @@ static inline unsigned long __must_check copy_from_user(void *to,
 
 	if (likely(sz == -1 || sz >= n))
 		n = _copy_from_user(to, from, n);
+	else if (!__builtin_constant_p(n))
+		copy_user_overflow(sz, n);
 	else
-		copy_from_user_overflow();
+		__bad_copy_user();
 
 	return n;
 }
-#else
-#define copy_from_user _copy_from_user
-#endif
 
 #ifdef __tilegx__
 /**
@@ -441,7 +447,8 @@ static inline unsigned long __must_check copy_from_user(void *to,
  * @from: Source address, in user space.
  * @n:    Number of bytes to copy.
  *
- * Context: User context only.  This function may sleep.
+ * Context: User context only. This function may sleep if pagefaults are
+ *          enabled.
  *
  * Copy data from user space to user space.  Caller must check
  * the specified blocks with access_ok() before calling this function.

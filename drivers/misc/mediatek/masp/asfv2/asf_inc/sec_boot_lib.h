@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef SEC_BOOT_LIB_H
 #define SEC_BOOT_LIB_H
 
@@ -9,9 +22,8 @@
  *  INCLUDE MTK HEADERS
  **************************************************************************/
 #include "masp_version.h"
-#include "sec_typedef.h"
+#include <linux/types.h>
 #include "sec_error.h"
-#include "sec_nvram.h"
 #include "sec_osal.h"
 #include "sec_mod.h"
 
@@ -49,6 +61,7 @@ extern unsigned int g_lock_state;
 extern unsigned int g_random_id[NUM_RID];
 extern unsigned char g_crypto_seed[NUM_CRYPTO_SEED];
 extern unsigned int g_sbc_pubk_hash[NUM_SBC_PUBK_HASH];
+extern unsigned int lks;
 
 /**************************************************************************
  * EXPORT FUNCTION

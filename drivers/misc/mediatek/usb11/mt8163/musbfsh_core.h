@@ -1,30 +1,14 @@
 /*
- * MUSB OTG driver defines
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2006 by Texas Instruments
- * Copyright (C) 2006-2007 Nokia Corporation
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #ifndef __MUSBFSH_CORE_H__
@@ -60,7 +44,7 @@ struct musbfsh_ep;
 #include "musbfsh_regs.h"
 #include "musbfsh_debug.h"
 
-#include <linux/switch.h>
+/*#include <linux/switch.h>*/
 #include <linux/i2c.h>
 #ifndef CONFIG_OF
 #include <mach/irqs.h>
@@ -98,9 +82,9 @@ extern struct device_node *usb11_dts_np;
 
 #define host_hc_driver_flag() (HCD_USB2 | HCD_MEMORY)
 
-extern irqreturn_t musbfsh_h_ep0_irq(struct musbfsh *);
-extern void musbfsh_host_tx(struct musbfsh *, u8);
-extern void musbfsh_host_rx(struct musbfsh *, u8);
+extern irqreturn_t musbfsh_h_ep0_irq(struct musbfsh *musbfsh);
+extern void musbfsh_host_tx(struct musbfsh *musbfsh, u8 epnum);
+extern void musbfsh_host_rx(struct musbfsh *musbfsh, u8 epnum);
 
 /****************************** CONSTANTS ********************************/
 
@@ -235,11 +219,11 @@ struct musbfsh {
 	enum musbfsh_h_ep0_state ep0_stage;
 
 	/* bulk traffic normally dedicates endpoint hardware, and each
-	* direction has its own ring of host side endpoints.
-	* we try to progress the transfer at the head of each endpoint's
-	* queue until it completes or NAKs too much; then we try the next
-	* endpoint.
-	*/
+	 * direction has its own ring of host side endpoints.
+	 * we try to progress the transfer at the head of each endpoint's
+	 * queue until it completes or NAKs too much; then we try the next
+	 * endpoint.
+	 */
 	struct musbfsh_hw_ep *bulk_ep;
 
 	struct list_head control;	/* of musbfsh_qh */
@@ -297,16 +281,16 @@ struct musbfsh {
 	(((type) == USB_ENDPOINT_XFER_BULK) && (musb)->bulk_combine)
 
 	/*
-	* FIXME: Remove this flag.
-	*
-	* This is only added to allow Blackfin to work
-	* with current driver. For some unknown reason
-	* Blackfin doesn't work with double buffering
-	* and that's enabled by default.
-	*
-	* We added this flag to forcefully disable double
-	* buffering until we get it working.
-	*/
+	 * FIXME: Remove this flag.
+	 *
+	 * This is only added to allow Blackfin to work
+	 * with current driver. For some unknown reason
+	 * Blackfin doesn't work with double buffering
+	 * and that's enabled by default.
+	 *
+	 * We added this flag to forcefully disable double
+	 * buffering until we get it working.
+	 */
 	unsigned double_buffer_not_ok:1;
 
 	struct musbfsh_hdrc_config *config;
@@ -328,14 +312,16 @@ extern void musbfsh_stop(struct musbfsh *musbfsh);
 extern int musbfsh_get_id(struct device *dev, gfp_t gfp_mask);
 extern void musbfsh_put_id(struct device *dev, int id);
 
-extern void musbfsh_write_fifo(struct musbfsh_hw_ep *ep, u16 len, const u8 *src);
+extern void musbfsh_write_fifo(struct musbfsh_hw_ep *ep,
+			u16 len, const u8 *src);
 extern void musbfsh_read_fifo(struct musbfsh_hw_ep *ep, u16 len, u8 *dst);
 
-extern void musbfsh_load_testpacket(struct musbfsh *);
+extern void musbfsh_load_testpacket(struct musbfsh *musbfsh);
 
-extern irqreturn_t musbfsh_interrupt(struct musbfsh *);
+extern irqreturn_t musbfsh_interrupt(struct musbfsh *musbfsh);
 
-static inline void musbfsh_platform_set_power(struct musbfsh *musbfsh, int action)
+static inline void musbfsh_platform_set_power(struct musbfsh *musbfsh,
+							int action)
 {
 	if (musbfsh->ops->set_power)
 		musbfsh->ops->set_power(musbfsh, action);
@@ -373,7 +359,8 @@ static inline int musbfsh_platform_set_mode(struct musbfsh *musbfsh, u8 mode)
 	return musbfsh->ops->set_mode(musbfsh, mode);
 }
 
-static inline void musbfsh_platform_try_idle(struct musbfsh *musbfsh, unsigned long timeout)
+static inline void musbfsh_platform_try_idle(struct musbfsh *musbfsh,
+					unsigned long timeout)
 {
 	if (musbfsh->ops->try_idle)
 		musbfsh->ops->try_idle(musbfsh, timeout);

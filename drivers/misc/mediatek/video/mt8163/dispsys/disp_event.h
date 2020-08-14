@@ -1,7 +1,20 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __DISP_EVENT_H__
 #define __DISP_EVENT_H__
 
-typedef enum {
+enum DISP_PATH_EVENT {
 	DISP_PATH_EVENT_FRAME_DONE = 0,
 	DISP_PATH_EVENT_FRAME_START,
 	DISP_PATH_EVENT_FRAME_REG_UPDATE,
@@ -14,6 +27,6 @@ typedef enum {
 	DISP_PATH_EVENT_AAL_OUT_END_FRAME,
 	DISP_PATH_EVENT_NUM,
 	DISP_PATH_EVENT_NONE = 0xff,
-} DISP_PATH_EVENT;
+};
 
 #endif

@@ -15,15 +15,6 @@
 #define _MT_PTP_
 
 #include <linux/kernel.h>
-/* #include <mach/sync_write.h> */
-
-/* not used
-#ifdef __MT_PTP_C__
-#define PTP_EXTERN
-#else
-#define PTP_EXTERN extern
-#endif
-*/
 
 #define PTP_EXTERN
 
@@ -104,10 +95,12 @@ extern u32 get_devinfo_with_index(u32 index);
  * 1: Select VCORE_AO ptpod detector
  * 0: Select VCORE_PDN ptpod detector
  */
-/* #define PERI_VCORE_PTPOD_CON0	(PERICFG_BASE + 0x408)
-#define VCORE_PTPODSEL		0:0
+#if 0
+#define PERI_VCORE_PTPOD_CON0	(PERICFG_BASE + 0x408)
+#define VCORE_PTPODSEL		(0:0)
 #define SEL_VCORE_AO		1
-#define SEL_VCORE_PDN		0 */
+#define SEL_VCORE_PDN		0
+#endif
 
 /* Thermal Register Definition */
 #define THERMAL_BASE            ptpod_base
@@ -175,10 +168,10 @@ enum ptp_ctrl_id {
 };
 
 /*
-Vproc = DVDD_DVFS
-Vgpu (DVDD_GPU)
-SoC = DVDD_CORE_AO
-*/
+ * Vproc = DVDD_DVFS
+ * Vgpu (DVDD_GPU)
+ * SoC = DVDD_CORE_AO
+ */
 enum ptp_det_id {
 	PTP_DET_MCUSYS = PTP_CTRL_MCUSYS,
 #ifdef CONFIG_MTK_INHOUSE_GPU
@@ -194,20 +187,5 @@ PTP_EXTERN unsigned int mt_ptp_get_level(void);
 PTP_EXTERN int mt_ptp_idle_can_enter(void);
 PTP_EXTERN int mt_ptp_status(enum ptp_det_id id);
 PTP_EXTERN int get_ptpod_status(void);
-
-#ifdef CONFIG_MTK_RAM_CONSOLE
-/* aee set function */
-extern void aee_rr_rec_ptp_gpu_volt(u64 val);
-extern void aee_rr_rec_ptp_cpu_little_volt(u64 val);
-extern void aee_rr_rec_ptp_temp(u64 val);
-extern void aee_rr_rec_ptp_status(u8 val);
-
-/* aee get function */
-extern u64 aee_rr_curr_ptp_gpu_volt(void);
-extern u64 aee_rr_curr_ptp_cpu_little_volt(void);
-extern u64 aee_rr_curr_ptp_temp(void);
-extern u8 aee_rr_curr_ptp_status(void);
-#endif
 #undef PTP_EXTERN
-
 #endif

@@ -54,6 +54,7 @@ struct micron_erase_count {
 	unsigned short avg_blk_erase_cnt;	/*  avg block erase count */
 };
 
+int mmc_micron_smart_report(struct mmc_card *card, u8 *buf);
 int mmc_select_card(struct mmc_card *card);
 int mmc_deselect_cards(struct mmc_host *host);
 int mmc_set_dsr(struct mmc_host *host);
@@ -70,6 +71,9 @@ int mmc_bus_test(struct mmc_card *card, u8 bus_width);
 int mmc_send_hpi_cmd(struct mmc_card *card, u32 *status);
 int mmc_can_ext_csd(struct mmc_card *card);
 int mmc_switch_status_error(struct mmc_host *host, u32 status);
+int __mmc_switch(struct mmc_card *card, u8 set, u8 index, u8 value,
+		unsigned int timeout_ms, bool use_busy_signal, bool send_status,
+		bool ignore_crc);
 
 #endif
 

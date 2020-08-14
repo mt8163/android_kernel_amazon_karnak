@@ -509,7 +509,7 @@ again:
 			c->bi.nospace_rp = 1;
 		smp_wmb();
 	} else
-		ubifs_err("cannot budget space, error %d", err);
+		ubifs_err(c, "cannot budget space, error %d", err);
 	return err;
 }
 
@@ -563,10 +563,6 @@ void ubifs_release_budget(struct ubifs_info *c, struct ubifs_budget_req *req)
 
 	ubifs_assert(c->bi.idx_growth >= 0);
 	ubifs_assert(c->bi.data_growth >= 0);
-	if (c->bi.dd_growth < 0) {
-		ubifs_err("c->bi.dd_growth %lld\n", c->bi.dd_growth);
-		c->bi.dd_growth = 0;
-	}
 	ubifs_assert(c->bi.dd_growth >= 0);
 	ubifs_assert(c->bi.min_idx_lebs < c->main_lebs);
 	ubifs_assert(!(c->bi.idx_growth & 7));

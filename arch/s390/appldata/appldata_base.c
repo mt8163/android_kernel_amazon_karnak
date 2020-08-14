@@ -511,7 +511,6 @@ static const struct dev_pm_ops appldata_pm_ops = {
 static struct platform_driver appldata_pdrv = {
 	.driver = {
 		.name	= "appldata",
-		.owner	= THIS_MODULE,
 		.pm	= &appldata_pm_ops,
 	},
 };
@@ -543,7 +542,7 @@ static int __init appldata_init(void)
 		rc = PTR_ERR(appldata_pdev);
 		goto out_driver;
 	}
-	appldata_wq = create_singlethread_workqueue("appldata");
+	appldata_wq = alloc_ordered_workqueue("appldata", 0);
 	if (!appldata_wq) {
 		rc = -ENOMEM;
 		goto out_device;

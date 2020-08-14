@@ -27,6 +27,14 @@ config MTK_COMBO_CHIP_MT6628
 	  is
 	  MT6628
 
+config MTK_COMBO_CHIP_MT7668
+	bool "MT7668"
+	help
+	  this config is used to decided combo chip version
+	  in current platform
+	  is
+	  MT7668
+
 config MTK_COMBO_CHIP_MT6630
 	bool "MT6630"
 	help
@@ -35,53 +43,45 @@ config MTK_COMBO_CHIP_MT6630
 	  is
 	  MT6630
 
-config MTK_COMBO_CHIP_MT76x2
-	bool "MT76x2"
+config MTK_COMBO_CHIP_MT6632
+	bool "Mediatek MT6632 device driver support"
 	help
-	  this config is used to decided combo chip version
-	  in current platform
-	  is
-	  MT7662/MT7632
+	  This driver supports the built-in smart phone found in the Mediatek MT6632 chipset.
+	  If you want to use MT6632 driver supprt, say Y.
+	  If unsure, say N.
+	  Mediatek MT6632 module includes BT, FM, GPS, WIFI.
 
-config MTK_COMBO_CHIP_CONSYS_6572
-	bool "CONSYS_6572"
+config MTK_COMBO_CHIP_CONSYS_6757
+	bool "MTK MT6757 combo chip support"
 	help
 	  this config is used to decided SOC consys version
 	  in current platform
 	  is
-	  MT6572
+	  MT6757(BT/WIFI/GPS/FM combo chip)
 
-config MTK_COMBO_CHIP_CONSYS_6582
-	bool "CONSYS_6582"
+config MTK_COMBO_CHIP_CONSYS_6763
+	bool "MTK MT6763 combo chip support"
 	help
 	  this config is used to decided SOC consys version
 	  in current platform
 	  is
-	  MT6582
+	  MT6763(BT/WIFI/GPS/FM combo chip)
 
-config MTK_COMBO_CHIP_CONSYS_8127
-	bool "CONSYS_8127"
+config MTK_COMBO_CHIP_CONSYS_6758
+	bool "MTK MT6758 combo chip support"
 	help
 	  this config is used to decided SOC consys version
 	  in current platform
 	  is
-	  MT6572
+	  MT6758(BT/WIFI/GPS/FM combo chip)
 
-config MTK_COMBO_CHIP_CONSYS_6752
-	bool "CONSYS_6752"
+config MTK_COMBO_CHIP_CONSYS_6759
+	bool "MTK MT6759 combo chip support"
 	help
 	  this config is used to decided SOC consys version
 	  in current platform
 	  is
-	  MT6752
-
-config MTK_COMBO_CHIP_CONSYS_6592
-	bool "CONSYS_6592"
-	help
-	  this config is used to decided SOC consys version
-	  in current platform
-	  is
-	  MT6592
+	  MT6759(BT/WIFI/GPS/FM combo chip)
 
 config MTK_COMBO_CHIP_CONSYS_8163
 	bool "CONSYS_8163"
@@ -91,21 +91,21 @@ config MTK_COMBO_CHIP_CONSYS_8163
 	  is
 	  MT8163
 
-config MTK_COMBO_CHIP_CONSYS_6735
-	bool "CONSYS_6735"
+config MTK_COMBO_CHIP_CONSYS_6765
+	bool "MTK MT6765 combo chip support"
 	help
 	  this config is used to decided SOC consys version
 	  in current platform
 	  is
-	  MT6735
+	  MT6765(BT/WIFI/GPS/FM combo chip)
 
-config MTK_COMBO_CHIP_CONSYS_6580
-	bool "CONSYS_6580"
-	help
-	  this config is used to decided SOC consys version
-	  in current platform
-	  is
-	  MT6580
+config MTK_COMBO_CHIP_CONSYS_8167
+        bool "MTK MT8167 combo chip support"
+        help
+          this config is used to decided SOC consys version
+          in current platform
+          is
+          MT8167(BT/WIFI/GPS/FM combo chip)
 
 endchoice
 
@@ -114,15 +114,15 @@ config MTK_COMBO_CHIP
 	default "MT6620" if MTK_COMBO_CHIP_MT6620
 	default "MT6628" if MTK_COMBO_CHIP_MT6628
 	default "MT6630" if MTK_COMBO_CHIP_MT6630
-	default "MT76x2" if MTK_COMBO_CHIP_MT76x2
-	default "CONSYS_6572" if MTK_COMBO_CHIP_CONSYS_6572
-	default "CONSYS_6582" if MTK_COMBO_CHIP_CONSYS_6582
-	default "CONSYS_8127" if MTK_COMBO_CHIP_CONSYS_8127
-	default "CONSYS_6752" if MTK_COMBO_CHIP_CONSYS_6752
-	default "CONSYS_6592" if MTK_COMBO_CHIP_CONSYS_6592
+	default "MT6632" if MTK_COMBO_CHIP_MT6632
+	default "MT7668" if MTK_COMBO_CHIP_MT7668
+	default "CONSYS_6757" if MTK_COMBO_CHIP_CONSYS_6757
+	default "CONSYS_6763" if MTK_COMBO_CHIP_CONSYS_6763
+	default "CONSYS_6758" if MTK_COMBO_CHIP_CONSYS_6758
+	default "CONSYS_6759" if MTK_COMBO_CHIP_CONSYS_6759
 	default "CONSYS_8163" if MTK_COMBO_CHIP_CONSYS_8163
-	default "CONSYS_6735" if MTK_COMBO_CHIP_CONSYS_6735
-	default "CONSYS_6580" if MTK_COMBO_CHIP_CONSYS_6580
+	default "CONSYS_6765" if MTK_COMBO_CHIP_CONSYS_6765
+	default "CONSYS_8167" if MTK_COMBO_CHIP_CONSYS_8167
 	help
 	  this feature is used to identify combo chip version or SOC chip
 	  consys version.
@@ -176,7 +176,7 @@ config MTK_COMBO_COMM_NPWR
 config MTK_COMBO_COMM_APO
 	depends on MTK_COMBO_COMM
 	bool "Enable always power on support"
-	default y
+	default n
 	help
 	  Enable chip will always power on
 
@@ -204,29 +204,21 @@ config MTK_COMBO_GPS
 	help
 	  MTK GPS /dev/stpgps driver
 
-config MTK_WIFI_PM_CONTROL
-        tristate "Mediatek Wi-Fi PM Control"
-        default y
-        help
-          Interface to control Wi-Fi Power Saver Modes
-
 config MTK_COMBO_WIFI
 	tristate "MediaTek combo chip Wi-Fi support"
 	depends on MTK_COMBO
 	select WIRELESS_EXT
 	select WEXT_PRIV
 
-config MTK_BT_SUPPORT
-	bool "MTK_BT_SUPPORT"
-	help
-	   When this option set to yes, the MTK 76x2 Bluetooth solution will be
-	   included.
-	   The config is only used for 76x2 Bluetooth driver. No meanings for
-	   other BT driver
+config MTK_WIFI_DEVICE
+	bool "Mediatek chip wifi support"
+	select WIRELESS_EXT
+	select WEXT_PRIV
 
 config MTK_WAPI_SUPPORT
 	bool "MTK_WAPI_SUPPORT"
 	depends on MTK_COMBO_WIFI
+	default y
 	help
 	  if it is set to TRUE: Support WAPI (WLAN Authentication and
 	  Privacy Infrastructure)
@@ -248,7 +240,7 @@ config MTK_WIFI_MCC_SUPPORT
 	depends on MTK_COMBO_WIFI
 	default y
 	help
-	   if it is set to TRUE, wlan will support Multi-Channel Concurrency,
+	  if it is set to TRUE, wlan will support Multi-Channel Concurrency,
 	   otherwise, only support Single Channel Concurrency
 
 config MTK_DHCPV6C_WIFI
@@ -256,52 +248,111 @@ config MTK_DHCPV6C_WIFI
 	help
 	  no: disable this feature
 
-config MTK_WFD_SUPPORT
-	bool "MTK_WFD_SUPPORT"
-	depends on MTK_COMBO_WIFI
-	help
-	  Wi-Fi Display Switch
-
 config MTK_CONN_LTE_IDC_SUPPORT
 	bool "MediaTek CONN LTE IDC support"
 	select MTK_CONN_MD
-	default y
+	default y if MTK_ECCCI_DRIVER
 	help
 	  This option enables CONN LTE IDC support
 
-config MTK_WIFI_ANTENNA_SWITCH
-	bool "MTK_WIFI_ANTENNA_SWITCH"
-	depends on ARCH_MT8163
+menuconfig GPS
+	tristate "GPS drivers"
+	default y
+	---help---
+	  Say Y here for supporting GPS.
+
+if GPS
+config MTK_GPS
+	tristate "MediaTek GPS driver"
+	default y
+	---help---
+	  MTK GPS driver
+	  To switch gps nmea port driver.
+	  Set "yes" to turn on.
+	  Set "no" to turn off.
+endif # GPS
+
+config MTK_GPS_SUPPORT
+	tristate "MediaTek GPS driver"
+	select MTK_GPS
+	help
+	  to switch GPS feature on the platform.
+	  Set "yes" to turn on and set "no"
+	  (with MTK_AGPS_APP=no at the same time)
+	  to turn off.
+
+config MTK_GPS_REGISTER_SETTING
+	tristate "MediaTek GPS Register Setting"
+	depends on MTK_COMBO_GPS
+	help
+	   GPS register settings.
+
+config MTK_GPS_EMI
+	tristate "MediaTek GPS EMI Driver"
+	depends on MTK_COMBO_GPS
+	help
+	   GPS EMI driver is for MNL OFFLOAD feature.
+
+config MTK_FMRADIO
+	tristate "MediaTek FMRadio driver"
+	depends on MTK_COMBO
+	help
+	  This config is used to choose
+	  if need to compile fmradio folder.
+	  Will compile fmradio folder if set to 'y',
+	  otherwise will not compile fmradio folder.
+
+config MTK_FM_CHIP
+	string "MTK_FM_CHIP"
+	depends on MTK_FMRADIO
+	help
+	  This config is used to choose
+	  which FM radio chip to use:
+	  e.g. MT6627_FM, MT6580_FM, MT6630_FM,
+	  for control to use which platform code.
+
+config MTK_FM_50KHZ_SUPPORT
+	bool "MTK_FM_50KHZ_SUPPORT"
+	depends on MTK_FMRADIO
+	help
+	  This config is used to choose
+	  if need to support FM 50KHz step or not
+	  for tune/seek/scan functions.
+	  Will support 50KHz step if set to 'y',
+	  otherwise will not support 50KHz step.
+
+config MTK_MERGE_INTERFACE_SUPPORT
+	bool "MTK_MERGE_INTERFACE_SUPPORT"
+	help
+	  This config is used to control FM Audio
+	  path. FM audio path will use PCM/I2S merge
+	  interface is set to 'y',
+	  otherwise merge interface is not used.
+
+config MTK_COMBO_CHIP_DEEP_SLEEP_SUPPORT
+	depends on MTK_COMBO_CHIP_MT6632
+	default y
+	tristate "Mediatek combo chip deep sleep feature setting"
+	help
+	  this config is used to enable or disable chip deep sleep feature,
+	  if the project is no deep sleep design,
+	  host can`t wake up chip form deep sleep,
+	  we must close this config.
+
+config MTK_CONN_MT3337_CHIP_SUPPORT
+	bool "Mediatek MT3337 device driver support"
+	help
+	  This config is used to enable or disble chip 3337's gps driver.
+	  MT3337 is gps only chip without BT and wifi,
+	  it is powered on by new gps driver.
+	  Otherwise we must close this config.
+
+config MTK_CONNSYS_DEDICATED_LOG_PATH
+	bool "Enable connsys log using dedicated path"
 	default n
 	help
-	  Enable manual antenna switch for MT8163 iLNA.
-
-config MTK_WIFI_ANTENNA_SELECT
-	bool "MTK_WIFI_ANTENNA_SELECT"
-	depends on MTK_WIFI_ANTENNA_SWITCH
-	default n
-	help
-	  Enable antenna selection.
-
-
-config MTK_WIFI_OOBE_AP_MODE
-	bool "MTK_WIFI_OOBE_AP_MODE"
-	depends on ARCH_MT8163
-	default n
-	help
-	  Enable OOBE AP mode.
-
-config MTK_WIFI_LOGGING_REDUCTION
-	bool "MTK_WIFI_LOGGING_REDUCTION"
-	depends on ARCH_MT8163
-	default n
-	help
-	  Ease Wifi logging.
-
-config WIFI_DFS_CHANNEL
-	bool "WIFI_DFS_CHANNEL"
-	default n
-
-config SUPPORT_FT
-	bool "SUPPORT_FT"
-	default n
+	  This will enable connsys log using dedicated path
+	  1. There would be a common debug utility for collecting log from connsys
+	     (by EMI or other specific path)
+	  2. The scope may include (but not limited) Wi-Fi firmware log,
+	     BT firmware log, GPS firmware log etc.

@@ -27,10 +27,6 @@
 #include <linux/slab.h>
 #include "kdb_private.h"
 
-#ifdef CONFIG_MTK_EXTMEM
-#include <linux/exm_driver.h>
-#endif
-
 /*
  * kdbgetsymval - Return the address of the given symbol.
  *
@@ -133,13 +129,13 @@ int kdbnearsym(unsigned long addr, kdb_symtab_t *symtab)
 		}
 		if (i >= ARRAY_SIZE(kdb_name_table)) {
 			debug_kfree(kdb_name_table[0]);
-			memmove(kdb_name_table, kdb_name_table+1,
+			memcpy(kdb_name_table, kdb_name_table+1,
 			       sizeof(kdb_name_table[0]) *
 			       (ARRAY_SIZE(kdb_name_table)-1));
 		} else {
 			debug_kfree(knt1);
 			knt1 = kdb_name_table[i];
-			memmove(kdb_name_table+i, kdb_name_table+i+1,
+			memcpy(kdb_name_table+i, kdb_name_table+i+1,
 			       sizeof(kdb_name_table[0]) *
 			       (ARRAY_SIZE(kdb_name_table)-i-1));
 		}
@@ -225,13 +221,11 @@ int kallsyms_symbol_complete(char *prefix_name, int max_len)
  * Parameters:
  *	prefix_name	prefix of a symbol name to lookup
  *	flag	0 means search from the head, 1 means continue search.
- *	buf_size	maximum length that can be written to prefix_name
- *			buffer
  * Returns:
  *	1 if a symbol matches the given prefix.
  *	0 if no string found
  */
-int kallsyms_symbol_next(char *prefix_name, int flag, int buf_size)
+int kallsyms_symbol_next(char *prefix_name, int flag)
 {
 	int prefix_len = strlen(prefix_name);
 	static loff_t pos;
@@ -241,8 +235,10 @@ int kallsyms_symbol_next(char *prefix_name, int flag, int buf_size)
 		pos = 0;
 
 	while ((name = kdb_walk_kallsyms(&pos))) {
-		if (!strncmp(name, prefix_name, prefix_len))
-			return strscpy(prefix_name, name, buf_size);
+		if (strncmp(name, prefix_name, prefix_len) == 0) {
+			strncpy(prefix_name, name, strlen(name)+1);
+			return 1;
+		}
 	}
 	return 0;
 }
@@ -709,27 +705,8 @@ struct debug_alloc_header {
 #define dah_align 8
 #define dah_overhead ALIGN(sizeof(struct debug_alloc_header), dah_align)
 
-#ifdef CONFIG_MTK_EXTMEM
-#define SIZEOF_DEBUG_ALLOC_POOL_ALIGNED   (sizeof(u64) * 256 * 1024/dah_align)
-static u64 *debug_alloc_pool_aligned;
-static char *debug_alloc_pool;
-
-void init_debug_alloc_pool_aligned(void)
-{
-	debug_alloc_pool_aligned =
-		extmem_malloc_page_align(SIZEOF_DEBUG_ALLOC_POOL_ALIGNED);
-	if (debug_alloc_pool_aligned == NULL) {
-		pr_err("%s[%s] ext memory alloc failed!!!\n", __FILE__, __func__);
-		debug_alloc_pool = vmalloc(SIZEOF_DEBUG_ALLOC_POOL_ALIGNED);
-	} else {
-		debug_alloc_pool = (char *)debug_alloc_pool_aligned;
-	}
-}
-EXPORT_SYMBOL(init_debug_alloc_pool_aligned);
-#else
 static u64 debug_alloc_pool_aligned[256*1024/dah_align];	/* 256K pool */
 static char *debug_alloc_pool = (char *)debug_alloc_pool_aligned;
-#endif
 static u32 dah_first, dah_first_call = 1, dah_used, dah_used_max;
 
 /* Locking is awkward.  The debug code is called from all contexts,
@@ -776,11 +753,7 @@ void *debug_kmalloc(size_t size, gfp_t flags)
 	}
 	h = (struct debug_alloc_header *)(debug_alloc_pool + dah_first);
 	if (dah_first_call) {
-#ifdef CONFIG_MTK_EXTMEM
-		h->size = SIZEOF_DEBUG_ALLOC_POOL_ALIGNED - dah_overhead;
-#else
 		h->size = sizeof(debug_alloc_pool_aligned) - dah_overhead;
-#endif
 		dah_first_call = 0;
 	}
 	size = ALIGN(size, dah_align);
@@ -834,11 +807,7 @@ void debug_kfree(void *p)
 	if (!p)
 		return;
 	if ((char *)p < debug_alloc_pool ||
-#ifdef CONFIG_MTK_EXTMEM
-	    (char *)p >= debug_alloc_pool + SIZEOF_DEBUG_ALLOC_POOL_ALIGNED) {
-#else
 	    (char *)p >= debug_alloc_pool + sizeof(debug_alloc_pool_aligned)) {
-#endif
 		kfree(p);
 		return;
 	}
@@ -907,15 +876,9 @@ void debug_kusage(void)
 		return;
 	}
 	h_free = (struct debug_alloc_header *)(debug_alloc_pool + dah_first);
-#ifdef CONFIG_MTK_EXTMEM
-	if (dah_first == 0 &&
-		(h_free->size == SIZEOF_DEBUG_ALLOC_POOL_ALIGNED - dah_overhead ||
-		dah_first_call))
-#else
 	if (dah_first == 0 &&
 	    (h_free->size == sizeof(debug_alloc_pool_aligned) - dah_overhead ||
 	     dah_first_call))
-#endif
 		goto out;
 	if (!debug_kusage_one_time)
 		goto out;
@@ -938,11 +901,7 @@ void debug_kusage(void)
 	h_used = (struct debug_alloc_header *)
 		  ((char *)h_free + dah_overhead + h_free->size);
 	if ((char *)h_used - debug_alloc_pool !=
-#ifdef CONFIG_MTK_EXTMEM
-	    SIZEOF_DEBUG_ALLOC_POOL_ALIGNED)
-#else
 	    sizeof(debug_alloc_pool_aligned))
-#endif
 		kdb_printf("%s: h_used %p size %d caller %p\n",
 			   __func__, h_used, h_used->size, h_used->caller);
 out:

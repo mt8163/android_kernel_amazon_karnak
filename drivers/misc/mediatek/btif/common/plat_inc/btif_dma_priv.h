@@ -1,7 +1,20 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __HAL_BTIF_DMA_H_
 #define __HAL_BTIF_DMA_H_
 
-#include <asm/io.h>
+#include <linux/io.h>
 #include "btif_dma_pub.h"
 
 #if defined(CONFIG_MTK_CLKMGR)
@@ -18,7 +31,7 @@ extern struct clk *clk_btif_apdma; /*btif apdma clock*/
 #define RX_DMA_VFF_SIZE (1024 * 8)	/*Rx vFIFO Len must be 8 Byte allignment */
 
 #define DMA_TX_THRE(n) (n - 7)	/*Tx Trigger Level */
-#define DMA_RX_THRE(n) ((n) * 3 / 4)	/*Rx Trigger Level */
+#define DMA_RX_THRE(n) (1)	/*Rx Trigger Level */
 
 /**********************************Hardware related defination**************************/
 #ifndef CONFIG_OF
@@ -43,6 +56,7 @@ extern struct clk *clk_btif_apdma; /*btif apdma clock*/
 #define DMA_RPT_OFFSET  0x30
 #define DMA_VALID_OFFSET  0x3C
 #define DMA_LEFT_OFFSET  0x40
+#define DMA_VFF_BIT29_OFFSET  0x01
 
 #define TX_DMA_INT_FLAG(base)       (unsigned long)(base + 0x0)	/*BTIF Tx Virtual FIFO Interrupt Flag Register */
 #define TX_DMA_INT_EN(base)         (unsigned long)(base + 0x4)	/*BTIF Tx Virtual FIFO Interrupt Enable Register */
@@ -63,6 +77,7 @@ extern struct clk *clk_btif_apdma; /*btif apdma clock*/
 #define TX_DMA_VFF_VALID_SIZE(base) (unsigned long)(base + 0x3C) /*BTIF Tx Virtual FIFO Valid Size Register */
 #define TX_DMA_VFF_LEFT_SIZE(base)  (unsigned long)(base + 0x40) /*BTIF Tx Virtual FIFO Left Size Register */
 #define TX_DMA_DEBUG_STATUS(base)   (unsigned long)(base + 0x50) /*BTIF Tx Virtual FIFO Debug Status Register */
+#define TX_DMA_VFF_ADDR_H(base)     (unsigned long)(base + 0x54) /*BTIF Tx Virtual FIFO Base High Address Register */
 
 /*Rx Register Address Mapping*/
 #define RX_DMA_INT_FLAG(base)       (unsigned long)(base + 0x0)	/*BTIF Rx Virtual FIFO Interrupt Flag Register */
@@ -81,6 +96,7 @@ extern struct clk *clk_btif_apdma; /*btif apdma clock*/
 #define RX_DMA_VFF_VALID_SIZE(base) (unsigned long)(base + 0x3C) /*BTIF Rx Virtual FIFO Valid Size Register */
 #define RX_DMA_VFF_LEFT_SIZE(base)  (unsigned long)(base + 0x40) /*BTIF Rx Virtual FIFO Left Size  Register */
 #define RX_DMA_DEBUG_STATUS(base)   (unsigned long)(base + 0x50) /*BTIF Rx Virtual FIFO Debug Status Register */
+#define RX_DMA_VFF_ADDR_H(base)     (unsigned long)(base + 0x54) /*BTIF Rx Virtual FIFO Base High Address Register */
 
 #define DMA_EN_BIT (0x1)
 #define DMA_STOP_BIT (0x1)
@@ -131,18 +147,18 @@ extern struct clk *clk_btif_apdma; /*btif apdma clock*/
 
 #define RX_DMA_VFF_LEFT_MASK (0x0000FFFF)
 
-typedef struct _MTK_BTIF_DMA_VFIFO_ {
-	DMA_VFIFO vfifo;
+struct _MTK_BTIF_DMA_VFIFO_ {
+	struct _DMA_VFIFO_ vfifo;
 	unsigned int wpt;	/*DMA's write pointer, which is maintained by SW for Tx DMA and HW for Rx DMA */
 	unsigned int last_wpt_wrap;	/*last wrap bit for wpt */
 	unsigned int rpt;	/*DMA's read pointer, which is maintained by HW for Tx DMA and SW for Rx DMA */
 	unsigned int last_rpt_wrap;	/*last wrap bit for rpt */
-} MTK_BTIF_DMA_VFIFO, *P_MTK_BTIF_DMA_VFIFO;
+};
 
 /*for DMA debug purpose*/
-typedef struct _MTK_BTIF_DMA_REG_DMP_DBG_ {
+struct _MTK_BTIF_DMA_REG_DMP_DBG_ {
 	unsigned long reg_addr;
 	unsigned int reg_val;
-} MTK_BTIF_DMA_REG_DMP_DBG, *P_MTK_BTIF_DMA_REG_DMP_DBG;
+};
 
 #endif /*__HAL_BTIF_DMA_H_*/

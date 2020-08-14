@@ -97,6 +97,10 @@ struct reiserfs_inode_info {
 #ifdef CONFIG_REISERFS_FS_XATTR
 	struct rw_semaphore i_xattr_sem;
 #endif
+#ifdef CONFIG_QUOTA
+	struct dquot *i_dquot[MAXQUOTAS];
+#endif
+
 	struct inode vfs_inode;
 };
 
@@ -266,7 +270,7 @@ struct reiserfs_journal_list {
 
 	struct mutex j_commit_mutex;
 	unsigned int j_trans_id;
-	time64_t j_timestamp; /* write-only but useful for crash dump analysis */
+	time_t j_timestamp;
 	struct reiserfs_list_bitmap *j_list_bitmap;
 	struct buffer_head *j_commit_bh;	/* commit buffer head */
 	struct reiserfs_journal_cnode *j_realblock;
@@ -906,7 +910,6 @@ do {									\
 	if (!(cond))							\
 		reiserfs_panic(NULL, "assertion failure", "(" #cond ") at " \
 			       __FILE__ ":%i:%s: " format "\n",		\
-			       in_interrupt() ? -1 : task_pid_nr(current), \
 			       __LINE__, __func__ , ##args);		\
 } while (0)
 
@@ -1323,7 +1326,6 @@ struct cpu_key {
 #define KEY_NOT_FOUND 0
 
 #define KEY_SIZE (sizeof(struct reiserfs_key))
-#define SHORT_KEY_SIZE (sizeof (__u32) + sizeof (__u32))
 
 /* return values for search_by_key and clones */
 #define ITEM_FOUND 1

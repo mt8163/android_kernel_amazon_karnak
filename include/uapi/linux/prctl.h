@@ -179,14 +179,16 @@ struct prctl_mm_map {
 #define PR_SET_THP_DISABLE	41
 #define PR_GET_THP_DISABLE	42
 
-/* Sets the timerslack for arbitrary threads
- * arg2 slack value, 0 means "use default"
- * arg3 pid of the thread whose timer slack needs to be set
+/*
+ * Tell the kernel to start/stop helping userspace manage bounds tables.
  */
-#define PR_SET_TIMERSLACK_PID 43
+#define PR_MPX_ENABLE_MANAGEMENT  43
+#define PR_MPX_DISABLE_MANAGEMENT 44
 
-#define PR_SET_VMA		0x53564d41
-# define PR_SET_VMA_ANON_NAME		0
+#define PR_SET_FP_MODE		45
+#define PR_GET_FP_MODE		46
+# define PR_FP_MODE_FR		(1 << 0)	/* 64b FP registers */
+# define PR_FP_MODE_FRE		(1 << 1)	/* 32b compatibility */
 
 /* Control the ambient capability set */
 #define PR_CAP_AMBIENT			47
@@ -194,5 +196,20 @@ struct prctl_mm_map {
 # define PR_CAP_AMBIENT_RAISE		2
 # define PR_CAP_AMBIENT_LOWER		3
 # define PR_CAP_AMBIENT_CLEAR_ALL	4
+
+/* Per task speculation control */
+#define PR_GET_SPECULATION_CTRL		52
+#define PR_SET_SPECULATION_CTRL		53
+/* Speculation control variants */
+# define PR_SPEC_STORE_BYPASS		0
+/* Return and control values for PR_SET/GET_SPECULATION_CTRL */
+# define PR_SPEC_NOT_AFFECTED		0
+# define PR_SPEC_PRCTL			(1UL << 0)
+# define PR_SPEC_ENABLE			(1UL << 1)
+# define PR_SPEC_DISABLE		(1UL << 2)
+# define PR_SPEC_FORCE_DISABLE		(1UL << 3)
+
+#define PR_SET_VMA		0x53564d41
+# define PR_SET_VMA_ANON_NAME		0
 
 #endif /* _LINUX_PRCTL_H */

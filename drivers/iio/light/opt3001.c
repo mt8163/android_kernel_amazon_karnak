@@ -28,17 +28,9 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#include <linux/string.h>
-
 #include <linux/iio/events.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
-
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-#include <alsps.h>
-#include <cust_alsps.h>
-#include <sensors_io.h>
-#endif
 
 #define OPT3001_RESULT		0x00
 #define OPT3001_CONFIGURATION	0x01
@@ -76,8 +68,6 @@
 #define OPT3001_INT_TIME_LONG		800000
 #define OPT3001_INT_TIME_SHORT		100000
 
-#define MAX_MEASURED_LUX	300
-
 /*
  * Time to wait for conversion result to be ready. The device datasheet
  * sect. 6.5 states results are ready after total integration time plus 3ms.
@@ -86,23 +76,8 @@
  */
 #define OPT3001_RESULT_READY_SHORT	150
 #define OPT3001_RESULT_READY_LONG	1000
-#define APS_TAG                  "[ALS/PS] "
-#define APS_FUN(f)               printk(APS_TAG"%s\n", __FUNCTION__)
-#define APS_ERR(fmt, args...)    printk(APS_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
-#define APS_LOG(fmt, args...)    printk(APS_TAG fmt, ##args)
-#define APS_DBG(fmt, args...)    printk(fmt, ##args)
-
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-struct alsps_hw alsps_cust;
-static struct alsps_hw *hw = &alsps_cust;
-static int  opt3001_local_init(void);
-static int  opt3001_local_uninit(void);
-#endif
 
 struct opt3001 {
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-	struct alsps_hw		*hw;
-#endif
 	struct i2c_client	*client;
 	struct device		*dev;
 
@@ -128,14 +103,6 @@ struct opt3001_scale {
 	int	val;
 	int	val2;
 };
-
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-static struct alsps_init_info opt3001_init_info = {
-	.name = "opt300x",
-	.init = opt3001_local_init,
-	.uninit = opt3001_local_uninit,
-};
-#endif
 
 static const struct opt3001_scale opt3001_scales[] = {
 	{
@@ -183,17 +150,6 @@ static const struct opt3001_scale opt3001_scales[] = {
 		.val2 = 600000,
 	},
 };
-
-static s32 calibrated_lux_at_0 = -1;
-
-/* Max Raw measurement */
-static s32 calibrated_lux_at_300 = -1;
-
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-static struct opt3001 *opt3001_obj;
-#endif
-
-static int opt3001_configure(struct opt3001 *opt);
 
 static int opt3001_find_scale(const struct opt3001 *opt, int val,
 		int val2, u8 *exponent)
@@ -271,50 +227,6 @@ static const struct iio_chan_spec opt3001_channels[] = {
 	},
 	IIO_CHAN_SOFT_TIMESTAMP(1),
 };
-
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-static int als_set_delay(u64 ns)
-{
-	return 0;
-}
-
-static int als_open_report_data(int open)
-{
-	APS_LOG("Inside als_open_report_data\n");
-	return 0;
-}
-
-static int als_enable_nodata(int en)
-{
-	int ret = 0;
-	u16 reg;
-	APS_LOG("opt3001_obj als enable value = %d\n", en);
-
-	if (en == 0) {
-		ret = i2c_smbus_read_word_swapped(opt3001_obj->client, OPT3001_CONFIGURATION);
-		if (ret < 0) {
-			dev_err(opt3001_obj->dev, "failed to read register %02x\n",
-				OPT3001_CONFIGURATION);
-			return ret;
-		}
-
-		reg = ret;
-		opt3001_set_mode(opt3001_obj, &reg, OPT3001_CONFIGURATION_M_SHUTDOWN);
-
-		ret = i2c_smbus_write_word_swapped(opt3001_obj->client, OPT3001_CONFIGURATION,
-						reg);
-		if (ret < 0) {
-			dev_err(opt3001_obj->dev, "failed to write register %02x\n",
-				OPT3001_CONFIGURATION);
-			return ret;
-		}
-	} else {
-		ret = opt3001_configure(opt3001_obj);
-	}
-
-	return ret;
-}
-#endif
 
 static int opt3001_get_lux(struct opt3001 *opt, int *val, int *val2)
 {
@@ -407,12 +319,10 @@ err:
 		/* Disallow IRQ to access the device while lock is active */
 		opt->ok_to_ignore_lock = false;
 
-	if (!opt->result_ready) {
-		if (ret == 0)
-			return -ETIMEDOUT;
-		else if (ret < 0)
-			return ret;
-	}
+	if (ret == 0)
+		return -ETIMEDOUT;
+	else if (ret < 0)
+		return ret;
 
 	if (opt->use_irq) {
 		/*
@@ -440,38 +350,6 @@ err:
 
 	return IIO_VAL_INT_PLUS_MICRO;
 }
-
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-static int als_get_data(int *value, int *status)
-{
-	int ret = 0;
-	int val1;
-	int val2;
-
-	int lux_val = 0;
-
-	if (!opt3001_obj) {
-		APS_ERR("opt3001_obj is NULL!\n");
-		return -1;
-	}
-
-	mutex_lock(&opt3001_obj->lock);
-	ret = opt3001_get_lux(opt3001_obj, &val1, &val2);
-	mutex_unlock(&opt3001_obj->lock);
-
-	lux_val = val2/1000 + val1*1000;
-
-	if (calibrated_lux_at_300 > 0) {
-
-		long calibrated_val = (lux_val * MAX_MEASURED_LUX) / calibrated_lux_at_300;
-		*value = (int)calibrated_val;
-	} else {
-		*value = val1;
-	}
-	*status = SENSOR_STATUS_ACCURACY_MEDIUM;
-	return 0;
-}
-#endif
 
 static int opt3001_get_int_time(struct opt3001 *opt, int *val, int *val2)
 {
@@ -812,80 +690,6 @@ static int opt3001_configure(struct opt3001 *opt)
 	return 0;
 }
 
-#if CONFIG_IDME
-#define IDME_OF_ALSCAL 		"/idme/alscal"
-void idme_set_alscal_calibrated_values(void)
-{
-    struct device_node *ap = NULL;
-    char *alscal_idme = NULL;
-	char alscal_copy[20];
-	char *alscal = alscal_copy;
-	char *lux_at_0_str, *lux_at_300_str;
-	char *lux_at_300_str_integer = NULL;
-	char *lux_at_300_str_decimal = NULL;
-	int lux_at_300_integer = 0;
-	int lux_at_300_decimal = 0;
-	const char delimiters[] = "., ";
-
-	APS_LOG("fetching calibration values for ALSCAL\n");
-	ap = of_find_node_by_path(IDME_OF_ALSCAL);
-	if (ap)
-		alscal_idme = (char *)of_get_property(ap, "value", NULL);
-	else {
-		pr_err("of_find_node_by_path failed\n");
-		return;
-	}
-
-	if (alscal_idme == NULL)
-		return;
-
-	strcpy(alscal, alscal_idme);
-
-	/* alscal is stored in the format alscal=00,06 or
-	 * alscal=00,06.23
-	 */
-	lux_at_0_str = strsep(&alscal, ", ");
-
-	if (alscal == NULL) {
-		return;
-	}
-
-	lux_at_300_str = strsep(&alscal, "");
-
-	lux_at_300_str_integer = strsep(&lux_at_300_str, delimiters);
-
-	if (lux_at_300_str != NULL)
-		lux_at_300_str_decimal = strsep(&lux_at_300_str, "");
-
-	if (kstrtos32(lux_at_300_str_integer, 16, &lux_at_300_integer) != 0) {
-		APS_ERR("Calibration data not found\n");
-		return;
-	}
-
-	if (lux_at_300_str_decimal != NULL) {
-		if (kstrtos32(lux_at_300_str_decimal, 10, &lux_at_300_decimal) != 0) {
-			APS_ERR("Calibration data not found\n");
-			return;
-		}
-	}
-
-	/* figuring out the nearest multiplier for the decimal part */
-	if (lux_at_300_decimal < 10)
-		lux_at_300_decimal *= 100;
-	else if (lux_at_300_decimal < 100)
-		lux_at_300_decimal *= 10;
-	else if (lux_at_300_decimal < 1000)
-		lux_at_300_decimal *= 1;
-
-	/* Multiply by 1000 to aid in fixed point division when
-	 * scaling the values */
-	calibrated_lux_at_300 = lux_at_300_integer * 1000 + lux_at_300_decimal;
-	calibrated_lux_at_0 *= 1000;
-
-	APS_LOG("Raw value at 300 lux is %d\n", calibrated_lux_at_300);
-}
-#endif
-
 static irqreturn_t opt3001_irq(int irq, void *_iio)
 {
 	struct iio_dev *iio = _iio;
@@ -909,13 +713,13 @@ static irqreturn_t opt3001_irq(int irq, void *_iio)
 					IIO_UNMOD_EVENT_CODE(IIO_LIGHT, 0,
 							IIO_EV_TYPE_THRESH,
 							IIO_EV_DIR_RISING),
-					iio_get_time_ns());
+					iio_get_time_ns(iio));
 		if (ret & OPT3001_CONFIGURATION_FL)
 			iio_push_event(iio,
 					IIO_UNMOD_EVENT_CODE(IIO_LIGHT, 0,
 							IIO_EV_TYPE_THRESH,
 							IIO_EV_DIR_FALLING),
-					iio_get_time_ns());
+					iio_get_time_ns(iio));
 	} else if (ret & OPT3001_CONFIGURATION_CRF) {
 		ret = i2c_smbus_read_word_swapped(opt->client, OPT3001_RESULT);
 		if (ret < 0) {
@@ -944,24 +748,14 @@ static int opt3001_probe(struct i2c_client *client,
 	struct opt3001 *opt;
 	int irq = client->irq;
 	int ret;
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-	static struct als_data_path als_data = {0};
-	static struct als_control_path als_ctl = {0};
-#endif
-	APS_LOG("%s: opt3001_probe \n", __FUNCTION__);
 
 	iio = devm_iio_device_alloc(dev, sizeof(*opt));
 	if (!iio)
 		return -ENOMEM;
 
 	opt = iio_priv(iio);
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-	opt3001_obj = opt;
-	opt->hw = &alsps_cust;
-#endif
 	opt->client = client;
 	opt->dev = dev;
-
 
 	mutex_init(&opt->lock);
 	init_waitqueue_head(&opt->result_ready_queue);
@@ -988,37 +782,11 @@ static int opt3001_probe(struct i2c_client *client,
 		return ret;
 	}
 
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-	als_ctl.open_report_data = als_open_report_data;
-	als_ctl.enable_nodata = als_enable_nodata;
-	als_ctl.set_delay = als_set_delay;
-	als_ctl.is_report_input_direct = false;
-	als_ctl.is_support_batch = false;
-
-	ret = als_register_control_path(&als_ctl);
-	if (ret) {
-		APS_ERR("register fail = %d\n", ret);
-		return ret;
-	}
-	als_data.get_data = als_get_data;
-	als_data.vender_div = 100;
-	ret = als_register_data_path(&als_data);
-	if (ret) {
-		APS_ERR("register data fail = %d\n", ret);
-		return ret;
-	}
-
-	ret = batch_register_support_info(ID_LIGHT, als_ctl.is_support_batch, 100, 0);
-	if (ret) {
-		APS_ERR("register light batch support ret = %d\n", ret);
-	}
-#endif
-
 	/* Make use of INT pin only if valid IRQ no. is given */
 	if (irq > 0) {
 		ret = request_threaded_irq(irq, NULL, opt3001_irq,
 				IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-				"opt300x", iio);
+				"opt3001", iio);
 		if (ret) {
 			dev_err(dev, "failed to request IRQ #%d\n", irq);
 			return ret;
@@ -1059,23 +827,17 @@ static int opt3001_remove(struct i2c_client *client)
 		return ret;
 	}
 
-	i2c_unregister_device(client);
-	kfree(i2c_get_clientdata(client));
 	return 0;
 }
 
 static const struct i2c_device_id opt3001_id[] = {
-	{ "opt300x", 0 },
+	{ "opt3001", 0 },
 	{ } /* Terminating Entry */
 };
 MODULE_DEVICE_TABLE(i2c, opt3001_id);
 
 static const struct of_device_id opt3001_of_match[] = {
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-	{ .compatible = "mediatek,alsps" },
-#else
 	{ .compatible = "ti,opt3001" },
-#endif
 	{ }
 };
 
@@ -1085,59 +847,13 @@ static struct i2c_driver opt3001_driver = {
 	.id_table = opt3001_id,
 
 	.driver = {
-		.name = "opt300x",
+		.name = "opt3001",
 		.of_match_table = of_match_ptr(opt3001_of_match),
 	},
 };
 
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-static int opt3001_local_init(void)
-{
-	if (i2c_add_driver(&opt3001_driver)) {
-		APS_ERR("Add driver error\n");
-		return -1;
-	}
-	return 0;
-}
+module_i2c_driver(opt3001_driver);
 
-static int opt3001_local_uninit(void)
-{
-	APS_FUN();
-	i2c_del_driver(&opt3001_driver);
-	return 0;
-}
-#endif
-
-static int __init opt3001_init(void)
-{
-#ifdef CONFIG_MTK_SENSOR_SUPPORT
-	const char *name = "mediatek,opt300x";
-	hw = get_alsps_dts_func(name, hw);
-	APS_LOG("%s: i2c_number=%d\n", __func__, hw->i2c_num);
-	alsps_driver_add(&opt3001_init_info);
-#else
-	 if (i2c_add_driver(&opt3001_driver)) {
-		APS_ERR("Add driver error\n");
-		return -1;
-	 }
-#endif
-#if CONFIG_IDME
-	idme_set_alscal_calibrated_values();
-#endif
-	return 0;
-}
-
-static void __exit opt3001_exit(void)
-{
-#ifndef CONFIG_MTK_SENSOR_SUPPORT
-	i2c_del_driver(&opt3001_driver);
-#else
-	APS_FUN();
-#endif
-}
-
-module_init(opt3001_init);
-module_exit(opt3001_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Andreas Dannenberg <dannenberg@ti.com>");
 MODULE_DESCRIPTION("Texas Instruments OPT3001 Light Sensor Driver");

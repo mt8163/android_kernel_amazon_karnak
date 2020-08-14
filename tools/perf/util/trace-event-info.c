@@ -38,7 +38,7 @@
 
 #include "../perf.h"
 #include "trace-event.h"
-#include <api/fs/debugfs.h>
+#include <api/fs/tracing_path.h>
 #include "evsel.h"
 #include "debug.h"
 
@@ -341,20 +341,14 @@ out:
 
 static int record_proc_kallsyms(void)
 {
-	unsigned int size;
-	const char *path = "/proc/kallsyms";
-	struct stat st;
-	int ret, err = 0;
-
-	ret = stat(path, &st);
-	if (ret < 0) {
-		/* not found */
-		size = 0;
-		if (write(output_fd, &size, 4) != 4)
-			err = -EIO;
-		return err;
-	}
-	return record_file(path, 4);
+	unsigned long long size = 0;
+	/*
+	 * Just to keep older perf.data file parsers happy, record a zero
+	 * sized kallsyms file, i.e. do the same thing that was done when
+	 * /proc/kallsyms (or something specified via --kallsyms, in a
+	 * different path) couldn't be read.
+	 */
+	return write(output_fd, &size, 4) != 4 ? -EIO : 0;
 }
 
 static int record_ftrace_printk(void)
@@ -513,14 +507,12 @@ struct tracing_data *tracing_data_get(struct list_head *pattrs,
 			 "/tmp/perf-XXXXXX");
 		if (!mkstemp(tdata->temp_file)) {
 			pr_debug("Can't make temp file");
-			free(tdata);
 			return NULL;
 		}
 
 		temp_fd = open(tdata->temp_file, O_RDWR);
 		if (temp_fd < 0) {
 			pr_debug("Can't read '%s'", tdata->temp_file);
-			free(tdata);
 			return NULL;
 		}
 

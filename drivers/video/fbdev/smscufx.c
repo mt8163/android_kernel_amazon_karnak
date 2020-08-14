@@ -1142,8 +1142,7 @@ static void ufx_free_framebuffer_work(struct work_struct *work)
 		fb_dealloc_cmap(&info->cmap);
 	if (info->monspecs.modedb)
 		fb_destroy_modedb(info->monspecs.modedb);
-	if (info->screen_base)
-		vfree(info->screen_base);
+	vfree(info->screen_base);
 
 	fb_destroy_modelist(&info->modelist);
 
@@ -1743,8 +1742,7 @@ error:
 				fb_dealloc_cmap(&info->cmap);
 			if (info->monspecs.modedb)
 				fb_destroy_modedb(info->monspecs.modedb);
-			if (info->screen_base)
-				vfree(info->screen_base);
+			vfree(info->screen_base);
 
 			fb_destroy_modelist(&info->modelist);
 
@@ -1763,10 +1761,8 @@ error:
 static void ufx_usb_disconnect(struct usb_interface *interface)
 {
 	struct ufx_data *dev;
-	struct fb_info *info;
 
 	dev = usb_get_intfdata(interface);
-	info = dev->info;
 
 	pr_debug("USB disconnect starting\n");
 

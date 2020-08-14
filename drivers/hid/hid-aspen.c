@@ -23,16 +23,11 @@
 #include <linux/input/mt.h>
 #include <linux/module.h>
 #include <linux/delay.h>
+#include <linux/version.h>
 #include "hid-ids.h"
-#include <linux/input.h>
-#include <linux/kernel.h>
-#include <linux/hidraw.h>
-#include <uapi/linux/hidraw.h>
 
 /* Debug message */
-
 #undef ASPEN_DEBUG
-/* #define ASPEN_DEBUG */
 #ifdef ASPEN_DEBUG
 	#define DEBUG_MSG(fmt, args...)	printk(fmt, ## args)
 #else
@@ -40,61 +35,55 @@
 #endif
 
 #undef VERY_VERBOSE_LOGGING
-/* #define VERY_VERBOSE_LOGGING */
 #ifdef VERY_VERBOSE_LOGGING
 	#define ASPEN_DEBUG_VERBOSE DEBUG_MSG
 #else
 	#define ASPEN_DEBUG_VERBOSE(fmt, args...)
 #endif
 
-/* Firmware version */
-#define ASPEN_DRV_VERSION __DATE__
-
 /* Report id */
-#define REPORT_ID_KEYBOARD          0x01
-
-#define REPORT_ID_MOUSE				0x06
-#define REPORT_ID_TOUCHPAD			0x05
+#define REPORT_ID_KEYBOARD	0x01
+#define REPORT_ID_MOUSE		0x06
+#define REPORT_ID_TOUCHPAD	0x05
 
 /* Handle Lab126 Keyboard shop key */
-#define REPORT_ID_CONSUMER          0x0c
-#define REPORT_ID_LAB126            0x09
-#define CAPS_OFF                    0
-#define CAPS_ON                     1
+#define REPORT_ID_CONSUMER	0x0c
+#define REPORT_ID_LAB126	0x09
+#define CAPS_OFF		0
+#define CAPS_ON			1
 
 static int caps_status = CAPS_OFF;
 
 /* CapsLock set feature report command */
-/* static unsigned char buf_on[] = { 0x01, 0x82 }; */
 static unsigned char buf_off[] = { 0x01, 0x80 };
 static unsigned char buf_aspen[] = {0x01, 0x80};
 
 /* Max multi-touch count */
-#define MAX_MULTITOUCH_COUNT	    2
+#define MAX_MULTITOUCH_COUNT	2
 
 /* Track Pad Constants */
-#define TRACKPAD_MIN_X              0
-#define TRACKPAD_MAX_X              590
-#define TRACKPAD_MIN_Y              -330
-#define TRACKPAD_MAX_Y              0
-#define TRACKPAD_RES_X              590
-#define TRACKPAD_RES_Y              330
+#define TRACKPAD_MIN_X		0
+#define TRACKPAD_MAX_X		590
+#define TRACKPAD_MIN_Y		-330
+#define TRACKPAD_MAX_Y		0
+#define TRACKPAD_RES_X		590
+#define TRACKPAD_RES_Y		330
 
-#define TOUCH_STATE_MASK            0xff
-#define TOUCH_STATE_NONE            0x00
+#define TOUCH_STATE_MASK	0xff
+#define TOUCH_STATE_NONE	0x00
 
-#define SHOP_KEY                    0x86
-#define BRIGHTNESSUP                0x87
-#define BRIGHTNESSDOWN              0x88
-#define KEYF21                      0x90
-#define KEYF22                      0x91
-#define KEYF23                      0x92
-#define KEYF24                      0x93
+#define SHOP_KEY		0x86
+#define BRIGHTNESSUP		0x87
+#define BRIGHTNESSDOWN		0x88
+#define KEYF21			0x90
+#define KEYF22			0x91
+#define KEYF23			0x92
+#define KEYF24			0x93
 
-#define TRACKPAD_LOCK               0xA0
-#define TRACKPAD_UNLOCK             0xA1
+#define TRACKPAD_LOCK		0xA0
+#define TRACKPAD_UNLOCK		0xA1
 
-#define CAPS_KEY                    0x39
+#define CAPS_KEY		0x39
 
 /*
  * Device structure for matched devices
@@ -164,7 +153,7 @@ static void aspen_emit_touch(struct aspen_device *aspen_dev, u8 *tdata, int fing
 
 	input_mt_slot(input, finger_id);
 
-    /* Generate the input events for this touch. */
+	/* Generate the input events for this touch. */
 	if (down) {
 		ASPEN_DEBUG_VERBOSE("%s : generate input event for finger id [%d] - DOWN = %d\n",
 			__func__, finger_id, down);
@@ -173,7 +162,7 @@ static void aspen_emit_touch(struct aspen_device *aspen_dev, u8 *tdata, int fing
 		input_report_abs(input, ABS_MT_POSITION_Y, Y);
 	} else {
 		ASPEN_DEBUG_VERBOSE("%s : generate input event for finger id [%d] - UP = %d\n",
-		__func__, finger_id, down);
+			__func__, finger_id, down);
 		input_mt_report_slot_state(input, MT_TOOL_FINGER, false);
 	}
 }
@@ -187,7 +176,6 @@ static void aspen_emit_touch(struct aspen_device *aspen_dev, u8 *tdata, int fing
  *
  *	0x09			Lab126 Keyboard : handle Shop key
  */
-
 static int aspen_raw_event(struct hid_device *hdev, struct hid_report *report,
 	 u8 *data, int size)
 {
@@ -250,7 +238,6 @@ static int aspen_raw_event(struct hid_device *hdev, struct hid_report *report,
 		break;
 
 	case REPORT_ID_TOUCHPAD:
-
 		clicks = ((data[5] & 0x80) >> 7);
 		ASPEN_DEBUG_VERBOSE("%s: Enter:: received REPORT_ID_TOUCHPAD event: size = %d : click = %d\n", __func__, size, clicks);
 
@@ -282,10 +269,10 @@ static int aspen_raw_event(struct hid_device *hdev, struct hid_report *report,
 				__func__, keyCode);
 			input_report_key(aspen_dev->input, KEY_BRIGHTNESSUP, 1);
 			input_sync(aspen_dev->input);
-/*feature
+#if 0
 			input_report_key(aspen_dev->input, KEY_BRIGHTNESSUP, 0);
 			input_sync(aspen_dev->input);
-*/
+#endif
 			break;
 
 		case BRIGHTNESSDOWN:
@@ -293,10 +280,10 @@ static int aspen_raw_event(struct hid_device *hdev, struct hid_report *report,
 				__func__, keyCode);
 			input_report_key(aspen_dev->input, KEY_BRIGHTNESSDOWN, 1);
 			input_sync(aspen_dev->input);
-/*
+#if 0
 			input_report_key(aspen_dev->input, KEY_BRIGHTNESSDOWN, 0);
 			input_sync(aspen_dev->input);
-*/
+#endif
 			break;
 		case TRACKPAD_LOCK:
 			DEBUG_MSG("%s: handle Lab126 Keyboard special case:  (Lock screen) keyCode = 0x%02x\n",
@@ -375,7 +362,6 @@ static int aspen_raw_event(struct hid_device *hdev, struct hid_report *report,
 
 }
 
-
 /*
  * Probe function for matched devices
  */
@@ -403,18 +389,20 @@ static int aspen_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	}
 
 	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT);
-	/* ret = hid_hw_start(hdev, HID_CONNECT_HIDINPUT); */
 	if (ret) {
 		DEBUG_MSG("%s: hw start failed\n", __func__);
 		goto fail;
 	}
 
-	ret = hdev->ll_driver->output_report(hdev, buf_aspen, sizeof(buf_aspen));
-	printk(KERN_DEBUG "%s: sent ID MSG (0x80) to Aspen\n", __func__);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
+	ret = hid_hw_output_report(hdev, buf_aspen, sizeof(buf_aspen));
+#else
+	ret = hdev->hid_output_raw_report(hdev, buf_aspen, sizeof(buf_aspen), HID_OUTPUT_REPORT);
+#endif
+	DEBUG_MSG("%s: sent ID MSG (0x80) to Aspen\n", __func__);
 
 	if (ret < 0) {
-		DEBUG_MSG("%s: set HID_OUTPUT_REPORT failed\n", __func__);
-		ret = -ENOMEM;
+		hid_err(hdev, "%s: set HID_OUTPUT_REPORT failed\n", __func__);
 		goto err_stop_hw;
 	}
 
@@ -423,13 +411,15 @@ static int aspen_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	/* Initialize CapsLock status: Off */
 	caps_status = CAPS_OFF;
 
-	ret = hdev->ll_driver->output_report(hdev, buf_off, sizeof(buf_off));
-	printk(KERN_DEBUG "%s: sent CAPS OFF (0x00) to Aspen\n", __func__);
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
+	ret = hid_hw_output_report(hdev, buf_off, sizeof(buf_off));
+#else
+	ret = hdev->hid_output_raw_report(hdev, buf_off, sizeof(buf_off), HID_OUTPUT_REPORT);
+#endif
+	DEBUG_MSG("%s: sent CAPS OFF (0x00) to Aspen\n", __func__);
 
 	if (ret < 0) {
-		DEBUG_MSG("%s: set HID_OUTPUT_REPORT failed\n", __func__);
-		ret = -ENOMEM;
+		hid_err(hdev, "%s: set HID_OUTPUT_REPORT failed\n", __func__);
 		goto err_stop_hw;
 	}
 
@@ -446,7 +436,7 @@ static int aspen_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		goto err_stop_hw;
 	}
 
-	printk(KERN_DEBUG "%s: Init ok, hdev->claimed = 0x%x\n", __func__, hdev->claimed);
+	DEBUG_MSG("%s: Init ok, hdev->claimed = 0x%x\n", __func__, hdev->claimed);
 
 	init_timer(&aspen->delay_timer);
 	aspen->delay_timer.function = aspen_delay_func;
@@ -464,7 +454,6 @@ fail:
 	return ret;
 }
 
-
 /*
  * Input settings and key mapping for matched devices
  *  USAGE_PAGE_ID:      DESCRIPTION:
@@ -476,7 +465,6 @@ fail:
  *		0x000c			Consumer
  *		0x000d			Digitizer
  */
-
 static int aspen_input_mapping(struct hid_device *hdev,
 		struct hid_input *hi, struct hid_field *field,
 		struct hid_usage *usage, unsigned long **bit, int *max)
@@ -488,7 +476,7 @@ static int aspen_input_mapping(struct hid_device *hdev,
 		aspen->input = hi->input;
 
 	ASPEN_DEBUG_VERBOSE("%s: Usage page = 0x%x, Usage id = 0x%x\n", __func__,
-				  (usage->hid & HID_USAGE_PAGE) >> 4, usage->hid & HID_USAGE);
+				(usage->hid & HID_USAGE_PAGE) >> 4, usage->hid & HID_USAGE);
 
 	switch (usage->hid & HID_USAGE_PAGE) {
 	case HID_UP_GENDESK:	/* 0x0001 */
@@ -530,12 +518,14 @@ static int aspen_input_mapping(struct hid_device *hdev,
 		break;
 	}
 
-	if ((hi->input->id.product == USB_DEVICE_ID_LAB126_ASPEN_KB_US || hi->input->id.product == USB_DEVICE_ID_LAB126_ASPEN_KB_UK) && field->flags & HID_MAIN_ITEM_RELATIVE)
+	if ((hi->input->id.product == USB_DEVICE_ID_LAB126_ASPEN_KB_US
+		|| hi->input->id.product == USB_DEVICE_ID_LAB126_ASPEN_KB_UK)
+		&& field->flags & HID_MAIN_ITEM_RELATIVE)
 		return -EPERM;
 
 	/*
 	 * Return a 1 means a matching mapping is found, otherwise need
-     * HID driver to search mapping in hid-input.c
+	 * HID driver to search mapping in hid-input.c
 	*/
 	return 0;
 }
@@ -599,7 +589,7 @@ static int aspen_input_configured(struct hid_device *hdev,
 		/* clean msc->input to notify probe() of the failure */
 		aspen->input = NULL;
 	} else {
-		printk(KERN_DEBUG "%s - Aspen setup input OK\n", __func__);
+		DEBUG_MSG("%s - Aspen setup input OK\n", __func__);
 	}
 
 	return ret;
@@ -612,39 +602,36 @@ static void aspen_remove(struct hid_device *hdev)
 {
 	struct aspen_device *aspen = hid_get_drvdata(hdev);
 
-	printk(KERN_DEBUG "%s\n", __func__);
+	DEBUG_MSG("%s\n", __func__);
 	hid_hw_stop(hdev);
 
 	if (NULL != aspen)
 		kfree(aspen);
 }
 
-
 /*
  * Device list that matches this driver
  */
 static const struct hid_device_id aspen_devices[] = {
-	{ HID_BLUETOOTH_DEVICE(BT_VENDOR_ID_LAB126_KB, USB_DEVICE_ID_LAB126_ASPEN_KB_US) },
-	{ HID_BLUETOOTH_DEVICE(BT_VENDOR_ID_LAB126_KB, USB_DEVICE_ID_LAB126_ASPEN_KB_UK) },
+	{ HID_BLUETOOTH_DEVICE(BT_VENDOR_ID_LAB126, USB_DEVICE_ID_LAB126_ASPEN_KB_US) },
+	{ HID_BLUETOOTH_DEVICE(BT_VENDOR_ID_LAB126, USB_DEVICE_ID_LAB126_ASPEN_KB_UK) },
 	{ }	/* Terminating entry */
 };
 MODULE_DEVICE_TABLE(hid, aspen_devices);
-
 
 /*
  * Special driver function structure for matched devices
  */
 static struct hid_driver aspen_driver = {
-	.name           = "Fire HD10 Keyboard",
-	.id_table       = aspen_devices,
-	.raw_event      = aspen_raw_event,
-	.probe          = aspen_probe,
-	.remove         = aspen_remove,
-	.input_mapping  = aspen_input_mapping,
+	.name		= "Fire HD10 Keyboard",
+	.id_table	= aspen_devices,
+	.raw_event	= aspen_raw_event,
+	.probe		= aspen_probe,
+	.remove		= aspen_remove,
+	.input_mapping	= aspen_input_mapping,
 	.input_configured = aspen_input_configured,
 
 };
-
 
 /*
  * Init function
@@ -654,10 +641,8 @@ static int __init aspen_init(void)
 	int ret = hid_register_driver(&aspen_driver);
 
 	DEBUG_MSG("%s: hid_register_driver returned %d\n", __func__, ret);
-	DEBUG_MSG("%s: aspen driver version = %s\n", __func__, ASPEN_DRV_VERSION);
 	return ret;
 }
-
 
 /*
  * Exit function
@@ -673,5 +658,3 @@ module_exit(aspen_exit);
 
 MODULE_AUTHOR("shawshin@lab126.com");
 MODULE_LICENSE("GPL");
-
-/* End of file */

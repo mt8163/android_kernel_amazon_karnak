@@ -253,9 +253,8 @@ static void spec_dst_fill(__be32 *spec_dst, struct sk_buff *skb)
  * If opt == NULL, then skb->data should point to IP header.
  */
 
-int __ip_options_compile(struct net *net,
-			 struct ip_options *opt, struct sk_buff *skb,
-			 __be32 *info)
+int ip_options_compile(struct net *net,
+		       struct ip_options *opt, struct sk_buff *skb)
 {
 	__be32 spec_dst = htonl(INADDR_ANY);
 	unsigned char *pp_ptr = NULL;
@@ -264,7 +263,7 @@ int __ip_options_compile(struct net *net,
 	unsigned char *iph;
 	int optlen, l;
 
-	if (skb != NULL) {
+	if (skb) {
 		rt = skb_rtable(skb);
 		optptr = (unsigned char *)&(ip_hdr(skb)[1]);
 	} else
@@ -471,21 +470,10 @@ eol:
 		return 0;
 
 error:
-	if (info)
-		*info = htonl((pp_ptr-iph)<<24);
+	if (skb) {
+		icmp_send(skb, ICMP_PARAMETERPROB, 0, htonl((pp_ptr-iph)<<24));
+	}
 	return -EINVAL;
-}
-
-int ip_options_compile(struct net *net,
-		       struct ip_options *opt, struct sk_buff *skb)
-{
-	int ret;
-	__be32 info;
-
-	ret = __ip_options_compile(net, opt, skb, &info);
-	if (ret != 0 && skb)
-		icmp_send(skb, ICMP_PARAMETERPROB, 0, info);
-	return ret;
 }
 EXPORT_SYMBOL(ip_options_compile);
 

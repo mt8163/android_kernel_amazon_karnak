@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -18,7 +31,7 @@
 
 #define FRA (48)
 #define PARA (25)
-bool musbfsh_power = false;
+bool musbfsh_power;
 
 struct mt_usb11_glue {
 	struct device *dev;
@@ -57,7 +70,7 @@ void usb11_hs_slew_rate_cal(void)
 		if (time_after(jiffies, timeout)) {
 			timeout_flag = 1;
 			break;
-	    }
+	}
 	}
 
 	/*4 s7: read result.*/
@@ -70,12 +83,16 @@ void usb11_hs_slew_rate_cal(void)
 	    value = (unsigned char)(x / 1000);
 		if (((x - value * 1000) / 100) >= 5)
 			value += 1;
-	    /* INFO("[USB11PHY]slew calibration:FM_OUT =%d, x=%d,value=%d\n",data,x,value);*/
+		/* INFO("[USB11PHY]slew calibration:FM_OUT =%d,
+		 * x=%d,value=%d\n",data,x,value);
+		 */
 	}
 
 	/*4 s8: disable Frequency and run clock.*/
-	USB11PHY_CLR8(0xf00 - 0x900 + 0x03, 0x05);	/*disable frequency meter*/
-	USB11PHY_CLR8(0xf00 - 0x900 + 0x11, 0x01);	/*disable free run clock*/
+	/*disable frequency meter*/
+	USB11PHY_CLR8(0xf00 - 0x900 + 0x03, 0x05);
+	/*disable free run clock*/
+	USB11PHY_CLR8(0xf00 - 0x900 + 0x11, 0x01);
 
 	/*4 s9: */
 	USB11PHY_WRITE8(0x15, value << 4);
@@ -96,14 +113,17 @@ void mt65xx_usb11_phy_poweron(void)
 		force_usb11_avalid | force_usb11_bvalid | force_usb11_sessend |
 		force_usb11_vbusvalid);
 	USB11PHY_CLR8(U1PHTCR2 + 2,
-		RG_USB11_AVALID | RG_USB11_BVALID | RG_USB11_SESSEND | RG_USB11_VBUSVALID);
-	USB11PHY_CLR8(U1PHYCR1 + 2, force_usb11_en_fs_ls_rcv | force_usb11_en_fs_ls_tx);
+		RG_USB11_AVALID | RG_USB11_BVALID | RG_USB11_SESSEND |
+		RG_USB11_VBUSVALID);
+	USB11PHY_CLR8(U1PHYCR1 + 2, force_usb11_en_fs_ls_rcv |
+		force_usb11_en_fs_ls_tx);
 	/**************************************/
 
 	USB11PHY_SET8(U1PHYCR0 + 1, RG_USB11_FSLS_ENBGRI);
 
 	USB11PHY_SET8(U1PHTCR2 + 3,
-		force_usb11_avalid | force_usb11_sessend | force_usb11_vbusvalid);
+		force_usb11_avalid | force_usb11_sessend |
+		force_usb11_vbusvalid);
 	USB11PHY_SET8(U1PHTCR2 + 2, RG_USB11_AVALID | RG_USB11_VBUSVALID);
 	USB11PHY_CLR8(U1PHTCR2 + 2, RG_USB11_SESSEND);
 #endif
@@ -191,10 +211,10 @@ void mt65xx_usb11_phy_poweron(void)
 	USB11PHY_CLR8(0x1a, 0x80);
 
 	/* remove in MT6588 ?????
-	 USBPHY_CLR8(0x02, 0x7f);
-	 USBPHY_SET8(0x02, 0x09);
-	 USBPHY_CLR8(0x22, 0x03);
-	*/
+	 * USBPHY_CLR8(0x02, 0x7f);
+	 * USBPHY_SET8(0x02, 0x09);
+	 * USBPHY_CLR8(0x22, 0x03);
+	 */
 
 	USB11PHY_CLR8(0x6a, 0x04);
 	/*USBPHY_SET8(0x1b, 0x08);*/
@@ -229,17 +249,22 @@ void mt65xx_usb11_phy_savecurrent(void)
 	INFO("[Flow][USB11]%s:%d\n", __func__, __LINE__);
 #if 0
 	USB11PHY_SET8(U1PHTCR2 + 3,
-		force_usb11_avalid | force_usb11_sessend | force_usb11_vbusvalid);
+		force_usb11_avalid | force_usb11_sessend |
+		force_usb11_vbusvalid);
 	USB11PHY_CLR8(U1PHTCR2 + 2, RG_USB11_AVALID | RG_USB11_VBUSVALID);
 	USB11PHY_SET8(U1PHTCR2 + 2, RG_USB11_SESSEND);
 
 	USB11PHY_CLR8(U1PHYCR0 + 1, RG_USB11_FSLS_ENBGRI);
 
-	USB11PHY_SET8(U1PHYCR1 + 2, force_usb11_en_fs_ls_rcv | force_usb11_en_fs_ls_tx);
-	USB11PHY_CLR8(U1PHYCR1 + 3, RG_USB11_EN_FS_LS_RCV | RG_USB11_EN_FS_LS_TX);
+	USB11PHY_SET8(U1PHYCR1 + 2,
+		force_usb11_en_fs_ls_rcv | force_usb11_en_fs_ls_tx);
+	USB11PHY_CLR8(U1PHYCR1 + 3,
+		RG_USB11_EN_FS_LS_RCV | RG_USB11_EN_FS_LS_TX);
 #endif
 
-	/*4 1. swtich to USB function. (system register, force ip into usb mode.*/
+	/*4 1. swtich to USB function.
+	 * (system register, force ip into usb mode.
+	 */
 	USB11PHY_CLR8(0x6b, 0x04);
 	USB11PHY_CLR8(0x6e, 0x01);
 
@@ -254,7 +279,10 @@ void mt65xx_usb11_phy_savecurrent(void)
 	USB11PHY_SET8(0x68, 0x04);
 	/*4 6. RG_DATAIN[3:0]=4'b0000*/
 	USB11PHY_CLR8(0x69, 0x3c);
-	/*4 7.force_dp_pulldown, force_dm_pulldown, force_xcversel,force_termsel.*/
+	/*4 7.force_dp_pulldown,
+	 * force_dm_pulldown,
+	 * force_xcversel,force_termsel.
+	 */
 	USB11PHY_SET8(0x6a, 0xba);
 
 	/*4 8.RG_USB20_BC11_SW_EN 1'b0*/
@@ -276,6 +304,8 @@ void mt65xx_usb11_phy_savecurrent(void)
 
 	/*4 13.  wait 1us*/
 	udelay(1);
+	/*4 14. turn off internal 48Mhz PLL.*/
+	enable_phy_clock(false);
 }
 
 void mt81xx_usb11_phy_recover(void)
@@ -285,9 +315,9 @@ void mt81xx_usb11_phy_recover(void)
 	/*4 1. turn on USB reference clock.     */
 	/*enable_pll(UNIVPLL, "USB11"); */
 	/*
-	* swtich to USB function.
-	* (system register, force ip into usb mode).
-	*/
+	 * swtich to USB function.
+	 * (system register, force ip into usb mode).
+	 */
 	USB11PHY_CLR8(0x6b, 0x04);
 	USB11PHY_CLR8(0x6e, 0x01);
 
@@ -361,15 +391,20 @@ void mt81xx_usb11_phy_recover(void)
 	{
 	INFO("[Flow][USB11]%s:%d\n", __func__, __LINE__);
 	INFO("mt65xx_usb11_phy_recover++\r\n");
+	/*4 1. turn on USB reference clock.  */
+	enable_phy_clock(true);
 
 #if 0
 	USB11PHY_SET8(U1PHTCR2 + 3,
-		force_usb11_avalid | force_usb11_sessend | force_usb11_vbusvalid);
+		force_usb11_avalid | force_usb11_sessend |
+		force_usb11_vbusvalid);
 	USB11PHY_SET8(U1PHTCR2 + 2, RG_USB11_AVALID | RG_USB11_VBUSVALID);
 	USB11PHY_CLR8(U1PHTCR2 + 2, RG_USB11_SESSEND);
 
-	USB11PHY_CLR8(U1PHYCR1 + 2, force_usb11_en_fs_ls_rcv | force_usb11_en_fs_ls_tx);
-	USB11PHY_CLR8(U1PHYCR1 + 3, RG_USB11_EN_FS_LS_RCV | RG_USB11_EN_FS_LS_TX);
+	USB11PHY_CLR8(U1PHYCR1 + 2,
+		force_usb11_en_fs_ls_rcv | force_usb11_en_fs_ls_tx);
+	USB11PHY_CLR8(U1PHYCR1 + 3,
+		RG_USB11_EN_FS_LS_RCV | RG_USB11_EN_FS_LS_TX);
 
 	USB11PHY_SET8(U1PHYCR0 + 1, RG_USB11_FSLS_ENBGRI);
 
@@ -513,7 +548,7 @@ void mt65xx_usb11_clock_enable(bool enable)
 			clock_enabled = true;
 		}
 	} else {
-		if (!clock_enabled)	{/*already disabled.*/
+		if (!clock_enabled) {/*already disabled.*/
 			INFO("[Flow][USB]already disabled\r\n");
 		} else {
 #ifdef CONFIG_MTK_CLKMGR
@@ -530,7 +565,6 @@ void mt65xx_usb11_clock_enable(bool enable)
 		}
 	}
 }
-
 
 void mt_usb11_poweron(struct musbfsh *musbfsh, int on)
 {
@@ -566,10 +600,11 @@ void mt_usb11_set_vbus(struct musbfsh *musbfsh, int is_on)
 	INFO("is_on=%d\n", is_on);
 #if 0
 	mt_set_gpio_dir(GPIO_OTG_DRVVBUS_PIN, GPIO_DIR_OUT);
-	if (1 == is_on) {
+	if (is_on == 1) {
 		if (oned)
 			else {
-				mt_set_gpio_out(GPIO_OTG_DRVVBUS_PIN, GPIO_OUT_ONE);
+				mt_set_gpio_out(GPIO_OTG_DRVVBUS_PIN,
+					GPIO_OUT_ONE);
 				oned = 1;
 			}
 	} else {
@@ -587,33 +622,43 @@ void musbfs_check_mpu_violation(u32 addr, int wr_vio)
 	void __iomem *mregs = (void *)USB_BASE;
 
 	INFO(KERN_CRIT "MUSB checks EMI MPU violation.\n");
-	INFO(KERN_CRIT "addr = 0x%x, %s violation.\n", addr, wr_vio ? "Write" : "Read");
-	INFO(KERN_CRIT "POWER = 0x%x,DEVCTL= 0x%x.\n", musbfsh_readb(mregs, MUSBFSH_POWER),
+	INFO(KERN_CRIT "addr = 0x%x, %s violation.\n",
+		addr, wr_vio ? "Write" : "Read");
+	INFO(KERN_CRIT "POWER = 0x%x,DEVCTL= 0x%x.\n",
+		musbfsh_readb(mregs, MUSBFSH_POWER),
 	musbfsh_readb((void __iomem *)USB11_BASE, MUSBFSH_DEVCTL));
-	INFO(KERN_CRIT "DMA_CNTLch0 0x%04x,DMA_ADDRch0 0x%08x,DMA_COUNTch0 0x%08x\n",
-	musbfsh_readw(mregs, 0x204), musbfsh_readl(mregs, 0x208), musbfsh_readl(mregs,
-					0x20C));
-	INFO(KERN_CRIT "DMA_CNTLch1 0x%04x,DMA_ADDRch1 0x%08x,DMA_COUNTch1 0x%08x\n",
-	musbfsh_readw(mregs, 0x214), musbfsh_readl(mregs, 0x218), musbfsh_readl(mregs,
-					0x21C));
-	INFO(KERN_CRIT "DMA_CNTLch2 0x%04x,DMA_ADDRch2 0x%08x,DMA_COUNTch2 0x%08x\n",
-	musbfsh_readw(mregs, 0x224), musbfsh_readl(mregs, 0x228), musbfsh_readl(mregs,
-					0x22C));
-	INFO(KERN_CRIT "DMA_CNTLch3 0x%04x,DMA_ADDRch3 0x%08x,DMA_COUNTch3 0x%08x\n",
-	musbfsh_readw(mregs, 0x234), musbfsh_readl(mregs, 0x238), musbfsh_readl(mregs,
-					0x23C));
-	INFO(KERN_CRIT "DMA_CNTLch4 0x%04x,DMA_ADDRch4 0x%08x,DMA_COUNTch4 0x%08x\n",
-	musbfsh_readw(mregs, 0x244), musbfsh_readl(mregs, 0x248), musbfsh_readl(mregs,
-					0x24C));
-	INFO(KERN_CRIT "DMA_CNTLch5 0x%04x,DMA_ADDRch5 0x%08x,DMA_COUNTch5 0x%08x\n",
-	musbfsh_readw(mregs, 0x254), musbfsh_readl(mregs, 0x258), musbfsh_readl(mregs,
-					0x25C));
-	INFO(KERN_CRIT "DMA_CNTLch6 0x%04x,DMA_ADDRch6 0x%08x,DMA_COUNTch6 0x%08x\n",
-	musbfsh_readw(mregs, 0x264), musbfsh_readl(mregs, 0x268), musbfsh_readl(mregs,
-					0x26C));
-	INFO(KERN_CRIT "DMA_CNTLch7 0x%04x,DMA_ADDRch7 0x%08x,DMA_COUNTch7 0x%08x\n",
-	musbfsh_readw(mregs, 0x274), musbfsh_readl(mregs, 0x278), musbfsh_readl(mregs,
-					0x27C));
+	INFO(KERN_CRIT "DMA_CNTLch0 0x%04x,DMA_ADDRch0 0x%08x,
+		DMA_COUNTch0 0x%08x\n",
+		musbfsh_readw(mregs, 0x204), musbfsh_readl(mregs, 0x208),
+		musbfsh_readl(mregs, 0x20C));
+	INFO(KERN_CRIT "DMA_CNTLch1 0x%04x,DMA_ADDRch1 0x%08x,
+		DMA_COUNTch1 0x%08x\n",
+		musbfsh_readw(mregs, 0x214), musbfsh_readl(mregs, 0x218),
+		musbfsh_readl(mregs, 0x21C));
+	INFO(KERN_CRIT "DMA_CNTLch2 0x%04x,DMA_ADDRch2 0x%08x,
+		DMA_COUNTch2 0x%08x\n",
+		musbfsh_readw(mregs, 0x224), musbfsh_readl(mregs, 0x228),
+		musbfsh_readl(mregs, 0x22C));
+	INFO(KERN_CRIT "DMA_CNTLch3 0x%04x,DMA_ADDRch3 0x%08x,
+		DMA_COUNTch3 0x%08x\n",
+		musbfsh_readw(mregs, 0x234), musbfsh_readl(mregs, 0x238),
+		musbfsh_readl(mregs, 0x23C));
+	INFO(KERN_CRIT "DMA_CNTLch4 0x%04x,DMA_ADDRch4 0x%08x,
+		DMA_COUNTch4 0x%08x\n",
+		musbfsh_readw(mregs, 0x244), musbfsh_readl(mregs, 0x248),
+		musbfsh_readl(mregs, 0x24C));
+	INFO(KERN_CRIT "DMA_CNTLch5 0x%04x,DMA_ADDRch5 0x%08x,
+		DMA_COUNTch5 0x%08x\n",
+		musbfsh_readw(mregs, 0x254), musbfsh_readl(mregs, 0x258),
+		musbfsh_readl(mregs, 0x25C));
+	INFO(KERN_CRIT "DMA_CNTLch6 0x%04x,DMA_ADDRch6 0x%08x,
+		DMA_COUNTch6 0x%08x\n",
+		musbfsh_readw(mregs, 0x264), musbfsh_readl(mregs, 0x268),
+		musbfsh_readl(mregs, 0x26C));
+	INFO(KERN_CRIT "DMA_CNTLch7 0x%04x,DMA_ADDRch7 0x%08x,
+		DMA_COUNTch7 0x%08x\n",
+		musbfsh_readw(mregs, 0x274), musbfsh_readl(mregs, 0x278),
+		musbfsh_readl(mregs, 0x27C));
 }
 
 int mt_usb11_init(struct musbfsh *musbfsh)
@@ -686,8 +731,9 @@ static int __init mt_usb11_probe(struct platform_device *pdev)
 	usb11_dts_np = pdev->dev.of_node;
 	INFO("[usb11] usb11_dts_np %p\n", usb11_dts_np);
 	/*usb_irq_number1 = irq_of_parse_and_map(pdev->dev.of_node, 0);
-	usb_mac = (unsigned long)of_iomap(pdev->dev.of_node, 0);
-	usb_phy_base = (unsigned long)of_iomap(pdev->dev.of_node, 1);*/
+	 * usb_mac = (unsigned long)of_iomap(pdev->dev.of_node, 0);
+	 * usb_phy_base = (unsigned long)of_iomap(pdev->dev.of_node, 1);
+	 */
 	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
 		ERR("failed to allocate musb platform data\n");
@@ -701,18 +747,20 @@ static int __init mt_usb11_probe(struct platform_device *pdev)
 	}
 	of_property_read_u32(np, "mode", (u32 *)&pdata->mode);
 
-	/*of_property_read_u32(np, "dma_channels",    (u32 *)&config->dma_channels); */
+	/*of_property_read_u32(np, "dma_channels",
+	 * (u32 *)&config->dma_channels);
+	 */
 	of_property_read_u32(np, "num_eps", (u32 *)&config->num_eps);
 	config->multipoint = of_property_read_bool(np, "multipoint");
 	/*
-	config->dyn_fifo = of_property_read_bool(np, "dyn_fifo");
-	config->soft_con = of_property_read_bool(np, "soft_con");
-	config->dma = of_property_read_bool(np, "dma");
-	*/
+	 * config->dyn_fifo = of_property_read_bool(np, "dyn_fifo");
+	 * config->soft_con = of_property_read_bool(np, "soft_con");
+	 * config->dma = of_property_read_bool(np, "dma");
+	 */
 
 	pdata->config = config;
-	INFO("[Flow][USB11]mode = %d ,num_eps = %d,multipoint = %d\n", pdata->mode,
-	config->num_eps, config->multipoint);
+	INFO("[Flow][USB11]mode = %d ,num_eps = %d,multipoint = %d\n",
+		pdata->mode, config->num_eps, config->multipoint);
 #endif
 
 	musbfsh->id = musbfshid;
@@ -722,6 +770,7 @@ static int __init mt_usb11_probe(struct platform_device *pdev)
 #ifdef CONFIG_OF
 	pdev->dev.dma_mask = &mt_usb11_dmamask;
 	pdev->dev.coherent_dma_mask = mt_usb11_dmamask;
+	arch_setup_dma_ops(&musbfsh->dev, 0, mt_usb11_dmamask, NULL, 0);
 #endif
 
 	glue->dev = &pdev->dev;
@@ -731,7 +780,8 @@ static int __init mt_usb11_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, glue);
 
-	ret = platform_device_add_resources(musbfsh, pdev->resource, pdev->num_resources);
+	ret = platform_device_add_resources(musbfsh,
+					pdev->resource, pdev->num_resources);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to add resources\n");
 		goto err3;

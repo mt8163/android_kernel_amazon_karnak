@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _SYSTRAKCER_H
 #define _SYSTRAKCER_H
 
@@ -39,14 +52,17 @@
 #define BUS_DBG_CON_BUS_OT_EN       (0x00004000)
 #define BUS_DBG_CON_SW_RST          (0x00010000)
 
-#define BUS_DBG_CON_IRQ_EN          (BUS_DBG_CON_IRQ_AR_EN | BUS_DBG_CON_IRQ_AW_EN | BUS_DBG_CON_IRQ_WP_EN)
+#define BUS_DBG_CON_IRQ_EN          (BUS_DBG_CON_IRQ_AR_EN | \
+				     BUS_DBG_CON_IRQ_AW_EN | \
+				     BUS_DBG_CON_IRQ_WP_EN)
 
 static inline unsigned int extract_n2mbits(unsigned int input, int n, int m)
 {
 	/*
 	 * 1. ~0 = 1111 1111 1111 1111 1111 1111 1111 1111
 	 * 2. ~0 << (m - n + 1) = 1111 1111 1111 1111 1100 0000 0000 0000
-	 * // assuming we are extracting 14 bits, the +1 is added for inclusive selection
+	 * assuming we are extracting 14 bits,
+	 * the +1 is added for inclusive selection
 	 * 3. ~(~0 << (m - n + 1)) = 0000 0000 0000 0000 0011 1111 1111 1111
 	 */
 	int mask;
@@ -73,7 +89,8 @@ struct mt_systracker_driver {
 	int (*systracker_probe)(struct platform_device *pdev);
 	unsigned int (*systracker_timeout_value)(void);
 	int (*systracker_remove)(struct platform_device *pdev);
-	int (*systracker_suspend)(struct platform_device *pdev, pm_message_t state);
+	int (*systracker_suspend)(struct platform_device *pdev,
+				  pm_message_t state);
 	int (*systracker_resume)(struct platform_device *pdev);
 	int (*systracker_hook_fault)(void);
 	int (*systracker_test_init)(void);
@@ -105,7 +122,8 @@ struct systracker_config_t {
 };
 
 extern int tracker_dump(char *buf);
-extern void dump_backtrace_entry_ramconsole_print(unsigned long where, unsigned long from,
+extern void dump_backtrace_entry_ramconsole_print(unsigned long where,
+						  unsigned long from,
 						  unsigned long frame);
 extern void dump_regs(const char *fmt, const char v1, const unsigned int reg,
 		      const unsigned int reg_val);
@@ -121,11 +139,12 @@ extern void save_entry(void);
 extern void aee_dump_backtrace(struct pt_regs *regs, struct task_struct *tsk);
 extern irqreturn_t systracker_isr(void);
 extern int systracker_watchpoint_enable(void);
-extern int systracker_set_watchpoint_addr(unsigned phy_addr);
+extern int systracker_set_watchpoint_addr(unsigned int phy_addr);
 extern void systracker_reset(void);
 extern void systracker_enable(void);
 extern void systracker_disable(void);
-extern int systracker_handler(unsigned long addr, unsigned int fsr, struct pt_regs *regs);
+extern int systracker_handler(unsigned long addr, unsigned int fsr,
+			      struct pt_regs *regs);
 extern int systracker_probe(struct platform_device *pdev);
 extern int systracker_remove(struct platform_device *pdev);
 extern int systracker_suspend(struct platform_device *pdev, pm_message_t state);
@@ -143,9 +162,9 @@ int systracker_resume(struct platform_device *pdev);
 
 
 /*
-#define SYSTRACKER_TEST_SUIT	// enable for driver poring test suit
-*/
+ *#define SYSTRACKER_TEST_SUIT	// enable for driver poring test suit
+ */
 /*
-#define TRACKER_DEBUG 0
-*/
+ *#define TRACKER_DEBUG 0
+ */
 #endif

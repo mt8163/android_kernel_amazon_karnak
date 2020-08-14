@@ -21,7 +21,10 @@
 
 /*=============================================================
  * Include files
- *=============================================================*/
+ *=============================================================
+ */
+
+#define pr_fmt(fmt)	"[PTP] "fmt
 
 /* system includes */
 #include <linux/init.h>
@@ -41,8 +44,8 @@
 #include <linux/file.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
-#include <mt-plat/mt_pmic_wrap.h>
 #include <mt-plat/aee.h>
+#include <mtk_ram_console.h>
 #include <mach/mt_thermal.h>
 #include <mach/mt_freqhopping.h>
 #include "mt_ptp.h"
@@ -59,7 +62,7 @@
 #endif
 
 /* Global variable for slow idle */
-volatile unsigned int ptp_data[3] = {0, 0, 0};
+unsigned int ptp_data[3] = {0, 0, 0};
 
 struct ptp_det;
 struct ptp_ctrl;
@@ -71,13 +74,13 @@ static void ptp_restore_ptp_volt(struct ptp_det *det);
 
 /*=============================================================
  * Macro definition
- *=============================================================*/
+ *=============================================================
+ */
 
 /*
  * CONFIG (SW related)
  */
 #define CONFIG_PTP_SHOWLOG	(1)
-#define EN_ISR_LOG		(0)
 #define PTP_GET_REAL_VAL	(1) /* get val from efuse */
 #define SET_PMIC_VOLT		(1) /* apply PMIC voltage */
 
@@ -105,9 +108,9 @@ static void ptp_restore_ptp_volt(struct ptp_det *det);
 #define PTP_VOLT_TO_PMIC_VAL(volt)  (((volt) - 70000 + 625 - 1) / 625)
 
 /* pmic value from ptpod already add 16 steps(16*6.25=100mV)
- * for real voltage transfer
+ * for real voltage transfer (((pmic) * 625) / 100 + 700)
  */
-#define PTP_PMIC_VAL_TO_VOLT(pmic)  (((pmic) * 625) + 70000) /* (((pmic) * 625) / 100 + 700) */
+#define PTP_PMIC_VAL_TO_VOLT(pmic)  (((pmic) * 625) + 70000)
 #else
 /* TODO: FIXME, refer to VOLT_TO_PMIC_VAL() */
 #define MV_TO_VAL(MV)		((((MV) - 600) * 100 + 625 - 1) / 625)
@@ -125,7 +128,7 @@ static void ptp_restore_ptp_volt(struct ptp_det *det);
 
 #define DTHI_VAL		0x01		/* positive */
 #define DTLO_VAL		0xfe		/* negative (2's compliment) */
-#define DETMAX_VAL		0xffff		/* This timeout value is in cycles of bclk_ck. */
+#define DETMAX_VAL		0xffff
 #define AGECONFIG_VAL		0x555555
 #define AGEM_VAL		0x0
 #define DVTFIXED_VAL		0x6
@@ -145,7 +148,7 @@ static void ptp_restore_ptp_volt(struct ptp_det *det);
  * @r:	Range in the form of MSB:LSB
  */
 #define BITMASK(r)	\
-	(((unsigned) -1 >> (31 - MSB(r))) & ~((1U << LSB(r)) - 1))
+	(((u32) -1 >> (31 - MSB(r))) & ~((1U << LSB(r)) - 1))
 
 /**
  * Set value at MSB:LSB. For example, BITS(7:3, 0x5A)
@@ -158,21 +161,6 @@ static void ptp_restore_ptp_volt(struct ptp_det *det);
 /*
  * LOG
  */
-#define ptp_emerg(fmt, args...)     pr_emerg("[PTP] " fmt, ##args)
-#define ptp_alert(fmt, args...)     pr_alert("[PTP] " fmt, ##args)
-#define ptp_crit(fmt, args...)      pr_crit("[PTP] " fmt, ##args)
-#define ptp_error(fmt, args...)     pr_err("[PTP] " fmt, ##args)
-#define ptp_warning(fmt, args...)   pr_warn("[PTP] " fmt, ##args)
-#define ptp_notice(fmt, args...)    pr_notice("[PTP] " fmt, ##args)
-#define ptp_info(fmt, args...)      pr_debug("[PTP] " fmt, ##args)
-#define ptp_debug(fmt, args...)     pr_debug("[PTP] " fmt, ##args)
-
-#if EN_ISR_LOG
-#define ptp_isr_info(fmt, args...)  ptp_debug(fmt, ##args)
-#else
-#define ptp_isr_info(fmt, args...)  ptp_debug(fmt, ##args)
-#endif
-
 #define FUNC_LV_MODULE          BIT(0)  /* module, platform driver interface */
 #define FUNC_LV_CPUFREQ         BIT(1)  /* cpufreq driver interface          */
 #define FUNC_LV_API             BIT(2)  /* mt_cpufreq driver global function */
@@ -185,8 +173,15 @@ static void ptp_restore_ptp_volt(struct ptp_det *det);
 static unsigned int func_lv_mask;
 
 #if defined(CONFIG_PTP_SHOWLOG)
-#define FUNC_ENTER(lv)	do { if ((lv) & func_lv_mask) ptp_debug(">> %s()\n", __func__); } while (0)
-#define FUNC_EXIT(lv)	do { if ((lv) & func_lv_mask) ptp_debug("<< %s():%d\n", __func__, __LINE__); } while (0)
+#define FUNC_ENTER(lv)	do { \
+	if ((lv) & func_lv_mask) \
+		pr_debug(">> %s()\n", __func__); \
+} while (0)
+
+#define FUNC_EXIT(lv)	do { \
+	if ((lv) & func_lv_mask) \
+		pr_debug("<< %s():%d\n", __func__, __LINE__); \
+} while (0)
 #else
 #define FUNC_ENTER(lv)
 #define FUNC_EXIT(lv)
@@ -213,9 +208,9 @@ static unsigned int func_lv_mask;
 
 #ifdef CONFIG_MTK_RAM_CONSOLE
 enum ptp_state {
-	PTP_CPU_LITTLE_IS_SET_VOLT = 0, /* L */
-	PTP_CPU_BIG_IS_SET_VOLT = 1,    /* B */
-	PTP_GPU_IS_SET_VOLT = 2,        /* G */
+	PTP_CPU_BIG_IS_SET_VOLT = 0,    /* B */
+	PTP_GPU_IS_SET_VOLT = 1,        /* G */
+	PTP_CPU_LITTLE_IS_SET_VOLT = 2, /* L */
 };
 #endif
 
@@ -233,7 +228,7 @@ enum {
 #ifdef CONFIG_OF
 
 void __iomem *ptpod_base;
-u32 ptpod_irq_number = 0;
+u32 ptpod_irq_number;
 int ptpod_phy_base;
 #endif
 
@@ -242,7 +237,9 @@ int ptpod_phy_base;
  * iterate over list of detectors
  * @det:	the detector * to use as a loop cursor.
  */
-#define for_each_det(det) for (det = ptp_detectors; det < (ptp_detectors + ARRAY_SIZE(ptp_detectors)); det++)
+#define for_each_det(det) \
+	for (det = ptp_detectors; \
+		det < (ptp_detectors + ARRAY_SIZE(ptp_detectors)); det++)
 
 /**
  * iterate over list of detectors and its controller
@@ -260,7 +257,9 @@ int ptpod_phy_base;
  * iterate over list of controllers
  * @pos:	the ptp_ctrl * to use as a loop cursor.
  */
-#define for_each_ctrl(ctrl) for (ctrl = ptp_ctrls; ctrl < (ptp_ctrls + ARRAY_SIZE(ptp_ctrls)); ctrl++)
+#define for_each_ctrl(ctrl) \
+	for (ctrl = ptp_ctrls; \
+		ctrl < (ptp_ctrls + ARRAY_SIZE(ptp_ctrls)); ctrl++)
 
 /**
  * Given a ptp_det * in ptp_detectors. Return the id.
@@ -281,13 +280,14 @@ int ptpod_phy_base;
  */
 #define HAS_FEATURE(det, feature)	((det)->features & feature)
 
-#define PERCENT(numerator, denominator)	\
-	(unsigned char)(((numerator) * 100 + (denominator) - 1) / (denominator))
+#define PERCENT(nmrtr, dnmntr)	\
+	(unsigned char)(((nmrtr) * 100 + (dnmntr) - 1) / (dnmntr))
 
 static int ptp_log_en;
 /*=============================================================
  * Local type definition
- *=============================================================*/
+ *=============================================================
+ */
 
 /*
  * CONFIG (CHIP related)
@@ -503,10 +503,8 @@ struct ptp_det {
 	unsigned int BTS;
 
 	/* dvfs */
-	unsigned int num_freq_tbl; /* could be got @ the same time
-				      with freq_tbl[] */
-	unsigned int max_freq_khz; /* maximum frequency used to
-				      calculate percentage */
+	unsigned int num_freq_tbl; /* can get the same time with freq_tbl[] */
+	unsigned int max_freq_khz; /* max_freq used to calculate percentage */
 	unsigned char freq_tbl[NR_FREQ]; /* percentage to maximum freq */
 
 	unsigned int volt_tbl[NR_FREQ]; /* pmic value */
@@ -558,12 +556,8 @@ struct ptp_devinfo {
 
 /*=============================================================
  *Local variable definition
- *=============================================================*/
-
-/*
- * lock
+ *=============================================================
  */
-/* static DEFINE_SPINLOCK(ptp_spinlock); */
 
 /**
  * PTP controllers
@@ -695,7 +689,8 @@ static struct hrtimer ptp_log_timer;
 
 /*=============================================================
  * Local function definition
- *=============================================================*/
+ *=============================================================
+ */
 
 static struct ptp_det *id_to_ptp_det(enum ptp_det_id id)
 {
@@ -742,7 +737,8 @@ static void base_ops_disable_locked(struct ptp_det *det, int reason)
 	switch (reason) {
 	case BY_MON_ERROR:
 		/* set init2 value to DVFS table (PMIC) */
-		memcpy(det->volt_tbl, det->volt_tbl_init2, sizeof(det->volt_tbl_init2));
+		memcpy(det->volt_tbl,
+		       det->volt_tbl_init2, sizeof(det->volt_tbl_init2));
 		ptp_set_ptp_volt(det);
 		break;
 
@@ -754,7 +750,7 @@ static void base_ops_disable_locked(struct ptp_det *det, int reason)
 		break;
 	}
 
-	ptp_error("Disable PTP-OD[%s] done.reason=%d\n", det->name, reason);
+	pr_err("Disable PTP-OD[%s] done.reason=%d\n", det->name, reason);
 	det->disabled |= reason;
 
 	FUNC_EXIT(FUNC_LV_HELP);
@@ -781,18 +777,19 @@ static int base_ops_init01(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_HELP);
 
 	if (unlikely(!HAS_FEATURE(det, FEA_INIT01))) {
-		ptp_error("det %s has no INIT01\n", det->name);
+		pr_err("det %s has no INIT01\n", det->name);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -1;
 	}
 
 	if (det->disabled & BY_PROCFS) {
-		ptp_error("[%s] Disabled by PROCFS\n", __func__);
+		pr_err("[%s] Disabled by PROCFS\n", __func__);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -2;
 	}
 
-	ptp_debug("%s(%s) start (ptp_level = 0x%08X).\n", __func__, det->name, ptp_level);
+	pr_debug("%s(%s) start (ptp_level = 0x%08X).\n",
+		 __func__, det->name, ptp_level);
 	/* atomic_inc(&ctrl->in_init); */
 	/* ptp_init01_prepare(det); */
 	/* det->ops->dump_status(det); */ /* <-@@@ */
@@ -808,21 +805,22 @@ static int base_ops_init02(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_HELP);
 
 	if (unlikely(!HAS_FEATURE(det, FEA_INIT02))) {
-		ptp_error("det %s has no INIT02\n", det->name);
+		pr_err("det %s has no INIT02\n", det->name);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -1;
 	}
 
 	if (det->disabled & BY_PROCFS) {
-		ptp_error("[%s] Disabled by PROCFS\n", __func__);
+		pr_err("[%s] Disabled by PROCFS\n", __func__);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -2;
 	}
 
 	if (ptp_log_en) {
-		ptp_isr_info("%s(%s) start (ptp_level = 0x%08X).\n", __func__, det->name, ptp_level);
-		ptp_isr_info("DCVOFFSETIN = 0x%08X\n", det->DCVOFFSETIN);
-		ptp_isr_info("AGEVOFFSETIN = 0x%08X\n", det->AGEVOFFSETIN);
+		pr_notice("%s(%s) start (ptp_level = 0x%08X).\n",
+			  __func__, det->name, ptp_level);
+		pr_notice("DCVOFFSETIN = 0x%08X\n", det->DCVOFFSETIN);
+		pr_notice("AGEVOFFSETIN = 0x%08X\n", det->AGEVOFFSETIN);
 	}
 
 	/* det->ops->dump_status(det); */ /* <-@@@ */
@@ -841,19 +839,20 @@ static int base_ops_mon_mode(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_HELP);
 
 	if (!HAS_FEATURE(det, FEA_MON)) {
-		ptp_error("det %s has no MON mode\n", det->name);
+		pr_err("det %s has no MON mode\n", det->name);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -1;
 	}
 
 	if (det->disabled & BY_PROCFS) {
-		ptp_error("[%s] Disabled by PROCFS\n", __func__);
+		pr_err("[%s] Disabled by PROCFS\n", __func__);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -2;
 	}
 
 	if (ptp_log_en)
-		ptp_notice("%s(%s) start (ptp_level = 0x%08X).\n", __func__, det->name, ptp_level);
+		pr_notice("%s(%s) start (ptp_level = 0x%08X).\n",
+			  __func__, det->name, ptp_level);
 
 	if (det->ctrl_id == PTP_CTRL_MCUSYS) {
 		ts_bank = THERMAL_BANK0;
@@ -864,8 +863,8 @@ static int base_ops_mon_mode(struct ptp_det *det)
 #else
 	} else {
 #endif
-		ptp_error("undefine det->ctrl_id = %d\n", det->ctrl_id);
-		BUG_ON(1);
+		pr_err("undefine det->ctrl_id = %d\n", det->ctrl_id);
+		WARN_ON(1);
 	}
 
 #ifdef CONFIG_THERMAL
@@ -879,10 +878,12 @@ static int base_ops_mon_mode(struct ptp_det *det)
 	det->BTS = ts_info.ts_BTS;
 
 	if (ptp_log_en)
-		ptp_info("%s det->MTS = %d, det->BTS = %d\n", __func__, det->MTS, det->BTS);
+		pr_debug("%s det->MTS = %d, det->BTS = %d\n",
+			 __func__, det->MTS, det->BTS);
 
 	if ((det->PTPINITEN == 0x0) || (det->PTPMONEN == 0x0)) {
-		ptp_error("PTPINITEN = 0x%08X, PTPMONEN = 0x%08X\n", det->PTPINITEN, det->PTPMONEN);
+		pr_err("PTPINITEN = 0x%08X, PTPMONEN = 0x%08X\n",
+		       det->PTPINITEN, det->PTPMONEN);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return 1;
 	}
@@ -918,98 +919,99 @@ static void base_ops_dump_status(struct ptp_det *det)
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	ptp_isr_info("[%s]\n",			det->name);
+	pr_notice("[%s]\n",			det->name);
 
-	ptp_isr_info("PTPINITEN = 0x%08X\n",	det->PTPINITEN);
-	ptp_isr_info("PTPMONEN = 0x%08X\n",	det->PTPMONEN);
-	ptp_isr_info("MDES = 0x%08X\n",		det->MDES);
-	ptp_isr_info("BDES = 0x%08X\n",		det->BDES);
-	ptp_isr_info("DCMDET = 0x%08X\n",	det->DCMDET);
+	pr_notice("PTPINITEN = 0x%08X\n",	det->PTPINITEN);
+	pr_notice("PTPMONEN = 0x%08X\n",	det->PTPMONEN);
+	pr_notice("MDES = 0x%08X\n",		det->MDES);
+	pr_notice("BDES = 0x%08X\n",		det->BDES);
+	pr_notice("DCMDET = 0x%08X\n",	det->DCMDET);
 
-	ptp_isr_info("DCCONFIG = 0x%08X\n",	det->DCCONFIG);
-	ptp_isr_info("DCBDET = 0x%08X\n",	det->DCBDET);
+	pr_notice("DCCONFIG = 0x%08X\n",	det->DCCONFIG);
+	pr_notice("DCBDET = 0x%08X\n",	det->DCBDET);
 
-	ptp_isr_info("AGECONFIG = 0x%08X\n",	det->AGECONFIG);
-	ptp_isr_info("AGEM = 0x%08X\n",		det->AGEM);
+	pr_notice("AGECONFIG = 0x%08X\n",	det->AGECONFIG);
+	pr_notice("AGEM = 0x%08X\n",		det->AGEM);
 
-	ptp_isr_info("AGEDELTA = 0x%08X\n",	det->AGEDELTA);
-	ptp_isr_info("DVTFIXED = 0x%08X\n",	det->DVTFIXED);
-	ptp_isr_info("MTDES = 0x%08X\n",	det->MTDES);
-	ptp_isr_info("VCO = 0x%08X\n",		det->VCO);
+	pr_notice("AGEDELTA = 0x%08X\n",	det->AGEDELTA);
+	pr_notice("DVTFIXED = 0x%08X\n",	det->DVTFIXED);
+	pr_notice("MTDES = 0x%08X\n",	det->MTDES);
+	pr_notice("VCO = 0x%08X\n",		det->VCO);
 
-	ptp_isr_info("DETWINDOW = 0x%08X\n",	det->DETWINDOW);
-	ptp_isr_info("VMAX = 0x%08X\n",		det->VMAX);
-	ptp_isr_info("VMIN = 0x%08X\n",		det->VMIN);
-	ptp_isr_info("DTHI = 0x%08X\n",		det->DTHI);
-	ptp_isr_info("DTLO = 0x%08X\n",		det->DTLO);
-	ptp_isr_info("VBOOT = 0x%08X\n",	det->VBOOT);
-	ptp_isr_info("DETMAX = 0x%08X\n",	det->DETMAX);
+	pr_notice("DETWINDOW = 0x%08X\n",	det->DETWINDOW);
+	pr_notice("VMAX = 0x%08X\n",		det->VMAX);
+	pr_notice("VMIN = 0x%08X\n",		det->VMIN);
+	pr_notice("DTHI = 0x%08X\n",		det->DTHI);
+	pr_notice("DTLO = 0x%08X\n",		det->DTLO);
+	pr_notice("VBOOT = 0x%08X\n",	det->VBOOT);
+	pr_notice("DETMAX = 0x%08X\n",	det->DETMAX);
 
-	ptp_isr_info("DCVOFFSETIN = 0x%08X\n",	det->DCVOFFSETIN);
-	ptp_isr_info("AGEVOFFSETIN = 0x%08X\n",	det->AGEVOFFSETIN);
+	pr_notice("DCVOFFSETIN = 0x%08X\n",	det->DCVOFFSETIN);
+	pr_notice("AGEVOFFSETIN = 0x%08X\n",	det->AGEVOFFSETIN);
 
-	ptp_isr_info("MTS = 0x%08X\n",		det->MTS);
-	ptp_isr_info("BTS = 0x%08X\n",		det->BTS);
+	pr_notice("MTS = 0x%08X\n",		det->MTS);
+	pr_notice("BTS = 0x%08X\n",		det->BTS);
 
-	ptp_isr_info("num_freq_tbl = %d\n",	det->num_freq_tbl);
-
-	for (i = 0; i < det->num_freq_tbl; i++)
-		ptp_isr_info("freq_tbl[%d] = %d\n", i, det->freq_tbl[i]);
+	pr_notice("num_freq_tbl = %d\n",	det->num_freq_tbl);
 
 	for (i = 0; i < det->num_freq_tbl; i++)
-		ptp_isr_info("volt_tbl[%d] = %d\n", i, det->volt_tbl[i]);
+		pr_info("freq_tbl[%d] = %d\n", i, det->freq_tbl[i]);
 
 	for (i = 0; i < det->num_freq_tbl; i++)
-		ptp_isr_info("volt_tbl_init2[%d] = %d\n", i, det->volt_tbl_init2[i]);
+		pr_info("volt_tbl[%d] = %d\n", i, det->volt_tbl[i]);
 
 	for (i = 0; i < det->num_freq_tbl; i++)
-		ptp_isr_info("volt_tbl_pmic[%d] = %d\n", i, det->volt_tbl_pmic[i]);
+		pr_info("volt_tbl_init2[%d] = %d\n",
+			i, det->volt_tbl_init2[i]);
+
+	for (i = 0; i < det->num_freq_tbl; i++)
+		pr_info("volt_tbl_pmic[%d] = %d\n", i, det->volt_tbl_pmic[i]);
 
 	FUNC_EXIT(FUNC_LV_HELP);
 }
 
 static void partial_reg_dump(struct ptp_det *det)
 {
-	ptp_isr_info("[%s]\n", det->name);
-	ptp_isr_info("Source :\n");
-	ptp_isr_info("PTP_DESCHAR = 0x%x\n", ptp_read(PTP_DESCHAR));
-	ptp_isr_info("PTP_DCCONFIG = 0x%x\n", ptp_read(PTP_DCCONFIG));
-	ptp_isr_info("PTP_DETCHAR = 0x%x\n", ptp_read(PTP_DETCHAR));
-	ptp_isr_info("PTP_AGECONFIG = 0x%x\n",
+	pr_notice("[%s]\n", det->name);
+	pr_notice("Source :\n");
+	pr_notice("PTP_DESCHAR = 0x%x\n", ptp_read(PTP_DESCHAR));
+	pr_notice("PTP_DCCONFIG = 0x%x\n", ptp_read(PTP_DCCONFIG));
+	pr_notice("PTP_DETCHAR = 0x%x\n", ptp_read(PTP_DETCHAR));
+	pr_notice("PTP_AGECONFIG = 0x%x\n",
 						ptp_read(PTP_AGECONFIG));
-	ptp_isr_info("PTP_AGECHAR = 0x%x\n", ptp_read(PTP_AGECHAR));
-	ptp_isr_info("PTP_TEMPCHAR = 0x%x\n", ptp_read(PTP_TEMPCHAR));
-	ptp_isr_info("PTP_RUNCONFIG = 0x%x\n",
+	pr_notice("PTP_AGECHAR = 0x%x\n", ptp_read(PTP_AGECHAR));
+	pr_notice("PTP_TEMPCHAR = 0x%x\n", ptp_read(PTP_TEMPCHAR));
+	pr_notice("PTP_RUNCONFIG = 0x%x\n",
 						ptp_read(PTP_RUNCONFIG));
-	ptp_isr_info("PTP_FREQPCT30 = 0x%x\n",
+	pr_notice("PTP_FREQPCT30 = 0x%x\n",
 						ptp_read(PTP_FREQPCT30));
-	ptp_isr_info("PTP_FREQPCT74 = 0x%x\n",
+	pr_notice("PTP_FREQPCT74 = 0x%x\n",
 						ptp_read(PTP_FREQPCT74));
-	ptp_isr_info("PTP_LIMITVALS = 0x%x\n",
+	pr_notice("PTP_LIMITVALS = 0x%x\n",
 						ptp_read(PTP_LIMITVALS));
-	ptp_isr_info("PTP_VBOOT = 0x%x\n", ptp_read(PTP_VBOOT));
-	ptp_isr_info("PTP_DETWINDOW = 0x%x\n",
+	pr_notice("PTP_VBOOT = 0x%x\n", ptp_read(PTP_VBOOT));
+	pr_notice("PTP_DETWINDOW = 0x%x\n",
 						ptp_read(PTP_DETWINDOW));
-	ptp_isr_info("PTP_PTPCONFIG = 0x%x\n",
+	pr_notice("PTP_PTPCONFIG = 0x%x\n",
 						ptp_read(PTP_PTPCONFIG));
-	ptp_isr_info("PTP_TSCALCS = 0x%x\n", ptp_read(PTP_TSCALCS));
+	pr_notice("PTP_TSCALCS = 0x%x\n", ptp_read(PTP_TSCALCS));
 
-	ptp_isr_info("Output check :\n");
-	ptp_isr_info("PTP_PTPINTSTS = 0x%x\n",
+	pr_notice("Output check :\n");
+	pr_notice("PTP_PTPINTSTS = 0x%x\n",
 						ptp_read(PTP_PTPINTSTS));
-	ptp_isr_info("PTP_DCVALUES = 0x%x\n", ptp_read(PTP_DCVALUES));
-	ptp_isr_info("PTP_AGECOUNT = 0x%x\n", ptp_read(PTP_AGECOUNT));
-	ptp_isr_info("PTP_INIT2VALS = 0x%x\n",
+	pr_notice("PTP_DCVALUES = 0x%x\n", ptp_read(PTP_DCVALUES));
+	pr_notice("PTP_AGECOUNT = 0x%x\n", ptp_read(PTP_AGECOUNT));
+	pr_notice("PTP_INIT2VALS = 0x%x\n",
 						ptp_read(PTP_INIT2VALS));
-	ptp_isr_info("PTP_VDESIGN30 = 0x%x\n",
+	pr_notice("PTP_VDESIGN30 = 0x%x\n",
 						ptp_read(PTP_VDESIGN30));
-	ptp_isr_info("PTP_VDESIGN74 = 0x%x\n",
+	pr_notice("PTP_VDESIGN74 = 0x%x\n",
 						ptp_read(PTP_VDESIGN74));
-	ptp_isr_info("PTP_TEMP = 0x%x\n", ptp_read(PTP_TEMP));
-	ptp_isr_info("PTP_DVT30 = 0x%x\n", ptp_read(PTP_DVT30));
-	ptp_isr_info("PTP_DVT74 = 0x%x\n", ptp_read(PTP_DVT74));
-	ptp_isr_info("PTP_VOP30 = 0x%x\n", ptp_read(PTP_VOP30));
-	ptp_isr_info("PTP_VOP74 = 0x%x\n", ptp_read(PTP_VOP74));
+	pr_notice("PTP_TEMP = 0x%x\n", ptp_read(PTP_TEMP));
+	pr_notice("PTP_DVT30 = 0x%x\n", ptp_read(PTP_DVT30));
+	pr_notice("PTP_DVT74 = 0x%x\n", ptp_read(PTP_DVT74));
+	pr_notice("PTP_VOP30 = 0x%x\n", ptp_read(PTP_VOP30));
+	pr_notice("PTP_VOP74 = 0x%x\n", ptp_read(PTP_VOP74));
 }
 
 static void base_ops_set_phase(struct ptp_det *det, enum ptp_phase phase)
@@ -1035,7 +1037,7 @@ static void base_ops_set_phase(struct ptp_det *det, enum ptp_phase phase)
 	ptp_write(PTP_DCCONFIG, det->DCCONFIG);
 	ptp_write(PTP_AGECONFIG, det->AGECONFIG);
 
-	if (PTP_PHASE_MON == phase)
+	if (phase == PTP_PHASE_MON)
 		ptp_write(PTP_TSCALCS,
 			  ((det->BTS << 12) & 0xfff000) | (det->MTS & 0xfff));
 
@@ -1077,10 +1079,9 @@ static void base_ops_set_phase(struct ptp_det *det, enum ptp_phase phase)
 
 	/* clear all pending PTP interrupt & config PTPINTEN */
 	ptp_write(PTP_PTPINTSTS, 0xffffffff);
-	/* ptp_debug("%s(%s) start (phase = %d).\n", __func__, det->name, phase); */
 
 	if (ptp_log_en) {
-		ptp_isr_info("Check registers setting before next interrupt\n");
+		pr_notice("Check registers setting before next interrupt\n");
 		partial_reg_dump(det);
 	}
 
@@ -1107,7 +1108,7 @@ static void base_ops_set_phase(struct ptp_det *det, enum ptp_phase phase)
 		break;
 
 	default:
-		BUG();
+		WARN_ON(1);
 		break;
 	}
 
@@ -1119,33 +1120,26 @@ static void base_ops_set_phase(struct ptp_det *det, enum ptp_phase phase)
 static int base_ops_get_temp(struct ptp_det *det)
 {
 	enum thermal_bank_name ts_bank;
+	enum ptp_det_id det_id = det_to_id(det);
 /* #if 1 TODO: FIXME Jerry */
 	FUNC_ENTER(FUNC_LV_HELP);
 /*
-    THERMAL_BANK0     = 0,//CPU (TS_MCU1,TS_MCU2)		(TS3, TS4)
-    THERMAL_BANK1     = 1,//GPU (TS_MCU3)			(TS5)
-    THERMAL_BANK2     = 2,//SOC (TS_MCU4,TS_MCU2,TS_MCU3)	(TS1, TS4, TS5)
-*/
-
-	/* ts_bank = (det_to_id(det) == PTP_DET_MCUSYS)? THERMAL_BANK0  :
-		      (det_to_id(det) == PTP_DET_GPUSYS)? THERMAL_BANK1  :
-		       THERMAL_BANK2; */
-
-	if (det_to_id(det) == PTP_DET_MCUSYS) {
+ *  THERMAL_BANK0     = 0,//CPU (TS_MCU1,TS_MCU2)		(TS3, TS4)
+ *  THERMAL_BANK1     = 1,//GPU (TS_MCU3)			(TS5)
+ *  THERMAL_BANK2     = 2,//SOC (TS_MCU4,TS_MCU2,TS_MCU3)	(TS1, TS4, TS5)
+ */
+	if (det_id == PTP_DET_MCUSYS) {
 		ts_bank = THERMAL_BANK0;
-	} else {
-#ifndef CONFIG_MTK_INHOUSE_GPU
-		ptp_error("If no gpufreq, code shouldn't run this else statement. It gets BUG_ON(1)\n");
-		BUG_ON(1);
-#else
-		/* need to put #else here. Otherwise, PTP_DET_GPUSYS is not defined */
-		ts_bank = (det_to_id(det) == PTP_DET_GPUSYS) ? THERMAL_BANK1 : THERMAL_BANK2;
+#ifdef CONFIG_MTK_INHOUSE_GPU
+	} else if (det_id == PTP_DET_GPUSYS) {
+		ts_bank = THERMAL_BANK1;
 #endif
+	} else {
+		ts_bank = THERMAL_BANK2;
 	}
 
 	FUNC_EXIT(FUNC_LV_HELP);
 /* #endif */
-
 
 #ifdef CONFIG_THERMAL
 	return tscpu_get_temp_by_bank(ts_bank);
@@ -1157,7 +1151,7 @@ static int base_ops_get_temp(struct ptp_det *det)
 static int base_ops_get_volt(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
-	ptp_debug("[%s] default func\n", __func__);
+	pr_debug("[%s] default func\n", __func__);
 	FUNC_EXIT(FUNC_LV_HELP);
 
 	return 0;
@@ -1166,7 +1160,7 @@ static int base_ops_get_volt(struct ptp_det *det)
 static int base_ops_set_volt(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
-	ptp_debug("[%s] default func\n", __func__);
+	pr_debug("[%s] default func\n", __func__);
 	FUNC_EXIT(FUNC_LV_HELP);
 
 	return 0;
@@ -1175,7 +1169,7 @@ static int base_ops_set_volt(struct ptp_det *det)
 static void base_ops_restore_default_volt(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
-	ptp_debug("[%s] default func\n", __func__);
+	pr_debug("[%s] default func\n", __func__);
 	FUNC_EXIT(FUNC_LV_HELP);
 }
 
@@ -1194,7 +1188,7 @@ static int get_volt_cpu(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
 	FUNC_EXIT(FUNC_LV_HELP);
-	return mt_cpufreq_get_cur_volt(MT_CPU_DVFS_LITTLE);/* unit mv * 100 = 10uv */
+	return mt_cpufreq_get_cur_volt(MT_CPU_DVFS_LITTLE); /* unit: 10uv */
 }
 
 /* volt_tbl_pmic is convert from 10uV */
@@ -1202,9 +1196,8 @@ static int set_volt_cpu(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
 	FUNC_EXIT(FUNC_LV_HELP);
-	/* ptp_debug("set_volt_cpu=%x %x %x %x %x\n", det->volt_tbl_pmic[0],det->volt_tbl_pmic[1],
-			det->volt_tbl_pmic[2], det->volt_tbl_pmic[3], det->volt_tbl_pmic[4]); */
-	return mt_cpufreq_update_volt(MT_CPU_DVFS_LITTLE, det->volt_tbl_pmic, det->num_freq_tbl);
+	return mt_cpufreq_update_volt(MT_CPU_DVFS_LITTLE,
+				      det->volt_tbl_pmic, det->num_freq_tbl);
 }
 
 static void restore_default_volt_cpu(struct ptp_det *det)
@@ -1228,13 +1221,11 @@ static void get_freq_table_cpu(struct ptp_det *det)
 	if (cpu != 0)
 		return; /* TODO: FIXME, just for E1 */
 #endif
-
-	/* det->max_freq_khz = mt_cpufreq_max_frequency_by_DVS(cpu, 0); */ /* XXX: defined @ ptp_detectors[] */
-
 	for (i = 0; i < NR_FREQ; i++) {
-		det->freq_tbl[i] = PERCENT(mt_cpufreq_get_freq_by_idx(cpu, i), det->max_freq_khz);
+		det->freq_tbl[i] = PERCENT(mt_cpufreq_get_freq_by_idx(cpu, i),
+					   det->max_freq_khz);
 
-		if (0 == det->freq_tbl[i])
+		if (det->freq_tbl[i] == 0)
 			break;
 	}
 
@@ -1259,8 +1250,6 @@ static int set_volt_gpu(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
 	FUNC_EXIT(FUNC_LV_HELP);
-	/* ptp_debug("set_volt_gpu=%x %x %x %x %x\n",
-	det->volt_tbl_pmic[0],det->volt_tbl_pmic[1], det->volt_tbl_pmic[2], det->volt_tbl_pmic[3]); */
 
 	return mt_gpufreq_update_volt(det->volt_tbl_pmic, det->num_freq_tbl);
 }
@@ -1283,9 +1272,10 @@ static void get_freq_table_gpu(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_HELP);
 
 	for (i = 0; i < NR_FREQ; i++) {
-		det->freq_tbl[i] = PERCENT(mt_gpufreq_get_freq_by_idx(i), det->max_freq_khz); /* TODO: FIXME */
+		det->freq_tbl[i] = PERCENT(mt_gpufreq_get_freq_by_idx(i),
+					   det->max_freq_khz);
 
-		if (0 == det->freq_tbl[i])
+		if (det->freq_tbl[i] == 0)
 			break;
 	}
 
@@ -1307,7 +1297,8 @@ static int get_volt_vcore(struct ptp_det *det)
 
 /*=============================================================
  * Global function definition
- *=============================================================*/
+ *=============================================================
+ */
 #if 0
 unsigned int mt_ptp_get_level(void)
 {
@@ -1352,6 +1343,7 @@ static unsigned int ptp_trasnfer_to_volt(unsigned int value)
 #endif	/* TODO: FIXME, remove it latter (unused) */
 
 #if 0
+static DEFINE_SPINLOCK(ptp_spinlock);
 void mt_ptp_lock(unsigned long *flags)
 {
 	/* FUNC_ENTER(FUNC_LV_HELP); */
@@ -1403,26 +1395,26 @@ static enum hrtimer_restart ptp_log_timer_func(struct hrtimer *timer)
 	FUNC_ENTER(FUNC_LV_HELP);
 
 	for_each_det(det) {
-			pr_notice("PTP_LOG: [%s] (%d) - (%d, %d, %d, %d, %d, %d, %d, %d)",
-			   det->name, det->ops->get_temp(det),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[0]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[1]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[2]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[3]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[4]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[5]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[6]),
-			   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[7]));
+		pr_notice("PTP: [%s] (%d) - (%d, %d, %d, %d, %d, %d, %d, %d)",
+			  det->name, det->ops->get_temp(det),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[0]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[1]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[2]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[3]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[4]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[5]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[6]),
+			  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[7]));
 
-			pr_notice(" - (%d, %d, %d, %d, %d, %d, %d, %d)\n",
-			   det->freq_tbl[0],
-			   det->freq_tbl[1],
-			   det->freq_tbl[2],
-			   det->freq_tbl[3],
-			   det->freq_tbl[4],
-			   det->freq_tbl[5],
-			   det->freq_tbl[6],
-			   det->freq_tbl[7]);
+		pr_notice(" - (%d, %d, %d, %d, %d, %d, %d, %d)\n",
+			  det->freq_tbl[0],
+			  det->freq_tbl[1],
+			  det->freq_tbl[2],
+			  det->freq_tbl[3],
+			  det->freq_tbl[4],
+			  det->freq_tbl[5],
+			  det->freq_tbl[6],
+			  det->freq_tbl[7]);
 	}
 
 	hrtimer_forward_now(timer, ns_to_ktime(LOG_INTERVAL));
@@ -1455,15 +1447,17 @@ static int ptp_volt_thread_handler(void *data)
 			ptp_status_temp = PTP_CPU_LITTLE_IS_SET_VOLT;
 			break;
 		default:
-			ptp_error("%s: %u, wrong ctrl_id = %d\n",
-				  __func__, __LINE__, det->ctrl_id);
+			pr_err("%s: %u, wrong ctrl_id = %d\n",
+				__func__, __LINE__, det->ctrl_id);
 			break;
 		}
 #endif
-		if ((ctrl->volt_update & PTP_VOLT_UPDATE) && det->ops->set_volt)
+		if ((ctrl->volt_update & PTP_VOLT_UPDATE) &&
+		    det->ops->set_volt)
 			det->ops->set_volt(det);
 
-		if ((ctrl->volt_update & PTP_VOLT_RESTORE) && det->ops->restore_default_volt)
+		if ((ctrl->volt_update & PTP_VOLT_RESTORE) &&
+		    det->ops->restore_default_volt)
 			det->ops->restore_default_volt(det);
 
 		ctrl->volt_update = PTP_VOLT_NONE;
@@ -1520,13 +1514,11 @@ static void ptp_init_ctrl(struct ptp_ctrl *ctrl)
 	/* init_completion(&ctrl->init_done); */
 	/* atomic_set(&ctrl->in_init, 0); */
 
-	if (1) { /* HAS_FEATURE(id_to_ptp_det(ctrl->det_id), FEA_MON)) { */ /* TODO: FIXME, why doesn't work <-XXX */
-		init_waitqueue_head(&ctrl->wq);
-		ctrl->thread = kthread_run(ptp_volt_thread_handler, ctrl, ctrl->name);
-
-		if (IS_ERR(ctrl->thread))
-			ptp_error("Create %s thread failed: %ld\n", ctrl->name, PTR_ERR(ctrl->thread));
-	}
+	init_waitqueue_head(&ctrl->wq);
+	ctrl->thread = kthread_run(ptp_volt_thread_handler, ctrl, ctrl->name);
+	if (IS_ERR(ctrl->thread))
+		pr_err("Create %s thread failed: %ld\n",
+		       ctrl->name, PTR_ERR(ctrl->thread));
 
 	FUNC_EXIT(FUNC_LV_HELP);
 }
@@ -1536,7 +1528,7 @@ static void ptp_init_det(struct ptp_det *det, struct ptp_devinfo *devinfo)
 	enum ptp_det_id det_id = det_to_id(det);
 
 	FUNC_ENTER(FUNC_LV_HELP);
-	ptp_info("det name=%s, det_id=%d\n", det->name, det_id);
+	pr_debug("det name=%s, det_id=%d\n", det->name, det_id);
 
 	inherit_base_det(det);
 
@@ -1560,9 +1552,9 @@ static void ptp_init_det(struct ptp_det *det, struct ptp_devinfo *devinfo)
 	det->VCO		= VCO_VAL;
 	det->DCCONFIG	= DCCONFIG_VAL;
 
-	if (NULL != det->ops->get_volt) {
+	if (det->ops->get_volt != NULL) {
 		det->VBOOT = PTP_VOLT_TO_PMIC_VAL(det->ops->get_volt(det));
-		ptp_info("@%s(), det->VBOOT = %d\n", __func__, det->VBOOT);
+		pr_debug("@%s(), det->VBOOT = %d\n", __func__, det->VBOOT);
 	}
 
 	switch (det_id) {
@@ -1571,9 +1563,10 @@ static void ptp_init_det(struct ptp_det *det, struct ptp_devinfo *devinfo)
 		det->BDES	= devinfo->CPU_BDES;
 		det->DCMDET	= devinfo->CPU_DCMDET;
 		det->DCBDET	= devinfo->CPU_DCBDET;
-		/* det->VBOOT	= PTP_VOLT_TO_PMIC_VAL(mt_cpufreq_cur_vproc(MT_CPU_DVFS_LITTLE)); */
-		/* Vsram and Vproc use the same buck. Besides, Vmin of Vsram is 115000 * 10uV.
-		   So, I need to override default setting */
+		/* Vsram and Vproc use the same buck. Besides,
+		 * Vmin of Vsram is 115000 * 10uV.
+		 * So, I need to override default setting
+		 */
 		det->VMIN	= PTP_VOLT_TO_PMIC_VAL(115000);
 		det->VMAX	= PTP_VOLT_TO_PMIC_VAL(130000);
 		break;
@@ -1586,13 +1579,11 @@ static void ptp_init_det(struct ptp_det *det, struct ptp_devinfo *devinfo)
 		det->DCBDET	= devinfo->GPU_DCBDET;
 		det->VMIN	= VMIN_VAL_GPU; /* override default setting */
 		det->DVTFIXED = 0x4;
-		/* TODO: FIXME, unit = 10us */
-		/* det->VBOOT	= PTP_VOLT_TO_PMIC_VAL(mt_gpufreq_get_cur_volt() / 100); */
 		break;
 #endif
 
 	default:
-		ptp_error("[%s]: Unknown det_id %d\n", __func__, det_id);
+		pr_err("[%s]: Unknown det_id %d\n", __func__, det_id);
 		break;
 	}
 
@@ -1610,7 +1601,7 @@ static void ptp_init_det(struct ptp_det *det, struct ptp_devinfo *devinfo)
 #endif
 
 	default:
-		ptp_error("[%s]: Unknown ctrl_id %d\n", __func__, det->ctrl_id);
+		pr_err("[%s]: Unknown ctrl_id %d\n", __func__, det->ctrl_id);
 		break;
 	}
 
@@ -1627,14 +1618,14 @@ static void ptp_set_ptp_volt(struct ptp_det *det)
 	int dvfs_index, cur_temp, low_temp_offset;
 	struct ptp_ctrl *ctrl = id_to_ptp_ctrl(det->ctrl_id);
 #ifdef CONFIG_MTK_RAM_CONSOLE
-	unsigned long long temp_long;
-	unsigned long long temp_cur = (unsigned long long)aee_rr_curr_ptp_temp();
+	u64 temp_long;
+	u64 temp_cur = (u64)aee_rr_curr_ptp_temp();
 #endif
 
 	cur_temp = det->ops->get_temp(det);
 
 	if (ptp_log_en)
-		ptp_isr_info("ptp_set_ptp_volt cur_temp = %d\n", cur_temp);
+		pr_notice("ptp_set_ptp_volt cur_temp = %d\n", cur_temp);
 
 	if (cur_temp <= 33000)
 		low_temp_offset = 10;
@@ -1645,30 +1636,33 @@ static void ptp_set_ptp_volt(struct ptp_det *det)
 	/* scale of det->volt_offset must equal 10uV */
 	for (dvfs_index = 0; dvfs_index < det->num_freq_tbl; dvfs_index++) {
 		det->volt_tbl_pmic[dvfs_index] =
-			clamp(det->volt_tbl[dvfs_index] + det->volt_offset + low_temp_offset,
-				det->VMIN, det->VMAX);
+			clamp(det->volt_tbl[dvfs_index] + det->volt_offset +
+			      low_temp_offset, det->VMIN, det->VMAX);
 	}
 #ifdef CONFIG_MTK_RAM_CONSOLE
 	switch (det->ctrl_id) {
 	case PTP_CTRL_MCUSYS:
 		/* update AEE temperature */
-		temp_long = (unsigned long long) (cur_temp / 1000);
+		temp_long = (u64) (cur_temp / 1000);
 		if (temp_long != 0) {
-			aee_rr_rec_ptp_temp(temp_long << (8 * PTP_CPU_LITTLE_IS_SET_VOLT) |
-				(temp_cur & ~((unsigned long long)0xFF <<
-					(8 * PTP_CPU_LITTLE_IS_SET_VOLT))));
+			aee_rr_rec_ptp_temp(temp_long <<
+				(8 * PTP_CPU_LITTLE_IS_SET_VOLT) |
+				(temp_cur & ~((u64)0xFF <<
+				(8 * PTP_CPU_LITTLE_IS_SET_VOLT))));
 		}
 
 		/* update AEE voltage */
 		for (dvfs_index = 0; dvfs_index < NR_FREQ; dvfs_index++) {
 			aee_rr_rec_ptp_cpu_little_volt(
-				((unsigned long long)(det->volt_tbl_pmic[dvfs_index])
-					<< (8 * dvfs_index)) | (aee_rr_curr_ptp_cpu_little_volt()
-						& ~((unsigned long long)(0xFF) << (8 * dvfs_index))));
+			((u64)(det->volt_tbl_pmic[dvfs_index]) <<
+			(8 * dvfs_index)) | (aee_rr_curr_ptp_cpu_little_volt() &
+			~((u64)(0xFF) << (8 * dvfs_index))));
 		}
+
 		break;
 	default:
-		ptp_error("%s: %u, wrong ctrl_id = %d\n", __func__, __LINE__, det->ctrl_id);
+		pr_err("%s: %u, wrong ctrl_id = %d\n",
+		       __func__, __LINE__, det->ctrl_id);
 		break;
 	}
 #endif
@@ -1693,29 +1687,6 @@ static void ptp_restore_ptp_volt(struct ptp_det *det)
 	FUNC_EXIT(FUNC_LV_HELP);
 }
 
-static void mt_ptp_reg_dump_locked(void)
-{
-#if 0
-#ifndef CONFIG_ARM64
-	unsigned int addr;
-
-	for (addr = (unsigned int)PTP_DESCHAR; addr <= (unsigned int)PTP_SMSTATE1; addr += 4)
-		ptp_isr_info("0x%08X = 0x%08X\n", addr, *(volatile unsigned int *)addr);
-
-	addr = (unsigned int)PTP_PTPCORESEL;
-	ptp_isr_info("0x%08X = 0x%08X\n", addr, *(volatile unsigned int *)addr);
-#else
-	unsigned long addr;
-
-	for (addr = (unsigned long)PTP_DESCHAR; addr <= (unsigned long)PTP_SMSTATE1; addr += 4)
-		ptp_isr_info("0x%lu = 0x%lu\n", addr, *(volatile unsigned long *)addr);
-
-	addr = (unsigned long)PTP_PTPCORESEL;
-	ptp_isr_info("0x%lu = 0x%lu\n", addr, *(volatile unsigned long *)addr);
-#endif
-#endif
-}
-
 static inline void handle_init01_isr(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_LOCAL);
@@ -1727,8 +1698,8 @@ static inline void handle_init01_isr(struct ptp_det *det)
 	det->ptp_ptpen[PTP_PHASE_INIT01]	= ptp_read(PTP_PTPEN);
 
 	if (ptp_log_en) {
-		ptp_info("@ %s(%s)\n", __func__, det->name);
-		ptp_isr_info("Dump registers\n");
+		pr_debug("@ %s(%s)\n", __func__, det->name);
+		pr_notice("Dump registers\n");
 		partial_reg_dump(det);
 	}
 
@@ -1737,22 +1708,24 @@ static inline void handle_init01_isr(struct ptp_det *det)
 		int i;
 
 		for (i = 0; i < ARRAY_SIZE(reg_dump_addr_off); i++)
-			det->reg_dump_data[i][PTP_PHASE_INIT01] = ptp_read(PTP_BASEADDR + reg_dump_addr_off[i]);
+			det->reg_dump_data[i][PTP_PHASE_INIT01] =
+				ptp_read(PTP_BASEADDR + reg_dump_addr_off[i]);
 	}
 #endif
 
-	ptp_notice("%s: %s: VDN74:0x%08x, VDN30:0x%08x, DCVALUES:0x%08x\n",
-		   det->name, __func__, ptp_read(PTP_VDESIGN74),
-		   ptp_read(PTP_VDESIGN30), ptp_read(PTP_DCVALUES));
+	pr_notice("%s: %s: VDN74:0x%08x, VDN30:0x%08x, DCVALUES:0x%08x\n",
+		  det->name, __func__, ptp_read(PTP_VDESIGN74),
+		  ptp_read(PTP_VDESIGN30), ptp_read(PTP_DCVALUES));
 
 	/*
 	 * Read & store 16 bit values DCVALUES.DCVOFFSET and
 	 * AGEVALUES.AGEVOFFSET for later use in INIT2 procedure
 	 */
-	det->DCVOFFSETIN = ~(ptp_read(PTP_DCVALUES) & 0xffff) + 1; /* hw bug, workaround */
+	det->DCVOFFSETIN = ~(ptp_read(PTP_DCVALUES) & 0xffff) + 1;
 	det->AGEVOFFSETIN = ptp_read(PTP_AGEVALUES) & 0xffff;
+
 	/* always dump the Vproc DC offset here, that is the gap data we want to track & statistic */
-	ptp_error("[PTP] INIT2VALS %d, %d, VDESIGN0 %d\n",
+	pr_err("[PTP] INIT2VALS %d, %d, VDESIGN0 %d\n",
 		  det->DCVOFFSETIN & 0xffff, det->AGEVOFFSETIN,
 		  ptp_read(PTP_VDESIGN30) & 0xff);
 
@@ -1777,8 +1750,8 @@ static inline void handle_init02_isr(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
 	if (ptp_log_en) {
-		ptp_isr_info("@ %s(%s)\n", __func__, det->name);
-		ptp_isr_info("Dump registers\n");
+		pr_notice("@ %s(%s)\n", __func__, det->name);
+		pr_notice("Dump registers\n");
 		partial_reg_dump(det);
 	}
 
@@ -1792,11 +1765,12 @@ static inline void handle_init02_isr(struct ptp_det *det)
 		int i;
 
 		for (i = 0; i < ARRAY_SIZE(reg_dump_addr_off); i++)
-			det->reg_dump_data[i][PTP_PHASE_INIT02] = ptp_read(PTP_BASEADDR + reg_dump_addr_off[i]);
+			det->reg_dump_data[i][PTP_PHASE_INIT02] =
+				ptp_read(PTP_BASEADDR + reg_dump_addr_off[i]);
 	}
 #endif
 
-	ptp_notice("%s: %s: VOP74:0x%08x, VOP30:0x%08x, DCVALUES:0x%08x\n",
+	pr_notice("%s: %s: VOP74:0x%08x, VOP30:0x%08x, DCVALUES:0x%08x\n",
 		   det->name, __func__, ptp_read(PTP_VOP74),
 		   ptp_read(PTP_VOP30), ptp_read(PTP_DCVALUES));
 
@@ -1819,10 +1793,11 @@ static inline void handle_init02_isr(struct ptp_det *det)
 
 	if (ptp_log_en) {
 		for (i = 0; i < NR_FREQ; i++)
-			ptp_isr_info("init02, ptp_detectors[%s].volt_tbl[%d] = 0x%08X (%d)\n",
-				det->name, i, det->volt_tbl[i], PTP_PMIC_VAL_TO_VOLT(det->volt_tbl[i]));
+			pr_notice("init02, [%s].volt_tbl[%d] = 0x%08X (%d)\n",
+				  det->name, i, det->volt_tbl[i],
+				  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl[i]));
 
-		ptp_isr_info("ptp_level = 0x%08X\n", ptp_level);
+		pr_notice("ptp_level = 0x%08X\n", ptp_level);
 	}
 
 	ptp_set_ptp_volt(det);
@@ -1845,15 +1820,15 @@ static inline void handle_init_err_isr(struct ptp_det *det)
 {
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
-	ptp_error("====================================================\n");
-	ptp_error("PTP init err: PTPEN(%p) = 0x%08X, PTPINTSTS(%p) = 0x%08X\n",
+	pr_err("====================================================\n");
+	pr_err("PTP init err: PTPEN(%p) = 0x%08X, PTPINTSTS(%p) = 0x%08X\n",
 		     PTP_PTPEN, ptp_read(PTP_PTPEN),
 		     PTP_PTPINTSTS, ptp_read(PTP_PTPINTSTS));
-	ptp_error("PTP_SMSTATE0 (%p) = 0x%08X\n",
+	pr_err("PTP_SMSTATE0 (%p) = 0x%08X\n",
 		     PTP_SMSTATE0, ptp_read(PTP_SMSTATE0));
-	ptp_error("PTP_SMSTATE1 (%p) = 0x%08X\n",
+	pr_err("PTP_SMSTATE1 (%p) = 0x%08X\n",
 		     PTP_SMSTATE1, ptp_read(PTP_SMSTATE1));
-	ptp_error("====================================================\n");
+	pr_err("====================================================\n");
 
 	/* TODO: FIXME */
 	{
@@ -1863,7 +1838,8 @@ static inline void handle_init_err_isr(struct ptp_det *det)
 	}
 	/* TODO: FIXME */
 
-	aee_kernel_warning("mt_ptp", "@%s():%d, get_volt(%s) = 0x%08X\n", __func__, __LINE__, det->name, det->VBOOT);
+	aee_kernel_warning("mt_ptp", "@%s():%d, get_volt(%s) = 0x%08X\n",
+			   __func__, __LINE__, det->name, det->VBOOT);
 	det->ops->disable_locked(det, BY_INIT_ERROR);
 
 	FUNC_EXIT(FUNC_LV_LOCAL);
@@ -1878,8 +1854,8 @@ static inline void handle_mon_mode_isr(struct ptp_det *det)
 
 
 	if (ptp_log_en) {
-		ptp_isr_info("@ %s(%s)\n", __func__, det->name);
-		ptp_isr_info("Dump registers\n");
+		pr_notice("@ %s(%s)\n", __func__, det->name);
+		pr_notice("Dump registers\n");
 		partial_reg_dump(det);
 	}
 
@@ -1893,14 +1869,16 @@ static inline void handle_mon_mode_isr(struct ptp_det *det)
 		int i;
 
 		for (i = 0; i < ARRAY_SIZE(reg_dump_addr_off); i++)
-			det->reg_dump_data[i][PTP_PHASE_MON] = ptp_read(PTP_BASEADDR + reg_dump_addr_off[i]);
+			det->reg_dump_data[i][PTP_PHASE_MON] =
+				ptp_read(PTP_BASEADDR + reg_dump_addr_off[i]);
 	}
 #endif
 	/* check if thermal sensor init completed? */
 	temp = (ptp_read(PTP_TEMP) & 0xff);
 
 	if ((temp > 0x4b) && (temp < 0xd3)) {
-		ptp_error("thermal sensor init has not been completed. (temp = 0x%08X)\n", temp);
+		pr_err("thermal sensor init not completed\n");
+		pr_err("ptp_read(PTP_TEMP): 0x%08X\n", temp);
 		goto out;
 	}
 
@@ -1920,15 +1898,16 @@ static inline void handle_mon_mode_isr(struct ptp_det *det)
 
 	if (ptp_log_en) {
 		for (i = 0; i < NR_FREQ; i++)
-			ptp_isr_info("mon, ptp_detectors[%s].volt_tbl[%d] = 0x%08X (%d)\n",
-				det->name, i, det->volt_tbl[i], PTP_PMIC_VAL_TO_VOLT(det->volt_tbl[i]));
+			pr_notice("mon, [%s]: volt_tbl[%d] = 0x%08X (%d)\n",
+				  det->name, i, det->volt_tbl[i],
+				  PTP_PMIC_VAL_TO_VOLT(det->volt_tbl[i]));
 
-		ptp_isr_info("ptp_level = 0x%08X\n", ptp_level);
+		pr_notice("ptp_level = 0x%08X\n", ptp_level);
 	}
 
 #ifdef CONFIG_THERMAL
 	if (ptp_log_en)
-		ptp_isr_info("ISR : TEMPSPARE1 = 0x%08X\n", ptp_read(TEMPSPARE1));
+		pr_notice("ISR : TEMPSPARE1 = 0x%08X\n", ptp_read(TEMPSPARE1));
 #endif
 
 	ptp_set_ptp_volt(det);
@@ -1945,29 +1924,30 @@ static inline void handle_mon_err_isr(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
 	/* PTP Monitor mode error handler */
-	ptp_error("====================================================\n");
-	ptp_error("PTP mon err: PTPEN(%p) = 0x%08X, PTPINTSTS(%p) = 0x%08X\n",
+	pr_err("====================================================\n");
+	pr_err("PTP mon err: PTPEN(%p) = 0x%08X, PTPINTSTS(%p) = 0x%08X\n",
 		     PTP_PTPEN, ptp_read(PTP_PTPEN),
 		     PTP_PTPINTSTS, ptp_read(PTP_PTPINTSTS));
-	ptp_error("PTP_SMSTATE0 (%p) = 0x%08X\n",
+	pr_err("PTP_SMSTATE0 (%p) = 0x%08X\n",
 		     PTP_SMSTATE0, ptp_read(PTP_SMSTATE0));
-	ptp_error("PTP_SMSTATE1 (%p) = 0x%08X\n",
+	pr_err("PTP_SMSTATE1 (%p) = 0x%08X\n",
 		     PTP_SMSTATE1, ptp_read(PTP_SMSTATE1));
-	ptp_error("PTP_TEMP (%p) = 0x%08X\n",
+	pr_err("PTP_TEMP (%p) = 0x%08X\n",
 		     PTP_TEMP, ptp_read(PTP_TEMP));
-	ptp_error("PTP_TEMPMSR0 (%p) = 0x%08X\n",
+	pr_err("PTP_TEMPMSR0 (%p) = 0x%08X\n",
 		     PTP_TEMPMSR0, ptp_read(PTP_TEMPMSR0));
-	ptp_error("PTP_TEMPMSR1 (%p) = 0x%08X\n",
+	pr_err("PTP_TEMPMSR1 (%p) = 0x%08X\n",
 		     PTP_TEMPMSR1, ptp_read(PTP_TEMPMSR1));
-	ptp_error("PTP_TEMPMSR2 (%p) = 0x%08X\n",
+	pr_err("PTP_TEMPMSR2 (%p) = 0x%08X\n",
 		     PTP_TEMPMSR2, ptp_read(PTP_TEMPMSR2));
-	ptp_error("PTP_TEMPMONCTL0 (%p) = 0x%08X\n",
+	pr_err("PTP_TEMPMONCTL0 (%p) = 0x%08X\n",
 		     PTP_TEMPMONCTL0, ptp_read(PTP_TEMPMONCTL0));
-	ptp_error("PTP_TEMPMSRCTL1 (%p) = 0x%08X\n",
+	pr_err("PTP_TEMPMSRCTL1 (%p) = 0x%08X\n",
 		     PTP_TEMPMSRCTL1, ptp_read(PTP_TEMPMSRCTL1));
-	ptp_error("====================================================\n");
+	pr_err("====================================================\n");
 
-	aee_kernel_warning("mt_ptp", "@%s():%d, get_volt(%s) = 0x%08X\n", __func__, __LINE__, det->name, det->VBOOT);
+	aee_kernel_warning("mt_ptp", "@%s():%d, get_volt(%s) = 0x%08X\n",
+			   __func__, __LINE__, det->name, det->VBOOT);
 	det->ops->disable_locked(det, BY_MON_ERROR);
 
 	FUNC_EXIT(FUNC_LV_LOCAL);
@@ -1983,13 +1963,13 @@ static inline void ptp_isr_handler(struct ptp_det *det)
 	PTPEN = ptp_read(PTP_PTPEN);
 
 	if (ptp_log_en) {
-		ptp_isr_info("func = %s\n", __func__);
-		ptp_isr_info("[%s]\n", det->name);
-		ptp_isr_info("PTP_PTPEN = 0x%08X\n", ptp_read(PTP_PTPEN));
-		ptp_isr_info("PTP_PTPODINTST = 0x%X\n", ptp_read(PTP_PTPODINTST));
-		ptp_isr_info("PTP_PTPCORESEL = 0x%X\n", ptp_read(PTP_PTPCORESEL));
-		ptp_isr_info("PTP_DCVALUES = 0x%08X\n", ptp_read(PTP_DCVALUES));
-		ptp_isr_info("PTP_AGECOUNT = 0x%08X\n", ptp_read(PTP_AGECOUNT));
+		pr_notice("func = %s\n", __func__);
+		pr_notice("[%s]\n", det->name);
+		pr_notice("PTP_PTPEN = 0x%08X\n", ptp_read(PTP_PTPEN));
+		pr_notice("PTP_PTPODINTST = 0x%X\n", ptp_read(PTP_PTPODINTST));
+		pr_notice("PTP_PTPCORESEL = 0x%X\n", ptp_read(PTP_PTPCORESEL));
+		pr_notice("PTP_DCVALUES = 0x%08X\n", ptp_read(PTP_DCVALUES));
+		pr_notice("PTP_AGECOUNT = 0x%08X\n", ptp_read(PTP_AGECOUNT));
 	}
 
 	if (PTPINTSTS == 0x1) { /* PTP init1 or init2 */
@@ -2026,10 +2006,10 @@ static irqreturn_t ptp_isr(int irq, void *dev_id)
 	FUNC_ENTER(FUNC_LV_MODULE);
 
 	if (ptp_log_en) {
-		ptp_isr_info("%s start.\n", __func__);
-		ptp_isr_info("PTP_PTPEN = 0x%08X\n", ptp_read(PTP_PTPEN));
-		ptp_isr_info("PTP_PTPODINTST = 0x%X\n", ptp_read(PTP_PTPODINTST));
-		ptp_isr_info("PTP_PTPCORESEL = 0x%X\n", ptp_read(PTP_PTPCORESEL));
+		pr_notice("%s start.\n", __func__);
+		pr_notice("PTP_PTPEN = 0x%08X\n", ptp_read(PTP_PTPEN));
+		pr_notice("PTP_PTPODINTST = 0x%X\n", ptp_read(PTP_PTPODINTST));
+		pr_notice("PTP_PTPCORESEL = 0x%X\n", ptp_read(PTP_PTPCORESEL));
 	}
 
 	mt_ptp_lock(&flags);
@@ -2052,17 +2032,13 @@ static irqreturn_t ptp_isr(int irq, void *dev_id)
 	}
 #endif
 	for (i = 0; i < NR_PTP_CTRL; i++) {
-		/* if (i == PTP_CTRL_VCORE)
-			continue; */
-
-		if ((BIT(i) & ptp_read(PTP_PTPODINTST))) /* TODO: FIXME, it is better to link i @ struct ptp_det */
+		/* PTP_BANK interrupt check */
+		if ((BIT(i) & ptp_read(PTP_PTPODINTST)))
 			continue;
 
 		det = &ptp_detectors[i];
 
 		det->ops->switch_bank(det);
-
-		mt_ptp_reg_dump_locked(); /* TODO: FIXME, for temp reg dump <-XXX */
 
 		ptp_isr_handler(det);
 	}
@@ -2072,7 +2048,7 @@ static irqreturn_t ptp_isr(int irq, void *dev_id)
 	FUNC_EXIT(FUNC_LV_MODULE);
 
 	if (ptp_log_en)
-		ptp_isr_info("%s done.\n", __func__);
+		pr_notice("%s done.\n", __func__);
 
 	return IRQ_HANDLED;
 }
@@ -2105,7 +2081,7 @@ static void ptp_init01_prepare(struct ptp_det *det)
 #endif
 #if 0	/* TODO: move to ptp_init01() */
 
-		if (0 == cpu) { /* TODO: FIXME, for E1 */
+		if (cpu == 0) { /* TODO: FIXME, for E1 */
 			/* disable frequency hopping (main PLL) */
 			mt_fh_popod_save();
 			/* disable DVFS and set vproc = 1.15v (1 GHz) */
@@ -2126,7 +2102,7 @@ static void ptp_init01_finish(struct ptp_det *det)
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
 	if (atomic_read(&ptp_init01_cnt) < 0)
-		BUG();
+		WARN();
 
 	if (atomic_read(&ptp_init01_cnt) == 0) {
 #if 0
@@ -2147,7 +2123,7 @@ static void ptp_init01_finish(struct ptp_det *det)
 #endif
 #if 0	/* TODO: move to ptp_init01() */
 
-		if (0 == cpu) { /* TODO: FIXME, for E1 */
+		if (cpu == 0) { /* TODO: FIXME, for E1 */
 			/* enable DVFS */
 			mt_cpufreq_enable_by_ptpod(cpu);
 			/* enable frequency hopping (main PLL) */
@@ -2165,39 +2141,43 @@ void ptp_init01(void)
 {
 	struct ptp_det *det;
 	struct ptp_ctrl *ctrl;
+	unsigned long flag;
+	unsigned int vboot;
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
 	for_each_det_ctrl(det, ctrl) {
-		{
-			unsigned long flag; /* <-XXX */
-			unsigned int vboot;
-#if 1
-			vboot = PTP_VOLT_TO_PMIC_VAL(det->ops->get_volt(det));
+		vboot = PTP_VOLT_TO_PMIC_VAL(det->ops->get_volt(det));
 
-			ptp_info("@%s(),get_volt(%s), vboot = %d\n", __func__, det->name, vboot);
-			if (vboot != det->VBOOT) {
-				ptp_error("@%s():%d, get_volt(%s) = 0x%08X, VBOOT = 0x%08X\n",
-					__func__, __LINE__, det->name, vboot, det->VBOOT);
-				aee_kernel_warning("mt_ptp", "@%s():%d, get_volt(%s) = 0x%08X, VBOOT = 0x%08X\n",
-					__func__, __LINE__, det->name, vboot, det->VBOOT);
-			}
-#else
-			BUG_ON(PTP_VOLT_TO_PMIC_VAL(det->ops->get_volt(det)) != det->VBOOT);
+#ifdef CONFIG_MTK_RAM_CONSOLE
+		/* record vboot of this bank */
+		aee_rr_rec_ptp_vboot(
+			((u64)(vboot) << (8 * det->ctrl_id)) |
+			(aee_rr_curr_ptp_vboot() & ~((u64)(0xFF) <<
+			(8 * det->ctrl_id))));
 #endif
-			mt_ptp_lock(&flag); /* <-XXX */
-			det->ops->init01(det);
-			mt_ptp_unlock(&flag); /* <-XXX */
+		pr_debug("%s(),get_volt(%s), vboot = %d\n", __func__,
+			 det->name, vboot);
+		if (vboot != det->VBOOT) {
+			pr_err("%s(): get_volt = 0x%08X, VBOOT = 0x%08X\n",
+			       det->name, vboot, det->VBOOT);
+			aee_kernel_warning(
+				"mt_ptp",
+				"%s(): get_volt = 0x%08X, VBOOT = 0x%08X\n",
+				det->name, vboot, det->VBOOT);
 		}
+		mt_ptp_lock(&flag); /* <-XXX */
+		det->ops->init01(det);
+		mt_ptp_unlock(&flag); /* <-XXX */
 
 		/*
 		 * VCORE_AO and VCORE_PDN use the same controller.
 		 * Wait until VCORE_AO init01 and init02 done
 		 */
-		/* if (atomic_read(&ctrl->in_init)) { */
-			/* TODO: Use workqueue to avoid blocking */
-		/*	wait_for_completion(&ctrl->init_done);
-		}*/
+#if 0
+		if (atomic_read(&ctrl->in_init))
+			wait_for_completion(&ctrl->init_done);
+#endif
 	}
 
 	FUNC_EXIT(FUNC_LV_LOCAL);
@@ -2243,9 +2223,11 @@ empty:
 
 	if (line_start >= buf_end) {
 		line_start = 0;
-		buf_end = fp->f_op->read(fp, &buf[line_end], sizeof(buf) - line_end, &fp->f_pos);
+		buf_end = fp->f_op->read(fp,
+					 &buf[line_end],
+					 sizeof(buf) - line_end, &fp->f_pos);
 
-		if (0 == buf_end) {
+		if (buf_end == 0) {
 			line_end = 0;
 			return NULL;
 		}
@@ -2302,15 +2284,23 @@ void get_devinfo(struct ptp_devinfo *p)
 	M_HW_RES[5] = 0x76BB34D0;
 #endif
 
-	ptp_notice("M_HW_RES[0]=0x%x\n", M_HW_RES[0]);
-	ptp_notice("M_HW_RES[1]=0x%x\n", M_HW_RES[1]);
-	ptp_notice("M_HW_RES[2]=0x%x\n", M_HW_RES[2]);
-	ptp_notice("M_HW_RES[3]=0x%x\n", M_HW_RES[3]);
-	ptp_notice("M_HW_RES[4]=0x%x\n", M_HW_RES[4]);
-	ptp_notice("M_HW_RES[5]=0x%x\n", M_HW_RES[5]);
+#ifdef CONFIG_MTK_RAM_CONSOLE
+	aee_rr_rec_ptp_e0((u32)M_HW_RES[0]);
+	aee_rr_rec_ptp_e1((u32)M_HW_RES[1]);
+	aee_rr_rec_ptp_e2((u32)M_HW_RES[2]);
+	aee_rr_rec_ptp_e3((u32)M_HW_RES[3]);
+	aee_rr_rec_ptp_e4((u32)M_HW_RES[4]);
+	aee_rr_rec_ptp_e5((u32)M_HW_RES[5]);
+#endif
+	pr_notice("M_HW_RES[0]=0x%x\n", M_HW_RES[0]);
+	pr_notice("M_HW_RES[1]=0x%x\n", M_HW_RES[1]);
+	pr_notice("M_HW_RES[2]=0x%x\n", M_HW_RES[2]);
+	pr_notice("M_HW_RES[3]=0x%x\n", M_HW_RES[3]);
+	pr_notice("M_HW_RES[4]=0x%x\n", M_HW_RES[4]);
+	pr_notice("M_HW_RES[5]=0x%x\n", M_HW_RES[5]);
 
-	ptp_info("p->PTPINITEN=0x%x\n", p->PTPINITEN);
-	ptp_info("p->PTPMONEN=0x%x\n", p->PTPMONEN);
+	pr_debug("p->PTPINITEN=0x%x\n", p->PTPINITEN);
+	pr_debug("p->PTPMONEN=0x%x\n", p->PTPMONEN);
 
 	/* p->PTPINITEN = 0; */ /* TODO: FIXME */
 	/* p->PTPMONEN  = 0; */ /* TODO: FIXME */
@@ -2321,6 +2311,7 @@ void get_devinfo(struct ptp_devinfo *p)
 #ifdef CONFIG_MTK_RAM_CONSOLE
 static void _mt_ptp_aee_init(void)
 {
+	aee_rr_rec_ptp_vboot(0x0);
 	aee_rr_rec_ptp_cpu_little_volt(0x0);
 	aee_rr_rec_ptp_temp(0x0);
 
@@ -2344,18 +2335,18 @@ static int ptp_probe(struct platform_device *pdev)
 	/* enable thermal CG */
 	/* enable_clock(MT_CG_INFRA_THERM, "PTPOD"); */
 	clk_infra_therm = devm_clk_get(&pdev->dev, "ptp_infra_therm");
-	BUG_ON(IS_ERR(clk_infra_therm));
+	WARN_ON(IS_ERR(clk_infra_therm));
 	clk_prepare_enable(clk_infra_therm);
 
 	/* set PTP IRQ */
-	ret = request_irq(ptpod_irq_number, ptp_isr, IRQF_TRIGGER_LOW, "ptp", NULL);
-
+	ret = request_irq(ptpod_irq_number,
+			  ptp_isr, IRQF_TRIGGER_LOW, "ptp", NULL);
 	if (ret) {
-		ptp_error("PTP IRQ register failed (%d)\n", ret);
+		pr_err("PTP IRQ register failed (%d)\n", ret);
 		WARN_ON(1);
 	}
 
-	ptp_debug("Set PTP IRQ OK.\n");
+	pr_debug("Set PTP IRQ OK.\n");
 
 	/* ptp_level = mt_ptp_get_level(); */
 
@@ -2393,7 +2384,7 @@ static int ptp_probe(struct platform_device *pdev)
 	/* enable DVFS */
 	mt_gpufreq_enable_by_ptpod();
 #endif
-	mt_cpufreq_enable_by_ptpod(MT_CPU_DVFS_LITTLE); /* TODO: FIXME, for E1 */
+	mt_cpufreq_enable_by_ptpod(MT_CPU_DVFS_LITTLE);
 
 	/* enable frequency hopping (main PLL) */
 	mt_fh_popod_restore();
@@ -2405,9 +2396,6 @@ static int ptp_probe(struct platform_device *pdev)
 
 static int ptp_suspend(struct platform_device *pdev, pm_message_t state)
 {
-	/*
-	kthread_stop(ptp_volt_thread);
-	*/
 	FUNC_ENTER(FUNC_LV_MODULE);
 	FUNC_EXIT(FUNC_LV_MODULE);
 
@@ -2416,13 +2404,6 @@ static int ptp_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int ptp_resume(struct platform_device *pdev)
 {
-	/*
-	ptp_volt_thread = kthread_run(ptp_volt_thread_handler, 0, "ptp volt");
-	if (IS_ERR(ptp_volt_thread))
-	{
-	    printk("[%s]: failed to create ptp volt thread\n", __func__);
-	}
-	*/
 	FUNC_ENTER(FUNC_LV_MODULE);
 	ptp_init02();
 	FUNC_EXIT(FUNC_LV_MODULE);
@@ -2476,17 +2457,19 @@ void mt_ptp_opp_freq(enum ptp_det_id id, unsigned int *freq)
 }
 EXPORT_SYMBOL(mt_ptp_opp_freq);
 
-void mt_ptp_opp_status(enum ptp_det_id id, unsigned int *temp, unsigned int *volt)
+void mt_ptp_opp_status(enum ptp_det_id id,
+		       unsigned int *temp, unsigned int *volt)
 {
 	struct ptp_det *det = id_to_ptp_det(id);
 	int i = 0;
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	/* TODO: FIXME */
-
 #ifdef CONFIG_THERMAL
-	*temp = tscpu_get_temp_by_bank((id == PTP_DET_MCUSYS) ? THERMAL_BANK0 : THERMAL_BANK1);
+	if (id == PTP_DET_MCUSYS)
+		*temp = tscpu_get_temp_by_bank(THERMAL_BANK0);
+	else
+		*temp = tscpu_get_temp_by_bank(THERMAL_BANK1);
 #else
 	*temp = 25000;
 #endif
@@ -2498,17 +2481,18 @@ void mt_ptp_opp_status(enum ptp_det_id id, unsigned int *temp, unsigned int *vol
 EXPORT_SYMBOL(mt_ptp_opp_status);
 
 /***************************
-* return current PTP stauts
-****************************/
+ * return current PTP stauts
+ ***************************
+ */
 int mt_ptp_status(enum ptp_det_id id)
 {
 	struct ptp_det *det = id_to_ptp_det(id);
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(!det);
-	BUG_ON(!det->ops);
-	BUG_ON(!det->ops->get_status);
+	WARN_ON(!det);
+	WARN_ON(!det->ops);
+	WARN_ON(!det->ops->get_status);
 
 	FUNC_EXIT(FUNC_LV_API);
 
@@ -2546,7 +2530,8 @@ static int ptp_debug_proc_show(struct seq_file *m, void *v)
  * set PTP status by procfs interface
  */
 static ssize_t ptp_debug_proc_write(struct file *file,
-				    const char __user *buffer, size_t count, loff_t *pos)
+				    const char __user *buffer,
+				    size_t count, loff_t *pos)
 {
 	int ret;
 	int enabled = 0;
@@ -2575,8 +2560,8 @@ static ssize_t ptp_debug_proc_write(struct file *file,
 	if (!kstrtoint(buf, 10, &enabled)) {
 		ret = 0;
 
-		if (1 == enabled)
-			; /* det->ops->enable(det, BY_PROCFS); // TODO: FIXME, kernel panic when enabled */
+		if (enabled == 1)
+			; /* det->ops->enable(det, BY_PROCFS); */
 		else
 			det->ops->disable(det, BY_PROCFS);
 	} else {
@@ -2601,14 +2586,11 @@ static int ptp_dump_proc_show(struct seq_file *m, void *v)
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	/* ptp_detectors[PTP_DET_LITTLE].ops->dump_status(&ptp_detectors[PTP_DET_LITTLE]); */ /* <-XXX */
-	/* ptp_detectors[PTP_DET_BIG].ops->dump_status(&ptp_detectors[PTP_DET_BIG]); */ /* <-XXX */
-
 	for (i = 0; i < sizeof(struct ptp_devinfo)/sizeof(unsigned int); i++)
 		seq_printf(m, "M_HW_RES%d\t= 0x%08X\n", i, M_HW_RES[i]);
-
-	/* seq_printf(m, "det->PTPMONEN= 0x%08X,det->PTPINITEN= 0x%08X\n", det->PTPMONEN, det->PTPINITEN); */
-/*
+#if 0
+	seq_printf(m, "det->PTPMONEN= 0x%08X,det->PTPINITEN= 0x%08X\n",
+		   det->PTPMONEN, det->PTPINITEN);
 	seq_printf(m, "leakage_core\t= %d\n"
 		   "leakage_gpu\t= %d\n"
 		   "leakage_little\t= %d\n"
@@ -2618,44 +2600,46 @@ static int ptp_dump_proc_show(struct seq_file *m, void *v)
 		   leakage_sram2,
 		   leakage_sram1
 		   );
-*/
+#endif
 	for_each_det(det) {
-		seq_printf(m, "PTP_DCVALUES[%s]\t= 0x%08X\n", det->name, det->VBOOT);
+		seq_printf(m, "PTP_DCVALUES[%s]\t= 0x%08X\n",
+			   det->name, det->VBOOT);
 
 		for (i = PTP_PHASE_INIT01; i < NR_PTP_PHASE; i++) {
-			seq_printf(m, "dcvalues=0x%08X, ptp_freqpct30=0x%08X, ptp_26c=0x%08X,", det->dcvalues[i],
-					det->ptp_freqpct30[i], det->ptp_26c[i]);
-
-			seq_printf(m, "ptp_vop30=0x%08X, ptp_ptpen= 0x%08X\n", det->ptp_vop30[i], det->ptp_ptpen[i]);
+			seq_printf(m, "dcvalues=0x%08X, ptp_freqpct30=0x%08X,",
+				   det->dcvalues[i], det->ptp_freqpct30[i]);
+			seq_printf(m, "ptp_26c=0x%08X,", det->ptp_26c[i]);
+			seq_printf(m, "ptp_vop30=0x%08X, ptp_ptpen= 0x%08X\n",
+				   det->ptp_vop30[i], det->ptp_ptpen[i]);
 
 			if (det->ptp_ptpen[i] == 0x5) {
-				seq_printf(m, "PTP_LOG: PTPOD[%s] (%d) - (%d, %d, %d, %d, %d, %d, %d, %d) - ",
+				seq_printf(m, "[%s] (%d) - (%d, %d, %d, %d, ",
 				det->name, det->ops->get_temp(det),
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[0]),
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[1]),
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[2]),
-				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[3]),
+				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[3]));
+
+				seq_printf(m, "%d, %d, %d, %d) - ",
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[4]),
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[5]),
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[6]),
 				PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[7]));
 
-				seq_printf(m, "(%d, %d, %d, %d, %d, %d, %d, %d)\n",
-				det->freq_tbl[0],
-				det->freq_tbl[1],
-				det->freq_tbl[2],
-				det->freq_tbl[3],
-				det->freq_tbl[4],
-				det->freq_tbl[5],
-				det->freq_tbl[6],
-				det->freq_tbl[7]);
+				seq_printf(m, "(%d, %d, %d, %d, %d, %d, %d, ",
+					   det->freq_tbl[0],
+					   det->freq_tbl[1],
+					   det->freq_tbl[2],
+					   det->freq_tbl[3],
+					   det->freq_tbl[4],
+					   det->freq_tbl[5],
+					   det->freq_tbl[6]);
+
+				seq_printf(m, "%d)\n", det->freq_tbl[7]);
 			}
 		}
-		/* dump the DC offset & age offset & vdesign0 register for big data statistic and screening */
-		seq_printf(m, "[PTP] INIT2VALS %d, %d, VDESIGN0 %d\n",
-			   det->DCVOFFSETIN & 0xffff,
-			   det->AGEVOFFSETIN, ptp_read(PTP_VDESIGN30) & 0xff);
 	}
+
 #if DUMP_DATA_TO_DE
 	for_each_det(det) {
 		for (i = PTP_PHASE_INIT01; i < NR_PTP_PHASE; i++) {
@@ -2671,6 +2655,7 @@ static int ptp_dump_proc_show(struct seq_file *m, void *v)
 					   PTP_BASEADDR + reg_dump_addr_off[j],
 					   det->reg_dump_data[j][i]);
 		}
+		seq_printf(m, "[PTP] INIT2VALS %d, %d, VDESIGN0 %d\n", (short int)(det->DCVOFFSETIN & 0xffff), det->AGEVOFFSETIN, ptp_read(PTP_VDESIGN30) & 0xff);
 	}
 #endif
 
@@ -2694,7 +2679,7 @@ static int ptp_cur_volt_proc_show(struct seq_file *m, void *v)
 	if (rdata != 0)
 		seq_printf(m, "%d\n", rdata);
 	else
-		seq_printf(m, "PTPOD[%s] read current voltage fail\n", det->name);
+		seq_printf(m, "[%s] read current voltage fail\n", det->name);
 
 	FUNC_EXIT(FUNC_LV_HELP);
 
@@ -2710,25 +2695,30 @@ static int ptpod_not_work(u32 cur_volt, unsigned int *volt_tbl_pmic, int num)
 	int i;
 
 	if (num == NUM_OF_CPU_FREQ_TABLE)
-		ptp_isr_info("CPU: In ptpod_not_work, cur_volt = %d -> %d\n",
-					cur_volt,  PTP_VOLT_TO_PMIC_VAL(cur_volt));
+		pr_notice("CPU: In ptpod_not_work, cur_volt = %d -> %d\n",
+			  cur_volt,  PTP_VOLT_TO_PMIC_VAL(cur_volt));
 	else
-		ptp_isr_info("GPU: In ptpod_not_work, cur_volt = %d -> %d\n",
-					cur_volt,  PTP_VOLT_TO_PMIC_VAL(cur_volt));
+		pr_notice("GPU: In ptpod_not_work, cur_volt = %d -> %d\n",
+			  cur_volt,  PTP_VOLT_TO_PMIC_VAL(cur_volt));
 
 	for (i = 0; i < num; i++) {
-		ptp_isr_info("volt_tbl_pmic[%d] = %d => %d\n",
-					i, volt_tbl_pmic[i], PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[i]));
+		pr_notice("volt_tbl_pmic[%d] = %d => %d\n",
+			  i, volt_tbl_pmic[i],
+			  PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[i]));
 
 		if (cur_volt == PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[i]))
 			return 0;
 	}
 
-	if ((cur_volt == (PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) + CPU_TURBO_VOLT_DIFF_1)) ||
-	    (cur_volt == (PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) + CPU_TURBO_VOLT_DIFF_2))) {
-		ptp_isr_info("%d, %d, %d\n", cur_volt,
-			PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) + CPU_TURBO_VOLT_DIFF_1,
-				PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) + CPU_TURBO_VOLT_DIFF_2);
+	if ((cur_volt == (PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) +
+			  CPU_TURBO_VOLT_DIFF_1)) ||
+	    (cur_volt == (PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) +
+			  CPU_TURBO_VOLT_DIFF_2))) {
+		pr_notice("%d, %d, %d\n", cur_volt,
+			  PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) +
+					       CPU_TURBO_VOLT_DIFF_1,
+			  PTP_PMIC_VAL_TO_VOLT(volt_tbl_pmic[0]) +
+					       CPU_TURBO_VOLT_DIFF_2);
 		return 0;
 	}
 
@@ -2748,18 +2738,23 @@ static int ptp_stress_result_proc_show(struct seq_file *m, void *v)
 
 		switch (det->ctrl_id) {
 		case PTP_CTRL_MCUSYS:
-			result |= (ptpod_not_work(rdata, det->volt_tbl_pmic, NUM_OF_CPU_FREQ_TABLE) << PTP_CTRL_MCUSYS);
+			result |= (ptpod_not_work(rdata,
+						  det->volt_tbl_pmic,
+						  NUM_OF_CPU_FREQ_TABLE)
+				   << PTP_CTRL_MCUSYS);
 
 			if ((result & (1 << PTP_CTRL_MCUSYS)) != 0)
-				ptp_error("CPU PTP fail\n");
+				pr_err("CPU PTP fail\n");
 			break;
 #ifdef CONFIG_MTK_INHOUSE_GPU
 		case PTP_CTRL_GPUSYS:
-			result |= (ptpod_not_work(rdata, det->volt_tbl_pmic, NUM_OF_GPU_FREQ_TABLE)
-												<< PTP_CTRL_GPUSYS);
+			result |= (ptpod_not_work(rdata,
+						  det->volt_tbl_pmic,
+						  NUM_OF_GPU_FREQ_TABLE)
+				   << PTP_CTRL_GPUSYS);
 
 			if ((result & (1 << PTP_CTRL_GPUSYS)) != 0)
-				ptp_error("GPU PTP fail\n");
+				pr_err("GPU PTP fail\n");
 			break;
 #endif
 		default:
@@ -2780,7 +2775,7 @@ static int ptp_status_proc_show(struct seq_file *m, void *v)
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	seq_printf(m, "PTP_LOG: PTPOD[%s] (%d) - (%d, %d, %d, %d, %d, %d, %d, %d) - ",
+	seq_printf(m, "[%s] (%d) - (%d, %d, %d, %d, %d, %d, %d, %d) - ",
 		   det->name, det->ops->get_temp(det),
 		   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[0]),
 		   PTP_PMIC_VAL_TO_VOLT(det->volt_tbl_pmic[1]),
@@ -2820,7 +2815,8 @@ static int ptp_log_en_proc_show(struct seq_file *m, void *v)
 }
 
 static ssize_t ptp_log_en_proc_write(struct file *file,
-				     const char __user *buffer, size_t count, loff_t *pos)
+				     const char __user *buffer,
+				     size_t count, loff_t *pos)
 {
 	int ret;
 	char *buf = (char *) __get_free_page(GFP_USER);
@@ -2847,21 +2843,22 @@ static ssize_t ptp_log_en_proc_write(struct file *file,
 	ret = 0;
 
 	if (kstrtoint(buf, 10, &ptp_log_en))
-		ptp_notice("kstrtoint(xx, 10, xx) cannot parse your input.");
+		pr_notice("kstrtoint(xx, 10, xx) cannot parse your input.");
 
 	switch (ptp_log_en) {
 	case 0:
-		ptp_notice("ptp log disabled, ptp_log_en = %d\n", ptp_log_en);
+		pr_notice("ptp log disabled, ptp_log_en = %d\n", ptp_log_en);
 		hrtimer_cancel(&ptp_log_timer);
 		break;
 
 	case 1:
-		ptp_notice("ptp log enabled, ptp_log_en = %d\n", ptp_log_en);
-		hrtimer_start(&ptp_log_timer, ns_to_ktime(LOG_INTERVAL), HRTIMER_MODE_REL);
+		pr_notice("ptp log enabled, ptp_log_en = %d\n", ptp_log_en);
+		hrtimer_start(&ptp_log_timer,
+			      ns_to_ktime(LOG_INTERVAL), HRTIMER_MODE_REL);
 		break;
 
 	default:
-		ptp_warning("bad argument!! Should be \"0\" or \"1\"\n");
+		pr_warn("bad argument!! Should be \"0\" or \"1\"\n");
 		ret = -EINVAL;
 		break;
 	}
@@ -2894,7 +2891,8 @@ static int ptp_offset_proc_show(struct seq_file *m, void *v)
  * set PTP offset by procfs
  */
 static ssize_t ptp_offset_proc_write(struct file *file,
-				     const char __user *buffer, size_t count, loff_t *pos)
+				     const char __user *buffer,
+				     size_t count, loff_t *pos)
 {
 	int ret;
 	char *buf = (char *) __get_free_page(GFP_USER);
@@ -2926,7 +2924,7 @@ static ssize_t ptp_offset_proc_write(struct file *file,
 		ptp_set_ptp_volt(det);
 	} else {
 		ret = -EINVAL;
-		ptp_warning("bad argument_1!! argument should be \"0\"\n");
+		pr_warn("bad argument_1!! argument should be \"0\"\n");
 	}
 
 out:
@@ -3007,14 +3005,16 @@ static int create_procfs(void)
 	ptp_dir = proc_mkdir("ptp", NULL);
 
 	if (!ptp_dir) {
-		ptp_error("[%s]: mkdir /proc/ptp failed\n", __func__);
+		pr_err("[%s]: mkdir /proc/ptp failed\n", __func__);
 		FUNC_EXIT(FUNC_LV_HELP);
 		return -1;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(ptp_entries); i++) {
-		if (!proc_create(ptp_entries[i].name, S_IRUGO | S_IWUSR | S_IWGRP, ptp_dir, ptp_entries[i].fops)) {
-			ptp_error("[%s]: create /proc/ptp/%s failed\n", __func__, ptp_entries[i].name);
+		if (!proc_create(ptp_entries[i].name,
+				 0664, ptp_dir, ptp_entries[i].fops)) {
+			pr_err("[%s]: create /proc/ptp/%s failed\n",
+			       __func__, ptp_entries[i].name);
 			FUNC_EXIT(FUNC_LV_HELP);
 			return -3;
 		}
@@ -3024,16 +3024,18 @@ static int create_procfs(void)
 		det_dir = proc_mkdir(det->name, ptp_dir);
 
 		if (!det_dir) {
-			ptp_error("[%s]: mkdir /proc/ptp/%s failed\n", __func__, det->name);
+			pr_err("[%s]: mkdir /proc/ptp/%s failed\n",
+			       __func__, det->name);
 			FUNC_EXIT(FUNC_LV_HELP);
 			return -2;
 		}
 
 		for (i = 0; i < ARRAY_SIZE(det_entries); i++) {
-			if (!proc_create_data(det_entries[i].name, S_IRUGO | S_IWUSR | S_IWGRP,
+			if (!proc_create_data(det_entries[i].name, 0664,
 				det_dir, det_entries[i].fops, det)) {
-				ptp_error("[%s]: create /proc/ptp/%s/%s failed\n",
-							__func__, det->name, det_entries[i].name);
+				pr_err("[%s]: create /proc/ptp/%s/%s failed\n",
+				       __func__, det->name,
+				       det_entries[i].name);
 				FUNC_EXIT(FUNC_LV_HELP);
 				return -3;
 			}
@@ -3069,21 +3071,21 @@ static int __init ptp_init(void)
 	if (node) {
 		/* Setup IO addresses */
 		ptpod_base = of_iomap(node, 0);
-		ptp_info("ptpod_base=0x%p\n", ptpod_base);
+		pr_debug("ptpod_base=0x%p\n", ptpod_base);
 	}
 
 	/* get ptpod irq num */
 	ptpod_irq_number = irq_of_parse_and_map(node, 0);
-	ptp_debug("[THERM_CTRL] ptpod_irq_number=%d\n", ptpod_irq_number);
+	pr_debug("[THERM_CTRL] ptpod_irq_number=%d\n", ptpod_irq_number);
 	if (!ptpod_irq_number) {
-		ptp_error("get irq num failed=0x%x\n", ptpod_irq_number);
+		pr_err("get irq num failed=0x%x\n", ptpod_irq_number);
 		return 0;
 	}
 
 	get_devinfo(&ptp_devinfo);
 
-	if (0 == ptp_devinfo.PTPINITEN) {
-		ptp_error("PTPINITEN = 0x%08X\n", ptp_devinfo.PTPINITEN);
+	if (ptp_devinfo.PTPINITEN == 0) {
+		pr_err("PTPINITEN = 0x%08X\n", ptp_devinfo.PTPINITEN);
 		FUNC_EXIT(FUNC_LV_MODULE);
 		return 0;
 	}
@@ -3091,7 +3093,7 @@ static int __init ptp_init(void)
 	/*
 	 * init timer for log / volt
 	 */
-	hrtimer_init(&ptp_log_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL); /* <-XXX */
+	hrtimer_init(&ptp_log_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	ptp_log_timer.function = ptp_log_timer_func; /* <-XXX */
 
 	create_procfs();
@@ -3102,7 +3104,7 @@ static int __init ptp_init(void)
 	err = platform_driver_register(&ptp_driver);
 
 	if (err) {
-		ptp_error("PTP driver callback register failed..\n");
+		pr_err("PTP driver callback register failed..\n");
 		FUNC_EXIT(FUNC_LV_MODULE);
 		return err;
 	}
@@ -3115,7 +3117,7 @@ static int __init ptp_init(void)
 static void __exit ptp_exit(void)
 {
 	FUNC_ENTER(FUNC_LV_MODULE);
-	ptp_error("PTP de-initialization\n");
+	pr_err("PTP de-initialization\n");
 	FUNC_EXIT(FUNC_LV_MODULE);
 }
 

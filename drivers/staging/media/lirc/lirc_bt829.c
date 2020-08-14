@@ -56,11 +56,6 @@ static unsigned char do_get_bits(void);
 #define DRIVER_NAME "lirc_bt829"
 
 static bool debug;
-#define dprintk(fmt, args...)						 \
-	do {								 \
-		if (debug)						 \
-			printk(KERN_DEBUG DRIVER_NAME ": "fmt, ## args); \
-	} while (0)
 
 static int atir_minor;
 static phys_addr_t pci_addr_phys;
@@ -101,7 +96,7 @@ static int atir_add_to_buf(void *data, struct lirc_buffer *buf)
 	status = poll_main();
 	key = (status >> 8) & 0xFF;
 	if (status & 0xFF) {
-		dprintk("reading key %02X\n", key);
+		dev_dbg(atir_driver.dev, "reading key %02X\n", key);
 		lirc_buffer_write(buf, &key);
 		return 0;
 	}
@@ -110,13 +105,13 @@ static int atir_add_to_buf(void *data, struct lirc_buffer *buf)
 
 static int atir_set_use_inc(void *data)
 {
-	dprintk("driver is opened\n");
+	dev_dbg(atir_driver.dev, "driver is opened\n");
 	return 0;
 }
 
 static void atir_set_use_dec(void *data)
 {
-	dprintk("driver is closed\n");
+	dev_dbg(atir_driver.dev, "driver is closed\n");
 }
 
 int init_module(void)
@@ -125,7 +120,7 @@ int init_module(void)
 	int rc;
 
 	pdev = do_pci_probe();
-	if (pdev == NULL)
+	if (!pdev)
 		return -ENODEV;
 
 	rc = pci_enable_device(pdev);
@@ -154,7 +149,8 @@ int init_module(void)
 		rc = atir_minor;
 		goto err_unmap;
 	}
-	dprintk("driver is registered on minor %d\n", atir_minor);
+	dev_dbg(atir_driver.dev, "driver is registered on minor %d\n",
+				atir_minor);
 
 	return 0;
 
@@ -167,7 +163,6 @@ err_put_dev:
 	return rc;
 }
 
-
 void cleanup_module(void)
 {
 	struct pci_dev *pdev = to_pci_dev(atir_driver.dev);
@@ -177,7 +172,6 @@ void cleanup_module(void)
 	pci_disable_device(pdev);
 	pci_dev_put(pdev);
 }
-
 
 static int atir_init_start(void)
 {
@@ -191,9 +185,8 @@ static int atir_init_start(void)
 
 static void cycle_delay(int cycle)
 {
-	udelay(WAIT_CYCLE*cycle);
+	udelay(WAIT_CYCLE * cycle);
 }
-
 
 static int poll_main(void)
 {

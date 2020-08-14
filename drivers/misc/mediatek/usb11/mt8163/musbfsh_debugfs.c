@@ -1,29 +1,14 @@
 /*
- * MUSB OTG driver debugfs support
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2010 Nokia Corporation
- * Contact: Felipe Balbi <felipe.balbi@nokia.com>
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -33,7 +18,7 @@
 #include <linux/seq_file.h>
 #include <linux/string.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include "musbfsh_mt65xx.h"
 #include "musbfsh_core.h"
@@ -45,8 +30,8 @@ static struct dentry *musbfsh_debugfs_root;
 
 struct musbfsh_register_map {
 	char *name;
-	unsigned offset;
-	unsigned size;
+	unsigned int offset;
+	unsigned int size;
 };
 
 static const struct musbfsh_register_map musbfsh_regmap[] = {
@@ -109,7 +94,7 @@ static const struct musbfsh_register_map musbfsh_regmap[] = {
 static int musbfsh_regdump_show(struct seq_file *s, void *unused)
 {
 	struct musbfsh *musbfsh = s->private;
-	unsigned i;
+	unsigned int i;
 
 	seq_puts(s, "MUSB (M)HDRC Register Dump\n");
 
@@ -117,15 +102,18 @@ static int musbfsh_regdump_show(struct seq_file *s, void *unused)
 		switch (musbfsh_regmap[i].size) {
 		case 8:
 			seq_printf(s, "%-12s: %02x\n", musbfsh_regmap[i].name,
-			musbfsh_readb(musbfsh->mregs, musbfsh_regmap[i].offset));
+			musbfsh_readb(musbfsh->mregs,
+					musbfsh_regmap[i].offset));
 			break;
 		case 16:
 			seq_printf(s, "%-12s: %04x\n", musbfsh_regmap[i].name,
-			musbfsh_readw(musbfsh->mregs, musbfsh_regmap[i].offset));
+			musbfsh_readw(musbfsh->mregs,
+					musbfsh_regmap[i].offset));
 			break;
 		case 32:
 			seq_printf(s, "%-12s: %08x\n", musbfsh_regmap[i].name,
-			musbfsh_readl(musbfsh->mregs, musbfsh_regmap[i].offset));
+			musbfsh_readl(musbfsh->mregs,
+					musbfsh_regmap[i].offset));
 			break;
 		}
 	}
@@ -143,7 +131,7 @@ static int musbfsh_regdump_open(struct inode *inode, struct file *file)
 static int musbfsh_test_mode_show(struct seq_file *s, void *unused)
 {
 	struct musbfsh *musbfsh = s->private;
-	unsigned test;
+	unsigned int test;
 
 	test = musbfsh_readb(musbfsh->mregs, MUSBFSH_TESTMODE);
 
@@ -196,12 +184,14 @@ void musbfshdebugfs_otg_write_fifo(u16 len, u8 *buf, struct musbfsh *mtk_musb)
 		musbfsh_writeb(mtk_musb->mregs, 0x20, *(buf + i));
 }
 
-void musbfshdebugfs_h_setup(struct usb_ctrlrequest *setup, struct musbfsh *mtk_musb)
+void musbfshdebugfs_h_setup(struct usb_ctrlrequest *setup,
+						struct musbfsh *mtk_musb)
 {
 	unsigned short csr0;
 
 	INFO("musbfsh_h_setup++\n");
-	musbfshdebugfs_otg_write_fifo(sizeof(struct usb_ctrlrequest), (u8 *) setup, mtk_musb);
+	musbfshdebugfs_otg_write_fifo(sizeof(struct usb_ctrlrequest),
+						(u8 *) setup, mtk_musb);
 	csr0 = musbfsh_readw(mtk_musb->mregs, MUSBFSH_OTG_CSR0);
 	INFO("musbfsh_h_setup,csr0=0x%x\n", csr0);
 	csr0 |= MUSBFSH_CSR0_H_SETUPPKT | MUSBFSH_CSR0_TXPKTRDY;
@@ -211,7 +201,8 @@ void musbfshdebugfs_h_setup(struct usb_ctrlrequest *setup, struct musbfsh *mtk_m
 }
 
 static ssize_t musbfsh_test_mode_write(struct file *file,
-				       const char __user *ubuf, size_t count, loff_t *ppos)
+				       const char __user *ubuf,
+				       size_t count, loff_t *ppos)
 {
 	struct seq_file *s = file->private_data;
 	struct musbfsh *musbfsh = s->private;
@@ -220,7 +211,8 @@ static ssize_t musbfsh_test_mode_write(struct file *file,
 	unsigned char power;
 	struct usb_ctrlrequest setup_packet;
 
-	setup_packet.bRequestType = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
+	setup_packet.bRequestType = USB_DIR_IN |
+					USB_TYPE_STANDARD | USB_RECIP_DEVICE;
 	setup_packet.bRequest = USB_REQ_GET_DESCRIPTOR;
 	setup_packet.wIndex = 0;
 	setup_packet.wValue = 0x0100;
@@ -272,7 +264,10 @@ static ssize_t musbfsh_test_mode_write(struct file *file,
 
 	if (!strncmp(buf, "test get_descripter", 18)) {
 		INFO("SINGLE_STEP_GET_DEVICE_DESCRIPTOR\n");
-/*the host issues SOFs for 15s allowing the test engineer to raise the scope trigger just above the SOF voltage level.*/
+		/* the host issues SOFs for 15s allowing the test
+		 * engineer to raise the scope trigger just above
+		 * the SOF voltage level.
+		 */
 		msleep(15000);
 		musbfshdebugfs_h_setup(&setup_packet, musbfsh);
 		return count;
@@ -321,7 +316,8 @@ static inline int my_isdigit(char c)
 	return (c >= '0' && c <= '9');
 }
 
-static unsigned my_strtoul(const char *nptr, char **endptr, unsigned int base)
+static unsigned int my_strtoul(const char *nptr,
+					char **endptr, unsigned int base)
 {
 	const char *s = nptr;
 	unsigned long acc;
@@ -401,7 +397,8 @@ static int musbfsh_regw_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t musbfsh_regw_mode_write(struct file *file,
-				    const char __user *ubuf, size_t count, loff_t *ppos)
+				    const char __user *ubuf,
+				    size_t count, loff_t *ppos)
 {
 	struct seq_file *s = file->private_data;
 	struct musbfsh *musbfsh = s->private;
@@ -409,8 +406,9 @@ static ssize_t musbfsh_regw_mode_write(struct file *file,
 	u8 is_mac = 0;
 	char *tmp1 = NULL;
 	char *tmp2 = NULL;
-	unsigned offset = 0;
+	unsigned int offset = 0;
 	u8 data = 0;
+	void __iomem *phybase;
 
 	memset(buf, 0x00, sizeof(buf));
 
@@ -427,29 +425,33 @@ static ssize_t musbfsh_regw_mode_write(struct file *file,
 		return -EFAULT;
 
 	tmp1 = strchr(buf, ':');
-	if (NULL == tmp1)
+	if (tmp1 == NULL)
 		return -EFAULT;
 	tmp1++;
-	if (0 == strlen(tmp1))
+	if (strlen(tmp1) == 0)
 		return -EFAULT;
 
 	tmp2 = strrchr(buf, ':');
-	if (NULL == tmp2)
+	if (tmp2 == NULL)
 		return -EFAULT;
 	tmp2++;
-	if (0 == strlen(tmp2))
+	if (strlen(tmp2) == 0)
 		return -EFAULT;
 
 
 	offset = my_strtoul(tmp1, NULL, 0);
 	data = my_strtoul(tmp2, NULL, 0);
 
-	if (1 == is_mac) {
-		pr_warn("Mac base adddr 0x%lx, Write %d[%d]\n", (unsigned long)musbfsh->mregs, offset, data);
+	phybase = musbfsh_Device->phy_reg_base;
+
+	if (is_mac == 1) {
+		pr_warn("Mac base adddr 0x%lx, Write %d[%d]\n",
+			(unsigned long)musbfsh->mregs, offset, data);
 		musbfsh_writeb(musbfsh->mregs, offset, data);
 	} else {
 		pr_warn("Phy base adddr 0x%lx, Write %d[%d]\n",
-		(unsigned long)((void __iomem *)(musbfsh_Device->phy_reg_base + 0x900)), offset, data);
+		(unsigned long)((void __iomem *)(phybase + 0x900)),
+		offset, data);
 		USB11PHY_WRITE8(offset, data);
 	}
 
@@ -481,14 +483,16 @@ static int musbfsh_regr_open(struct inode *inode, struct file *file)
 }
 
 static ssize_t musbfsh_regr_mode_write(struct file *file,
-				    const char __user *ubuf, size_t count, loff_t *ppos)
+						const char __user *ubuf,
+						size_t count, loff_t *ppos)
 {
 	struct seq_file *s = file->private_data;
 	struct musbfsh *musbfsh = s->private;
 	char			buf[20];
 	u8 is_mac = 0;
 	char *tmp = NULL;
-	unsigned offset = 0;
+	unsigned int offset = 0;
+	void __iomem *phybase;
 
 	memset(buf, 0x00, sizeof(buf));
 
@@ -506,23 +510,26 @@ static ssize_t musbfsh_regr_mode_write(struct file *file,
 
 	tmp = strrchr(buf, ':');
 
-	if (NULL == tmp)
+	if (tmp == NULL)
 		return -EFAULT;
 
 	tmp++;
 
-	if (0 == strlen(tmp))
+	if (strlen(tmp) == 0)
 		return -EFAULT;
 
 	offset = my_strtoul(tmp, NULL, 0);
 
-	if (1 == is_mac)
+	phybase = musbfsh_Device->phy_reg_base;
+
+	if (is_mac == 1)
 		pr_warn("Read Mac base adddr 0x%lx, Read %d[%d]\n",
-			(unsigned long)musbfsh->mregs, offset, musbfsh_readb(musbfsh->mregs, offset));
+			(unsigned long)musbfsh->mregs, offset,
+			musbfsh_readb(musbfsh->mregs, offset));
 	else
 		pr_warn("Read Phy base adddr 0x%lx, Read %d[%d]\n",
-			(unsigned long)((void __iomem *)(musbfsh_Device->phy_reg_base + 0x900)), offset,
-			USB11PHY_READ8(offset));
+			(unsigned long)((void __iomem *)(phybase + 0x900)),
+			offset, USB11PHY_READ8(offset));
 
 	return count;
 }
@@ -548,27 +555,30 @@ int musbfsh_init_debugfs(struct musbfsh *musbfsh)
 		ret = -ENOMEM;
 		goto err0;
 	}
-	file = debugfs_create_file("regdump", S_IRUGO, root, musbfsh, &musbfsh_regdump_fops);
+	file = debugfs_create_file("regdump", 0444,
+					root, musbfsh, &musbfsh_regdump_fops);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
 
 	INFO("musbfsh_init_debugfs 1\n");
-	file = debugfs_create_file("testmode", S_IRUGO | S_IWUSR,
-								root, musbfsh, &musbfsh_test_mode_fops);
+	file = debugfs_create_file("testmode", 0644,
+					root, musbfsh, &musbfsh_test_mode_fops);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
 
-	file = debugfs_create_file("regw", S_IRUGO | S_IWUSR, root, musbfsh, &musbfsh_regw_fops);
+	file = debugfs_create_file("regw", 0644, root,
+						musbfsh, &musbfsh_regw_fops);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;
 	}
 
-	file = debugfs_create_file("regr", S_IRUGO | S_IWUSR, root, musbfsh, &musbfsh_regr_fops);
+	file = debugfs_create_file("regr", 0644, root,
+						musbfsh, &musbfsh_regr_fops);
 	if (!file) {
 		ret = -ENOMEM;
 		goto err1;

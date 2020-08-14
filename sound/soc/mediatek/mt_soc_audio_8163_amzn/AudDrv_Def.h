@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 #ifndef AUDIO_DEF_H
 #define AUDIO_DEF_H
@@ -23,14 +25,14 @@
 
 #define AUDIO_MEMORY_SRAM
 #define AUDIO_MEM_IOREMAP
+
 #ifdef CONFIG_SND_BT_SCO_I2S
-#define BCM_SCO_I2S /*Define this to use I2S0(IN)+I2S3(OUT)*/
-#define ENABLE_I2S0_CLK_RESYNC /*I2S0+I2S3 four pin resync*/
+#define BCM_SCO_I2S            /* Define this to use I2S0(IN)+I2S3(OUT) */
+#define ENABLE_I2S0_CLK_RESYNC              /* I2S0+I2S3 four pin resync */
 #endif
-/*#define LOW_JITTER_MODE*/   /*I2S0+3 low jitter*/
 
 /* below for audio debugging */
-/* #define DEBUG_AUDDRV*/
+#define DEBUG_AUDDRV
 /* #define DEBUG_AFE_REG */
 /* #define DEBUG_ANA_REG */
 /* #define DEBUG_AUD_CLK */
@@ -142,7 +144,7 @@
 #define PRINTK_AUD_ERROR(format, args...)  pr_err(format, ##args)
 
 /* if need assert , use AUDIO_ASSERT(true) */
-#define AUDIO_ASSERT(value) BUG_ON(false)
+#define AUDIO_ASSERT(value) WARN_ON(false)
 
 
 /**********************************
@@ -213,6 +215,7 @@
 #define MT_SOC_FM_I2S_CAPTURE_NAME "mt-soc-fmi2Scapturedai-driver"
 #define MT_SOC_OFFLOAD_GDMA_NAME "mt-soc-offload-gdma-driver"
 
+
 /* platform name */
 #define MT_SOC_DL1_PCM   "mt-soc-dl1-pcm"
 #define MT_SOC_HP_IMPEDANCE_PCM   "mt-soc-hp-impedence-pcm"
@@ -248,9 +251,7 @@
 #define MT_SOC_FM_I2S_PCM  "mt-soc-fm-i2s-pcm"
 #define MT_SOC_FM_I2S_AWB_PCM  "mt-soc-fm-i2s-awb-pcm"
 #define MT_SOC_OFFLOAD_GDMA_PCM "mt-soc-offload-gdma-pcm"
-#define MT_SOC_I2S_TI_PCM "mt-soc-i2s-ti-pcm"
 #define AMZN_MT_SPI_PCM "amzn-mt-spi-pcm"
-
 
 /* codec dai name */
 #define MT_SOC_CODEC_TXDAI_NAME "mt-soc-codec-tx-dai"
@@ -324,9 +325,8 @@
 #define MT_SOC_FM_I2S_PLAYBACK_STREAM_NAME "FM_I2S_Playback"
 #define MT_SOC_FM_I2S_CAPTURE_STREAM_NAME "FM_I2S_Capture"
 #define MT_SOC_OFFLOAD_GDMA_STREAM_NAME "OFFLOAD_GDMA_Playback"
-#define MT_SOC_TI_PLAY_STREAM_NAME "TLV320AIC3204 Playback"
 #define MT_SOC_TI_AIC3101_CAPTURE_STREAM_NAME "TLV320AIC3101 Capture"
-#define MT_SOC_I2S1_PLAYBACK_STREAM_NAME "I2S1_Playback"
+#define MT_SOC_RT_PLAYBACK_STREAM_NAME "RT5616_Playback"
 
 #endif
 

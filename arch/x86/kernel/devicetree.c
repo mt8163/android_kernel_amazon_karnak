@@ -4,7 +4,6 @@
 #include <linux/bootmem.h>
 #include <linux/export.h>
 #include <linux/io.h>
-#include <linux/irqdomain.h>
 #include <linux/interrupt.h>
 #include <linux/list.h>
 #include <linux/of.h>
@@ -12,11 +11,13 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/of_irq.h>
+#include <linux/libfdt.h>
 #include <linux/slab.h>
 #include <linux/pci.h>
 #include <linux/of_pci.h>
 #include <linux/initrd.h>
 
+#include <asm/irqdomain.h>
 #include <asm/hpet.h>
 #include <asm/apic.h>
 #include <asm/pci_x86.h>
@@ -65,7 +66,7 @@ static int __init add_bus_probe(void)
 
 	return of_platform_bus_probe(NULL, ce4100_ids, NULL);
 }
-module_init(add_bus_probe);
+device_initcall(add_bus_probe);
 
 #ifdef CONFIG_PCI
 struct device_node *pcibios_get_phb_of_node(struct pci_bus *bus)
@@ -151,7 +152,7 @@ static void __init dtb_lapic_setup(void)
 		return;
 
 	/* Did the boot loader setup the local APIC ? */
-	if (!cpu_has_apic) {
+	if (!boot_cpu_has(X86_FEATURE_APIC)) {
 		if (apic_force_enable(r.start))
 			return;
 	}
@@ -196,38 +197,34 @@ static struct of_ioapic_type of_ioapic_type[] =
 	},
 };
 
-static int ioapic_xlate(struct irq_domain *domain,
-			struct device_node *controller,
-			const u32 *intspec, u32 intsize,
-			irq_hw_number_t *out_hwirq, u32 *out_type)
+static int dt_irqdomain_alloc(struct irq_domain *domain, unsigned int virq,
+			      unsigned int nr_irqs, void *arg)
 {
+	struct irq_fwspec *fwspec = (struct irq_fwspec *)arg;
 	struct of_ioapic_type *it;
-	u32 line, idx, gsi;
+	struct irq_alloc_info tmp;
+	int type_index;
 
-	if (WARN_ON(intsize < 2))
+	if (WARN_ON(fwspec->param_count < 2))
 		return -EINVAL;
 
-	line = intspec[0];
-
-	if (intspec[1] >= ARRAY_SIZE(of_ioapic_type))
+	type_index = fwspec->param[1];
+	if (type_index >= ARRAY_SIZE(of_ioapic_type))
 		return -EINVAL;
 
-	it = &of_ioapic_type[intspec[1]];
+	it = &of_ioapic_type[type_index];
+	ioapic_set_alloc_attr(&tmp, NUMA_NO_NODE, it->trigger, it->polarity);
+	tmp.ioapic_id = mpc_ioapic_id(mp_irqdomain_ioapic_idx(domain));
+	tmp.ioapic_pin = fwspec->param[0];
 
-	idx = (u32)(long)domain->host_data;
-	gsi = mp_pin_to_gsi(idx, line);
-	if (mp_set_gsi_attr(gsi, it->trigger, it->polarity, cpu_to_node(0)))
-		return -EBUSY;
-
-	*out_hwirq = line;
-	*out_type = it->out_type;
-	return 0;
+	return mp_irqdomain_alloc(domain, virq, nr_irqs, &tmp);
 }
 
-const struct irq_domain_ops ioapic_irq_domain_ops = {
-	.map = mp_irqdomain_map,
-	.unmap = mp_irqdomain_unmap,
-	.xlate = ioapic_xlate,
+static const struct irq_domain_ops ioapic_irq_domain_ops = {
+	.alloc		= dt_irqdomain_alloc,
+	.free		= mp_irqdomain_free,
+	.activate	= mp_irqdomain_activate,
+	.deactivate	= mp_irqdomain_deactivate,
 };
 
 static void __init dtb_add_ioapic(struct device_node *dn)
@@ -283,16 +280,17 @@ static void __init x86_flattree_get_config(void)
 
 	map_len = max(PAGE_SIZE - (initial_dtb & ~PAGE_MASK), (u64)128);
 
-	initial_boot_params = dt = early_memremap(initial_dtb, map_len);
-	size = of_get_flat_dt_size();
+	dt = early_memremap(initial_dtb, map_len);
+	size = fdt_totalsize(dt);
 	if (map_len < size) {
-		early_iounmap(dt, map_len);
-		initial_boot_params = dt = early_memremap(initial_dtb, size);
+		early_memunmap(dt, map_len);
+		dt = early_memremap(initial_dtb, size);
 		map_len = size;
 	}
 
+	early_init_dt_verify(dt);
 	unflatten_and_copy_device_tree();
-	early_iounmap(dt, map_len);
+	early_memunmap(dt, map_len);
 }
 #else
 static inline void x86_flattree_get_config(void) { }

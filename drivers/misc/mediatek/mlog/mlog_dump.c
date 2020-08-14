@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/types.h>
 /* #include <linux/errno.h> */
 /* #include <linux/time.h> */
@@ -9,6 +22,7 @@
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/debugfs.h>
 
 #include "mlog_internal.h"
 #include "mlog_dump.h"
@@ -26,7 +40,8 @@ static int mlog_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t mlog_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
+static ssize_t mlog_read(struct file *file, char __user *buf,
+		size_t count, loff_t *ppos)
 {
 	if (file->f_flags & O_NONBLOCK) {
 		if (!mlog_unread())
@@ -70,8 +85,18 @@ static const struct file_operations mlog_fmt_proc_fops = {
 	.release = single_release,
 };
 
+static const struct file_operations proc_dmlog_operations = {
+	.open = dmlog_open,
+	.read = dmlog_read,
+	.release = dmlog_release,
+};
+
 void mlog_init_procfs(void)
 {
-	proc_create("mlog_fmt", 0, NULL, &mlog_fmt_proc_fops);
-	proc_create("mlog", 0, NULL, &proc_mlog_operations);
+	debugfs_create_file("mlog_fmt", 0444, NULL, NULL,
+			&mlog_fmt_proc_fops);
+	debugfs_create_file("mlog", 0444, NULL, NULL,
+			&proc_mlog_operations);
+	debugfs_create_file("dmlog", 0444, NULL, NULL,
+			&proc_dmlog_operations);
 }

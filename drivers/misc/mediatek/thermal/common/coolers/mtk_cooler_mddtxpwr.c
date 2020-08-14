@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2017 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,19 +16,19 @@
 #include <linux/types.h>
 #include <linux/kobject.h>
 #include <linux/proc_fs.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/err.h>
 #include <linux/syscalls.h>
 #include "mt-plat/mtk_thermal_monitor.h"
 #include <mach/mtk_eemcs_helper.h>
 
 #define mtk_cooler_mddtxpwr_dprintk_always(fmt, args...) \
-pr_debug("thermal/cooler/mddtxpwr" fmt, ##args)
+pr_debug("[Thermal/TC/mddtxpwr]" fmt, ##args)
 
 #define mtk_cooler_mddtxpwr_dprintk(fmt, args...) \
 do { \
-	if (1 == cl_mddtxpwr_klog_on) \
-		pr_debug("thermal/cooler/mddtxpwr" fmt, ##args); \
+	if (cl_mddtxpwr_klog_on == 1) \
+		pr_debug("[Thermal/TC/mddtxpwr]" fmt, ##args); \
 } while (0)
 
 #define MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR  3
@@ -44,15 +44,18 @@ do { \
 
 #define MTK_CL_MDDTXPWR_SET_CURR_STATE(curr_state, state) \
 do {\
-	if (0 == curr_state) \
+	if (curr_state == 0) \
 		state &= ~0x1; \
 	else \
 		state |= 0x1; \
 } while (0)
 
 static int cl_mddtxpwr_klog_on;
-static struct thermal_cooling_device *cl_mddtxpwr_dev[MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR] = { 0 };
-static unsigned long cl_mddtxpwr_state[MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR] = { 0 };
+static struct thermal_cooling_device
+		*cl_mddtxpwr_dev[MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR] = { 0 };
+
+static unsigned long cl_mddtxpwr_state
+			[MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR] = { 0 };
 
 static int cl_mddtxpwr_cur_limit = 65535;
 
@@ -65,8 +68,10 @@ static void mtk_cl_mddtxpwr_set_mddtxpwr_limit(void)
 	for (; i < MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR; i++) {
 		unsigned long curr_state;
 
-		MTK_CL_MDDTXPWR_GET_CURR_STATE(curr_state, cl_mddtxpwr_state[i]);
-		if (1 == curr_state) {
+		MTK_CL_MDDTXPWR_GET_CURR_STATE(curr_state,
+						cl_mddtxpwr_state[i]);
+
+		if (curr_state == 1) {
 			int limit;
 
 			MTK_CL_MDDTXPWR_GET_LIMIT(limit, cl_mddtxpwr_state[i]);
@@ -78,41 +83,55 @@ static void mtk_cl_mddtxpwr_set_mddtxpwr_limit(void)
 	if (min_limit != cl_mddtxpwr_cur_limit) {
 		cl_mddtxpwr_cur_limit = min_limit;
 #if 1
-		if (65535 <= cl_mddtxpwr_cur_limit) {
-			int ret = eemcs_notify_md_by_sys_msg(MD_SYS5, EXT_MD_DTX_REQ, 8);
+		if (cl_mddtxpwr_cur_limit >= 65535) {
+			int ret = eemcs_notify_md_by_sys_msg(MD_SYS5,
+							EXT_MD_DTX_REQ, 8);
 
-			mtk_cooler_mddtxpwr_dprintk_always
-			    ("mtk_cl_mddtxpwr_set_mddtxpwr_limit() ret %d limit=30\n", ret);
+			mtk_cooler_mddtxpwr_dprintk_always(
+					"mtk_cl_mddtxpwr_set_mddtxpwr_limit() ret %d limit=30\n",
+					ret);
+
 		} else {
 			int ret =
 			    eemcs_notify_md_by_sys_msg(MD_SYS5, EXT_MD_DTX_REQ,
 						       cl_mddtxpwr_cur_limit);
-			mtk_cooler_mddtxpwr_dprintk_always
-			    ("mtk_cl_mddtxpwr_set_mddtxpwr_limit() ret %d limit=%d\n",
-			     cl_mddtxpwr_cur_limit);
+			mtk_cooler_mddtxpwr_dprintk_always(
+					"mtk_cl_mddtxpwr_set_mddtxpwr_limit() ret %d limit=%d\n",
+					cl_mddtxpwr_cur_limit);
 		}
 #endif
 	}
 }
 
-static int mtk_cl_mddtxpwr_get_max_state(struct thermal_cooling_device *cdev, unsigned long *state)
+static int mtk_cl_mddtxpwr_get_max_state(
+struct thermal_cooling_device *cdev, unsigned long *state)
 {
 	*state = 1;
-	mtk_cooler_mddtxpwr_dprintk("mtk_cl_mddtxpwr_get_max_state() %s %d\n", cdev->type, *state);
+	mtk_cooler_mddtxpwr_dprintk("mtk_cl_mddtxpwr_get_max_state() %s %d\n",
+							cdev->type, *state);
 	return 0;
 }
 
-static int mtk_cl_mddtxpwr_get_cur_state(struct thermal_cooling_device *cdev, unsigned long *state)
+static int mtk_cl_mddtxpwr_get_cur_state(
+struct thermal_cooling_device *cdev, unsigned long *state)
 {
-	MTK_CL_MDDTXPWR_GET_CURR_STATE(*state, *((unsigned long *)cdev->devdata));
-	mtk_cooler_mddtxpwr_dprintk("mtk_cl_mddtxpwr_get_cur_state() %s %d\n", cdev->type, *state);
+	MTK_CL_MDDTXPWR_GET_CURR_STATE(*state,
+					*((unsigned long *)cdev->devdata));
+
+	mtk_cooler_mddtxpwr_dprintk("mtk_cl_mddtxpwr_get_cur_state() %s %d\n",
+							cdev->type, *state);
 	return 0;
 }
 
-static int mtk_cl_mddtxpwr_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
+static int mtk_cl_mddtxpwr_set_cur_state(
+struct thermal_cooling_device *cdev, unsigned long state)
 {
-	mtk_cooler_mddtxpwr_dprintk("mtk_cl_mddtxpwr_set_cur_state() %s %d\n", cdev->type, state);
-	MTK_CL_MDDTXPWR_SET_CURR_STATE(state, *((unsigned long *)cdev->devdata));
+	mtk_cooler_mddtxpwr_dprintk("mtk_cl_mddtxpwr_set_cur_state() %s %d\n",
+							cdev->type, state);
+
+	MTK_CL_MDDTXPWR_SET_CURR_STATE(state,
+					*((unsigned long *)cdev->devdata));
+
 	mtk_cl_mddtxpwr_set_mddtxpwr_limit();
 
 	return 0;
@@ -136,8 +155,9 @@ static int mtk_cooler_mddtxpwr_register_ltf(void)
 
 		sprintf(temp, "mtk-cl-mddtxpwr%02d", i);
 		/* put mddtxpwr state to cooler devdata */
-		cl_mddtxpwr_dev[i] = mtk_thermal_cooling_device_register(temp, (void *)&cl_mddtxpwr_state[i],
-									 &mtk_cl_mddtxpwr_ops);
+		cl_mddtxpwr_dev[i] = mtk_thermal_cooling_device_register(temp,
+						(void *)&cl_mddtxpwr_state[i],
+						&mtk_cl_mddtxpwr_ops);
 	}
 
 	return 0;
@@ -151,15 +171,16 @@ static void mtk_cooler_mddtxpwr_unregister_ltf(void)
 
 	for (i = MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR; i-- > 0;) {
 		if (cl_mddtxpwr_dev[i]) {
-			mtk_thermal_cooling_device_unregister(cl_mddtxpwr_dev[i]);
-			cl_mddtxpwr_dev[i] = NULL;
-			cl_mddtxpwr_state[i] = 0;
+			mtk_thermal_cooling_device_unregister(
+						cl_mddtxpwr_dev[i]);
+						cl_mddtxpwr_dev[i] = NULL;
+						cl_mddtxpwr_state[i] = 0;
 		}
 	}
 }
 
-static int _mtk_cl_mddtxpwr_proc_read(char *buf, char **start, off_t off, int count, int *eof,
-				      void *data)
+static int _mtk_cl_mddtxpwr_proc_read(
+char *buf, char **start, off_t off, int count, int *eof, void *data)
 {
 	int len = 0;
 	char *p = buf;
@@ -172,8 +193,9 @@ static int _mtk_cl_mddtxpwr_proc_read(char *buf, char **start, off_t off, int co
      *  <mtk-cl-mddtxpwr<ID>> <bcc limit>
      *  ..
      */
-	if (NULL == data) {
-		mtk_cooler_mddtxpwr_dprintk("[_mtk_cl_mddtxpwr_proc_read] null data\n");
+	if (data == NULL) {
+		mtk_cooler_mddtxpwr_dprintk(
+				"[_mtk_cl_mddtxpwr_proc_read] null data\n");
 	} else {
 		int i = 0;
 
@@ -185,10 +207,12 @@ static int _mtk_cl_mddtxpwr_proc_read(char *buf, char **start, off_t off, int co
 			unsigned int curr_state;
 
 			MTK_CL_MDDTXPWR_GET_LIMIT(limit, cl_mddtxpwr_state[i]);
-			MTK_CL_MDDTXPWR_GET_CURR_STATE(curr_state, cl_mddtxpwr_state[i]);
+			MTK_CL_MDDTXPWR_GET_CURR_STATE(curr_state,
+							cl_mddtxpwr_state[i]);
 
-			p += sprintf(p, "mtk-cl-mddtxpwr%02d lv %d, state %d\n", i, limit,
-				     curr_state);
+			p += sprintf(p, "mtk-cl-mddtxpwr%02d lv %d, state %d\n",
+								i, limit,
+								curr_state);
 		}
 	}
 
@@ -203,8 +227,8 @@ static int _mtk_cl_mddtxpwr_proc_read(char *buf, char **start, off_t off, int co
 	return len < count ? len : count;
 }
 
-static ssize_t _mtk_cl_mddtxpwr_proc_write(struct file *file, const char *buffer,
-					   unsigned long count, void *data)
+static ssize_t _mtk_cl_mddtxpwr_proc_write(
+struct file *file, const char *buffer, unsigned long count, void *data)
 {
 	int len = 0;
 	char desc[128];
@@ -216,23 +240,31 @@ static ssize_t _mtk_cl_mddtxpwr_proc_write(struct file *file, const char *buffer
 
 	desc[len] = '\0';
 
-    /**
-     * sscanf format <klog_on> <mtk-cl-mddtxpwr00 limit> <mtk-cl-mddtxpwr01 limit> ...
-     * <klog_on> can only be 0 or 1
-     * <mtk-cl-mddtxpwr00 limit> can only be positive integer or -1 to denote no limit
-     */
+	/**
+	 * sscanf format
+	 * <klog_on> <mtk-cl-mddtxpwr00 limit> <mtk-cl-mddtxpwr01 limit>
+	 * <klog_on> can only be 0 or 1
+	 * <mtk-cl-mddtxpwr00 limit> can only be positive integer
+	 * or -1 to denote no limit
+	 */
 
-	if (NULL == data) {
-		mtk_cooler_mddtxpwr_dprintk("[_mtk_cl_mddtxpwr_proc_write] null data\n");
+	if (data == NULL) {
+		mtk_cooler_mddtxpwr_dprintk(
+					"[_mtk_cl_mddtxpwr_proc_write] null data\n");
+
 		return -EINVAL;
 	}
-	/* WARNING: Modify here if MTK_THERMAL_MONITOR_COOLER_MAX_EXTRA_CONDITIONS is changed to other than 3 */
+	/* WARNING: Modify here if
+	 * MTK_THERMAL_MONITOR_COOLER_MAX_EXTRA_CONDITIONS
+	 * is changed to other than 3
+	 */
 #if (3 == MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR)
 	MTK_CL_MDDTXPWR_SET_LIMIT(-1, cl_mddtxpwr_state[0]);
 	MTK_CL_MDDTXPWR_SET_LIMIT(-1, cl_mddtxpwr_state[1]);
 	MTK_CL_MDDTXPWR_SET_LIMIT(-1, cl_mddtxpwr_state[2]);
 
-	if (1 <= sscanf(desc, "%d %d %d %d", &klog_on, &limit0, &limit1, &limit2)) {
+	if (sscanf(desc, "%d %d %d %d",
+		&klog_on, &limit0, &limit1, &limit2) >= 1) {
 		if (klog_on == 0 || klog_on == 1)
 			cl_mddtxpwr_klog_on = klog_on;
 
@@ -246,9 +278,11 @@ static ssize_t _mtk_cl_mddtxpwr_proc_write(struct file *file, const char *buffer
 		return count;
 	}
 #else
-#error "Change correspondent part when changing MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR!"
+#error	\
+"Change correspondent part when changing MAX_NUM_INSTANCE_MTK_COOLER_MDDTXPWR!"
 #endif
-	mtk_cooler_mddtxpwr_dprintk("[_mtk_cl_mddtxpwr_proc_write] bad argument\n");
+	mtk_cooler_mddtxpwr_dprintk(
+				"[_mtk_cl_mddtxpwr_proc_write] bad argument\n");
 	return -EINVAL;
 }
 
@@ -275,16 +309,18 @@ static int __init mtk_cooler_mddtxpwr_init(void)
 		struct proc_dir_entry *entry = NULL;
 
 		entry =
-		    create_proc_entry("driver/mtk-cl-mddtxpwr", S_IRUGO | S_IWUSR | S_IWGRP, NULL);
+		    create_proc_entry("driver/mtk-cl-mddtxpwr", 0664, NULL);
 
-		if (NULL != entry) {
+		if (entry != NULL) {
 			entry->read_proc = _mtk_cl_mddtxpwr_proc_read;
 			entry->write_proc = _mtk_cl_mddtxpwr_proc_write;
 			entry->data = cl_mddtxpwr_state;
-			entry->gid = 1000;	/* allow system process to write this proc */
+			/* allow system process to write this proc */
+			entry->gid = 1000;
 		}
-		mtk_cooler_mddtxpwr_dprintk("[mtk_cooler_mddtxpwr_init] proc file created: %x\n",
-					    entry->data);
+		mtk_cooler_mddtxpwr_dprintk(
+					"[mtk_cooler_mddtxpwr_init] proc file created: %x\n",
+					entry->data);
 	}
 
 	return 0;

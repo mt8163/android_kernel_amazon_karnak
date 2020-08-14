@@ -1,0 +1,31 @@
+
+config MTK_JSA1214
+	bool "JSA1214 for MediaTek package"
+	default n
+	help
+	  If this option is set, it will support
+	  ambient and light sensor JSA1214.
+
+config MTK_JSA1214_SWITCH_RANGE_AUTO
+	bool "JSA1214 support for switching range automatic"
+	default n
+	depends on MTK_JSA1214
+	help
+	  If this option is set, it will support
+	  for switching range automatic.
+
+config ALS_FORMULA_CHANGE
+	bool "JSA1214 support read productid2.If 1, use old formula,else, use new formula"
+	default n
+	depends on MTK_JSA1214
+	help
+	  If this option is set, it will support
+	  for changing als formula.
+
+config ALS_WHITE_RANGE_CHANGE
+	bool "JSA1214 support for switching white range"
+	default n
+	depends on MTK_JSA1214
+	help
+	  If this option is set, it will support
+	  for searching abc123 evt white device.

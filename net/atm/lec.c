@@ -31,7 +31,7 @@
 #include <linux/atmlec.h>
 
 /* Proxy LEC knows about bridging */
-#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+#if IS_ENABLED(CONFIG_BRIDGE)
 #include "../bridge/br_private.h"
 
 static unsigned char bridge_ula_lec[] = { 0x01, 0x80, 0xc2, 0x00, 0x00 };
@@ -40,6 +40,9 @@ static unsigned char bridge_ula_lec[] = { 0x01, 0x80, 0xc2, 0x00, 0x00 };
 /* Modular too */
 #include <linux/module.h>
 #include <linux/init.h>
+
+/* Hardening for Spectre-v1 */
+#include <linux/nospec.h>
 
 #include "lec.h"
 #include "lec_arpc.h"
@@ -121,7 +124,7 @@ static unsigned char bus_mac[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 /* Device structures */
 static struct net_device *dev_lec[MAX_LEC_ITF];
 
-#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+#if IS_ENABLED(CONFIG_BRIDGE)
 static void lec_handle_bridge(struct sk_buff *skb, struct net_device *dev)
 {
 	char *buff;
@@ -155,7 +158,7 @@ static void lec_handle_bridge(struct sk_buff *skb, struct net_device *dev)
 		sk->sk_data_ready(sk);
 	}
 }
-#endif /* defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE) */
+#endif /* IS_ENABLED(CONFIG_BRIDGE) */
 
 /*
  * Open/initialize the netdevice. This is called (in the current kernel)
@@ -194,7 +197,7 @@ lec_send(struct atm_vcc *vcc, struct sk_buff *skb)
 static void lec_tx_timeout(struct net_device *dev)
 {
 	pr_info("%s\n", dev->name);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	netif_wake_queue(dev);
 }
 
@@ -222,7 +225,7 @@ static netdev_tx_t lec_start_xmit(struct sk_buff *skb,
 	pr_debug("skbuff head:%lx data:%lx tail:%lx end:%lx\n",
 		 (long)skb->head, (long)skb->data, (long)skb_tail_pointer(skb),
 		 (long)skb_end_pointer(skb));
-#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+#if IS_ENABLED(CONFIG_BRIDGE)
 	if (memcmp(skb->data, bridge_ula_lec, sizeof(bridge_ula_lec)) == 0)
 		lec_handle_bridge(skb, dev);
 #endif
@@ -324,7 +327,7 @@ static netdev_tx_t lec_start_xmit(struct sk_buff *skb,
 out:
 	if (entry)
 		lec_arp_put(entry);
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 	return NETDEV_TX_OK;
 }
 
@@ -426,7 +429,7 @@ static int lec_atm_send(struct atm_vcc *vcc, struct sk_buff *skb)
 		    (unsigned short)(0xffff & mesg->content.normal.flag);
 		break;
 	case l_should_bridge:
-#if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+#if IS_ENABLED(CONFIG_BRIDGE)
 	{
 		pr_debug("%s: bridge zeppelin asks about %pM\n",
 			 dev->name, mesg->content.proxy.mac_addr);
@@ -452,7 +455,7 @@ static int lec_atm_send(struct atm_vcc *vcc, struct sk_buff *skb)
 			sk->sk_data_ready(sk);
 		}
 	}
-#endif /* defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE) */
+#endif /* IS_ENABLED(CONFIG_BRIDGE) */
 		break;
 	default:
 		pr_info("%s: Unknown message type %d\n", dev->name, mesg->type);
@@ -697,8 +700,10 @@ static int lec_vcc_attach(struct atm_vcc *vcc, void __user *arg)
 	bytes_left = copy_from_user(&ioc_data, arg, sizeof(struct atmlec_ioc));
 	if (bytes_left != 0)
 		pr_info("copy from user failed for %d bytes\n", bytes_left);
-	if (ioc_data.dev_num < 0 || ioc_data.dev_num >= MAX_LEC_ITF ||
-	    !dev_lec[ioc_data.dev_num])
+	if (ioc_data.dev_num < 0 || ioc_data.dev_num >= MAX_LEC_ITF)
+		return -EINVAL;
+	ioc_data.dev_num = array_index_nospec(ioc_data.dev_num, MAX_LEC_ITF);
+	if (!dev_lec[ioc_data.dev_num])
 		return -EINVAL;
 	vpriv = kmalloc(sizeof(struct lec_vcc_priv), GFP_KERNEL);
 	if (!vpriv)
@@ -2001,7 +2006,7 @@ lec_vcc_added(struct lec_priv *priv, const struct atmlec_ioc *ioc_data,
 		if (entry == NULL)
 			goto out;
 		memcpy(entry->atm_addr, ioc_data->atm_addr, ATM_ESA_LEN);
-		memset(entry->mac_addr, 0, ETH_ALEN);
+		eth_zero_addr(entry->mac_addr);
 		entry->recv_vcc = vcc;
 		entry->old_recv_push = old_push;
 		entry->status = ESI_UNKNOWN;
@@ -2086,7 +2091,7 @@ lec_vcc_added(struct lec_priv *priv, const struct atmlec_ioc *ioc_data,
 	entry->vcc = vcc;
 	entry->old_push = old_push;
 	memcpy(entry->atm_addr, ioc_data->atm_addr, ATM_ESA_LEN);
-	memset(entry->mac_addr, 0, ETH_ALEN);
+	eth_zero_addr(entry->mac_addr);
 	entry->status = ESI_UNKNOWN;
 	hlist_add_head(&entry->next, &priv->lec_arp_empty_ones);
 	entry->timer.expires = jiffies + priv->vcc_timeout_period;

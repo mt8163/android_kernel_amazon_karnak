@@ -1,12 +1,24 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/clk-provider.h>
 #include <linux/delay.h>
 #include <linux/init.h>
-#include <linux/irqchip/mt-gic.h>
 #include <linux/kernel.h>
 #include <linux/lockdep.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
-#include <mt-plat/mt_cirq.h>
+#include <mt-plat/mtk_cirq.h>
 
 #include "mt_spm_internal.h"
 #include "mt_spm_idle.h"
@@ -16,61 +28,32 @@
 /**************************************
  * only for internal debug
  **************************************/
-/* FIXME: for FPGA early porting */
-#define  CONFIG_MTK_LDVT
-
-#define SODI_DVT_APxGPT 0	/*0:disable, 1: enable : use in android load: mt_idle.c and mt_spm_sodi.c */
-#define SODI_DVT_BLOCK_BF_WFI 0	/*blcok code before while issue WFI for step by step current measurement */
-#define SODI_DVT_SPM_DBG_MODE 0	/*1: using debug mode fw, 0: normal fw */
-#define SODI_DVT_SPM_DBG_MODE_1PLL 0	/*set pcm_reserve bit 10 */
-#define SODI_DVT_SPM_MEM_RW_TEST 0
-#define SODI_DVT_MAGIC_NUM 0xa5a5a5a5
-#define SODI_MEMPLL_RESETMODE_FW 1	/*may usie reset mode fw+SODI_DVT_SPM_DBG_MODE_1PLL should use together */
-#define SODI_SPM_DBG_MEMPLL_RESETMODE_FW 0	/*DBG Mode FW + MEMPLL Reset mode */
-
-#if SODI_DVT_SPM_MEM_RW_TEST
-static u32 magicArray[16] = {
-	SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM,
-	SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM,
-	SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM,
-	SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM, SODI_DVT_MAGIC_NUM,
-};
-#endif
-
-#ifdef CONFIG_MTK_LDVT
 #define SPM_BYPASS_SYSPWREQ     1
-#else
-#define SPM_BYPASS_SYSPWREQ     0
-#endif
 
-
-#if (SODI_DVT_APxGPT)		/* APxGPT test only */
-#if (SODI_DVT_BLOCK_BF_WFI)
-#define WAKE_SRC_FOR_SODI WAKE_SRC_EINT
-
-#else
-#define WAKE_SRC_FOR_SODI WAKE_SRC_GPT
-
-#endif
-#else
 #define WAKE_SRC_FOR_SODI \
-	(WAKE_SRC_MD32_WDT | WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_CONN2AP | WAKE_SRC_EINT |  \
-	 WAKE_SRC_CONN_WDT | WAKE_SRC_MD32_SPM | WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_AFE |  \
-	 WAKE_SRC_CIRQ | WAKE_SRC_SYSPWREQ)
-#endif
+	(WAKE_SRC_MD32_WDT | WAKE_SRC_KP | WAKE_SRC_GPT | WAKE_SRC_CONN2AP | \
+	 WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | WAKE_SRC_MD32_SPM | \
+	 WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_AFE | WAKE_SRC_CIRQ | \
+	 WAKE_SRC_SYSPWREQ)
 
-#define WAKE_SRC_FOR_MD32  0                                          \
-				/* (WAKE_SRC_AUD_MD32) */
-
-#define I2C_CHANNEL 1
+#define WAKE_SRC_FOR_MD32	0
 
 #ifdef CONFIG_OF
-#define MCUCFG_BASE          spm_mcucfg
-#else
-#define MCUCFG_BASE          (0xF0200000)	/* 0x1020_0000 */
+#define MCUCFG_BASE	spm_mcucfg
+#define MP0_AXI_CONFIG	(MCUCFG_BASE + 0x2C)
 #endif
-#define MP0_AXI_CONFIG          (MCUCFG_BASE + 0x2C)
-#define ACINACTM                (1<<4)
+#define ACINACTM	(1<<4)
+
+#if SPM_AEE_RR_REC
+enum spm_sodi_step {
+	SPM_SODI_ENTER = 0,
+	SPM_SODI_ENTER_SPM_FLOW,
+	SPM_SODI_ENTER_WFI,
+	SPM_SODI_LEAVE_WFI,
+	SPM_SODI_LEAVE_SPM_FLOW,
+	SPM_SODI_LEAVE,
+};
+#endif
 
 /* ========================================== */
 /* PCM code for SODI (Screen On Deep Idle) */
@@ -251,7 +234,6 @@ static struct pwr_ctrl sodi_ctrl = {
 	.r0_ctrl_en = 1,
 	.r7_ctrl_en = 1,
 	.wfi_op = WFI_OP_AND,
-#if (!SODI_DVT_APxGPT)
 	.ca15_wfi0_en = 1,
 	.ca15_wfi1_en = 1,
 	.ca15_wfi2_en = 1,
@@ -263,28 +245,6 @@ static struct pwr_ctrl sodi_ctrl = {
 	.mfg_req_mask = 1,
 #if SPM_BYPASS_SYSPWREQ
 	.syspwreq_mask = 1,
-#endif
-#else
-	.ca15_wfi0_en = 0,
-	.ca15_wfi1_en = 0,
-	.ca15_wfi2_en = 0,
-	.ca15_wfi3_en = 0,
-	.ca7_wfi0_en = 1,
-	.ca7_wfi1_en = 0,
-	.ca7_wfi2_en = 0,
-	.ca7_wfi3_en = 0,
-	.conn_mask = 1,
-	.disp_req_mask = 1,
-	.mfg_req_mask = 1,
-	.md32_req_mask = 1,
-	.mcusys_idle_mask = 1,
-	.ca7top_idle_mask = 1,
-	.ca15top_idle_mask = 1,
-	.syspwreq_mask = 1,
-#if SPM_BYPASS_SYSPWREQ
-	.syspwreq_mask = 1,
-#endif
-
 #endif
 };
 
@@ -298,169 +258,8 @@ static bool gSpm_sodi_en;
 static bool gSpm_SODI_cpu_dvs_en = 1;
 struct clk *c;
 
-/*
-extern int mt_irq_mask_all(struct mtk_irq_mask *mask);
-extern int mt_irq_mask_restore(struct mtk_irq_mask *mask);
-extern void mt_irq_unmask_for_sleep(unsigned int irq);
-*/
-
-#ifdef SPM_SODI_DEBUG
-static void spm_sodi_dump_regs(void)
-{
-	/* SPM register */
-	spm_idle_ver("SPM_MP0_CPU0_IRQ_MASK   0x%x = 0x%x\n", SPM_CA7_CPU0_IRQ_MASK,
-		     spm_read(SPM_CA7_CPU0_IRQ_MASK));
-	spm_idle_ver("SPM_MP0_CPU1_IRQ_MASK   0x%x = 0x%x\n", SPM_CA7_CPU1_IRQ_MASK,
-		     spm_read(SPM_CA7_CPU1_IRQ_MASK));
-	spm_idle_ver("SPM_MP0_CPU2_IRQ_MASK   0x%x = 0x%x\n", SPM_CA7_CPU2_IRQ_MASK,
-		     spm_read(SPM_CA7_CPU2_IRQ_MASK));
-	spm_idle_ver("SPM_MP0_CPU3_IRQ_MASK   0x%x = 0x%x\n", SPM_CA7_CPU3_IRQ_MASK,
-		     spm_read(SPM_CA7_CPU3_IRQ_MASK));
-	spm_idle_ver("SPM_MP1_CPU0_IRQ_MASK   0x%x = 0x%x\n", SPM_MP1_CPU0_IRQ_MASK,
-		     spm_read(SPM_MP1_CPU0_IRQ_MASK));
-	spm_idle_ver("SPM_MP1_CPU1_IRQ_MASK   0x%x = 0x%x\n", SPM_MP1_CPU1_IRQ_MASK,
-		     spm_read(SPM_MP1_CPU1_IRQ_MASK));
-	spm_idle_ver("SPM_MP1_CPU2_IRQ_MASK   0x%x = 0x%x\n", SPM_MP1_CPU2_IRQ_MASK,
-		     spm_read(SPM_MP1_CPU2_IRQ_MASK));
-	spm_idle_ver("SPM_MP1_CPU3_IRQ_MASK   0x%x = 0x%x\n", SPM_MP1_CPU3_IRQ_MASK,
-		     spm_read(SPM_MP1_CPU3_IRQ_MASK));
-#if 0
-	spm_idle_ver("POWER_ON_VAL0   0x%x = 0x%x\n", SPM_POWER_ON_VAL0,
-		     spm_read(SPM_POWER_ON_VAL0));
-	spm_idle_ver("POWER_ON_VAL1   0x%x = 0x%x\n", SPM_POWER_ON_VAL1,
-		     spm_read(SPM_POWER_ON_VAL1));
-	spm_idle_ver("PCM_PWR_IO_EN   0x%x = 0x%x\n", SPM_PCM_PWR_IO_EN,
-		     spm_read(SPM_PCM_PWR_IO_EN));
-	spm_idle_ver("CLK_CON         0x%x = 0x%x\n", SPM_CLK_CON, spm_read(SPM_CLK_CON));
-	spm_idle_ver("AP_DVFS_CON     0x%x = 0x%x\n", SPM_AP_DVFS_CON_SET,
-		     spm_read(SPM_AP_DVFS_CON_SET));
-	spm_idle_ver("PWR_STATUS      0x%x = 0x%x\n", SPM_PWR_STATUS, spm_read(SPM_PWR_STATUS));
-	spm_idle_ver("PWR_STATUS_S    0x%x = 0x%x\n", SPM_PWR_STATUS_S, spm_read(SPM_PWR_STATUS_S));
-	spm_idle_ver("SLEEP_TIMER_STA 0x%x = 0x%x\n", SPM_SLEEP_TIMER_STA,
-		     spm_read(SPM_SLEEP_TIMER_STA));
-	spm_idle_ver("WAKE_EVENT_MASK 0x%x = 0x%x\n", SPM_SLEEP_WAKEUP_EVENT_MASK,
-		     spm_read(SPM_SLEEP_WAKEUP_EVENT_MASK));
-	spm_idle_ver("SPM_SLEEP_CPU_WAKEUP_EVENT 0x%x = 0x%x\n", SPM_SLEEP_CPU_WAKEUP_EVENT,
-		     spm_read(SPM_SLEEP_CPU_WAKEUP_EVENT));
-	spm_idle_ver("SPM_PCM_RESERVE   0x%x = 0x%x\n", SPM_PCM_RESERVE, spm_read(SPM_PCM_RESERVE));
-	spm_idle_ver("SPM_AP_STANBY_CON   0x%x = 0x%x\n", SPM_AP_STANBY_CON,
-		     spm_read(SPM_AP_STANBY_CON));
-	spm_idle_ver("SPM_PCM_TIMER_OUT   0x%x = 0x%x\n", SPM_PCM_TIMER_OUT,
-		     spm_read(SPM_PCM_TIMER_OUT));
-	spm_idle_ver("SPM_PCM_CON1   0x%x = 0x%x\n", SPM_PCM_CON1, spm_read(SPM_PCM_CON1));
-#endif
-
-	/* PCM register */
-	spm_idle_ver("PCM_REG0_DATA   0x%x = 0x%x\n", SPM_PCM_REG0_DATA,
-		     spm_read(SPM_PCM_REG0_DATA));
-	spm_idle_ver("PCM_REG1_DATA   0x%x = 0x%x\n", SPM_PCM_REG1_DATA,
-		     spm_read(SPM_PCM_REG1_DATA));
-	spm_idle_ver("PCM_REG2_DATA   0x%x = 0x%x\n", SPM_PCM_REG2_DATA,
-		     spm_read(SPM_PCM_REG2_DATA));
-	spm_idle_ver("PCM_REG3_DATA   0x%x = 0x%x\n", SPM_PCM_REG3_DATA,
-		     spm_read(SPM_PCM_REG3_DATA));
-	spm_idle_ver("PCM_REG4_DATA   0x%x = 0x%x\n", SPM_PCM_REG4_DATA,
-		     spm_read(SPM_PCM_REG4_DATA));
-	spm_idle_ver("PCM_REG5_DATA   0x%x = 0x%x\n", SPM_PCM_REG5_DATA,
-		     spm_read(SPM_PCM_REG5_DATA));
-	spm_idle_ver("PCM_REG6_DATA   0x%x = 0x%x\n", SPM_PCM_REG6_DATA,
-		     spm_read(SPM_PCM_REG6_DATA));
-	spm_idle_ver("PCM_REG7_DATA   0x%x = 0x%x\n", SPM_PCM_REG7_DATA,
-		     spm_read(SPM_PCM_REG7_DATA));
-	spm_idle_ver("PCM_REG8_DATA   0x%x = 0x%x\n", SPM_PCM_REG8_DATA,
-		     spm_read(SPM_PCM_REG8_DATA));
-	spm_idle_ver("PCM_REG9_DATA   0x%x = 0x%x\n", SPM_PCM_REG9_DATA,
-		     spm_read(SPM_PCM_REG9_DATA));
-	spm_idle_ver("PCM_REG10_DATA   0x%x = 0x%x\n", SPM_PCM_REG10_DATA,
-		     spm_read(SPM_PCM_REG10_DATA));
-	spm_idle_ver("PCM_REG11_DATA   0x%x = 0x%x\n", SPM_PCM_REG11_DATA,
-		     spm_read(SPM_PCM_REG11_DATA));
-	spm_idle_ver("PCM_REG12_DATA   0x%x = 0x%x\n", SPM_PCM_REG12_DATA,
-		     spm_read(SPM_PCM_REG12_DATA));
-	spm_idle_ver("PCM_REG13_DATA   0x%x = 0x%x\n", SPM_PCM_REG13_DATA,
-		     spm_read(SPM_PCM_REG13_DATA));
-	spm_idle_ver("PCM_REG14_DATA   0x%x = 0x%x\n", SPM_PCM_REG14_DATA,
-		     spm_read(SPM_PCM_REG14_DATA));
-	spm_idle_ver("PCM_REG15_DATA   0x%x = 0x%x\n", SPM_PCM_REG15_DATA,
-		     spm_read(SPM_PCM_REG15_DATA));
-
-	spm_idle_ver("SPM_MP0_FC0_PWR_CON   0x%x = 0x%x\n", SPM_MP0_FC0_PWR_CON,
-		     spm_read(SPM_MP0_FC0_PWR_CON));
-	spm_idle_ver("SPM_MP0_FC1_PWR_CON   0x%x = 0x%x\n", SPM_MP0_FC1_PWR_CON,
-		     spm_read(SPM_MP0_FC1_PWR_CON));
-	spm_idle_ver("SPM_MP0_FC2_PWR_CON   0x%x = 0x%x\n", SPM_MP0_FC2_PWR_CON,
-		     spm_read(SPM_MP0_FC2_PWR_CON));
-	spm_idle_ver("SPM_MP0_FC3_PWR_CON   0x%x = 0x%x\n", SPM_MP0_FC3_PWR_CON,
-		     spm_read(SPM_MP0_FC3_PWR_CON));
-	spm_idle_ver("SPM_MP1_FC0_PWR_CON   0x%x = 0x%x\n", SPM_MP1_FC0_PWR_CON,
-		     spm_read(SPM_MP1_FC0_PWR_CON));
-	spm_idle_ver("SPM_MP1_FC1_PWR_CON   0x%x = 0x%x\n", SPM_MP1_FC1_PWR_CON,
-		     spm_read(SPM_MP1_FC1_PWR_CON));
-	spm_idle_ver("SPM_MP1_FC2_PWR_CON   0x%x = 0x%x\n", SPM_MP1_FC2_PWR_CON,
-		     spm_read(SPM_MP1_FC2_PWR_CON));
-	spm_idle_ver("SPM_MP1_FC3_PWR_CON   0x%x = 0x%x\n", SPM_MP1_FC3_PWR_CON,
-		     spm_read(SPM_MP1_FC3_PWR_CON));
-
-	spm_idle_ver("CLK_CON         0x%x = 0x%x\n", SPM_CLK_CON, spm_read(SPM_CLK_CON));
-	spm_idle_ver("SPM_PCM_CON0   0x%x = 0x%x\n", SPM_PCM_CON0, spm_read(SPM_PCM_CON0));
-	spm_idle_ver("SPM_PCM_CON1   0x%x = 0x%x\n", SPM_PCM_CON1, spm_read(SPM_PCM_CON1));
-
-	spm_idle_ver("SPM_PCM_MP_CORE0_AUX   0x%x = 0x%x\n", SPM_PCM_EVENT_VECTOR2,
-		     spm_read(SPM_PCM_EVENT_VECTOR2));
-	spm_idle_ver("SPM_PCM_MP_CORE1_AUX   0x%x = 0x%x\n", SPM_PCM_EVENT_VECTOR3,
-		     spm_read(SPM_PCM_EVENT_VECTOR3));
-	spm_idle_ver("SPM_PCM_MP_CORE2_AUX   0x%x = 0x%x\n", SPM_PCM_EVENT_VECTOR4,
-		     spm_read(SPM_PCM_EVENT_VECTOR4));
-	spm_idle_ver("SPM_PCM_MP_CORE3_AUX   0x%x = 0x%x\n", SPM_PCM_EVENT_VECTOR5,
-		     spm_read(SPM_PCM_EVENT_VECTOR5));
-	spm_idle_ver("SPM_PCM_MP_CORE4_AUX   0x%x = 0x%x\n", SPM_PCM_EVENT_VECTOR6,
-		     spm_read(SPM_PCM_EVENT_VECTOR6));
-	spm_idle_ver("SPM_PCM_MP_CORE5_AUX   0x%x = 0x%x\n", SPM_PCM_EVENT_VECTOR7,
-		     spm_read(SPM_PCM_EVENT_VECTOR7));
-	spm_idle_ver("SPM_PCM_MP_CORE6_AUX   0x%x = 0x%x\n", SPM_PCM_RESERVE,
-		     spm_read(SPM_PCM_RESERVE));
-	spm_idle_ver("SPM_PCM_MP_CORE7_AUX   0x%x = 0x%x\n", SPM_PCM_WDT_TIMER_VAL,
-		     spm_read(SPM_PCM_WDT_TIMER_VAL));
-
-	spm_idle_ver("SPM_MP0_CORE0_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA7_WFI0_EN,
-		     spm_read(SPM_SLEEP_CA7_WFI0_EN));
-	spm_idle_ver("SPM_MP0_CORE1_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA7_WFI1_EN,
-		     spm_read(SPM_SLEEP_CA7_WFI1_EN));
-	spm_idle_ver("SPM_MP0_CORE2_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA7_WFI2_EN,
-		     spm_read(SPM_SLEEP_CA7_WFI2_EN));
-	spm_idle_ver("SPM_MP0_CORE3_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA7_WFI3_EN,
-		     spm_read(SPM_SLEEP_CA7_WFI3_EN));
-	spm_idle_ver("SPM_MP1_CORE0_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA15_WFI0_EN,
-		     spm_read(SPM_SLEEP_CA15_WFI0_EN));
-	spm_idle_ver("SPM_MP1_CORE1_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA15_WFI1_EN,
-		     spm_read(SPM_SLEEP_CA15_WFI1_EN));
-	spm_idle_ver("SPM_MP1_CORE2_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA15_WFI2_EN,
-		     spm_read(SPM_SLEEP_CA15_WFI2_EN));
-	spm_idle_ver("SPM_MP1_CORE3_WFI_SEL   0x%x = 0x%x\n", SPM_SLEEP_CA15_WFI3_EN,
-		     spm_read(SPM_SLEEP_CA15_WFI3_EN));
-
-	spm_idle_ver("SPM_SLEEP_TIMER_STA   0x%x = 0x%x\n", SPM_SLEEP_TIMER_STA,
-		     spm_read(SPM_SLEEP_TIMER_STA));
-	spm_idle_ver("SPM_PWR_STATUS   0x%x = 0x%x\n", SPM_PWR_STATUS, spm_read(SPM_PWR_STATUS));
-	spm_idle_ver("SPM_PWR_STATUS_S   0x%x = 0x%x\n", SPM_PWR_STATUS_S,
-		     spm_read(SPM_PWR_STATUS_S));
-
-	spm_idle_ver("SPM_MP0_FC0_PWR_CON   0x%x = 0x%x\n", SPM_MP0_FC0_PWR_CON,
-		     spm_read(SPM_MP0_FC0_PWR_CON));
-	spm_idle_ver("SPM_MP0_DBG_PWR_CON   0x%x = 0x%x\n", SPM_MP0_DBG_PWR_CON,
-		     spm_read(SPM_MP0_DBG_PWR_CON));
-	spm_idle_ver("SPM_MP0_CPU_PWR_CON   0x%x = 0x%x\n", SPM_MP0_CPU_PWR_CON,
-		     spm_read(SPM_MP0_CPU_PWR_CON));
-
-}
-#endif
-
-
 static void spm_trigger_wfi_for_sodi(struct pwr_ctrl *pwrctrl)
 {
-	/* TODO:[fixme: early porting comment out] */
-	/* sync_hw_gating_value();     // for Vcore DVFS */
-
 	if (is_cpu_pdn(pwrctrl->pcm_flags)) {
 		mt_cpu_dormant(CPU_SODI_MODE);
 	} else {
@@ -471,31 +270,20 @@ static void spm_trigger_wfi_for_sodi(struct pwr_ctrl *pwrctrl)
 	}
 }
 
-#define CHA_DDRPHY_BASE  0xf000F000
-#if SODI_DVT_SPM_MEM_RW_TEST
-static u32 magic_init;
-#endif
-
 void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 {
 	struct wake_status wakesta;
 	unsigned long flags;
 	struct mtk_irq_mask mask;
 
-	wake_reason_t wr = WR_NONE;
+	int wr = WR_NONE;
 	struct pcm_desc *pcmdesc = __spm_sodi.pcmdesc;
 	struct pwr_ctrl *pwrctrl = __spm_sodi.pwrctrl;
 
-#if SODI_DVT_SPM_MEM_RW_TEST
-	if (magic_init == 0) {
-		magic_init++;
-		pr_debug("magicNumArray:0x%x", magicArray);
-	}
+#if SPM_AEE_RR_REC
+	aee_rr_rec_sodi_val(1 << SPM_SODI_ENTER);
 #endif
 
-	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
-
-	/* set PMIC WRAP table for deepidle power control */
 	mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_DEEPIDLE);
 	soidle_before_wfi(0);
 
@@ -505,79 +293,32 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 	mt_cirq_clone_gic();
 	mt_cirq_enable();
 
+#if SPM_AEE_RR_REC
+	aee_rr_rec_sodi_val(aee_rr_curr_sodi_val() |
+		(1 << SPM_SODI_ENTER_SPM_FLOW));
+#endif
+
 	__spm_reset_and_init_pcm(pcmdesc);
 
-#if 0				/* (!SODI_DVT_APxGPT)  //workaroud for ca17 disp mempll power down switch crash */
-	if (gSpm_SODI_mempll_pwr_mode == 1) {	/* disp req: reset or 1pll request */
-		/* pr_debug("[SODI] MEMPLL RESET\n"); */
-		/* MEMPLL 1PLL Mode */
-		pwrctrl->pcm_flags |= SPM_MEMPLL_RESET;
-#if (!SODI_MEMPLL_RESETMODE_FW)	/* spm fw : 1pll + pdn fw */
-		/* pr_debug("[SODI] 1PLL\n"); */
-		pwrctrl->md2_req_mask = 1;
-		pwrctrl->md1_req_mask = 1;
-		pwrctrl->conn_mask = 1;
-		pwrctrl->md32_req_mask = 1;
-#endif
+	spm_flags |= (SPM_LOW_SPD_I2C | SPM_MEMPLL_RESET);
 
-
-	} else {			/* pdn */
-		/* pr_debug("[SODI] MEMPLL PDN Mode\n"); */
-		/* power down mode */
-#if (!SODI_MEMPLL_RESETMODE_FW)
-		pwrctrl->md2_req_mask = 0;
-		pwrctrl->md1_req_mask = 0;
-		pwrctrl->conn_mask = 0;
-		pwrctrl->md32_req_mask = 0;
-#endif
-		pwrctrl->pcm_flags &= ~SPM_MEMPLL_RESET;
-	}
-#else				/* stress test for rest mode + pdn */
-
-	pwrctrl->pcm_flags |= SPM_LOW_SPD_I2C;
-
-#if 1
-	/* pr_debug("[SODI] MEMPLL RESET!\n"); */
-	/* MEMPLL RESET Mode */
-	pwrctrl->pcm_flags |= SPM_MEMPLL_RESET;
-#endif
-
-#if 0
-	/* pr_debug("[SODI] MEMPLL 1PLL\n"); */
-	/* MEMPLL 1PLL Mode */
-	pwrctrl->pcm_flags |= SPM_MEMPLL_RESET;
-	pwrctrl->md2_req_mask = 1;
-	pwrctrl->md1_req_mask = 1;
-	pwrctrl->conn_mask = 1;
-	pwrctrl->md32_req_mask = 1;
-#endif
-
-#if 0
-	/* pr_debug("[SODI] MEMPLL PDN Mode!\n"); */
-	/* power down mode */
-	if (gSpm_SODI_mempll_pwr_mode == 1)
-		pwrctrl->pcm_flags |= SPM_SODI_DIS;
-	else
-		pwrctrl->pcm_flags &= ~SPM_SODI_DIS;
-
-	pwrctrl->pcm_flags &= ~SPM_MEMPLL_RESET;
-#endif
-#endif
 	/* check GCE */
 	if (__clk_is_enabled(c))
-		pwrctrl->pcm_flags &= ~SPM_DDR_HIGH_SPEED;
+		spm_flags &= ~SPM_DDR_HIGH_SPEED;
 	else
-		pwrctrl->pcm_flags |= SPM_DDR_HIGH_SPEED;
+		spm_flags |= SPM_DDR_HIGH_SPEED;
 
 	/* arm atf dormant abort */
 #if defined(CONFIG_ARM_PSCI) || defined(CONFIG_MTK_PSCI)
-	pwrctrl->pcm_flags |= SPM_SCREEN_OFF;
+	spm_flags |= SPM_SCREEN_OFF;
 #endif
 
 	if (gSpm_SODI_cpu_dvs_en)
-		pwrctrl->pcm_flags &= ~SPM_CPU_DVS_DIS;
+		spm_flags &= ~SPM_CPU_DVS_DIS;
 	else
-		pwrctrl->pcm_flags |= SPM_CPU_DVS_DIS;
+		spm_flags |= SPM_CPU_DVS_DIS;
+
+	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
 
 	__spm_kick_im_to_fetch(pcmdesc);
 
@@ -595,37 +336,29 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 
 	__spm_set_wakeup_event(pwrctrl);
 
-#if (SODI_DVT_BLOCK_BF_WFI) && (SODI_DVT_APxGPT)
-	spm_write(SPM_PCM_CON1, spm_read(SPM_PCM_CON1) & (~CON1_PCM_TIMER_EN));
-	pwrctrl->pcm_reserve = 0x000003ff;
-#endif
 	__spm_kick_pcm_to_run(pwrctrl);
 
-	/* test begin */
-#if (SODI_DVT_SPM_DBG_MODE) && (SODI_DVT_SPM_DBG_MODE_1PLL) && (SODI_DVT_APxGPT)
-	spm_write(SPM_PCM_RESERVE, 0x400);	/* keep in 1pll */
-#endif
-	/* end */
-
-#ifdef SPM_SODI_DEBUG
-	spm_idle_ver("============SODI Before============\n");
-	spm_sodi_dump_regs();	/* dump debug info */
+#if SPM_AEE_RR_REC
+	aee_rr_rec_sodi_val(aee_rr_curr_sodi_val() | (1 << SPM_SODI_ENTER_WFI));
 #endif
 
 	spm_trigger_wfi_for_sodi(pwrctrl);
 
-#ifdef SPM_SODI_DEBUG
-	spm_idle_ver("============SODI After=============\n");
-	spm_sodi_dump_regs();	/* dump debug info */
+#if SPM_AEE_RR_REC
+	aee_rr_rec_sodi_val(aee_rr_curr_sodi_val() | (1 << SPM_SODI_LEAVE_WFI));
 #endif
 
 	__spm_get_wakeup_status(&wakesta);
 
-	spm_idle_ver("SODI:dram-selfrefrsh cnt %d", spm_read(SPM_PCM_PASR_DPD_3));
-
 	__spm_clean_after_wakeup();
 
-	wr = __spm_output_wake_reason(&wakesta, pcmdesc, false);
+	if (pwrctrl->enable_log)
+		wr = __spm_output_wake_reason(&wakesta, pcmdesc, false);
+
+#if SPM_AEE_RR_REC
+	aee_rr_rec_sodi_val(aee_rr_curr_sodi_val() |
+		(1 << SPM_SODI_LEAVE_SPM_FLOW));
+#endif
 
 	mt_cirq_flush();
 	mt_cirq_disable();
@@ -633,23 +366,11 @@ void spm_go_to_sodi(u32 spm_flags, u32 spm_data)
 	spin_unlock_irqrestore(&__spm_lock, flags);
 
 	soidle_after_wfi(0);
-	/* set PMIC WRAP table for normal power control */
 	mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_NORMAL);
 
-#if SODI_DVT_SPM_MEM_RW_TEST
-	{
-		int i = 0;
-
-		for (i = 0; i < 16; i++) {
-			if (magicArray[i] != SODI_DVT_MAGIC_NUM) {
-				pr_debug("Error: sodi magic number no match!!!");
-				ASSERT(0);
-			}
-		}
-	}
+#if SPM_AEE_RR_REC
+	aee_rr_rec_sodi_val(0);
 #endif
-	/* return wr; */
-
 }
 
 void spm_sodi_mempll_pwr_mode(bool pwr_mode)
@@ -678,20 +399,20 @@ static void spm_set_sodi_pcm_ver(void)
 {
 }
 
+#if SPM_AEE_RR_REC
+static void spm_sodi_aee_init(void)
+{
+	aee_rr_rec_sodi_val(0);
+}
+#endif
+
 void spm_sodi_init(void)
 {
 	c = __clk_lookup("infra_gce");
 	spm_set_sodi_pcm_ver();
-}
-
-
-#if 0
-void spm_sodi_lcm_video_mode(bool IsLcmVideoMode)
-{
-	gSpm_IsLcmVideoMode = IsLcmVideoMode;
-
-	spm_idle_ver("spm_sodi_lcm_video_mode() : gSpm_IsLcmVideoMode = %x\n", gSpm_IsLcmVideoMode);
-
-}
+#if SPM_AEE_RR_REC
+	spm_sodi_aee_init();
 #endif
+}
+
 MODULE_DESCRIPTION("SPM-SODI Driver v0.1");

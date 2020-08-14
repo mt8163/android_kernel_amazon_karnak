@@ -24,10 +24,14 @@
 #include <linux/fs.h>
 #include <linux/seq_file.h>
 #include <linux/input/bu520.h>
-#include <linux/wakelock.h>
 #ifdef CONFIG_OF
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#define METRICS_STR_LEN 128
 #endif
 
 #define DELAY_VALUE 50
@@ -44,7 +48,7 @@ struct hall_priv {
 	struct input_dev *input;
 	struct hall_sensor_data *sensor_data;
 	int hall_sensor_num;
-	struct wake_lock hall_wake_lock;
+	struct wakeup_source hall_wake_lock;
 };
 
 #ifdef CONFIG_PROC_FS
@@ -56,6 +60,7 @@ static int hall_show(struct seq_file *m, void *v)
 
 	u8 reg_val = 0;
 	int i;
+
 	for (i = 0; i < priv->hall_sensor_num; i++)
 		reg_val = reg_val | (sensor_data[i].gpio_state << i);
 
@@ -79,6 +84,7 @@ static const struct file_operations proc_fops = {
 static void create_hall_proc_file(struct hall_priv *priv)
 {
 	struct proc_dir_entry *entry;
+
 	entry = proc_create_data(HALL_PROC_FILE, 0644, NULL, &proc_fops, priv);
 	if (!entry)
 		pr_err("%s: Error creating %s\n", __func__, HALL_PROC_FILE);
@@ -93,16 +99,28 @@ static void remove_hall_proc_file(void)
 static void hall_work_func(struct work_struct *work)
 {
 	struct hall_priv *priv = container_of(work, struct hall_priv, work);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	char metrics_log[METRICS_STR_LEN];
+#endif
 	struct input_dev *input = priv->input;
 	unsigned long gpio_pin = priv->sensor_data[0].gpio_pin;
 
-	if (!input) return;
+	if (!input)
+		return;
 
 	msleep(DELAY_VALUE);
 	priv->sensor_data[0].gpio_state = gpio_get_value(gpio_pin);
 	priv->cover = priv->sensor_data[0].gpio_state ? COVER_OPENED : COVER_CLOSED;
-	pr_info("%s: cover state: %s\n", __func__,
-			priv->cover == COVER_OPENED ? "OPENED" : "CLOSED");
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	/* Log in metrics */
+	//TODO DISPLAY is useless for hall sensor under current implementation
+	//Revise metrics format then stop logging fake display state.
+	snprintf(metrics_log, METRICS_STR_LEN, "bu520:TIMEOUT:COVER=%d;CT;1,DISPLAY=%d;CT;1:NR",
+		priv->cover, 0);
+	log_to_metrics(ANDROID_LOG_INFO, "HallSensor", metrics_log);
+#endif
+
 	input_report_switch(input, SW_LID, priv->sensor_data[0].gpio_state ? 0 : 1);
 	input_sync(input);
 }
@@ -122,8 +140,8 @@ static irqreturn_t hall_sensor_isr(int irq, void *data)
 			irq_set_irq_type(irq, priv->sensor_data[i].gpio_state ?
 					 IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING);
 
-			// Avoid unnecessary suspend
-			wake_lock_timeout(&priv->hall_wake_lock, TIMEOUT_VALUE);
+			/* Avoid unnecessary suspend */
+			__pm_wakeup_event(&priv->hall_wake_lock, TIMEOUT_VALUE);
 			queue_work(priv->workqueue, &priv->work);
 			break;
 		}
@@ -162,7 +180,8 @@ static int configure_irqs(struct hall_priv *priv)
 	return ret;
 }
 
-struct input_dev * hall_input_device_create(void){
+struct input_dev *hall_input_device_create(void)
+{
 	int err = 0;
 	struct input_dev *input;
 
@@ -268,7 +287,7 @@ static int hall_probe(struct platform_device *pdev)
 	priv->hall_sensor_num = hall_sensors->hall_sensor_num;
 
 	priv->workqueue = create_singlethread_workqueue("workqueue");
-	if(!priv->workqueue){
+	if (!priv->workqueue) {
 		dev_err(dev, "Unable to create workqueue\n");
 		goto fail2;
 	}
@@ -278,7 +297,7 @@ static int hall_probe(struct platform_device *pdev)
 
 	device_init_wakeup(&pdev->dev, 1);
 
-	wake_lock_init(&priv->hall_wake_lock, WAKE_LOCK_SUSPEND, "hall sensor wakelock");
+	wakeup_source_init(&priv->hall_wake_lock, "hall sensor wakelock");
 
 	error = configure_irqs(priv);
 	if (error) {
@@ -287,7 +306,7 @@ static int hall_probe(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_PROC_FS
-        create_hall_proc_file(priv);
+	create_hall_proc_file(priv);
 #endif
 
 	return 0;
@@ -321,7 +340,7 @@ static int hall_remove(struct platform_device *pdev)
 	destroy_workqueue(priv->workqueue);
 	input_unregister_device(priv->input);
 
-	wake_lock_destroy(&priv->hall_wake_lock);
+	wakeup_source_trash(&priv->hall_wake_lock);
 #ifdef CONFIG_OF
 	kfree(sensor_data);
 #endif
@@ -353,7 +372,7 @@ static struct platform_driver hall_driver = {
 #ifdef CONFIG_OF
 		   .of_match_table = hall_of_match,
 #endif
-		   }
+			}
 };
 
 module_platform_driver(hall_driver);

@@ -5,6 +5,7 @@
 #include <linux/preempt.h>
 #include <linux/smp.h>
 #include <linux/cpumask.h>
+#include <linux/printk.h>
 #include <linux/pfn.h>
 #include <linux/init.h>
 
@@ -15,12 +16,6 @@
 #define PERCPU_MODULE_RESERVE		(8 << 10)
 #else
 #define PERCPU_MODULE_RESERVE		0
-#endif
-
-#ifndef PERCPU_ENOUGH_ROOM
-#define PERCPU_ENOUGH_ROOM						\
-	(ALIGN(__per_cpu_end - __per_cpu_start, SMP_CACHE_BYTES) +	\
-	 PERCPU_MODULE_RESERVE)
 #endif
 
 /* minimum unit size, also is the maximum supported allocation size */

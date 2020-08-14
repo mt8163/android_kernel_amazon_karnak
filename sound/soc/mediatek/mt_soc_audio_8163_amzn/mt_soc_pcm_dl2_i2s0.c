@@ -30,7 +30,7 @@
 #include "mt_soc_pcm_common.h"
 
 static DEFINE_SPINLOCK(auddrv_DL2_I2S0_lock);
-static AFE_MEM_CONTROL_T *pDL2I2s0MemControl;
+static struct AFE_MEM_CONTROL_T *pDL2I2s0MemControl;
 static struct snd_dma_buffer *dl2_i2s0_dma_buf;
 
 static struct device *mDev;
@@ -63,7 +63,7 @@ static struct snd_pcm_hardware mtk_dl2_i2s0_hardware = {
 
 static int mtk_pcm_dl2_i2s0_stop(struct snd_pcm_substream *substream)
 {
-	AFE_BLOCK_T *Afe_Block = &(pDL2I2s0MemControl->rBlock);
+	struct AFE_BLOCK_T *Afe_Block = &(pDL2I2s0MemControl->rBlock);
 
 	pr_debug("%s\n", __func__);
 	SetIrqEnable(Soc_Aud_IRQ_MCU_MODE_IRQ1_MCU_MODE, false);
@@ -102,7 +102,7 @@ static snd_pcm_uframes_t mtk_pcm_dl2_i2s0_pointer(struct snd_pcm_substream
 	kal_int32 HW_Cur_ReadIdx = 0;
 	kal_uint32 Frameidx = 0;
 	kal_int32 Afe_consumed_bytes = 0;
-	AFE_BLOCK_T *Afe_Block = &pDL2I2s0MemControl->rBlock;
+	struct AFE_BLOCK_T *Afe_Block = &pDL2I2s0MemControl->rBlock;
 	/* struct snd_pcm_runtime *runtime = substream->runtime; */
 	PRINTK_AUD_DL2(" %s Afe_Block->u4DMAReadIdx = 0x%x\n", __func__,
 		       Afe_Block->u4DMAReadIdx);
@@ -158,7 +158,7 @@ static void SetDL2Buffer(struct snd_pcm_substream *substream,
 			 struct snd_pcm_hw_params *hw_params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	AFE_BLOCK_T *pblock = &pDL2I2s0MemControl->rBlock;
+	struct AFE_BLOCK_T *pblock = &pDL2I2s0MemControl->rBlock;
 
 	pr_debug("%s\n", __func__);
 
@@ -207,6 +207,8 @@ static int mtk_pcm_dl2_i2s0_hw_params(struct snd_pcm_substream *substream,
 		ret =
 		    snd_pcm_lib_malloc_pages(substream,
 					     params_buffer_bytes(hw_params));
+		if (ret < 0)
+			return ret;
 	}
 	pr_debug("%s dma_bytes = %zu, dma_area = %p, dma_addr = 0x%x\n",
 		 __func__, runtime->dma_bytes, runtime->dma_area,
@@ -245,9 +247,10 @@ static int mtk_pcm_dl2_i2s0_open(struct snd_pcm_substream *substream)
 
 	pr_debug("%s\n", __func__);
 
-	AudDrv_ANA_Clk_On();
-	AudDrv_Clk_On();
-	AudDrv_Emi_Clk_On();
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		pr_debug("SNDRV_PCM_STREAM_PLAYBACK OK");
+	else
+		return -1;
 
 	runtime->hw = mtk_dl2_i2s0_hardware;
 	memcpy((void *)(&(runtime->hw)), (void *)&mtk_dl2_i2s0_hardware,
@@ -256,25 +259,28 @@ static int mtk_pcm_dl2_i2s0_open(struct snd_pcm_substream *substream)
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
 					 &constraints_sample_rates);
+	if (ret < 0) {
+		pr_warn("snd_pcm_hw_constraint_list failed\n");
+		return ret;
+	}
+
 	ret =
 	    snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
 
-	if (ret < 0)
+	if (ret < 0) {
 		pr_warn("snd_pcm_hw_constraint_integer failed\n");
+		return ret;
+	}
 
 	/* print for hw pcm information */
 	pr_debug
 	    ("%s, runtime->rate = %d, channels = %d, ",
 	     __func__, runtime->rate, runtime->channels);
-	pr_debug("substream->pcm->device = %d\n", substream->pcm->device);
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-		pr_debug("SNDRV_PCM_STREAM_PLAYBACK ");
-		pr_debug("mtkalsa_i2s0_playback_constraints\n");
-	if (ret < 0) {
-		pr_warn("mtk_pcm_dl2_i2s0_close\n");
-		mtk_pcm_dl2_i2s0_close(substream);
-		return ret;
-	}
+
+	AudDrv_ANA_Clk_On();
+	AudDrv_Clk_On();
+	AudDrv_Emi_Clk_On();
+
 	pr_debug("%s return\n", __func__);
 	return 0;
 }
@@ -290,6 +296,9 @@ static int mtk_pcm_dl2_i2s0_close(struct snd_pcm_substream *substream)
 
 static int mtk_pcm_dl2_i2s0_prepare(struct snd_pcm_substream *substream)
 {
+	pr_debug("%s, substream->rate = %d, substream->channels = %d\n",
+		 __func__, substream->runtime->rate,
+		 substream->runtime->channels);
 	return 0;
 }
 
@@ -366,7 +375,7 @@ static int mtk_pcm_dl2_i2s0_copy(struct snd_pcm_substream *substream,
 				 int channel, snd_pcm_uframes_t pos,
 				 void __user *dst, snd_pcm_uframes_t count)
 {
-	AFE_BLOCK_T *Afe_Block = NULL;
+	struct AFE_BLOCK_T *Afe_Block = NULL;
 	int copy_size = 0, Afe_WriteIdx_tmp;
 	unsigned long flags;
 	char *data_w_ptr = (char *)dst;
@@ -535,25 +544,6 @@ static int mtk_pcm_dl2_i2s0_copy(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static int mtk_pcm_dl2_i2s0_silence(struct snd_pcm_substream *substream,
-				    int channel, snd_pcm_uframes_t pos,
-				    snd_pcm_uframes_t count)
-{
-	pr_debug("%s\n", __func__);
-	/* do nothing */
-	return 0;
-}
-
-static void *dummy_page[2];
-
-static struct page *mtk_dl2_i2s0_pcm_page(struct snd_pcm_substream *substream,
-					  unsigned long offset)
-{
-	pr_debug("%s\n", __func__);
-	/* the same page */
-	return virt_to_page(dummy_page[substream->stream]);
-}
-
 static struct snd_pcm_ops mtk_dl2_i2s0_ops = {
 
 	.open = mtk_pcm_dl2_i2s0_open,
@@ -565,8 +555,6 @@ static struct snd_pcm_ops mtk_dl2_i2s0_ops = {
 	.trigger = mtk_pcm_dl2_i2s0_trigger,
 	.pointer = mtk_pcm_dl2_i2s0_pointer,
 	.copy = mtk_pcm_dl2_i2s0_copy,
-	.silence = mtk_pcm_dl2_i2s0_silence,
-	.page = mtk_dl2_i2s0_pcm_page,
 };
 
 static struct snd_soc_platform_driver mtk_i2s0_soc_platform = {

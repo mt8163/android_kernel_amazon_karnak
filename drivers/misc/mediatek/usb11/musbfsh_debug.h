@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MUSBFSH_LINUX_DEBUG_H__
 #define __MUSBFSH_LINUX_DEBUG_H__
 
@@ -5,8 +18,8 @@
 extern int musbfsh_debug;
 #define yprintk(facility, format, args...)	do { \
 		if (musbfsh_debug) { \
-			printk(facility "[MUSBFSH] %s %d: " format , \
-					__func__, __LINE__ , ## args); \
+			printk(facility "[MUSBFSH] %s %d: " format, \
+					__func__, __LINE__, ## args); \
 		} \
 	} while (0)
 
@@ -14,8 +27,8 @@ extern int musbfsh_debug;
 
 /* for critical log */
 #define zprintk(facility, format, args...) \
-		printk(facility "[MUSBFSH] %s %d: " format , \
-				__func__, __LINE__ , ## args)
+		printk(facility "[MUSBFSH] %s %d: " format, \
+				__func__, __LINE__, ## args)
 
 #define WARNING(fmt, args...) zprintk(KERN_WARNING, fmt, ## args)
 #define ERR(fmt, args...) zprintk(KERN_ERR, fmt, ## args)

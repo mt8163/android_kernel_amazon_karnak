@@ -40,17 +40,16 @@ static struct proc_dir_entry *root_irq_dir;
 static int show_irq_affinity(int type, struct seq_file *m, void *v)
 {
 	struct irq_desc *desc = irq_to_desc((long)m->private);
-	const struct cpumask *mask = desc->irq_data.affinity;
+	const struct cpumask *mask = desc->irq_common_data.affinity;
 
 #ifdef CONFIG_GENERIC_PENDING_IRQ
 	if (irqd_is_setaffinity_pending(&desc->irq_data))
 		mask = desc->pending_mask;
 #endif
 	if (type)
-		seq_cpumask_list(m, mask);
+		seq_printf(m, "%*pbl\n", cpumask_pr_args(mask));
 	else
-		seq_cpumask(m, mask);
-	seq_putc(m, '\n');
+		seq_printf(m, "%*pb\n", cpumask_pr_args(mask));
 	return 0;
 }
 
@@ -68,8 +67,7 @@ static int irq_affinity_hint_proc_show(struct seq_file *m, void *v)
 		cpumask_copy(mask, desc->affinity_hint);
 	raw_spin_unlock_irqrestore(&desc->lock, flags);
 
-	seq_cpumask(m, mask);
-	seq_putc(m, '\n');
+	seq_printf(m, "%*pb\n", cpumask_pr_args(mask));
 	free_cpumask_var(mask);
 
 	return 0;
@@ -98,7 +96,7 @@ static ssize_t write_irq_affinity(int type, struct file *file,
 	cpumask_var_t new_value;
 	int err;
 
-	if (!irq_can_set_affinity(irq) || no_irq_affinity)
+	if (!irq_can_set_affinity_usr(irq) || no_irq_affinity)
 		return -EIO;
 
 	if (!alloc_cpumask_var(&new_value, GFP_KERNEL))
@@ -187,8 +185,7 @@ static const struct file_operations irq_affinity_list_proc_fops = {
 
 static int default_affinity_show(struct seq_file *m, void *v)
 {
-	seq_cpumask(m, irq_default_affinity);
-	seq_putc(m, '\n');
+	seq_printf(m, "%*pb\n", cpumask_pr_args(irq_default_affinity));
 	return 0;
 }
 
@@ -241,49 +238,11 @@ static const struct file_operations default_affinity_proc_fops = {
 	.write		= default_affinity_write,
 };
 
-#ifdef CONFIG_MTK_IRQ_NEW_DESIGN
-static int irq_need_migrate_list_show(struct seq_file *m, void *v)
-{
-	struct per_cpu_irq_desc *node;
-	struct list_head *pos, *temp;
-	int cpu;
-
-	rcu_read_lock();
-	for_each_cpu(cpu, cpu_possible_mask) {
-		seq_printf(m, "dump per-cpu irq-need-migrate list of CPU%u\n", cpu);
-		list_for_each_safe(pos, temp, &(irq_need_migrate_list[cpu].list)) {
-			node = list_entry_rcu(pos, struct per_cpu_irq_desc, list);
-			seq_printf(m, "IRQ %d\n", (node->desc->irq_data).irq);
-		}
-	}
-	rcu_read_unlock();
-	return 0;
-}
-
-static int irq_need_migrate_list_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, irq_need_migrate_list_show, PDE_DATA(inode));
-}
-
-static const struct file_operations irq_need_migrate_list_fops = {
-	.open		= irq_need_migrate_list_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static void register_irq_need_migrate_list_proc(void)
-{
-	proc_create("irq/dump_irq_need_migrate_list", 0400, NULL,
-		    &irq_need_migrate_list_fops);
-}
-#endif
-
 static int irq_node_proc_show(struct seq_file *m, void *v)
 {
 	struct irq_desc *desc = irq_to_desc((long) m->private);
 
-	seq_printf(m, "%d\n", desc->irq_data.node);
+	seq_printf(m, "%d\n", irq_desc_get_node(desc));
 	return 0;
 }
 
@@ -332,7 +291,7 @@ static int name_unique(unsigned int irq, struct irqaction *new_action)
 	int ret = 1;
 
 	raw_spin_lock_irqsave(&desc->lock, flags);
-	for (action = desc->action ; action; action = action->next) {
+	for_each_action_of_desc(desc, action) {
 		if ((action != new_action) && action->name &&
 				!strcmp(new_action->name, action->name)) {
 			ret = 0;
@@ -352,7 +311,6 @@ void register_handler_proc(unsigned int irq, struct irqaction *action)
 					!name_unique(irq, action))
 		return;
 
-	memset(name, 0, MAX_NAMELEN);
 	snprintf(name, MAX_NAMELEN, "%s", action->name);
 
 	/* create /proc/irq/1234/handler/ */
@@ -381,7 +339,6 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 	if (desc->dir)
 		goto out_unlock;
 
-	memset(name, 0, MAX_NAMELEN);
 	sprintf(name, "%d", irq);
 
 	/* create /proc/irq/1234 */
@@ -427,7 +384,6 @@ void unregister_irq_proc(unsigned int irq, struct irq_desc *desc)
 #endif
 	remove_proc_entry("spurious", desc->dir);
 
-	memset(name, 0, MAX_NAMELEN);
 	sprintf(name, "%u", irq);
 	remove_proc_entry(name, root_irq_dir);
 }
@@ -459,19 +415,11 @@ void init_irq_proc(void)
 
 	register_default_affinity_proc();
 
-#ifdef CONFIG_MTK_IRQ_NEW_DESIGN
-	register_irq_need_migrate_list_proc();
-#endif
-
 	/*
 	 * Create entries for all existing IRQs.
 	 */
-	for_each_irq_desc(irq, desc) {
-		if (!desc)
-			continue;
-
+	for_each_irq_desc(irq, desc)
 		register_irq_proc(irq, desc);
-	}
 }
 
 #ifdef CONFIG_GENERIC_IRQ_SHOW
@@ -520,7 +468,7 @@ int show_interrupts(struct seq_file *p, void *v)
 	for_each_online_cpu(j)
 		any_count |= kstat_irqs_cpu(i, j);
 	action = desc->action;
-	if (!action && !any_count)
+	if ((!action || irq_desc_is_chained(desc)) && !any_count)
 		goto out;
 
 	seq_printf(p, "%*d: ", prec, i);

@@ -1,24 +1,26 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
 
 
-/*****************************************************************************
+
+/**********************************************************************
  *                     C O M P I L E R   F L A G S
- *****************************************************************************/
+ **********************************************************************/
 
 
-/*****************************************************************************
+/**********************************************************************
  *                E X T E R N A L   R E F E R E N C E S
- *****************************************************************************/
+ **********************************************************************/
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -36,15 +38,15 @@
 #include <linux/wait.h>
 #include <linux/spinlock.h>
 #include <linux/sched.h>
-#include <linux/wakelock.h>
+//#include <linux/wakelock.h>
 #include <linux/semaphore.h>
 #include <linux/jiffies.h>
 #include <linux/proc_fs.h>
 #include <linux/string.h>
 #include <linux/mutex.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/irq.h>
-#include <asm/io.h>
+#include <linux/io.h>
 #include <asm/div64.h>
 #include <mt-plat/aee.h>
 
@@ -76,14 +78,11 @@
 /* mutex lock */
 static DEFINE_MUTEX(afe_connection_mutex);
 
-/**
-* here define conenction table for input and output
-*/
+
 static const char mConnectionTable[Soc_Aud_InterConnectionInput_Num_Input]
-								[Soc_Aud_InterConnectionOutput_Num_Output]
+	[Soc_Aud_InterConnectionOutput_Num_Output]
 = {
-	/*  0    1    2    3   4   5   6   7   8   9  10  11  12
-	   13   14   15   16  17  18  19  20  21  22  23  24  25 */
+
 	{3, 3, 3, 3, 3, 3, -1, 1, 1, 1, 1, -1, -1,
 	 1, 1, 3, 3, 1, 1, 3, 25, 1, -1, -1, -1, -1},	/* I00 */
 	{3, 3, 3, 3, 3, -1, 3, -1, -1, -1, -1, -1, -1,
@@ -132,14 +131,11 @@ static const char mConnectionTable[Soc_Aud_InterConnectionInput_Num_Input]
 
 
 /* remind for AFE_CONN4 bit31 */
-/**
-* connection bits of certain bits
-*/
+
 static const char mConnectionbits[Soc_Aud_InterConnectionInput_Num_Input]
-								[Soc_Aud_InterConnectionOutput_Num_Output]
+	[Soc_Aud_InterConnectionOutput_Num_Output]
 = {
-	/*   0   1   2   3   4   5   6   7   8   9  10  11  12
-	   13  14  15  16  17  18  19  20  21  22  23  24  25 */
+
 	{0, 16, 0, 16, 0, 16, -1, 2, 5, 8, 12, -1, -1,
 	 2, 15, 16, 22, 14, 18, 8, 24, 30, -1, -1, -1, -1},	/* I00 */
 	{1, 17, 1, 17, 1, -1, 22, 3, 6, 9, 13, -1, -1,
@@ -186,195 +182,263 @@ static const char mConnectionbits[Soc_Aud_InterConnectionInput_Num_Input]
 	 4, 5, 6, 7, -1, -1, 22, 23, -1, -1, -1, -1, -1},	/* I21 */
 };
 
-/*
-* connection shift bits of certain bits
-*/
 static const char mShiftConnectionbits[Soc_Aud_InterConnectionInput_Num_Input]
-									[Soc_Aud_InterConnectionOutput_Num_Output]
-= {
-	/*   0   1   2   3   4   5   6   7   8   9  10  11  12
-	   13  14  15  16  17  18  19  20  21  22  23  24  25 */
+	[Soc_Aud_InterConnectionOutput_Num_Output] = {
+	/* 0   1   2   3   4   5   6   7   8   9  10  11  12 */
+	/* 13  14  15  16  17  18  19  20  21  22  23  24  25 */
 	{10, 26, 10, 26, 10, 19, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, 31, 25, -1, -1, 9, 25, -1, -1, -1, -1, -1},	/* I00 */
+	 -1, -1, 31, 25, -1, -1, 9, 25, -1, -1, -1, -1, -1},
+
 	{11, 27, 11, 27, 11, -1, 20, -1, -1, -1, -1, -1, -1,
-	 -1, -1, 16, 4, -1, -1, 11, 27, -1, -1, -1, -1, -1},	/* I01 */
+	 -1, -1, 16, 4, -1, -1, 11, 27, -1, -1, -1, -1, -1},
+
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I02 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, 25, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I03 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, 26, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I04 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{12, 28, 12, 28, 12, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, 15, 30, -1, -1, -1, -1, -1},	/* I05 */
+	 -1, -1, -1, -1, -1, -1, 15, 30, -1, -1, -1, -1, -1},
+
 	{13, 29, 13, 29, 13, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, 17, 1, -1, -1, -1, -1, -1},	/* I06 */
+	 -1, -1, -1, -1, -1, -1, 17, 1, -1, -1, -1, -1, -1},
+
 	{14, 30, 14, 30, 14, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, 19, 3, -1, -1, -1, -1, -1},	/* I07 */
+	 -1, -1, -1, -1, -1, -1, 19, 3, -1, -1, -1, -1, -1},
+
 	{15, 31, 15, 31, 15, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, 21, 5, -1, -1, -1, -1, -1},	/* I08 */
+	 -1, -1, -1, -1, -1, -1, 21, 5, -1, -1, -1, -1, -1},
+
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I09 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{1, -1, 5, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I10 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, 3, 7, -1, 11, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I11 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{1, -1, 5, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I12 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, 3, 7, -1, 11, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I13 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I14 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{15, 20, 25, 30, 3, 7, -1, -1, -1, 10, -1, -1, -1,
-	 -1, -1, 0, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I15 */
+	 -1, -1, 0, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{16, 21, 26, 31, 4, -1, 9, -1, -1, -1, 11, -1, -1,
-	 -1, -1, 30, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I16 */
+	 -1, -1, 30, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{14, 19, 30, 29, 2, -1, 8, -1, -1, -1, 11, -1, -1,
-	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I17 */
+	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{14, 19, 31, 29, 2, -1, 8, -1, -1, -1, 11, -1, -1,
-	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I18 */
+	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{2, 19, 11, 16, 19, -1, 8, -1, -1, -1, 11, -1, -1,
-	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I19 */
+	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{14, 5, 13, 17, 21, -1, 8, -1, -1, -1, 11, -1, -1,
-	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I20 */
+	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{14, 19, 24, 29, 2, -1, 8, -1, -1, -1, 11, -1, -1,
-	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1},	/* I21 */
-
+	 -1, -1, 30, 3, -1, -1, -1, -1, -1, -1, -1, -1},
 };
 
-/*
-* connection of register
-*/
 static const short mConnectionReg[Soc_Aud_InterConnectionInput_Num_Input]
-								[Soc_Aud_InterConnectionOutput_Num_Output]
-= {
-	/*      0      1      2      3      4      5      6      7      8      9     10     11     12
-	   13    14     15     16     17     18     19     20     21     22     23     24     25 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x5c, -1, 0x5c, 0x5c, -1, -1,
-	 0x448, 0x448, 0x438, 0x438, 0x5c, 0x5c, 0x464, 0x464, -1, -1, -1, -1, -1},	/* I00 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, 0x5c, 0x5c, 0x5c, 0x5c, -1, -1,
-	 0x448, 0x448, 0x438, 0x438, 0x5c, 0x5c, 0x464, 0x464, -1, 0xbc, -1, 0x468, -1},	/* I01 */
-	{-1, 0x20, 0x24, 0x24, -1, -1, 0x30, 0x30, -1, -1, -1, 0x2c, -1,
-	 0x448, 0x448, -1, -1, 0x30, 0x30, -1, -1, -1, -1, -1, -1, -1},	/* I02 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x28, -1, 0x2C, -1, -1, -1,
-	 0x448, 0x448, 0x438, 0x438, 0x30, -1, 0x464, 0x464, 0x5c, -1, 0xbc, -1, 0xbc},	/* I03 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, -1, 0x28, -1, 0x2C, -1, -1,
-	 0x448, 0x448, 0x438, 0x438, -1, 0x30, 0x464, 0x464, -1, 0xbc, -1, 0xbc, -1},	/* I04 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x28, -1, 0x2C, -1, -1, -1,
-	 0x420, 0x420, -1, -1, 0x30, -1, 0x464, 0x464, -1, -1, -1, -1, -1},	/* I05 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, -1, 0x28, -1, 0x2C, -1, 0x2C,
-	 0x420, 0x420, -1, -1, -1, 0x30, 0x464, -1, -1, -1, -1, -1, -1},	/* I06 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x28, -1, 0x2C, -1, -1, -1,
-	 0x420, 0x420, -1, -1, 0x30, -1, 0x464, -1, -1, -1, -1, -1, -1},	/* I07 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, -1, 0x28, -1, 0x2C, -1, 0x2C,
-	 0x420, 0x420, -1, -1, -1, 0x30, 0x464, -1, -1, -1, -1, -1, -1},	/* I08 */
-	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, -1, -1, 0x5c, -1, -1, 0x2C,
-	 0x448, 0x448, 0x438, 0x438, 0x5c, 0x5c, 0x5c, 0x5c, -1, -1, 0xbc, 0xbc, 0xbc},	/* I09 */
-	{0x420, -1, -1, 0x420, -1, 0x420, -1, 0x420, -1, -1, -1, -1, 0x448,
-	 -1, -1, -1, -1, 0x420, -1, 0x448, -1, 0x448, 0x44c, 0x44c, -1, 0x44c},	/* I10 */
-	{-1, 0x420, -1, -1, 0x420, -1, 0x420, -1, 0x420, -1, -1, -1, 0x448,
-	 -1, -1, -1, -1, -1, 0x420, -1, 0x448, 0x448, 0x44c, -1, 0x44c, -1},	/* I11 */
-	{0x438, 0x438, -1, 0x438, -1, 0x438, -1, 0x438, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, 0x440, -1, 0x444, -1, 0x444, 0x444, -1, -1, -1},	/* I12 */
-	{-1, 0x438, -1, -1, 0x438, -1, 0x438, -1, 0x438, -1, -1, -1, -1,
-	 -1, -1, -1, -1, 1, 0x440, -1, 0x444, 0x444, 0x444, -1, -1, -1},	/* I13 */
-	{0x2C, 0x2C, 0x2C, 0x2C, 0x30, 0x30, -1, 0x5c, 0x5c, 0x5c, -1, -1, 0x30,
-	 0x448, 0x448, 0x438, 0x440, 1, -1, 0x5c, 0x5c, -1, -1, -1, 0x44c, -1},	/* I14 */
-	{0x2C, 0x2C, 0x2C, 0x2C, 0x30, 0x30, -1, -1, -1, 0x30, -1, -1, -1,
-	 0x448, 0x448, 0x438, 0x440, 1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I15 */
-	{0x2C, 0x2C, 0x2C, 0x2C, 0x30, -1, 0x30, -1, -1, -1, 0x30, -1, -1,
-	 0x448, 0x448, 0x438, 0x440, 1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I16 */
-	{0x460, 0x2C, 0x2C, 0x5c, 0x30, 0x460, 0x30, 0x460, -1, 0x460, 0x30, 0x464, -1,
-	 0x448, 0x448, 0x438, 0x440, 0x5c, -1, 0x464, -1, 0xbc, -1, 0xbc, -1, 0xbc},	/* I17 */
-	{0x2C, 0x460, 0x2C, 0x2C, 0x5c, -1, 0x460, -1, 0x460, -1, 0x464, -1, 0x464,
-	 0x448, 0x448, 0x438, 0x440, -1, 0x5c, 0x464, -1, -1, 0xbc, -1, 0xbc, -1},	/* I18 */
-	{0x460, 0x2C, 0x460, 0x460, 0x460, 0x460, 0x30, 0x460, -1, 0x460, 0x30, 0x464, -1,
-	 0x448, 0x448, 0x438, 0x444, 0x464, -1, 0x5c, 0x5c, 0xbc, -1, 0xbc, -1, -1},	/* I19 */
-	{0x2C, 0x460, 0x460, 0x460, 0x460, -1, 0x460, -1, 0x460, -1, 0x464, -1, 0x464,
-	 0x448, 0x448, 0x438, 0x444, -1, 0x464, 0x5c, 0x5c, -1, 0xbc, -1, 0xbc, -1},	/* I20 */
-	{0xbc, 0xbc, 0xbc, 0xbc, 0x30, -1, 0x30, 0xbc, 0xbc, 0xbc, 0x30, -1, 0xbc,
-	 0x44c, 0x44c, 0x438, 0x440, -1, -1, 0xbc, 0xbc, -1, -1, -1, -1, -1},	/* I21 */
+	[Soc_Aud_InterConnectionOutput_Num_Output] = {
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x5c,
+	-1, 0x5c, 0x5c, -1, -1, 0x448, 0x448, 0x438,
+	0x438, 0x5c, 0x5c, 0x464, 0x464, -1, -1, -1, -1, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, 0x5c,
+	0x5c, 0x5c, 0x5c, -1, -1, 0x448, 0x448, 0x438,
+	0x438, 0x5c, 0x5c, 0x464, 0x464, -1, 0xbc, -1, 0x468, -1},
+
+	{-1, 0x20, 0x24, 0x24, -1, -1, 0x30, 0x30, -1,
+	-1, -1, 0x2c, -1, 0x448, 0x448, -1, -1, 0x30,
+	0x30, -1, -1, -1, -1, -1, -1, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x28,
+	-1, 0x2C, -1, -1, -1, 0x448, 0x448, 0x438, 0x438,
+	0x30, -1, 0x464, 0x464, 0x5c, -1, 0xbc, -1, 0xbc},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, -1, 0x28,
+	-1, 0x2C, -1, -1, 0x448, 0x448, 0x438, 0x438, -1,
+	0x30, 0x464, 0x464, -1, 0xbc, -1, 0xbc, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x28, -1,
+	0x2C, -1, -1, -1, 0x420, 0x420, -1, -1, 0x30, -1,
+	0x464, 0x464, -1, -1, -1, -1, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, -1, 0x28,
+	-1, 0x2C, -1, 0x2C, 0x420, 0x420, -1, -1, -1, 0x30,
+	0x464, -1, -1, -1, -1, -1, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, 0x28,
+	-1, 0x2C, -1, -1, -1, 0x420, 0x420, -1, -1,
+	0x30, -1, 0x464, -1, -1, -1, -1, -1, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x28, -1,
+	0x28, -1, 0x2C, -1, 0x2C, 0x420, 0x420, -1,
+	-1, -1, 0x30, 0x464, -1, -1, -1, -1, -1, -1},
+
+	{0x20, 0x20, 0x24, 0x24, 0x28, 0x28, -1, -1,
+	-1, 0x5c, -1, -1, 0x2C, 0x448, 0x448, 0x438,
+	0x438, 0x5c, 0x5c, 0x5c, 0x5c, -1, -1, 0xbc, 0xbc, 0xbc},
+
+	{0x420, -1, -1, 0x420, -1, 0x420, -1, 0x420,
+	-1, -1, -1, -1, 0x448, -1, -1, -1, -1, 0x420,
+	-1, 0x448, -1, 0x448, 0x44c, 0x44c, -1, 0x44c},
+
+	{-1, 0x420, -1, -1, 0x420, -1, 0x420, -1, 0x420,
+	-1, -1, -1, 0x448, -1, -1, -1, -1, -1, 0x420, -1,
+	0x448, 0x448, 0x44c, -1, 0x44c, -1},
+
+	{0x438, 0x438, -1, 0x438, -1, 0x438, -1, 0x438,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, 0x440, -1,
+	0x444, -1, 0x444, 0x444, -1, -1, -1},
+
+	{-1, 0x438, -1, -1, 0x438, -1, 0x438, -1, 0x438,
+	-1, -1, -1, -1, -1, -1, -1, -1, 1, 0x440, -1,
+	0x444, 0x444, 0x444, -1, -1, -1},
+
+	{0x2C, 0x2C, 0x2C, 0x2C, 0x30, 0x30, -1, 0x5c,
+	0x5c, 0x5c, -1, -1, 0x30, 0x448, 0x448, 0x438,
+	0x440, 1, -1, 0x5c, 0x5c, -1, -1, -1, 0x44c, -1},
+
+	{0x2C, 0x2C, 0x2C, 0x2C, 0x30, 0x30, -1, -1, -1,
+	0x30, -1, -1, -1, 0x448, 0x448, 0x438, 0x440, 1,
+	-1, -1, -1, -1, -1, -1, -1, -1},
+
+	{0x2C, 0x2C, 0x2C, 0x2C, 0x30, -1, 0x30, -1, -1,
+	-1, 0x30, -1, -1, 0x448, 0x448, 0x438, 0x440, 1,
+	-1, -1, -1, -1, -1, -1, -1, -1},
+
+	{0x460, 0x2C, 0x2C, 0x5c, 0x30, 0x460, 0x30, 0x460,
+	-1, 0x460, 0x30, 0x464, -1, 0x448, 0x448, 0x438,
+	0x440, 0x5c, -1, 0x464, -1, 0xbc, -1, 0xbc, -1, 0xbc},
+
+	{0x2C, 0x460, 0x2C, 0x2C, 0x5c, -1, 0x460, -1, 0x460,
+	-1, 0x464, -1, 0x464, 0x448, 0x448, 0x438, 0x440, -1,
+	0x5c, 0x464, -1, -1, 0xbc, -1, 0xbc, -1},
+
+	{0x460, 0x2C, 0x460, 0x460, 0x460, 0x460, 0x30, 0x460,
+	-1, 0x460, 0x30, 0x464, -1, 0x448, 0x448, 0x438, 0x444,
+	0x464, -1, 0x5c, 0x5c, 0xbc, -1, 0xbc, -1, -1},
+
+	{0x2C, 0x460, 0x460, 0x460, 0x460, -1, 0x460, -1, 0x460,
+	-1, 0x464, -1, 0x464, 0x448, 0x448, 0x438, 0x444, -1,
+	0x464, 0x5c, 0x5c, -1, 0xbc, -1, 0xbc, -1},
+
+	{0xbc, 0xbc, 0xbc, 0xbc, 0x30, -1, 0x30, 0xbc, 0xbc,
+	0xbc, 0x30,	-1, 0xbc, 0x44c, 0x44c, 0x438, 0x440, -1,
+	-1, 0xbc, 0xbc, -1, -1, -1, -1, -1},
+
 };
 
-
-/*
-* shift connection of register
-*/
 static const short mShiftConnectionReg[Soc_Aud_InterConnectionInput_Num_Input]
-									[Soc_Aud_InterConnectionOutput_Num_Output]
+	[Soc_Aud_InterConnectionOutput_Num_Output]
 = {
-	/*   0      1      2      3      4      5      6      7      8      9     10     11    12
-	   13     14     15     16     17     18     19     20     21     22     23     24    25 */
 	{0x20, 0x20, 0x24, 0x24, 0x28, 0x30, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, 0x438, -1, -1, -1, 0x464, 0x464, -1, -1, -1, -1, -1},	/* I00 */
+	 -1, -1, 0x438, -1, -1, -1, 0x464, 0x464, -1, -1, -1, -1, -1},
+
 	{0x20, 0x20, 0x24, 0x24, 0x28, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, 0x464, 0x464, -1, -1, -1, -1, -1},	/* I01 */
+	 -1, -1, -1, 0x440, -1, -1, 0x464, 0x464, -1, -1, -1, -1, -1},
+
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I02 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, 0x30, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I03 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, 0x30, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I04 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x20, 0x20, 0x24, 0x24, 0x28, -1, -1, -1, -1, -1, -1, 0x2C, -1,
-	 -1, -1, -1, -1, -1, -1, 0x464, 0x464, -1, -1, -1, -1, -1},	/* I05 */
+	 -1, -1, -1, -1, -1, -1, 0x464, 0x464, -1, -1, -1, -1, -1},
+
 	{0x20, 0x20, 0x24, 0x24, 0x28, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, 0x464, -1, -1, -1, -1, -1, -1},	/* I06 */
+	 -1, -1, -1, -1, -1, -1, 0x464, -1, -1, -1, -1, -1, -1},
+
 	{0x20, 0x20, 0x24, 0x24, 0x28, -1, -1, -1, -1, -1, -1, 0x2C, -1,
-	 -1, -1, -1, -1, -1, -1, 0x464, -1, -1, -1, -1, -1, -1},	/* I07 */
+	 -1, -1, -1, -1, -1, -1, 0x464, -1, -1, -1, -1, -1, -1},
+
 	{0x20, 0x20, 0x24, 0x24, 0x28, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, 0x464, -1, -1, -1, -1, -1, -1},	/* I08 */
+	 -1, -1, -1, -1, -1, -1, 0x464, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I09 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x420, -1, -1, 0x420, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I10 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x420, 0x420, -1, -1, 0x420, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I11 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x438, 0x438, -1, 0x438, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I12 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, 0x438, -1, -1, 0x438, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I13 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I14 */
+	 -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x2C, 0x2C, -1, 0x2C, 0x30, 0x30, -1, -1, -1, -1, -1, -1, -1,
-	 -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I15 */
+	 -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x2C, 0x2C, -1, 0x2C, 0x30, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I16 */
+	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x2C, 0x2C, 0xbc, 0x2C, 0x30, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I17 */
+	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x2C, 0x2C, 0xbc, 0x2C, 0x30, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I18 */
+	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x460, 0x2C, 0x460, 0x460, 0x460, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I19 */
+	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x2C, 0x460, 0x460, 0x460, 0x460, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I20 */
+	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 	{0x2C, 0x2C, -1, 0x2C, 0x30, -1, 0x30, -1, -1, -1, -1, -1, -1,
-	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},	/* I21 */
+	 -1, -1, -1, 0x440, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+
 };
 
-/*
-* connection state of register
-*/
+
 static char mConnectionState[Soc_Aud_InterConnectionInput_Num_Input]
-							[Soc_Aud_InterConnectionOutput_Num_Output]
-= {
+	[Soc_Aud_InterConnectionOutput_Num_Output] = {
 /*   0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I00 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I01 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I02 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I03 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I04 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I05 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I06 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I07 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I08 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I09 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I10 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I11 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I12 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I13 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I14 */
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 #if 0
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},	/* I15 */
-	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}	/* I16 */
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #endif
 };
 
@@ -387,15 +451,16 @@ static bool CheckBitsandReg(short regaddr, char bits)
 	return true;
 }
 
-bool SetConnectionState(uint32 ConnectionState, uint32 Input, uint32 Output)
+bool SetConnectionState(uint32 ConnectionState,
+	 uint32 Input, uint32 Output)
 {
-	/* pr_debug("SetinputConnection ConnectionState = %d Input = %d Output = %d\n",
-	   ConnectionState, Input, Output); */
 	if ((mConnectionTable[Input][Output]) < 0)
-		pr_warn("no connection mpConnectionTable[%d][%d] = %d\n", Input, Output,
+		pr_warn("no connection mpConnectionTable[%d][%d] = %d\n",
+			Input, Output,
 			mConnectionTable[Input][Output]);
 	else if ((mConnectionTable[Input][Output]) == 0)
-		pr_warn("test only !! mpConnectionTable[%d][%d] = %d\n", Input, Output,
+		pr_warn("test only !! mpConnectionTable[%d][%d] = %d\n",
+			Input, Output,
 			mConnectionTable[Input][Output]);
 	else {
 		if (mConnectionTable[Input][Output]) {
@@ -404,57 +469,78 @@ bool SetConnectionState(uint32 ConnectionState, uint32 Input, uint32 Output)
 
 			switch (ConnectionState) {
 			case Soc_Aud_InterCon_DisConnect:{
-				/* pr_debug("nConnectionState = %d\n", ConnectionState); */
-				if ((mConnectionState[Input][Output] & Soc_Aud_InterCon_Connection)
+				if ((mConnectionState[Input][Output] &
+					Soc_Aud_InterCon_Connection)
 					== Soc_Aud_InterCon_Connection) {
 					/* here to disconnect connect bits */
-					connectionBits = mConnectionbits[Input][Output];
-					connectReg = mConnectionReg[Input][Output];
-					if (CheckBitsandReg(connectReg, connectionBits)) {
-						Afe_Set_Reg(connectReg, 0 << connectionBits, 1 << connectionBits);
-						mConnectionState[Input][Output] &= ~(Soc_Aud_InterCon_Connection);
+					connectionBits =
+						mConnectionbits[Input][Output];
+					connectReg =
+						mConnectionReg[Input][Output];
+					if (CheckBitsandReg(connectReg,
+					connectionBits)) {
+					Afe_Set_Reg(connectReg,
+					0 << connectionBits,
+					1 << connectionBits);
+					mConnectionState[Input][Output] &=
+					~(Soc_Aud_InterCon_Connection);
 					}
 				}
-				if ((mConnectionState[Input][Output] & Soc_Aud_InterCon_ConnectionShift)
+				if ((mConnectionState[Input][Output] &
+					Soc_Aud_InterCon_ConnectionShift)
 					== Soc_Aud_InterCon_ConnectionShift) {
-					/* here to disconnect connect shift bits */
-					connectionBits = mShiftConnectionbits[Input][Output];
-					connectReg = mShiftConnectionReg[Input][Output];
-					if (CheckBitsandReg(connectReg, connectionBits)) {
-						Afe_Set_Reg(connectReg, 0 << connectionBits, 1 << connectionBits);
-						mConnectionState[Input][Output] &= ~(Soc_Aud_InterCon_ConnectionShift);
+					connectionBits =
+					mShiftConnectionbits[Input][Output];
+					connectReg =
+					mShiftConnectionReg[Input][Output];
+					if (CheckBitsandReg(connectReg,
+						 connectionBits)) {
+					Afe_Set_Reg(connectReg,
+					0 << connectionBits,
+					1 << connectionBits);
+					mConnectionState[Input][Output] &=
+					~(Soc_Aud_InterCon_ConnectionShift);
 					}
 				}
 				break;
 			}
 			case Soc_Aud_InterCon_Connection:{
-				/* pr_debug("nConnectionState = %d\n", ConnectionState); */
 				/* here to disconnect connect shift bits */
 				connectionBits = mConnectionbits[Input][Output];
 				connectReg = mConnectionReg[Input][Output];
-				if (CheckBitsandReg(connectReg, connectionBits)) {
-					Afe_Set_Reg(connectReg, 1 << connectionBits, 1 << connectionBits);
-					mConnectionState[Input][Output] |= Soc_Aud_InterCon_Connection;
+				if (CheckBitsandReg(connectReg,
+					connectionBits)) {
+					Afe_Set_Reg(connectReg,
+						1 << connectionBits,
+						1 << connectionBits);
+					mConnectionState[Input][Output] |=
+						Soc_Aud_InterCon_Connection;
 				}
 				break;
 			}
 			case Soc_Aud_InterCon_ConnectionShift:{
-				/* pr_debug("nConnectionState = %d\n", ConnectionState); */
-				if ((mConnectionTable[Input][Output] & Soc_Aud_InterCon_ConnectionShift)
+				if ((mConnectionTable[Input][Output] &
+					Soc_Aud_InterCon_ConnectionShift)
 					!= Soc_Aud_InterCon_ConnectionShift) {
 					pr_warn("don't support shift opeartion\n");
 					break;
 				}
-				connectionBits = mShiftConnectionbits[Input][Output];
-				connectReg = mShiftConnectionReg[Input][Output];
-				if (CheckBitsandReg(connectReg, connectionBits)) {
-					Afe_Set_Reg(connectReg, 1 << connectionBits, 1 << connectionBits);
-					mConnectionState[Input][Output] |= Soc_Aud_InterCon_ConnectionShift;
-					}
+				connectionBits =
+				 mShiftConnectionbits[Input][Output];
+				connectReg =
+				 mShiftConnectionReg[Input][Output];
+				if (CheckBitsandReg(connectReg,
+					connectionBits)) {
+				Afe_Set_Reg(connectReg, 1 << connectionBits,
+					1 << connectionBits);
+				mConnectionState[Input][Output] |=
+					Soc_Aud_InterCon_ConnectionShift;
+				}
 				break;
 			}
 			default:
-				pr_warn("no this state ConnectionState = %d\n", ConnectionState);
+				pr_warn("no this state ConnectionState = %d\n",
+					ConnectionState);
 				break;
 			}
 		}

@@ -300,7 +300,6 @@ static int pm860x_touch_probe(struct platform_device *pdev)
 static struct platform_driver pm860x_touch_driver = {
 	.driver	= {
 		.name	= "88pm860x-touch",
-		.owner	= THIS_MODULE,
 	},
 	.probe	= pm860x_touch_probe,
 };

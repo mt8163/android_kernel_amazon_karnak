@@ -22,7 +22,6 @@
 #ifndef __S5H1411_H__
 #define __S5H1411_H__
 
-#include <linux/kconfig.h>
 #include <linux/dvb/frontend.h>
 
 #define S5H1411_I2C_TOP_ADDR (0x32 >> 1)
@@ -83,8 +82,3 @@ static inline struct dvb_frontend *s5h1411_attach(
 #endif /* CONFIG_DVB_S5H1411 */
 
 #endif /* __S5H1411_H__ */
-
-/*
- * Local variables:
- * c-basic-offset: 8
- */

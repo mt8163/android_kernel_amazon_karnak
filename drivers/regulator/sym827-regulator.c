@@ -1,16 +1,16 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
-* Author: HenryC.Chen <henryc.chen@mediatek.com>
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
-*/
+ * Copyright (c) 2018 MediaTek Inc.
+ * Author: HenryC.Chen <henryc.chen@mediatek.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
 #include <linux/err.h>
 #include <linux/gpio.h>
 #include <linux/i2c.h>
@@ -61,7 +61,6 @@ static const struct regmap_config sym827_regmap_config = {
 #define SYM827_MAX_UV		1387500
 #define SYM827_STEP_UV		12500
 
-#ifdef CONFIG_ARCH_MT8163
 __attribute__ ((weak))
 void set_slp_spm_deepidle_flags(bool en)
 {
@@ -74,6 +73,7 @@ static int sym827_hw_component_detect(struct sym827 *chip)
 	u32 ret_rev = 0;
 	u32 val = 0;
 	u32 val_rev = 0;
+	u32 gpio_vsel = 0;
 
 	ret = regmap_read(chip->regmap, SYM827_REG_ID_1, &val);
 	val = (val >> 5) & 0x7;
@@ -87,12 +87,14 @@ static int sym827_hw_component_detect(struct sym827 *chip)
 	val &= 0xF;
 	ret_rev = regmap_read(chip->regmap, SYM827_REG_ID_2, &val_rev);
 
+	gpio_vsel = chip->pdata->gpio_vsel;
 	if (!ret && !ret_rev) {
-		pr_warn("%s: DIE_ID = %d, DIE_REV = %d\n", __func__, val, val_rev);
+		pr_warn("%s: DIE_ID = %d, DIE_REV = %d\n", __func__, val,
+			val_rev);
 		if (!val) {
 			if (!val_rev) { /* For Failchild */
-				if (chip->pdata->gpio_vsel > 0) {
-					gpio_direction_output(chip->pdata->gpio_vsel, 1);
+				if (gpio_vsel > 0) {
+					gpio_direction_output(gpio_vsel, 1);
 				} else {
 					slp_cpu_dvs_en(0);
 					set_slp_spm_deepidle_flags(0);
@@ -106,8 +108,8 @@ static int sym827_hw_component_detect(struct sym827 *chip)
 				chip->pdata->gpio_vsel = 0;
 			}
 		} else { /* For Silergy */
-			if (chip->pdata->gpio_vsel > 0) {
-				gpio_direction_output(chip->pdata->gpio_vsel, 1);
+			if (gpio_vsel > 0) {
+				gpio_direction_output(gpio_vsel, 1);
 			} else {
 				slp_cpu_dvs_en(0);
 				set_slp_spm_deepidle_flags(0);
@@ -121,7 +123,7 @@ static int sym827_hw_component_detect(struct sym827 *chip)
 	}
 	return 0;
 }
-#endif
+
 static unsigned int sym827_buck_get_mode(struct regulator_dev *rdev)
 {
 	struct sym827 *chip = rdev_get_drvdata(rdev);
@@ -176,7 +178,8 @@ static int sym827_buck_set_mode(struct regulator_dev *rdev, unsigned int mode)
 			reg = SYM827_REG_VSEL_0;
 	}
 
-	ret = regmap_update_bits(chip->regmap, reg, SYM827_BUCK_MODE_MASK, val << SYM827_BUCK_MODE_SHIFT);
+	ret = regmap_update_bits(chip->regmap, reg, SYM827_BUCK_MODE_MASK,
+				 val << SYM827_BUCK_MODE_SHIFT);
 
 	regmap_read(chip->regmap, reg, &data);
 
@@ -202,7 +205,8 @@ static int sym827_enable_regmap(struct regulator_dev *rdev)
 			reg = SYM827_REG_VSEL_0;
 	}
 
-	return regmap_update_bits(rdev->regmap, reg, SYM827_BUCK_EN_MASK, 1 << SYM827_BUCK_EN_SHIFT);
+	return regmap_update_bits(rdev->regmap, reg, SYM827_BUCK_EN_MASK,
+				  1 << SYM827_BUCK_EN_SHIFT);
 }
 
 static int sym827_disable_regmap(struct regulator_dev *rdev)
@@ -222,7 +226,8 @@ static int sym827_disable_regmap(struct regulator_dev *rdev)
 			reg = SYM827_REG_VSEL_0;
 	}
 
-	return regmap_update_bits(rdev->regmap, reg, SYM827_BUCK_EN_MASK, 0 << SYM827_BUCK_EN_SHIFT);
+	return regmap_update_bits(rdev->regmap, reg, SYM827_BUCK_EN_MASK,
+				  0 << SYM827_BUCK_EN_SHIFT);
 }
 
 static int sym827_is_enabled_regmap(struct regulator_dev *rdev)
@@ -248,7 +253,8 @@ static int sym827_is_enabled_regmap(struct regulator_dev *rdev)
 	return (val & SYM827_BUCK_EN_MASK) != 0;
 }
 
-static int sym827_set_voltage_sel_regmap(struct regulator_dev *rdev, unsigned sel)
+static int sym827_set_voltage_sel_regmap(struct regulator_dev *rdev,
+					 unsigned int sel)
 {
 	struct sym827 *chip = rdev_get_drvdata(rdev);
 	int ret, reg = 0;
@@ -262,7 +268,8 @@ static int sym827_set_voltage_sel_regmap(struct regulator_dev *rdev, unsigned se
 			reg = SYM827_REG_VSEL_0;
 	}
 
-	ret = regmap_update_bits(rdev->regmap, reg, SYM827_BUCK_NSEL_MASK, sel);
+	ret = regmap_update_bits(rdev->regmap, reg, SYM827_BUCK_NSEL_MASK,
+				 sel);
 
 	return ret;
 }
@@ -322,14 +329,14 @@ static int sym827_regulator_init(struct sym827 *chip)
 
 	ret = regmap_read(chip->regmap, SYM827_REG_ID_1, &data);
 	if (ret < 0 || (!(data & SYM827_VENDOR_ID))) {
-		dev_err(chip->dev, "Failed to read SYM827_REG_ID_1 reg: %x\n", data);
+		dev_err(chip->dev, "Failed to read SYM827_REG_ID_1 reg: %x\n",
+			data);
 		goto err;
 	}
-#ifdef CONFIG_ARCH_MT8163
+
 	ret = sym827_hw_component_detect(chip);
 	if (ret)
 		return ret;
-#endif
 
 	config.init_data = chip->pdata->init_data;
 	config.dev = chip->dev;
@@ -393,7 +400,7 @@ static struct sym827_pdata *of_get_sym827_platform_data(struct device *dev)
 		return NULL;
 	}
 
-	pdata->init_data = of_get_regulator_init_data(dev, node);
+	pdata->init_data = of_get_regulator_init_data(dev, node, &sym827_reg);
 
 	of_node_put(node);
 
@@ -409,7 +416,8 @@ static struct sym827_pdata *of_get_sym827_platform_data(struct device *dev)
 		pdata->gpio_vsel = ret;
 		ret = gpio_request(pdata->gpio_vsel, "sym827_vsel");
 		if (ret)
-			dev_err(dev, "Failed to gpio_request %d\n", pdata->gpio_vsel);
+			dev_err(dev, "Failed to gpio_request %d\n",
+				pdata->gpio_vsel);
 	}
 
 	ret = of_get_named_gpio(node, "en-gpio", 0);
@@ -417,7 +425,8 @@ static struct sym827_pdata *of_get_sym827_platform_data(struct device *dev)
 		pdata->gpio_en = ret;
 		ret = gpio_request(pdata->gpio_en, "sym827_gpio_en");
 		if (ret)
-			dev_err(dev, "Failed to gpio_request %d\n", pdata->gpio_en);
+			dev_err(dev, "Failed to gpio_request %d\n",
+				pdata->gpio_en);
 		gpio_direction_output(pdata->gpio_en, 1);
 	}
 
@@ -430,14 +439,16 @@ static struct sym827_pdata *of_get_sym827_platform_data(struct device *dev)
 }
 #endif
 #ifdef SYM827_TEST_NODE
-unsigned int reg_value_sym827 = 0;
-static ssize_t show_sym827_access(struct device *dev, struct device_attribute *attr, char *buf)
+unsigned int reg_value_sym827;
+static ssize_t show_sym827_access(struct device *dev,
+				  struct device_attribute *attr, char *buf)
 {
 	return sprintf(buf, "%x\n", reg_value_sym827);
 }
 
 static ssize_t store_sym827_access(struct device *dev,
-				   struct device_attribute *attr, const char *buf, size_t size)
+				   struct device_attribute *attr,
+				   const char *buf, size_t size)
 {
 	int ret = 0;
 	unsigned long reg_value = 0;
@@ -446,31 +457,37 @@ static ssize_t store_sym827_access(struct device *dev,
 
 	if (buf != NULL && size != 0) {
 		if (size > 4) {
-			ret = kstrtoul(strsep((char **)&buf, " "), 16, &reg_address);
+			ret = kstrtoul(strsep((char **)&buf, " "), 16,
+				       &reg_address);
 			if (ret)
 				return ret;
 			ret = kstrtoul(buf, 16, &reg_value);
 			if (ret)
 				return ret;
-			ret = regmap_update_bits(chip->regmap, reg_address, 0xff, reg_value);
+			ret = regmap_update_bits(chip->regmap, reg_address,
+						 0xff, reg_value);
 			if (ret < 0)
-				dev_err(chip->dev, "Failed to update PAGE reg: %d\n", ret);
+				dev_err(chip->dev, "Failed update PAGE: %d\n",
+					ret);
 		} else {
 			ret = kstrtoul(buf, 16, &reg_address);
 			if (ret)
 				return ret;
-			ret = regmap_read(chip->regmap, reg_address, &reg_value_sym827);
+			ret = regmap_read(chip->regmap, reg_address,
+					  &reg_value_sym827);
 			if (ret < 0)
-				dev_err(chip->dev, "Failed to read reg: %d\n", ret);
+				dev_err(chip->dev, "Failed to read reg: %d\n",
+					ret);
 		}
-		dev_err(chip->dev, "reg_address: %lx, reg_value: %lx, reg_value_sym827: %x\n",
+		dev_err(chip->dev, "add: %lx, reg: %lx = %x\n",
 			reg_address, reg_value, reg_value_sym827);
 	}
 	return size;
 }
 static DEVICE_ATTR(access, 0664, show_sym827_access, store_sym827_access);
 #endif
-static int sym827_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
+static int sym827_i2c_probe(struct i2c_client *i2c,
+			    const struct i2c_device_id *id)
 {
 	struct sym827 *chip;
 	int error, ret;
@@ -481,7 +498,8 @@ static int sym827_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *
 	chip->regmap = devm_regmap_init_i2c(i2c, &sym827_regmap_config);
 	if (IS_ERR(chip->regmap)) {
 		error = PTR_ERR(chip->regmap);
-		dev_err(&i2c->dev, "Failed to allocate register map: %d\n", error);
+		dev_err(&i2c->dev, "Failed to allocate register map: %d\n",
+			error);
 		return error;
 	}
 
@@ -498,7 +516,8 @@ static int sym827_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *
 	ret = sym827_regulator_init(chip);
 
 	if (ret < 0) {
-		dev_err(&i2c->dev, "Failed to initialize regulator: %d\n", ret);
+		dev_err(&i2c->dev, "Failed to initialize regulator: %d\n",
+			ret);
 		return ret;
 	}
 	dev_err(&i2c->dev, "sym827_i2c_probe: done...\n");

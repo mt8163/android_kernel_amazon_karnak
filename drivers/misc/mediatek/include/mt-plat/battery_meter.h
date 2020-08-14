@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #ifndef _BATTERY_METER_H
 #define _BATTERY_METER_H
 
@@ -9,7 +22,7 @@
 
 #ifdef CONFIG_MTK_MULTI_BAT_PROFILE_SUPPORT
 #define MTK_GET_BATTERY_ID_BY_AUXADC
-#define BATTERY_ID_CHANNEL_NUM 1
+#define BATTERY_ID_CHANNEL_NUM 0
 #define ID_VOLT_END (-1)
 #endif
 
@@ -48,9 +61,13 @@ enum {
 /* ============================================================ */
 /* typedef */
 /* ============================================================ */
-#if !defined(CONFIG_MTK_HAFG_20)
+#define BATT_TEMPERATURE struct batt_temperature
+struct batt_temperature {
+	signed int BatteryTemp;
+	signed int TemperatureR;
+};
+
 struct battery_meter_custom_data {
-	/* mt_pmic.h */
 	int vbat_channel_number;
 	int isense_channel_number;
 	int vbattemp_channel_number;
@@ -126,12 +143,12 @@ struct battery_meter_custom_data {
 
 	int std_loading_current;
 	int step_of_qmax;
-
 	int battery_id_channel_number;
+	int slp_current;
+	int slp_current_wifi;
 };
-#endif
 
-typedef enum {
+enum FG_DAEMON_CTRL_CMD_FROM_USER {
 	FG_DAEMON_CMD_GET_INIT_FLAG,
 	FG_DAEMON_CMD_GET_SOC,
 	FG_DAEMON_CMD_GET_DOD0,
@@ -192,16 +209,22 @@ typedef enum {
 	FG_DAEMON_CMD_NOTIFY_DAEMON,
 
 	FG_DAEMON_CMD_FROM_USER_NUMBER
-} FG_DAEMON_CTRL_CMD_FROM_USER;
+};
+
+struct battery_meter_data {
+	int batt_capacity_aging;
+	int batt_capacity;
+	int aging_factor;
+	int battery_cycle;
+	int columb_sum;
+};
 
 
 /* ============================================================ */
 /* External Variables */
 /* ============================================================ */
 
-#if !defined(CONFIG_MTK_HAFG_20)
 extern struct battery_meter_custom_data batt_meter_cust_data;
-#endif
 
 #ifdef MTK_ENABLE_AGING_ALGORITHM
 extern unsigned int suspend_time;
@@ -217,12 +240,15 @@ extern signed int gFG_BATT_CAPACITY;
 /* ============================================================ */
 /* External function */
 /* ============================================================ */
+extern signed int battery_meter_get_data(struct battery_meter_data *aging);
 extern signed int battery_meter_get_battery_voltage(bool update);
 extern signed int battery_meter_get_charging_current_imm(void);
 extern signed int battery_meter_get_charging_current(void);
 extern signed int battery_meter_get_battery_current(void);
 extern bool battery_meter_get_battery_current_sign(void);
 extern signed int battery_meter_get_car(void);
+extern signed int battery_meter_get_charge_full(void);
+extern signed int battery_meter_get_charge_counter(void);
 extern signed int battery_meter_get_battery_temperature(void);
 extern signed int battery_meter_get_charger_voltage(void);
 extern signed int battery_meter_get_vbus_now(void);
@@ -232,8 +258,11 @@ extern signed int battery_meter_reset(void);
 extern signed int battery_meter_sync(signed int bat_i_sense_offset);
 
 extern signed int battery_meter_get_battery_zcv(void);
-extern signed int battery_meter_get_battery_nPercent_zcv(void);	/* 15% zcv,  15% can be customized */
-extern signed int battery_meter_get_battery_nPercent_UI_SOC(void);	/* tracking point */
+
+/* 15% zcv,  15% can be customized */
+extern signed int battery_meter_get_battery_nPercent_zcv(void);
+/* tracking point */
+extern signed int battery_meter_get_battery_nPercent_UI_SOC(void);
 
 extern signed int battery_meter_get_tempR(signed int dwVolt);
 extern signed int battery_meter_get_tempV(void);
@@ -252,8 +281,10 @@ extern int IMM_GetOneChannelValue_Cali(int Channel, int *voltage);
 extern unsigned int upmu_get_reg_value(unsigned int reg);
 extern int IMM_GetOneChannelValue(int dwChannel, int data[4], int *rawdata);
 extern int IMM_IsAdcInitReady(void);
-extern unsigned int pmic_config_interface(unsigned int RegNum, unsigned int val, unsigned int MASK, unsigned int SHIFT);
-extern unsigned int pmic_read_interface(unsigned int RegNum, unsigned int *val, unsigned int MASK, unsigned int SHIFT);
+extern unsigned int pmic_config_interface(unsigned int RegNum,
+		unsigned int val, unsigned int MASK, unsigned int SHIFT);
+extern unsigned int pmic_read_interface(unsigned int RegNum,
+		unsigned int *val, unsigned int MASK, unsigned int SHIFT);
 extern unsigned int get_pmic_mt6325_cid(void);
 extern bool get_battery_id_status(void);
 #endif

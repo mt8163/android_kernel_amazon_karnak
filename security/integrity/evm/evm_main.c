@@ -22,7 +22,6 @@
 #include <linux/xattr.h>
 #include <linux/integrity.h>
 #include <linux/evm.h>
-#include <linux/magic.h>
 #include <crypto/hash.h>
 #include <crypto/algapi.h>
 #include "evm.h"
@@ -74,16 +73,16 @@ static void __init evm_init_config(void)
 
 static int evm_find_protected_xattrs(struct dentry *dentry)
 {
-	struct inode *inode = dentry->d_inode;
+	struct inode *inode = d_backing_inode(dentry);
 	char **xattr;
 	int error;
 	int count = 0;
 
-	if (!inode->i_op->getxattr)
+	if (!(inode->i_opflags & IOP_XATTR))
 		return -EOPNOTSUPP;
 
 	for (xattr = evm_config_xattrnames; *xattr != NULL; xattr++) {
-		error = inode->i_op->getxattr(dentry, *xattr, NULL, 0);
+		error = __vfs_getxattr(dentry, inode, *xattr, NULL, 0);
 		if (error < 0) {
 			if (error == -ENODATA)
 				continue;
@@ -164,9 +163,14 @@ static enum integrity_status evm_verify_hmac(struct dentry *dentry,
 					(const char *)xattr_data, xattr_len,
 					calc.digest, sizeof(calc.digest));
 		if (!rc) {
-			/* we probably want to replace rsa with hmac here */
-			evm_update_evmxattr(dentry, xattr_name, xattr_value,
-				   xattr_value_len);
+			/* Replace RSA with HMAC if not mounted readonly and
+			 * not immutable
+			 */
+			if (!IS_RDONLY(d_backing_inode(dentry)) &&
+			    !IS_IMMUTABLE(d_backing_inode(dentry)))
+				evm_update_evmxattr(dentry, xattr_name,
+						    xattr_value,
+						    xattr_value_len);
 		}
 		break;
 	default:
@@ -232,7 +236,7 @@ enum integrity_status evm_verifyxattr(struct dentry *dentry,
 		return INTEGRITY_UNKNOWN;
 
 	if (!iint) {
-		iint = integrity_iint_find(dentry->d_inode);
+		iint = integrity_iint_find(d_backing_inode(dentry));
 		if (!iint)
 			return INTEGRITY_UNKNOWN;
 	}
@@ -250,7 +254,7 @@ EXPORT_SYMBOL_GPL(evm_verifyxattr);
  */
 static enum integrity_status evm_verify_current_integrity(struct dentry *dentry)
 {
-	struct inode *inode = dentry->d_inode;
+	struct inode *inode = d_backing_inode(dentry);
 
 	if (!evm_initialized || !S_ISREG(inode->i_mode) || evm_fixmode)
 		return 0;
@@ -290,13 +294,13 @@ static int evm_protect_xattr(struct dentry *dentry, const char *xattr_name,
 	if (evm_status == INTEGRITY_NOXATTRS) {
 		struct integrity_iint_cache *iint;
 
-		iint = integrity_iint_find(dentry->d_inode);
+		iint = integrity_iint_find(d_backing_inode(dentry));
 		if (iint && (iint->flags & IMA_NEW_FILE))
 			return 0;
 
 		/* exception for pseudo filesystems */
-		if (dentry->d_inode->i_sb->s_magic == TMPFS_MAGIC
-		    || dentry->d_inode->i_sb->s_magic == SYSFS_MAGIC)
+		if (dentry->d_sb->s_magic == TMPFS_MAGIC
+		    || dentry->d_sb->s_magic == SYSFS_MAGIC)
 			return 0;
 
 		integrity_audit_msg(AUDIT_INTEGRITY_METADATA,
@@ -307,7 +311,7 @@ static int evm_protect_xattr(struct dentry *dentry, const char *xattr_name,
 	}
 out:
 	if (evm_status != INTEGRITY_PASS)
-		integrity_audit_msg(AUDIT_INTEGRITY_METADATA, dentry->d_inode,
+		integrity_audit_msg(AUDIT_INTEGRITY_METADATA, d_backing_inode(dentry),
 				    dentry->d_name.name, "appraise_metadata",
 				    integrity_status_msg[evm_status],
 				    -EPERM, 0);
@@ -355,6 +359,15 @@ int evm_inode_removexattr(struct dentry *dentry, const char *xattr_name)
 	return evm_protect_xattr(dentry, xattr_name, NULL, 0);
 }
 
+static void evm_reset_status(struct inode *inode)
+{
+	struct integrity_iint_cache *iint;
+
+	iint = integrity_iint_find(inode);
+	if (iint)
+		iint->evm_status = INTEGRITY_UNKNOWN;
+}
+
 /**
  * evm_inode_post_setxattr - update 'security.evm' to reflect the changes
  * @dentry: pointer to the affected dentry
@@ -375,6 +388,8 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
 				 && !posix_xattr_acl(xattr_name)))
 		return;
 
+	evm_reset_status(dentry->d_inode);
+
 	evm_update_evmxattr(dentry, xattr_name, xattr_value, xattr_value_len);
 }
 
@@ -384,17 +399,18 @@ void evm_inode_post_setxattr(struct dentry *dentry, const char *xattr_name,
  * @xattr_name: pointer to the affected extended attribute name
  *
  * Update the HMAC stored in 'security.evm' to reflect removal of the xattr.
+ *
+ * No need to take the i_mutex lock here, as this function is called from
+ * vfs_removexattr() which takes the i_mutex.
  */
 void evm_inode_post_removexattr(struct dentry *dentry, const char *xattr_name)
 {
-	struct inode *inode = dentry->d_inode;
-
 	if (!evm_initialized || !evm_protected_xattr(xattr_name))
 		return;
 
-	mutex_lock(&inode->i_mutex);
+	evm_reset_status(dentry->d_inode);
+
 	evm_update_evmxattr(dentry, xattr_name, NULL, 0);
-	mutex_unlock(&inode->i_mutex);
 }
 
 /**
@@ -412,7 +428,7 @@ int evm_inode_setattr(struct dentry *dentry, struct iattr *attr)
 	if ((evm_status == INTEGRITY_PASS) ||
 	    (evm_status == INTEGRITY_NOXATTRS))
 		return 0;
-	integrity_audit_msg(AUDIT_INTEGRITY_METADATA, dentry->d_inode,
+	integrity_audit_msg(AUDIT_INTEGRITY_METADATA, d_backing_inode(dentry),
 			    dentry->d_name.name, "appraise_metadata",
 			    integrity_status_msg[evm_status], -EPERM, 0);
 	return -EPERM;
@@ -470,21 +486,34 @@ out:
 }
 EXPORT_SYMBOL_GPL(evm_inode_init_security);
 
+#ifdef CONFIG_EVM_LOAD_X509
+void __init evm_load_x509(void)
+{
+	int rc;
+
+	rc = integrity_load_x509(INTEGRITY_KEYRING_EVM, CONFIG_EVM_X509_PATH);
+	if (!rc)
+		evm_initialized |= EVM_INIT_X509;
+}
+#endif
+
 static int __init init_evm(void)
 {
 	int error;
 
 	evm_init_config();
 
+	error = integrity_init_keyring(INTEGRITY_KEYRING_EVM);
+	if (error)
+		return error;
+
 	error = evm_init_secfs();
 	if (error < 0) {
 		pr_info("Error registering secfs\n");
-		goto err;
+		return error;
 	}
 
 	return 0;
-err:
-	return error;
 }
 
 /*

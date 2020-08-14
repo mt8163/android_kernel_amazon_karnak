@@ -776,7 +776,7 @@ static void sierra_close(struct usb_serial_port *port)
 
 	/*
 	 * Need to take susp_lock to make sure port is not already being
-	 * resumed, but no need to hold it due to ASYNC_INITIALIZED.
+	 * resumed, but no need to hold it due to initialized
 	 */
 	spin_lock_irq(&intfdata->susp_lock);
 	if (--intfdata->open_ports == 0)
@@ -790,9 +790,9 @@ static void sierra_close(struct usb_serial_port *port)
 		kfree(urb->transfer_buffer);
 		usb_free_urb(urb);
 		usb_autopm_put_interface_async(serial->interface);
-		spin_lock_irq(&portdata->lock);
+		spin_lock(&portdata->lock);
 		portdata->outstanding_urbs--;
-		spin_unlock_irq(&portdata->lock);
+		spin_unlock(&portdata->lock);
 	}
 
 	sierra_stop_rx_urbs(port);
@@ -1039,7 +1039,7 @@ static int sierra_resume(struct usb_serial *serial)
 	for (i = 0; i < serial->num_ports; i++) {
 		port = serial->port[i];
 
-		if (!test_bit(ASYNCB_INITIALIZED, &port->port.flags))
+		if (!tty_port_initialized(&port->port))
 			continue;
 
 		err = sierra_submit_delayed_urbs(port);

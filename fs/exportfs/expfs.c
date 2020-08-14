@@ -76,7 +76,7 @@ static bool dentry_connected(struct dentry *dentry)
 		struct dentry *parent = dget_parent(dentry);
 
 		dput(dentry);
-		if (dentry == parent) {
+		if (IS_ROOT(dentry)) {
 			dput(parent);
 			return false;
 		}
@@ -124,10 +124,10 @@ static struct dentry *reconnect_one(struct vfsmount *mnt,
 	int err;
 
 	parent = ERR_PTR(-EACCES);
-	mutex_lock(&dentry->d_inode->i_mutex);
+	inode_lock(dentry->d_inode);
 	if (mnt->mnt_sb->s_export_op->get_parent)
 		parent = mnt->mnt_sb->s_export_op->get_parent(dentry);
-	mutex_unlock(&dentry->d_inode->i_mutex);
+	inode_unlock(dentry->d_inode);
 
 	if (IS_ERR(parent)) {
 		dprintk("%s: get_parent of %ld failed, err %d\n",
@@ -143,14 +143,18 @@ static struct dentry *reconnect_one(struct vfsmount *mnt,
 	if (err)
 		goto out_err;
 	dprintk("%s: found name: %s\n", __func__, nbuf);
-	mutex_lock(&parent->d_inode->i_mutex);
-	tmp = lookup_one_len(nbuf, parent, strlen(nbuf));
-	mutex_unlock(&parent->d_inode->i_mutex);
+	tmp = lookup_one_len_unlocked(nbuf, parent, strlen(nbuf));
 	if (IS_ERR(tmp)) {
 		dprintk("%s: lookup failed: %d\n", __func__, PTR_ERR(tmp));
 		goto out_err;
 	}
 	if (tmp != dentry) {
+		/*
+		 * Somebody has renamed it since exportfs_get_name();
+		 * great, since it could've only been renamed if it
+		 * got looked up and thus connected, and it would
+		 * remain connected afterwards.  We are done.
+		 */
 		dput(tmp);
 		goto out_reconnected;
 	}
@@ -241,10 +245,11 @@ struct getdents_callback {
  * A rather strange filldir function to capture
  * the name matching the specified inode number.
  */
-static int filldir_one(void * __buf, const char * name, int len,
+static int filldir_one(struct dir_context *ctx, const char *name, int len,
 			loff_t pos, u64 ino, unsigned int d_type)
 {
-	struct getdents_callback *buf = __buf;
+	struct getdents_callback *buf =
+		container_of(ctx, struct getdents_callback, ctx);
 	int result = 0;
 
 	buf->sequence++;
@@ -307,7 +312,7 @@ static int get_name(const struct path *path, char *name, struct dentry *child)
 		goto out;
 
 	error = -EINVAL;
-	if (!file->f_op->iterate)
+	if (!file->f_op->iterate && !file->f_op->iterate_shared)
 		goto out_close;
 
 	buffer.sequence = 0;
@@ -423,12 +428,12 @@ struct dentry *exportfs_decode_fh(struct vfsmount *mnt, struct fid *fid,
 	if (!nop || !nop->fh_to_dentry)
 		return ERR_PTR(-ESTALE);
 	result = nop->fh_to_dentry(mnt->mnt_sb, fid, fh_len, fileid_type);
-	if (!result)
-		result = ERR_PTR(-ESTALE);
-	if (IS_ERR(result))
-		return result;
+	if (PTR_ERR(result) == -ENOMEM)
+		return ERR_CAST(result);
+	if (IS_ERR_OR_NULL(result))
+		return ERR_PTR(-ESTALE);
 
-	if (S_ISDIR(result->d_inode->i_mode)) {
+	if (d_is_dir(result)) {
 		/*
 		 * This request is for a directory.
 		 *
@@ -502,10 +507,10 @@ struct dentry *exportfs_decode_fh(struct vfsmount *mnt, struct fid *fid,
 		 */
 		err = exportfs_get_name(mnt, target_dir, nbuf, result);
 		if (!err) {
-			mutex_lock(&target_dir->d_inode->i_mutex);
+			inode_lock(target_dir->d_inode);
 			nresult = lookup_one_len(nbuf, target_dir,
 						 strlen(nbuf));
-			mutex_unlock(&target_dir->d_inode->i_mutex);
+			inode_unlock(target_dir->d_inode);
 			if (!IS_ERR(nresult)) {
 				if (nresult->d_inode) {
 					dput(result);
@@ -536,6 +541,8 @@ struct dentry *exportfs_decode_fh(struct vfsmount *mnt, struct fid *fid,
 
  err_result:
 	dput(result);
+	if (err != -ENOMEM)
+		err = -ESTALE;
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(exportfs_decode_fh);

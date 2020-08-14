@@ -8,13 +8,11 @@
 #include <linux/stddef.h>
 #include <linux/mm.h>
 #include <linux/mmzone.h>
-#include <linux/export.h>
 
 struct pglist_data *first_online_pgdat(void)
 {
 	return NODE_DATA(first_online_node);
 }
-EXPORT_SYMBOL_GPL(first_online_pgdat);
 
 struct pglist_data *next_online_pgdat(struct pglist_data *pgdat)
 {
@@ -24,7 +22,6 @@ struct pglist_data *next_online_pgdat(struct pglist_data *pgdat)
 		return NULL;
 	return NODE_DATA(nid);
 }
-EXPORT_SYMBOL_GPL(next_online_pgdat);
 
 /*
  * next_zone - helper magic for for_each_zone()
@@ -44,7 +41,6 @@ struct zone *next_zone(struct zone *zone)
 	}
 	return zone;
 }
-EXPORT_SYMBOL_GPL(next_zone);
 
 static inline int zref_in_nodemask(struct zoneref *zref, nodemask_t *nodes)
 {
@@ -56,10 +52,9 @@ static inline int zref_in_nodemask(struct zoneref *zref, nodemask_t *nodes)
 }
 
 /* Returns the next zone at or below highest_zoneidx in a zonelist */
-struct zoneref *next_zones_zonelist(struct zoneref *z,
+struct zoneref *__next_zones_zonelist(struct zoneref *z,
 					enum zone_type highest_zoneidx,
-					nodemask_t *nodes,
-					struct zone **zone)
+					nodemask_t *nodes)
 {
 	/*
 	 * Find the next suitable zone to use for the allocation.
@@ -73,21 +68,20 @@ struct zoneref *next_zones_zonelist(struct zoneref *z,
 				(z->zone && !zref_in_nodemask(z, nodes)))
 			z++;
 
-	*zone = zonelist_zone(z);
 	return z;
 }
 
 #ifdef CONFIG_ARCH_HAS_HOLES_MEMORYMODEL
-int memmap_valid_within(unsigned long pfn,
+bool memmap_valid_within(unsigned long pfn,
 					struct page *page, struct zone *zone)
 {
 	if (page_to_pfn(page) != pfn)
-		return 0;
+		return false;
 
 	if (page_zone(page) != zone)
-		return 0;
+		return false;
 
-	return 1;
+	return true;
 }
 #endif /* CONFIG_ARCH_HAS_HOLES_MEMORYMODEL */
 

@@ -28,12 +28,7 @@
 #include <linux/kthread.h>
 #include <cust_acc.h>
 #include <accel.h>
-#include <upmu_hw.h>
-#include <upmu_sw.h>
-
-#include <mt_gpio.h>
 #include <hwmsensor.h>
-#include <hwmsen_dev.h>
 #include <sensors_io.h>
 #include <hwmsen_helper.h>
 #include <linux/kernel.h>
@@ -54,6 +49,9 @@
 #define BMA250_ACC_AXES_NUM	3
 #define ACCEL_SELF_TEST_MIN_VAL		0
 #define ACCEL_SELF_TEST_MAX_VAL		13000
+
+#define BMA250_MODE_NORMAL      0
+#define BMA250_MODE_SUSPEND     1
 /* default tolenrance is 20% */
 static int accel_cali_tolerance = 20;
 
@@ -90,8 +88,6 @@ struct manuf_gsensor_cali partition_calidata;
 
 /*----------------------------------------------------------------------------*/
 static const struct i2c_device_id bma250_i2c_id[] = {{BMA250_DEV_NAME, 0}, {} };
-static int bma250_suspend(struct i2c_client *client, pm_message_t msg);
-static int bma250_resume(struct i2c_client *client);
 static int accel_self_test[BMA250_ACC_AXES_NUM] = {0};
 static s16 accel_xyz_offset[BMA250_ACC_AXES_NUM] = {0};
 /*the adapter id will be available in customization*/
@@ -101,6 +97,11 @@ static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 static int bma250_i2c_remove(struct i2c_client *client);
 #ifdef CUSTOM_KERNEL_SENSORHUB
 static int gsensor_setup_irq(void);
+#endif
+
+#ifdef CONFIG_PM_SLEEP
+static int bma250_i2c_suspend(struct device *dev);
+static int bma250_i2c_resume(struct device *dev);
 #endif
 
 static int BMA250_ReadSensorData(struct i2c_client *client, char *buf, int bufsize);
@@ -192,7 +193,11 @@ enum bma250_rev {
 
 static struct acc_hw accel_cust;
 static struct acc_hw *hw = &accel_cust;
-
+#ifdef CONFIG_PM_SLEEP
+static const struct dev_pm_ops bma250_i2c_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(bma250_i2c_suspend, bma250_i2c_resume)
+};
+#endif
 #ifdef CONFIG_OF
 static const struct of_device_id accel_of_match[] = {
 	{ .compatible = "mediatek,bma_gsensor",},
@@ -207,15 +212,15 @@ static struct i2c_driver bma250_i2c_driver = {
 #ifdef CONFIG_OF
 		.of_match_table = accel_of_match,
 #endif
+#ifdef CONFIG_PM_SLEEP
+		.pm = &bma250_i2c_pm_ops,
+#endif
 	},
 	.probe				= bma250_i2c_probe,
 	.remove				= bma250_i2c_remove,
-#if 1
-	.suspend			= bma250_suspend,
-	.resume				= bma250_resume,
-#endif
 	.id_table = bma250_i2c_id,
 };
+
 
 /*----------------------------------------------------------------------------*/
 static struct i2c_client *bma250_i2c_client;
@@ -509,7 +514,8 @@ static int BMA250_WriteCalibration(struct i2c_client *client, int dat[BMA250_AXE
 {
 	struct bma250_i2c_data *obj = i2c_get_clientdata(client);
 	int err;
-	int cali[BMA250_AXES_NUM], raw[BMA250_AXES_NUM];
+	int cali[BMA250_AXES_NUM] = {0};
+	int raw[BMA250_AXES_NUM] = {0};
 #ifndef SW_CALIBRATION
 	int lsb = bma250_offset_resolution.sensitivity;
 	int divisor = obj->reso->sensitivity/lsb;
@@ -645,74 +651,128 @@ static int readcali(void *unused)
 /*----------------------------------------------------------------------------*/
 static int BMA250_SetPowerMode(struct i2c_client *client, int enable)
 {
-	u8 databuf[2];
-	u8 databuf1[2] = { 0};
+	u8 databuf[2] = {0};
 	int res = 0;
-	int i;
-	u8 addr = BMA250_REG_POWER_CTL;
-
-	if (enable == sensor_power) {
+	u8 temp, temp0, temp1;
+	u8 actual_power_mode = 0;
+	int count = 0;
+	static int num_record;
+	if ((enable == sensor_power) && (num_record)) {
 		GSE_LOG("Sensor power status is newest!\n");
 		return BMA250_SUCCESS;
 	}
+	num_record = 0;
+	num_record++;
+	if (enable == true)
+		actual_power_mode = BMA250_MODE_NORMAL;
+	else
+		actual_power_mode = BMA250_MODE_SUSPEND;
 
-	if (hwmsen_read_block(client, addr, databuf, 0x01)) {
-		printk("read power ctl register err!\n");
+	res = hwmsen_read_block(client, 0x3E, &temp, 0x1);
+	udelay(1000);
+	count++;
+	while ((count < 3) && (res < 0)) {
+		res = hwmsen_read_block(client, 0x3E, &temp, 0x1);
+		udelay(1000);
+		count++;
+	}
+	if (res < 0)
+		GSE_ERR("read  config failed!\n");
+	switch (actual_power_mode) {
+	case BMA250_MODE_NORMAL:
+		databuf[0] = 0x00;
+		databuf[1] = 0x00;
+		while (count < 10) {
+			res = hwmsen_write_block(client,
+				BMA250_REG_POWER_CTL, &databuf[0], 1);
+			udelay(1000);
+			if (res < 0)
+				GSE_LOG("write MODE_CTRL_REG failed!\n");
+			res = hwmsen_write_block(client,
+				BMA250_LOW_POWER_CTRL_REG, &databuf[1], 1);
+			udelay(2000);
+			if (res < 0)
+				GSE_LOG("write LOW_POWER_CTRL_REG failed!\n");
+			res = hwmsen_read_block(client,
+				BMA250_REG_POWER_CTL, &temp0, 0x1);
+			if (res < 0)
+				GSE_LOG("read MODE_CTRL_REG failed!\n");
+			res = hwmsen_read_block(client,
+				BMA250_LOW_POWER_CTRL_REG, &temp1, 0x1);
+			if (res < 0)
+				GSE_LOG("read LOW_POWER_CTRL_REG failed!\n");
+			if (temp0 != databuf[0]) {
+				GSE_LOG("readback MODE_CTRL failed!\n");
+				count++;
+				continue;
+			} else if (temp1 != databuf[1]) {
+				GSE_LOG("readback LOW_POWER_CTRL failed!\n");
+				count++;
+				continue;
+			} else {
+				GSE_LOG("configure powermode success\n");
+				break;
+			}
+		}
+		udelay(1000);
+		break;
+	case BMA250_MODE_SUSPEND:
+		databuf[0] = 0x80;
+		databuf[1] = 0x00;
+		while (count < 10) {
+			res = hwmsen_write_block(client,
+				BMA250_LOW_POWER_CTRL_REG, &databuf[1], 1);
+			udelay(1000);
+			if (res < 0)
+				GSE_LOG("write LOW_POWER_CTRL_REG failed!\n");
+			res = hwmsen_write_block(client,
+				BMA250_REG_POWER_CTL, &databuf[0], 1);
+			udelay(1000);
+			res = hwmsen_write_block(client, 0x3E, &temp, 0x1);
+			if (res < 0)
+				GSE_LOG("write  config failed!\n");
+			udelay(1000);
+			res = hwmsen_write_block(client, 0x3E, &temp, 0x1);
+			if (res < 0)
+				GSE_LOG("write  config failed!\n");
+			udelay(2000);
+			res = hwmsen_read_block(client,
+				BMA250_REG_POWER_CTL, &temp0, 0x1);
+			if (res < 0)
+				GSE_LOG("read BMA250_MODE_CTRL_REG failed!\n");
+			res = hwmsen_read_block(client,
+				BMA250_LOW_POWER_CTRL_REG, &temp1, 0x1);
+			if (res < 0)
+				GSE_LOG("read BLOW_POWER_CTRL_REG failed!\n");
+			if (temp0 != databuf[0]) {
+				GSE_LOG("readback MODE_CTRL failed!\n");
+				count++;
+				continue;
+			} else if (temp1 != databuf[1]) {
+				GSE_LOG("readback LOW_POWER_CTRL failed!\n");
+				count++;
+				continue;
+			} else {
+				GSE_LOG("configure powermode success\n");
+				break;
+			}
+		}
+		udelay(1000);
+	break;
+	}
+
+	if (res < 0) {
+		GSE_ERR("set power mode failed, res = %d\n", res);
 		return BMA250_ERR_I2C;
-	} else
-		printk("%s: read register 0x%x value is 0x%x\n", __func__, addr, databuf[0]);
-
-	if (enable == true) {
-		databuf[0] &= ~BMA250_MEASURE_MODE;
-	} else {
-		databuf[0] &= ~BMA250_MEASURE_MODE;
-		databuf[0] |= 0x80;
 	}
-	databuf[1] = databuf[0];
-	databuf[0] = BMA250_REG_POWER_CTL;
-
-	for (i = 1; i < 6; i++) {
-
-		res = i2c_master_send(client, databuf, 0x2);
-		if (res <= 0) {
-			printk("gsensor i2c write fail time %d\n", i);
-			msleep(10);
-			continue;
-		}
-
-		mdelay(10);
-		hwmsen_read_block(client, BMA250_REG_POWER_CTL, databuf1, 0x1);
-
-		if (enable == true) {
-
-			if ((databuf1[0]&BMA250_MEASURE_MODE) == 0x00)
-				goto exit;
-
-			printk("gsensor register_1 write fail time %d,databuf1[0] %04x \n", i, databuf1[0]);
-		} else {
-			if ((databuf1[0]&BMA250_MEASURE_MODE) == 0x80)
-				goto exit;
-
-			printk("gsensor register_2 write fail time %d,databuf1[0] %04x \n", i, databuf1[0]);
-
-		}
-	}
-
-	printk("gsensor write register 0x11 fail!\n");
-	return BMA250_ERR_I2C;
-
-	exit:
 	sensor_power = enable;
-
-	mdelay(20);
-	printk("%s: success\n", __func__);
 	return BMA250_SUCCESS;
 }
 /*----------------------------------------------------------------------------*/
 static int BMA250_SetDataFormat(struct i2c_client *client, u8 dataformat)
 {
 	struct bma250_i2c_data *obj = i2c_get_clientdata(client);
-	u8 databuf[10];
+	u8 databuf[10], databuf1[2] = {0};
 	int res = 0;
 
 	memset(databuf, 0, sizeof(u8)*10);
@@ -727,11 +787,27 @@ static int BMA250_SetDataFormat(struct i2c_client *client, u8 dataformat)
 	databuf[1] = databuf[0];
 	databuf[0] = BMA250_REG_DATA_FORMAT;
 
+	printk("gsensor write register 0x0f data:0x%x\n", databuf[1]);
 
 	res = i2c_master_send(client, databuf, 0x2);
-
+	mdelay(1);
 	if (res <= 0) {
 		return BMA250_ERR_I2C;
+	}
+
+	if (hwmsen_read_block(client, BMA250_REG_DATA_FORMAT, databuf1, 0x01)) {
+		GSE_ERR("bma250 read Dataformat failt \n");
+		return BMA250_ERR_I2C;
+	} else {
+		printk("gsensor read register 0x0f data:0x%x\n", databuf1[0]);
+		if (databuf1[0] != dataformat) {
+			res = i2c_master_send(client, databuf, 0x2);
+			mdelay(1);
+			if (res <= 0) {
+				return BMA250_ERR_I2C;
+			}
+			printk("gsensor set 0x0f register again!\n");
+		}
 	}
 
 	return BMA250_SetDataResolution(obj);
@@ -756,7 +832,7 @@ static int BMA250_SetBWRate(struct i2c_client *client, u8 bwrate)
 
 
 	res = i2c_master_send(client, databuf, 0x2);
-
+	mdelay(1);
 	if (res <= 0) {
 		return BMA250_ERR_I2C;
 	}
@@ -771,10 +847,12 @@ static int BMA250_SetIntEnable(struct i2c_client *client, u8 intenable)
 	int res = 0;
 
 	res = hwmsen_write_byte(client, BMA250_INT_REG_1, 0x00);
+	mdelay(1);
 	if (res != BMA250_SUCCESS) {
 		return res;
 	}
 	res = hwmsen_write_byte(client, BMA250_INT_REG_2, 0x00);
+	mdelay(1);
 	if (res != BMA250_SUCCESS) {
 		return res;
 	}
@@ -809,10 +887,10 @@ s16 *offset, int data_valid)
 		dest += 2;
 		};
 	GSE_LOG("w_buf: %s\n", w_buf);
-	cali_file->f_op->write(cali_file, (void *)w_buf,
+	vfs_write(cali_file, (void *)w_buf,
 	BMA250_DATA_BUF_NUM*sizeof(s16)*2, &cali_file->f_pos);
 	cali_file->f_pos = 0x00;
-	cali_file->f_op->read(cali_file, (void *)r_buf,
+	vfs_read(cali_file, (void *)r_buf,
 	BMA250_DATA_BUF_NUM*sizeof(s16)*2, &cali_file->f_pos);
 	for (i = 0; i < BMA250_DATA_BUF_NUM*sizeof(s16)*2; i++) {
 		if (r_buf[i] != w_buf[i]) {
@@ -835,6 +913,12 @@ static int bma250_init_client(struct i2c_client *client, int reset_cali)
 	int res = 0;
 
 	GSE_LOG("bma250_init_client \n");
+
+	res = BMA250_SetPowerMode(client, true);
+	if (res != BMA250_SUCCESS) {
+		return res;
+	}
+	GSE_LOG("BMA250_SetPowerMode to normal OK!\n");
 
 	res = BMA250_CheckDeviceID(client);
 	if (res != BMA250_SUCCESS) {
@@ -1169,7 +1253,8 @@ static int BMA250_ReadSensorData(struct i2c_client *client, char *buf, int bufsi
 		acc[obj->cvt.map[BMA250_AXIS_Y]] = obj->cvt.sign[BMA250_AXIS_Y]*obj->data[BMA250_AXIS_Y];
 		acc[obj->cvt.map[BMA250_AXIS_Z]] = obj->cvt.sign[BMA250_AXIS_Z]*obj->data[BMA250_AXIS_Z];
 
-		GSE_LOG("gsensor data x=%d, y=%d, z=%d\n", acc[BMA250_AXIS_X], acc[BMA250_AXIS_Y], acc[BMA250_AXIS_Z]);
+		GSE_LOG("gsensor data x=%d, y=%d, z=%d, sensitivity:%d\n",
+			acc[BMA250_AXIS_X], acc[BMA250_AXIS_Y], acc[BMA250_AXIS_Z], obj->reso->sensitivity);
 		sprintf(buf, "%04x %04x %04x", acc[BMA250_AXIS_X], acc[BMA250_AXIS_Y], acc[BMA250_AXIS_Z]);
 		if (atomic_read(&obj->trace) & ADX_TRC_IOCTL) {
 			GSE_LOG("gsensor data: %s!\n", buf);
@@ -1219,7 +1304,7 @@ static ssize_t show_chipinfo_value(struct device_driver *ddri, char *buf)
 static ssize_t show_sensordata_value(struct device_driver *ddri, char *buf)
 {
 	struct i2c_client *client = bma250_i2c_client;
-	char strbuf[BMA250_BUFSIZE];
+	char strbuf[BMA250_BUFSIZE] = {0};
 	int data[3] = {0, 0, 0};
 	int res;
 
@@ -1245,7 +1330,7 @@ static ssize_t show_cali_value(struct device_driver *ddri, char *buf)
 	struct i2c_client *client = bma250_i2c_client;
 	struct bma250_i2c_data *obj;
 	int err, len = 0, mul;
-	int tmp[BMA250_AXES_NUM];
+	int tmp[BMA250_AXES_NUM] = {0};
 
 	if (NULL == client) {
 		GSE_ERR("i2c client is null!!\n");
@@ -1636,7 +1721,36 @@ static ssize_t store_cali_tolerance(struct device_driver *ptDevDrv,
 	return tCount;
 }
 
+/*----------------------------------------------------------------------------*/
+static ssize_t show_registers(struct device_driver *ddri, char *buf)
+{
+	unsigned char temp = 0;
+	int count = 0;
+	int num = 0;
 
+	if (buf == NULL)
+		return -EINVAL;
+	if (bma250_i2c_client == NULL)
+		return -EINVAL;
+	mutex_lock(&gsensor_mutex);
+	while (count <= 0x3F) {
+		temp = 0;
+		if (hwmsen_read_block(bma250_i2c_client,
+			count,
+			&temp,
+			1) < 0) {
+			num =
+			 snprintf(buf, PAGE_SIZE, "Read byte block error\n");
+			return num;
+		} else {
+			num +=
+			 snprintf(buf + num, PAGE_SIZE, "0x%x\n", temp);
+		}
+		count++;
+	}
+	mutex_unlock(&gsensor_mutex);
+	return num;
+}
 
 /*----------------------------------------------------------------------------*/
 static DRIVER_ATTR(chipinfo, S_IWUSR | S_IRUGO, show_chipinfo_value, NULL);
@@ -1659,6 +1773,7 @@ static DRIVER_ATTR(gcalidata, S_IRUGO, show_gcalidata, NULL);
 
 static DRIVER_ATTR(power_mode, S_IWUSR | S_IRUGO, show_power_mode, store_power_mode);
 static DRIVER_ATTR(cali_tolerance,  S_IWUSR | S_IRUGO, show_cali_tolerance, store_cali_tolerance);
+static DRIVER_ATTR(dump_registers, S_IRUGO, show_registers, NULL);
 
 
 /*----------------------------------------------------------------------------*/
@@ -1680,6 +1795,7 @@ static struct driver_attribute *bma250_attr_list[] = {
 #endif
 	&driver_attr_power_mode,
 	&driver_attr_cali_tolerance,
+	&driver_attr_dump_registers,
 
 };
 /*----------------------------------------------------------------------------*/
@@ -1847,11 +1963,11 @@ static long bma250_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 {
 	struct i2c_client *client = (struct i2c_client *)file->private_data;
 	struct bma250_i2c_data *obj = (struct bma250_i2c_data *)i2c_get_clientdata(client);
-	char strbuf[BMA250_BUFSIZE];
+	char strbuf[BMA250_BUFSIZE] = {0};
 	void __user *data;
 	struct SENSOR_DATA sensor_data;
 	long err = 0;
-	int cali[3];
+	int cali[3] = {0};
 
 	if (_IOC_DIR(cmd) & _IOC_READ) {
 		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
@@ -1896,20 +2012,6 @@ static long bma250_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 			break;
 		}
 		break;
-
-	case GSENSOR_IOCTL_READ_GAIN:
-		data = (void __user *) arg;
-		if (data == NULL) {
-			err = -EINVAL;
-			break;
-		}
-
-		if (copy_to_user(data, &gsensor_gain, sizeof(struct GSENSOR_VECTOR3D))) {
-			err = -EFAULT;
-			break;
-		}
-		break;
-
 	case GSENSOR_IOCTL_READ_RAW_DATA:
 		data = (void __user *) arg;
 		if (data == NULL) {
@@ -1992,54 +2094,60 @@ static struct miscdevice bma250_device = {
 	.name = "gsensor",
 	.fops = &bma250_fops,
 };
+#ifdef CONFIG_PM_SLEEP
 /*----------------------------------------------------------------------------*/
-static int bma250_suspend(struct i2c_client *client, pm_message_t msg)
+static int bma250_i2c_suspend(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
 	struct bma250_i2c_data *obj = i2c_get_clientdata(client);
 	int err = 0;
-	GSE_FUN();
 
-	if (msg.event == PM_EVENT_SUSPEND) {
-		if (obj == NULL) {
-			GSE_ERR("null pointer!!\n");
-			return -EINVAL;
-		}
-		atomic_set(&obj->suspend, 1);
+	GSE_LOG("suspend function entrance");
 
-#ifndef CUSTOM_KERNEL_SENSORHUB
-		err = BMA250_SetPowerMode(obj->client, false);
-#else
-		err = BMA250_SCP_SetPowerMode(false, ID_ACCELEROMETER);
-#endif
-		if (err) {
-			GSE_ERR("write power control fail!!\n");
-			return -EINVAL;
-		}
-#ifndef CUSTOM_KERNEL_SENSORHUB
-		BMA250_power(obj->hw, 0);
-#endif
-	}
-	return err;
-
-}
-/*----------------------------------------------------------------------------*/
-static int bma250_resume(struct i2c_client *client)
-{
-	struct bma250_i2c_data *obj = i2c_get_clientdata(client);
-	GSE_FUN();
-
-	if (obj == NULL) {
+	if (!obj) {
 		GSE_ERR("null pointer!!\n");
 		return -EINVAL;
 	}
-#ifndef CUSTOM_KERNEL_SENSORHUB
-	BMA250_power(obj->hw, 1);
-#endif
 
+	acc_driver_pause_polling(1);
+	atomic_set(&obj->suspend, 1);
+	mutex_lock(&gsensor_mutex);
+	err = BMA250_SetPowerMode(client, false);
+	mutex_unlock(&gsensor_mutex);
+	if (err) {
+                acc_driver_pause_polling(0);
+                atomic_set(&obj->suspend, 0);
+                GSE_ERR("write power control fail!!\n");
+        }
+	return err;
+}
+
+/*----------------------------------------------------------------------------*/
+static int bma250_i2c_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct bma250_i2c_data *obj = i2c_get_clientdata(client);
+
+	int err = 0;
+
+	GSE_LOG("resume function entrance");
+
+	if (!obj) {
+		GSE_ERR("null pointer!!\n");
+		return -EINVAL;
+	}
+	if (acc_driver_query_polling_state() == 1) {
+		mutex_lock(&gsensor_mutex);
+		err = BMA250_SetPowerMode(client, true);
+		mutex_unlock(&gsensor_mutex);
+		if (err)
+                        GSE_ERR("initialize client fail!!\n");
+        }
 	atomic_set(&obj->suspend, 0);
-
+	acc_driver_pause_polling(0);
 	return 0;
 }
+#endif
 /*----------------------------------------------------------------------------*/
 static int gsensor_open_report_data(int open)
 {
@@ -2181,7 +2289,7 @@ static int gsensor_get_data(int *x, int *y, int *z, int *status)
 	int len;
 	int err = 0;
 #else
-	char buff[BMA250_BUFSIZE];
+	char buff[BMA250_BUFSIZE] = {0};
 #endif
 
 #ifdef CUSTOM_KERNEL_SENSORHUB
@@ -2221,6 +2329,21 @@ static int gsensor_get_data(int *x, int *y, int *z, int *status)
 	return 0;
 }
 
+
+
+static int gsensor_acc_batch(int flag, int64_t samplingPeriodNs,
+					int64_t maxBatchReportLatencyNs)
+{
+	int value = 0;
+
+	value = (int)samplingPeriodNs / 1000 / 1000;
+	GSE_ERR("gsensor acc set delay = (%d) ok.\n", value);
+	return gsensor_set_delay(samplingPeriodNs);
+}
+static int gsensor_acc_flush(void)
+{
+	return acc_flush_report();
+}
 /*----------------------------------------------------------------------------*/
 static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -2231,12 +2354,19 @@ static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	s16 idmedata[6] = {0};
 	int err = 0;
 	GSE_FUN();
-
 	obj = kzalloc(sizeof(*obj), GFP_KERNEL);
 	if (!obj) {
 		err = -ENOMEM;
 		goto exit;
 	}
+        err = get_accel_dts_func(client->dev.of_node, hw);
+        if (err < 0)
+        {
+                GSE_ERR("get dts info fail\n");
+                err = -EFAULT;
+                goto exit_kfree;
+        }
+
 
 	memset(obj, 0, sizeof(struct bma250_i2c_data));
 
@@ -2244,7 +2374,7 @@ static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	err = hwmsen_get_convert(obj->hw->direction, &obj->cvt);
 	if (err) {
 		GSE_ERR("invalid direction: %d\n", obj->hw->direction);
-		goto exit;
+		goto exit_kfree;
 	}
 
 #ifdef CUSTOM_KERNEL_SENSORHUB
@@ -2294,19 +2424,16 @@ static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	}
 
 	ctl.open_report_data = gsensor_open_report_data;
-#ifdef CUSTOM_KERNEL_SENSORHUB
-	ctl.enable_nodata = scp_gsensor_enable_nodata;
-#else
+
 	ctl.enable_nodata = gsensor_enable_nodata;
-#endif
+
 	ctl.set_delay  = gsensor_set_delay;
 	ctl.is_report_input_direct = false;
 
-#ifdef CUSTOM_KERNEL_SENSORHUB
-	ctl.is_support_batch = obj->hw->is_batch_supported;
-#else
 	ctl.is_support_batch = false;
-#endif
+
+	ctl.batch = gsensor_acc_batch;
+	ctl.flush = gsensor_acc_flush;
 
 	err = acc_register_control_path(&ctl);
 	if (err) {
@@ -2325,14 +2452,6 @@ static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	}
 
 	GSE_LOG("acc_register_data_path sucess\n");
-
-	err = batch_register_support_info(ID_ACCELEROMETER, ctl.is_support_batch, 102, 0);
-	if (err) {
-		GSE_ERR("register gsensor batch support err = %d\n", err);
-		goto exit_create_attr_failed;
-	}
-
-	GSE_LOG("batch_register_support_info sucess\n");
 
 	gsensor_init_flag = 0;
 
@@ -2361,6 +2480,7 @@ static int bma250_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	misc_deregister(&bma250_device);
 	exit_misc_device_register_failed:
 	exit_init_failed:
+	exit_kfree:
 	kfree(obj);
 	exit:
 	GSE_ERR("%s: err = %d\n", __func__, err);
@@ -2378,11 +2498,7 @@ static int bma250_i2c_remove(struct i2c_client *client)
 		GSE_ERR("bma150_delete_attr fail: %d\n", err);
 	}
 
-	err = misc_deregister(&bma250_device);
-	if (err) {
-		GSE_ERR("misc_deregister fail: %d\n", err);
-	}
-
+	misc_deregister(&bma250_device);
 	bma250_i2c_client = NULL;
 	i2c_unregister_device(client);
 	kfree(i2c_get_clientdata(client));
@@ -2415,10 +2531,7 @@ static int gsensor_remove(void)
 /*----------------------------------------------------------------------------*/
 static int __init bma250_init(void)
 {
-	const char *name = "mediatek,bma253";
-	hw = get_accel_dts_func(name, hw);
-	if (!hw)
-		GSE_ERR("get dts info fail\n");
+
 	GSE_FUN();
 	acc_driver_add(&bma250_init_info);
 

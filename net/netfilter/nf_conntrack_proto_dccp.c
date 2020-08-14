@@ -244,14 +244,14 @@ dccp_state_table[CT_DCCP_ROLE_MAX + 1][DCCP_PKT_SYNCACK + 1][CT_DCCP_MAX + 1] = 
 		 * We currently ignore Sync packets
 		 *
 		 *	sNO, sRQ, sRS, sPO, sOP, sCR, sCG, sTW */
-			sIV, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
+			sIG, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
 		},
 		[DCCP_PKT_SYNCACK] = {
 		/*
 		 * We currently ignore SyncAck packets
 		 *
 		 *	sNO, sRQ, sRS, sPO, sOP, sCR, sCG, sTW */
-			sIV, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
+			sIG, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
 		},
 	},
 	[CT_DCCP_ROLE_SERVER] = {
@@ -372,14 +372,14 @@ dccp_state_table[CT_DCCP_ROLE_MAX + 1][DCCP_PKT_SYNCACK + 1][CT_DCCP_MAX + 1] = 
 		 * We currently ignore Sync packets
 		 *
 		 *	sNO, sRQ, sRS, sPO, sOP, sCR, sCG, sTW */
-			sIV, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
+			sIG, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
 		},
 		[DCCP_PKT_SYNCACK] = {
 		/*
 		 * We currently ignore SyncAck packets
 		 *
 		 *	sNO, sRQ, sRS, sPO, sOP, sCR, sCG, sTW */
-			sIV, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
+			sIG, sIG, sIG, sIG, sIG, sIG, sIG, sIG,
 		},
 	},
 };
@@ -398,11 +398,12 @@ static inline struct dccp_net *dccp_pernet(struct net *net)
 }
 
 static bool dccp_pkt_to_tuple(const struct sk_buff *skb, unsigned int dataoff,
-			      struct nf_conntrack_tuple *tuple)
+			      struct net *net, struct nf_conntrack_tuple *tuple)
 {
 	struct dccp_hdr _hdr, *dh;
 
-	dh = skb_header_pointer(skb, dataoff, sizeof(_hdr), &_hdr);
+	/* Actually only need first 4 bytes to get ports. */
+	dh = skb_header_pointer(skb, dataoff, 4, &_hdr);
 	if (dh == NULL)
 		return false;
 
@@ -618,17 +619,17 @@ out_invalid:
 	return -NF_ACCEPT;
 }
 
-static int dccp_print_tuple(struct seq_file *s,
-			    const struct nf_conntrack_tuple *tuple)
+static void dccp_print_tuple(struct seq_file *s,
+			     const struct nf_conntrack_tuple *tuple)
 {
-	return seq_printf(s, "sport=%hu dport=%hu ",
-			  ntohs(tuple->src.u.dccp.port),
-			  ntohs(tuple->dst.u.dccp.port));
+	seq_printf(s, "sport=%hu dport=%hu ",
+		   ntohs(tuple->src.u.dccp.port),
+		   ntohs(tuple->dst.u.dccp.port));
 }
 
-static int dccp_print_conntrack(struct seq_file *s, struct nf_conn *ct)
+static void dccp_print_conntrack(struct seq_file *s, struct nf_conn *ct)
 {
-	return seq_printf(s, "%s ", dccp_state_names[ct->proto.dccp.state]);
+	seq_printf(s, "%s ", dccp_state_names[ct->proto.dccp.state]);
 }
 
 #if IS_ENABLED(CONFIG_NF_CT_NETLINK)
@@ -645,7 +646,8 @@ static int dccp_to_nlattr(struct sk_buff *skb, struct nlattr *nla,
 	    nla_put_u8(skb, CTA_PROTOINFO_DCCP_ROLE,
 		       ct->proto.dccp.role[IP_CT_DIR_ORIGINAL]) ||
 	    nla_put_be64(skb, CTA_PROTOINFO_DCCP_HANDSHAKE_SEQ,
-			 cpu_to_be64(ct->proto.dccp.handshake_seq)))
+			 cpu_to_be64(ct->proto.dccp.handshake_seq),
+			 CTA_PROTOINFO_DCCP_PAD))
 		goto nla_put_failure;
 	nla_nest_end(skb, nest_parms);
 	spin_unlock_bh(&ct->lock);
@@ -660,6 +662,7 @@ static const struct nla_policy dccp_nla_policy[CTA_PROTOINFO_DCCP_MAX + 1] = {
 	[CTA_PROTOINFO_DCCP_STATE]	= { .type = NLA_U8 },
 	[CTA_PROTOINFO_DCCP_ROLE]	= { .type = NLA_U8 },
 	[CTA_PROTOINFO_DCCP_HANDSHAKE_SEQ] = { .type = NLA_U64 },
+	[CTA_PROTOINFO_DCCP_PAD]	= { .type = NLA_UNSPEC },
 };
 
 static int nlattr_to_dccp(struct nlattr *cda[], struct nf_conn *ct)

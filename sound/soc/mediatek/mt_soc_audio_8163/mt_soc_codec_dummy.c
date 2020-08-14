@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -33,14 +35,14 @@
 #include "mt_soc_pcm_common.h"
 
 
-static int dummy_codec_startup(struct snd_pcm_substream *substream ,
+static int dummy_codec_startup(struct snd_pcm_substream *substream,
 			       struct snd_soc_dai *Daiport)
 {
 	pr_debug("dummy_codec_startup\n");
 	return 0;
 }
 
-static int dummy_codec_prepare(struct snd_pcm_substream *substream ,
+static int dummy_codec_prepare(struct snd_pcm_substream *substream,
 			       struct snd_soc_dai *Daiport)
 {
 	pr_debug("dummy_codec_prepare\n");
@@ -53,8 +55,8 @@ static int dummy_codec_prepare(struct snd_pcm_substream *substream ,
 	return 0;
 }
 
-static int dummy_codec_trigger(struct snd_pcm_substream *substream ,
-			       int command , struct snd_soc_dai *Daiport)
+static int dummy_codec_trigger(struct snd_pcm_substream *substream,
+			       int command, struct snd_soc_dai *Daiport)
 {
 	switch (command) {
 	case SNDRV_PCM_TRIGGER_START:
@@ -471,7 +473,7 @@ static struct snd_soc_dai_driver dummy_6323_dai_codecs[] = {
 			.rates = SNDRV_PCM_RATE_8000_48000,
 			.formats = SND_SOC_ADV_MT_FMTS,
 		},
-		.compress_dai = 1,
+		//.compress_dai = 1,
 	},
 };
 
@@ -502,7 +504,8 @@ static int mtk_dummy_codec_dev_probe(struct platform_device *pdev)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_CODEC_DUMMY_NAME);
 	pr_debug("%s dev name %s\n", __func__, dev_name(&pdev->dev));
 	return snd_soc_register_codec(&pdev->dev,
-				      &soc_mtk_codec, dummy_6323_dai_codecs, ARRAY_SIZE(dummy_6323_dai_codecs));
+				      &soc_mtk_codec, dummy_6323_dai_codecs,
+				      ARRAY_SIZE(dummy_6323_dai_codecs));
 }
 
 static int mtk_dummy_codec_dev_remove(struct platform_device *pdev)
@@ -541,7 +544,8 @@ static int __init mtk_dummy_codec_init(void)
 #ifndef CONFIG_OF
 	int ret = 0;
 
-	soc_mtk_codec_dummy_dev = platform_device_alloc(MT_SOC_CODEC_DUMMY_NAME, -1);
+	soc_mtk_codec_dummy_dev =
+		platform_device_alloc(MT_SOC_CODEC_DUMMY_NAME, -1);
 	if (!soc_mtk_codec_dummy_dev)
 		return -ENOMEM;
 	ret = platform_device_add(soc_mtk_codec_dummy_dev);

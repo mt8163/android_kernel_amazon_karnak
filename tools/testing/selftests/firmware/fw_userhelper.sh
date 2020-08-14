@@ -9,7 +9,17 @@ modprobe test_firmware
 
 DIR=/sys/devices/virtual/misc/test_firmware
 
-OLD_TIMEOUT=$(cat /sys/class/firmware/timeout)
+# CONFIG_FW_LOADER_USER_HELPER has a sysfs class under /sys/class/firmware/
+# These days no one enables CONFIG_FW_LOADER_USER_HELPER so check for that
+# as an indicator for CONFIG_FW_LOADER_USER_HELPER.
+HAS_FW_LOADER_USER_HELPER=$(if [ -d /sys/class/firmware/ ]; then echo yes; else echo no; fi)
+
+if [ "$HAS_FW_LOADER_USER_HELPER" = "yes" ]; then
+       OLD_TIMEOUT=$(cat /sys/class/firmware/timeout)
+else
+	echo "usermode helper disabled so ignoring test"
+	exit 0
+fi
 
 FWPATH=$(mktemp -d)
 FW="$FWPATH/test-firmware.bin"
@@ -54,9 +64,33 @@ trap "test_finish" EXIT
 echo "ABCD0123" >"$FW"
 NAME=$(basename "$FW")
 
+DEVPATH="$DIR"/"nope-$NAME"/loading
+
 # Test failure when doing nothing (timeout works).
-echo 1 >/sys/class/firmware/timeout
-echo -n "$NAME" >"$DIR"/trigger_request
+echo -n 2 >/sys/class/firmware/timeout
+echo -n "nope-$NAME" >"$DIR"/trigger_request 2>/dev/null &
+
+# Give the kernel some time to load the loading file, must be less
+# than the timeout above.
+sleep 1
+if [ ! -f $DEVPATH ]; then
+	echo "$0: fallback mechanism immediately cancelled"
+	echo ""
+	echo "The file never appeared: $DEVPATH"
+	echo ""
+	echo "This might be a distribution udev rule setup by your distribution"
+	echo "to immediately cancel all fallback requests, this must be"
+	echo "removed before running these tests. To confirm look for"
+	echo "a firmware rule like /lib/udev/rules.d/50-firmware.rules"
+	echo "and see if you have something like this:"
+	echo ""
+	echo "SUBSYSTEM==\"firmware\", ACTION==\"add\", ATTR{loading}=\"-1\""
+	echo ""
+	echo "If you do remove this file or comment out this line before"
+	echo "proceeding with these tests."
+	exit 1
+fi
+
 if diff -q "$FW" /dev/test_firmware >/dev/null ; then
 	echo "$0: firmware was not expected to match" >&2
 	exit 1

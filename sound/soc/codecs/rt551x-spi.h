@@ -14,7 +14,6 @@
 
 #define RT551X_SPI_BUF_LEN		240
 #define RT551X_RW_ADDR_START	0x4ff60000
-//#define RT551X_RW_ADDR_END		0x4ffb8000
 #define RT551X_RW_ADDR_END		0x4ffb0000
 
 /* SPI Command */

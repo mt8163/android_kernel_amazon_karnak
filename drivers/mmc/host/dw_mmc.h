@@ -15,6 +15,7 @@
 #define _DW_MMC_H_
 
 #define DW_MMC_240A		0x240a
+#define DW_MMC_280A		0x280a
 
 #define SDMMC_CTRL		0x000
 #define SDMMC_PWREN		0x004
@@ -46,6 +47,7 @@
 #define SDMMC_VERID		0x06c
 #define SDMMC_HCON		0x070
 #define SDMMC_UHS_REG		0x074
+#define SDMMC_RST_N		0x078
 #define SDMMC_BMOD		0x080
 #define SDMMC_PLDMND		0x084
 #define SDMMC_DBADDR		0x088
@@ -55,6 +57,17 @@
 #define SDMMC_BUFADDR		0x098
 #define SDMMC_CDTHRCTL		0x100
 #define SDMMC_DATA(x)		(x)
+/*
+* Registers to support idmac 64-bit address mode
+*/
+#define SDMMC_DBADDRL		0x088
+#define SDMMC_DBADDRU		0x08c
+#define SDMMC_IDSTS64		0x090
+#define SDMMC_IDINTEN64		0x094
+#define SDMMC_DSCADDRL		0x098
+#define SDMMC_DSCADDRU		0x09c
+#define SDMMC_BUFADDRL		0x0A0
+#define SDMMC_BUFADDRU		0x0A4
 
 /*
  * Data offset is difference according to Version
@@ -137,6 +150,15 @@
 #define SDMMC_SET_FIFOTH(m, r, t)	(((m) & 0x7) << 28 | \
 					 ((r) & 0xFFF) << 16 | \
 					 ((t) & 0xFFF))
+/* HCON register defines */
+#define DMA_INTERFACE_IDMA		(0x0)
+#define DMA_INTERFACE_DWDMA		(0x1)
+#define DMA_INTERFACE_GDMA		(0x2)
+#define DMA_INTERFACE_NODMA		(0x3)
+#define SDMMC_GET_TRANS_MODE(x)		(((x)>>16) & 0x3)
+#define SDMMC_GET_SLOT_NUM(x)		((((x)>>1) & 0x1F) + 1)
+#define SDMMC_GET_HDATA_WIDTH(x)	(((x)>>7) & 0x7)
+#define SDMMC_GET_ADDR_CONFIG(x)	(((x)>>27) & 0x1)
 /* Internal DMAC interrupt defines */
 #define SDMMC_IDMAC_INT_AI		BIT(9)
 #define SDMMC_IDMAC_INT_NI		BIT(8)
@@ -149,33 +171,48 @@
 #define SDMMC_IDMAC_ENABLE		BIT(7)
 #define SDMMC_IDMAC_FB			BIT(1)
 #define SDMMC_IDMAC_SWRESET		BIT(0)
+/* H/W reset */
+#define SDMMC_RST_HWACTIVE		0x1
 /* Version ID register define */
 #define SDMMC_GET_VERID(x)		((x) & 0xFFFF)
 /* Card read threshold */
-#define SDMMC_SET_RD_THLD(v, x)		(((v) & 0x1FFF) << 16 | (x))
+#define SDMMC_SET_THLD(v, x)		(((v) & 0xFFF) << 16 | (x))
+#define SDMMC_CARD_WR_THR_EN		BIT(2)
+#define SDMMC_CARD_RD_THR_EN		BIT(0)
+/* UHS-1 register defines */
 #define SDMMC_UHS_18V			BIT(0)
 /* All ctrl reset bits */
 #define SDMMC_CTRL_ALL_RESET_FLAGS \
 	(SDMMC_CTRL_RESET | SDMMC_CTRL_FIFO_RESET | SDMMC_CTRL_DMA_RESET)
 
+/* FIFO register access macros. These should not change the data endian-ness
+ * as they are written to memory to be dealt with by the upper layers */
+#define mci_fifo_readw(__reg)	__raw_readw(__reg)
+#define mci_fifo_readl(__reg)	__raw_readl(__reg)
+#define mci_fifo_readq(__reg)	__raw_readq(__reg)
+
+#define mci_fifo_writew(__value, __reg)	__raw_writew(__reg, __value)
+#define mci_fifo_writel(__value, __reg)	__raw_writel(__reg, __value)
+#define mci_fifo_writeq(__value, __reg)	__raw_writeq(__reg, __value)
+
 /* Register access macros */
 #define mci_readl(dev, reg)			\
-	__raw_readl((dev)->regs + SDMMC_##reg)
+	readl_relaxed((dev)->regs + SDMMC_##reg)
 #define mci_writel(dev, reg, value)			\
-	__raw_writel((value), (dev)->regs + SDMMC_##reg)
+	writel_relaxed((value), (dev)->regs + SDMMC_##reg)
 
 /* 16-bit FIFO access macros */
 #define mci_readw(dev, reg)			\
-	__raw_readw((dev)->regs + SDMMC_##reg)
+	readw_relaxed((dev)->regs + SDMMC_##reg)
 #define mci_writew(dev, reg, value)			\
-	__raw_writew((value), (dev)->regs + SDMMC_##reg)
+	writew_relaxed((value), (dev)->regs + SDMMC_##reg)
 
 /* 64-bit FIFO access macros */
 #ifdef readq
 #define mci_readq(dev, reg)			\
-	__raw_readq((dev)->regs + SDMMC_##reg)
+	readq_relaxed((dev)->regs + SDMMC_##reg)
 #define mci_writeq(dev, reg, value)			\
-	__raw_writeq((value), (dev)->regs + SDMMC_##reg)
+	writeq_relaxed((value), (dev)->regs + SDMMC_##reg)
 #else
 /*
  * Dummy readq implementation for architectures that don't define it.
@@ -189,6 +226,10 @@
 	(*(volatile u64 __force *)((dev)->regs + SDMMC_##reg))
 #define mci_writeq(dev, reg, value)			\
 	(*(volatile u64 __force *)((dev)->regs + SDMMC_##reg) = (value))
+
+#define __raw_writeq(__value, __reg) \
+	(*(volatile u64 __force *)(__reg) = (__value))
+#define __raw_readq(__reg) (*(volatile u64 __force *)(__reg))
 #endif
 
 extern int dw_mci_probe(struct dw_mci *host);
@@ -202,25 +243,21 @@ extern int dw_mci_resume(struct dw_mci *host);
  * struct dw_mci_slot - MMC slot state
  * @mmc: The mmc_host representing this slot.
  * @host: The MMC controller this slot is using.
- * @quirks: Slot-level quirks (DW_MCI_SLOT_QUIRK_XXX)
  * @ctype: Card type for this slot.
  * @mrq: mmc_request currently being processed or waiting to be
  *	processed, or NULL when the slot is idle.
  * @queue_node: List node for placing this node in the @queue list of
  *	&struct dw_mci.
  * @clock: Clock rate configured by set_ios(). Protected by host->lock.
- * @__clk_old: The last updated clock with reflecting clock divider.
- *	Keeping track of this helps us to avoid spamming the console
- *	with CONFIG_MMC_CLKGATE.
+ * @__clk_old: The last clock value that was requested from core.
+ *	Keeping track of this helps us to avoid spamming the console.
  * @flags: Random state bits associated with the slot.
  * @id: Number of this slot.
- * @last_detect_state: Most recently observed card detect state.
+ * @sdio_id: Number of this slot in the SDIO interrupt registers.
  */
 struct dw_mci_slot {
 	struct mmc_host		*mmc;
 	struct dw_mci		*host;
-
-	int			quirks;
 
 	u32			ctype;
 
@@ -233,21 +270,16 @@ struct dw_mci_slot {
 	unsigned long		flags;
 #define DW_MMC_CARD_PRESENT	0
 #define DW_MMC_CARD_NEED_INIT	1
+#define DW_MMC_CARD_NO_LOW_PWR	2
+#define DW_MMC_CARD_NO_USE_HOLD 3
 	int			id;
-	int			last_detect_state;
-};
-
-struct dw_mci_tuning_data {
-	const u8 *blk_pattern;
-	unsigned int blksz;
+	int			sdio_id;
 };
 
 /**
  * dw_mci driver data - dw-mshc implementation specific driver data.
  * @caps: mmc subsystem specified capabilities of the controller(s).
  * @init: early implementation specific initialization.
- * @setup_clock: implementation specific clock configuration.
- * @prepare_command: handle CMD register extensions.
  * @set_ios: handle bus specific extensions.
  * @parse_dt: parse implementation specific device tree properties.
  * @execute_tuning: implementation specific tuning procedure.
@@ -259,11 +291,12 @@ struct dw_mci_tuning_data {
 struct dw_mci_drv_data {
 	unsigned long	*caps;
 	int		(*init)(struct dw_mci *host);
-	int		(*setup_clock)(struct dw_mci *host);
-	void		(*prepare_command)(struct dw_mci *host, u32 *cmdr);
 	void		(*set_ios)(struct dw_mci *host, struct mmc_ios *ios);
 	int		(*parse_dt)(struct dw_mci *host);
-	int		(*execute_tuning)(struct dw_mci_slot *slot, u32 opcode,
-					struct dw_mci_tuning_data *tuning_data);
+	int		(*execute_tuning)(struct dw_mci_slot *slot, u32 opcode);
+	int		(*prepare_hs400_tuning)(struct dw_mci *host,
+						struct mmc_ios *ios);
+	int		(*switch_voltage)(struct mmc_host *mmc,
+					  struct mmc_ios *ios);
 };
 #endif /* _DW_MMC_H_ */

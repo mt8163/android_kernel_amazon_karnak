@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -63,13 +65,18 @@ static int Audio_fm_i2s_Volume_Set(struct snd_kcontrol *kcontrol,
 	pr_debug("%s mfm_i2s_Volume = 0x%x\n", __func__, mfm_i2s_Volume);
 
 	if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2) == true)
-		SetHwDigitalGain(mfm_i2s_Volume, Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1);
+		SetHwDigitalGain(mfm_i2s_Volume,
+			Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1);
 
 	return 0;
 }
 
 static const char * const wcn_stub_audio_ctr[] = {
-	"CMB_STUB_AIF_0", "CMB_STUB_AIF_1", "CMB_STUB_AIF_2", "CMB_STUB_AIF_3" };
+	"CMB_STUB_AIF_0",
+	"CMB_STUB_AIF_1",
+	"CMB_STUB_AIF_2",
+	"CMB_STUB_AIF_3"
+};
 
 static const struct soc_enum wcn_stub_audio_ctr_Enum[] = {
 
@@ -78,7 +85,8 @@ static const struct soc_enum wcn_stub_audio_ctr_Enum[] = {
 };
 
 /* static int mAudio_Wcn_Cmb = CMB_STUB_AIF_3;//temp mark for early porting */
-static int Audio_Wcn_Cmb_Get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+static int Audio_Wcn_Cmb_Get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
 {
 #if 0				/* temp mark for early porting */
 	pr_debug("Audio_Wcn_Cmb_Get = %d\n", mAudio_Wcn_Cmb);
@@ -87,22 +95,28 @@ static int Audio_Wcn_Cmb_Get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_
 	return 0;
 }
 
-static int Audio_Wcn_Cmb_Set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+static int Audio_Wcn_Cmb_Set(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
 {
-#if 0				/* temp mark for early porting */
+#if 0
+	/* temp mark for early porting */
 	mAudio_Wcn_Cmb = ucontrol->value.integer.value[0];
 	pr_debug("%s mAudio_Wcn_Cmb = 0x%x\n", __func__, mAudio_Wcn_Cmb);
-	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)mAudio_Wcn_Cmb);//temp mark for early porting */
+	//temp mark for early porting
+	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)mAudio_Wcn_Cmb); */
 #endif
 	return 0;
 }
 
 static const struct snd_kcontrol_new Audio_snd_fm_i2s_controls[] = {
 
-	SOC_SINGLE_EXT("Audio FM I2S Volume", SND_SOC_NOPM, 0, 0x80000, 0, Audio_fm_i2s_Volume_Get,
-		       Audio_fm_i2s_Volume_Set),
-	SOC_ENUM_EXT("cmb stub Audio Control", wcn_stub_audio_ctr_Enum[0], Audio_Wcn_Cmb_Get,
-		     Audio_Wcn_Cmb_Set),
+	SOC_SINGLE_EXT("Audio FM I2S Volume",
+		SND_SOC_NOPM, 0, 0x80000, 0, Audio_fm_i2s_Volume_Get,
+		Audio_fm_i2s_Volume_Set),
+	SOC_ENUM_EXT("cmb stub Audio Control",
+		wcn_stub_audio_ctr_Enum[0],
+		Audio_Wcn_Cmb_Get,
+		Audio_Wcn_Cmb_Set),
 };
 
 static struct snd_pcm_hardware mtk_fm_i2s_hardware = {
@@ -129,7 +143,8 @@ static int mtk_pcm_fm_i2s_stop(struct snd_pcm_substream *substream)
 }
 
 static kal_int32 Previous_Hw_cur;
-static snd_pcm_uframes_t mtk_pcm_fm_i2s_pointer(struct snd_pcm_substream *substream)
+static snd_pcm_uframes_t mtk_pcm_fm_i2s_pointer(
+	struct snd_pcm_substream *substream)
 {
 	return (Previous_Hw_cur >> 2);
 }
@@ -173,14 +188,18 @@ static int mtk_pcm_fm_i2s_open(struct snd_pcm_substream *substream)
 	       sizeof(struct snd_pcm_hardware));
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
-					 &fm_i2s_constraints_sample_rates);
-	ret = snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
+		&fm_i2s_constraints_sample_rates);
+	ret = snd_pcm_hw_constraint_integer(runtime,
+		SNDRV_PCM_HW_PARAM_PERIODS);
 
 	if (ret < 0)
 		pr_warn("snd_pcm_hw_constraint_integer failed\n");
 
 	pr_debug("%s, runtime->rate = %d, channels = %d, substream->pcm->device = %d\n",
-		__func__, runtime->rate, runtime->channels, substream->pcm->device);
+		__func__,
+		runtime->rate,
+		runtime->channels,
+		substream->pcm->device);
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		pr_debug("SNDRV_PCM_STREAM_PLAYBACK mtkalsa_fm_i2s_playback_constraints\n");
@@ -201,8 +220,8 @@ static int mtk_pcm_fm_i2s_close(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 
 	pr_debug("%s rate = %d\n", __func__, runtime->rate);
-
-	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_0);//temp mark for early porting */
+	//temp mark for early porting
+	/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_0);*/
 
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2, false);
 	if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2) == false) {
@@ -217,14 +236,18 @@ static int mtk_pcm_fm_i2s_close(struct snd_pcm_substream *substream)
 		SetI2SDacEnable(false);
 
 	/* interconnection setting */
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I00,
-		      Soc_Aud_InterConnectionOutput_O13);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I01,
-		      Soc_Aud_InterConnectionOutput_O14);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I10,
-		      Soc_Aud_InterConnectionOutput_O03);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I11,
-		      Soc_Aud_InterConnectionOutput_O04);
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		Soc_Aud_InterConnectionInput_I00,
+		Soc_Aud_InterConnectionOutput_O13);
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		Soc_Aud_InterConnectionInput_I01,
+		Soc_Aud_InterConnectionOutput_O14);
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		Soc_Aud_InterConnectionInput_I10,
+		Soc_Aud_InterConnectionOutput_O03);
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		Soc_Aud_InterConnectionInput_I11,
+		Soc_Aud_InterConnectionOutput_O04);
 
 
 	EnableAfe(false);
@@ -240,7 +263,7 @@ static int mtk_pcm_fm_i2s_close(struct snd_pcm_substream *substream)
 
 static int mtk_pcm_fm_i2s_prepare(struct snd_pcm_substream *substream)
 {
-	AudioDigtalI2S m2ndI2SInAttribute;
+	struct AudioDigtalI2S m2ndI2SInAttribute;
 
 	struct snd_pcm_runtime *runtime = substream->runtime;
 
@@ -248,53 +271,76 @@ static int mtk_pcm_fm_i2s_prepare(struct snd_pcm_substream *substream)
 
 	if (mPrepareDone == false) {
 		/* temp mark for early porting */
-		/* mtk_wcn_cmb_stub_audio_ctrl((CMB_STUB_AIF_X)CMB_STUB_AIF_3); */
-
+		/* mtk_wcn_cmb_stub_audio_ctrl(
+		 *	(CMB_STUB_AIF_X)CMB_STUB_AIF_3);
+		 */
 		/* interconnection setting */
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I00,
-			      Soc_Aud_InterConnectionOutput_O13);
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I01,
-			      Soc_Aud_InterConnectionOutput_O14);
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I10,
-			      Soc_Aud_InterConnectionOutput_O03);
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I11,
-			      Soc_Aud_InterConnectionOutput_O04);
+		SetConnection(Soc_Aud_InterCon_Connection,
+			Soc_Aud_InterConnectionInput_I00,
+			Soc_Aud_InterConnectionOutput_O13);
+		SetConnection(Soc_Aud_InterCon_Connection,
+			Soc_Aud_InterConnectionInput_I01,
+			Soc_Aud_InterConnectionOutput_O14);
+		SetConnection(Soc_Aud_InterCon_Connection,
+			Soc_Aud_InterConnectionInput_I10,
+			Soc_Aud_InterConnectionOutput_O03);
+		SetConnection(Soc_Aud_InterCon_Connection,
+			Soc_Aud_InterConnectionInput_I11,
+			Soc_Aud_InterConnectionOutput_O04);
 
 		/* Set HW_GAIN */
-		SetHwDigitalGainMode(Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1, runtime->rate, 0x40);
-		SetHwDigitalGainEnable(Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1, true);
-		SetHwDigitalGain(mfm_i2s_Volume, Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1);
+		SetHwDigitalGainMode(Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1,
+			runtime->rate, 0x40);
+		SetHwDigitalGainEnable(Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1,
+			true);
+		SetHwDigitalGain(mfm_i2s_Volume,
+			Soc_Aud_Hw_Digital_Gain_HW_DIGITAL_GAIN1);
 
 		/* start I2S DAC out */
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) == false) {
-			SetI2SDacOut(runtime->rate, false, Soc_Aud_I2S_WLEN_WLEN_16BITS);
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
+		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) ==
+			false) {
+			SetI2SDacOut(runtime->rate, false,
+				Soc_Aud_I2S_WLEN_WLEN_16BITS);
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC,
+				true);
 			SetI2SDacEnable(true);
 		} else
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC,
+				true);
 
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2) == false) {
+		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2) ==
+			false) {
 			/* set merge interface */
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2, true);
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2,
+				true);
 
 			/* Config 2nd I2S IN */
-			memset((void *)&m2ndI2SInAttribute, 0, sizeof(m2ndI2SInAttribute));
+			memset((void *)&m2ndI2SInAttribute,
+				0,
+				sizeof(m2ndI2SInAttribute));
 
 			m2ndI2SInAttribute.mLR_SWAP = Soc_Aud_LR_SWAP_NO_SWAP;
-			m2ndI2SInAttribute.mI2S_IN_PAD_SEL = false;	/* I2S_IN_FROM_CONNSYS */
-			m2ndI2SInAttribute.mI2S_SLAVE = Soc_Aud_I2S_SRC_SLAVE_MODE;
+			/* I2S_IN_FROM_CONNSYS */
+			m2ndI2SInAttribute.mI2S_IN_PAD_SEL = false;
+			m2ndI2SInAttribute.mI2S_SLAVE =
+				Soc_Aud_I2S_SRC_SLAVE_MODE;
 			m2ndI2SInAttribute.mI2S_SAMPLERATE = 32000;
-			m2ndI2SInAttribute.mINV_LRCK = Soc_Aud_INV_LRCK_NO_INVERSE;
-			m2ndI2SInAttribute.mI2S_FMT = Soc_Aud_I2S_FORMAT_I2S;
-			m2ndI2SInAttribute.mI2S_WLEN = Soc_Aud_I2S_WLEN_WLEN_16BITS;
+			m2ndI2SInAttribute.mINV_LRCK =
+				Soc_Aud_INV_LRCK_NO_INVERSE;
+			m2ndI2SInAttribute.mI2S_FMT =
+				Soc_Aud_I2S_FORMAT_I2S;
+			m2ndI2SInAttribute.mI2S_WLEN =
+				Soc_Aud_I2S_WLEN_WLEN_16BITS;
 			Set2ndI2SIn(&m2ndI2SInAttribute);
-
-			SetI2SASRCConfig(true, 44100);	/* Covert from 32000 Hz to 44100 Hz */
+			/* Covert from 32000 Hz to 44100 Hz */
+			SetI2SASRCConfig(true, 44100);
 			SetI2SASRCEnable(true);
 
 			Set2ndI2SInEnable(true);
-		} else
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2, true);
+		} else {
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_2,
+				true);
+		}
 
 		EnableAfe(true);
 		mPrepareDone = true;
@@ -332,7 +378,7 @@ static int mtk_pcm_fm_i2s_copy(struct snd_pcm_substream *substream,
 }
 
 static int mtk_pcm_fm_i2s_silence(struct snd_pcm_substream *substream,
-				  int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
+	int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
 {
 	pr_debug("%s\n", __func__);
 	/* do nothing */
@@ -341,10 +387,11 @@ static int mtk_pcm_fm_i2s_silence(struct snd_pcm_substream *substream,
 
 static void *dummy_page[2];
 
-static struct page *mtk_fm_i2s_pcm_page(struct snd_pcm_substream *substream, unsigned long offset)
+static struct page *mtk_fm_i2s_pcm_page(struct snd_pcm_substream *substream,
+	unsigned long offset)
 {
 	pr_debug("%s\n", __func__);
-	return virt_to_page(dummy_page[substream->stream]);	/* the same page */
+	return virt_to_page(dummy_page[substream->stream]); /* the same page */
 }
 
 static struct snd_pcm_ops mtk_fm_i2s_ops = {

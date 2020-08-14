@@ -29,27 +29,30 @@
 #include <linux/suspend.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#include <linux/firmware.h>
 #include <mach/md32_ipi.h>
 #include <mach/md32_helper.h>
 #include <mt_spm_sleep.h>
 #include <mt-plat/sync_write.h>
 
 #include "md32_irq.h"
-#include "md32_firmware.h"
-
 
 #define TIMEOUT 5000
-/* #define LOG_TO_AP_UART */
 
-#define MD32_DEVICE_NAME	"md32"
-#define MD32_DATA_IMAGE_PATH		"/md32_d.bin"
-#define MD32_PROGRAM_IMAGE_PATH		"/md32_p.bin"
+#define MD32_DEVICE_NAME		"md32"
+#define MD32_DATA_IMAGE_PATH	"md32_d.bin"
+#define MD32_PROGRAM_IMAGE_PATH	"md32_p.bin"
 
-#define MD32_SEMAPHORE		(MD32_BASE + 0x90)
-#define MD32_CLK_CTRL_BASE	(md32reg.clkctrl)
+#define MD32_SEMAPHORE			(MD32_BASE + 0x90)
+#define MD32_CLK_CTRL_BASE		(md32reg.clkctrl)
 
-#define MD32_LOG_DUMP_SIZE	512
+#define MD32_LOG_DUMP_SIZE		512
 #define MD32_LOG_BUF_MAX_LEN	4096
+
+enum md32_image {
+	MD32_DATA_IMAGE,
+	MD32_PROGRAM_IMAGE,
+};
 
 /* This structre need to sync with MD32-side */
 struct flag_log_info {
@@ -81,22 +84,21 @@ unsigned int md32_log_end_idx_addr;
 unsigned int md32_log_lock_addr;
 unsigned int md32_log_buf_len_addr;
 unsigned int enable_md32_mobile_log_addr;
-unsigned int md32_mobile_log_ready = 0;
+unsigned int md32_mobile_log_ready;
 
 unsigned int flag_md32_addr;
 unsigned int flag_apmcu_addr;
-unsigned int apmcu_clk_init_count = 0;
-static DEFINE_SPINLOCK(dma_lock);
-
-unsigned int md32_mobile_log_ipi_check = 0;
-
-unsigned char *g_md32_log_buf = NULL;
-unsigned char *g_md32_dump_log_buf = NULL;
-unsigned int last_log_buf_max_len = 0;
-unsigned int md32_log_read_count = 0;
-unsigned int buff_full_count = 0;
-unsigned int last_buff_full_count = 0;
+unsigned int apmcu_clk_init_count;
+unsigned int md32_mobile_log_ipi_check;
+unsigned char *g_md32_log_buf;
+unsigned char *g_md32_dump_log_buf;
+unsigned int last_log_buf_max_len;
+unsigned int md32_log_read_count;
+unsigned int buff_full_count;
+unsigned int last_buff_full_count;
 static wait_queue_head_t logwait;
+
+static DEFINE_SPINLOCK(dma_lock);
 
 void memcpy_to_md32(void __iomem *trg, const void *src, int size)
 {
@@ -155,10 +157,9 @@ int get_md32_semaphore(int flag)
 		}
 
 		if (ret < 0)
-			pr_err("[MD32] get md32 semaphore %d TIMEOUT...!\n",
-			       flag);
+			pr_err("[MD32] get semaphore %d TIMEOUT!\n", flag);
 	} else {
-		pr_err("[MD32] try tp double get md32 semaphore %d\n", flag);
+		pr_err("[MD32] try to double get semaphore %d\n", flag);
 	}
 
 	return ret;
@@ -182,11 +183,9 @@ int release_md32_semaphore(int flag)
 		if (read_back == 0)
 			ret = 1;
 		else
-			pr_err("[MD32] release md32 semaphore %d failed!\n",
-			       flag);
+			pr_err("[MD32] release semaphore %d failed!\n", flag);
 	} else {
-		pr_err("[MD32] try to double release md32 semaphore %d\n",
-		       flag);
+		pr_err("[MD32] try to double release semaphore %d\n", flag);
 	}
 
 	return ret;
@@ -207,10 +206,6 @@ static ssize_t md32_get_log_buf(unsigned char *md32_log_buf, size_t b_len)
 				md32_log_end_idx_addr));
 	log_buf_max_len = readl((void __iomem *)(MD32_DTCM +
 				md32_log_buf_len_addr));
-
-	/* pr_debug("[MD32] log_start_idx = %d\n", log_start_idx); */
-	/* pr_debug("[MD32] log_end_idx = %d\n", log_end_idx); */
-	/* pr_debug("[MD32] log_buf_max_len = %d\n", log_buf_max_len); */
 
 	if (!md32_log_buf) {
 		pr_err("[MD32] input null buffer\n");
@@ -249,7 +244,7 @@ out:
 
 static int md32_log_open(struct inode *inode, struct file *file)
 {
-	pr_debug("[MD32] md32_log_open\n");
+	pr_debug("[MD32] %s\n", __func__);
 	return nonseekable_open(inode, file);
 }
 
@@ -264,16 +259,18 @@ static ssize_t md32_log_read(struct file *file, char __user *data, size_t len,
 	log_buf_max_len = readl((void __iomem *)(MD32_DTCM +
 				md32_log_buf_len_addr));
 
-	if (log_buf_max_len != last_log_buf_max_len) {
+	if (log_buf_max_len != last_log_buf_max_len)
 		last_log_buf_max_len = log_buf_max_len;
-	}
 
 	ret_len = md32_get_log_buf(g_md32_log_buf, len);
 	if (ret_len) {
 		g_md32_log_buf[ret_len] = '\0';
 	} else {
+		/*
 		strcpy(g_md32_log_buf, " ");
 		ret_len = strlen(g_md32_log_buf);
+		*/
+		g_md32_log_buf[0] = '\0';
 	}
 
 	copy_size = copy_to_user((unsigned char *)data,
@@ -281,9 +278,6 @@ static ssize_t md32_log_read(struct file *file, char __user *data, size_t len,
 #else
 	ret_len = 0;
 #endif
-
-	/* pr_debug("[MD32] Exit md32_log_read, ret_len = %d, count = %d\n",
-			ret_len, ++md32_log_read_count); */
 
 	return ret_len;
 }
@@ -376,9 +370,8 @@ void buf_full_ipi_handler(int id, void *data, unsigned int len)
 	log_buf_max_len = readl((void __iomem *)(MD32_DTCM +
 				md32_log_buf_len_addr));
 
-	if (log_buf_max_len != last_log_buf_max_len) {
+	if (log_buf_max_len != last_log_buf_max_len)
 		last_log_buf_max_len = log_buf_max_len;
-	}
 
 	ret_len = md32_get_log_buf(g_md32_log_buf, log_buf_max_len);
 	while (ret_len > 0) {
@@ -417,60 +410,6 @@ void apdma_ipi_handler(int id, void *data, unsigned int len)
 	pr_debug("[MD32] INFRA APDMA clock count = %d\n", apmcu_clk_init_count);
 }
 
-int get_md32_img_sz(const char *IMAGE_PATH)
-{
-	struct file *filp = NULL;
-	struct inode *inode;
-	off_t fsize = 0;
-
-	filp = filp_open(IMAGE_PATH, O_RDONLY, 0644);
-
-	if (IS_ERR(filp)) {
-		pr_err("[MD32] Open MD32 image %s FAIL! (%ld)\n", IMAGE_PATH, PTR_ERR(filp));
-		return -1;
-	}
-
-	inode = filp->f_dentry->d_inode;
-	fsize = inode->i_size;
-
-	filp_close(filp, NULL);
-	return fsize;
-}
-
-int load_md32(const char *IMAGE_PATH, char *dst, int dst_len)
-{
-	struct file *filp = NULL;
-	struct inode *inode;
-	off_t fsize;
-	mm_segment_t fs;
-
-	filp = filp_open(IMAGE_PATH, O_RDONLY, 0644);
-	if (IS_ERR(filp)) {
-		int r = PTR_ERR(filp);
-		pr_err("[MD32] Open MD32 image %s FAIL (%d)!\n", IMAGE_PATH, r);
-
-		return r;
-	}
-
-	inode = filp->f_dentry->d_inode;
-	fsize = inode->i_size;
-	if (dst_len < fsize + 1) {
-		pr_err("[MD32] image %s dst_len to small(%d)!\n", IMAGE_PATH, dst_len);
-		filp_close(filp, NULL);
-		return -1;
-	}
-	pr_debug("[MD32] file %s size: %i\n", IMAGE_PATH, (int)fsize);
-
-	fs = get_fs();
-	set_fs(KERNEL_DS);
-	filp->f_op->read(filp, dst, fsize, &filp->f_pos);
-	set_fs(fs);
-	dst[fsize] = '\0';
-	filp_close(filp, NULL);
-
-	return fsize;
-}
-
 unsigned int is_md32_enable(void)
 {
 	if (md32_init_done && readl(MD32_BASE))
@@ -479,14 +418,65 @@ unsigned int is_md32_enable(void)
 		return 0;
 }
 
+static int load_md32_fw(struct device *dev, enum md32_image type, int *size)
+{
+	int err;
+	const struct firmware *fw;
+
+	if (type == MD32_DATA_IMAGE) {
+		const char fwname[] = MD32_DATA_IMAGE_PATH;
+
+		err = request_firmware(&fw, fwname, dev);
+		if (err != 0) {
+			pr_err("fw %s not available, err:%d\n", fwname, err);
+			return -err;
+		}
+		*size = fw->size;
+
+		if (fw->size < MD32_DTCM_SIZE) {
+			memcpy_to_md32((void *)MD32_DTCM, fw->data, fw->size);
+			pr_info("fw %s load success!\n", fwname);
+		} else {
+			pr_err("fw %s size too large\n", fwname);
+			release_firmware(fw);
+			return -EFBIG;
+		}
+
+		release_firmware(fw);
+	} else if (type == MD32_PROGRAM_IMAGE) {
+		const char fwname[] = MD32_PROGRAM_IMAGE_PATH;
+
+		err = request_firmware(&fw, fwname, dev);
+		if (err != 0) {
+			pr_err("fw %s not available, err:%d\n", fwname, err);
+			return -err;
+		}
+		*size = fw->size;
+
+		if (fw->size < MD32_PTCM_SIZE) {
+			memcpy_to_md32((void *)MD32_PTCM, fw->data, fw->size);
+			pr_info("fw %s load success!\n", fwname);
+		} else{
+			pr_err("fw %s size too large\n", fwname);
+			release_firmware(fw);
+			return -EFBIG;
+		}
+
+		release_firmware(fw);
+	} else
+		pr_warn("type %d unknown!\n", type);
+
+	return 0;
+}
+
 /* put md32 in reset state */
-void reset_md32(void)
+void md32_reset_hold(void)
 {
 	unsigned int sw_rstn;
 
 	sw_rstn = readl(MD32_BASE);
 	if (sw_rstn == 0x0)
-		pr_debug("[MD32] has already been reseted!\n");
+		pr_debug("[MD32] has already been reset!\n");
 	else
 		mt_reg_sync_writel(0x0, MD32_BASE);
 }
@@ -503,9 +493,8 @@ static inline ssize_t md32_log_len_show(struct device *kobj,
 {
 	int log_legnth = 0;
 
-	if (md32_mobile_log_ready) {
+	if (md32_mobile_log_ready)
 		log_legnth = readl(MD32_DTCM + md32_log_buf_len_addr);
-	}
 
 	return sprintf(buf, "%08x\n", log_legnth);
 }
@@ -520,24 +509,22 @@ static ssize_t md32_log_len_store(struct device *kobj,
 
 DEVICE_ATTR(md32_log_len, 0644, md32_log_len_show, md32_log_len_store);
 
-int reboot_load_md32(void)
+int reboot_load_md32(struct device *dev)
 {
 	int i;
 	int ret = 0;
-	//int d_sz, p_sz;
+	int d_sz = 0, p_sz = 0;
 	int d_num, p_num;
 	unsigned int sw_rstn;
-	//unsigned char *md32_data_image;
-	//unsigned char *md32_program_image;
 	unsigned int reg;
 
 	sw_rstn = readl(MD32_BASE);
 
 	if (sw_rstn == 0x1)
-		pr_debug("[MD32] MD32 is already running, reboot now...\n");
+		pr_info("[MD32] MD32 is already running, reboot now...\n");
 
 	/* reset MD32 */
-	reset_md32();
+	md32_reset_hold();
 
 	mt_reg_sync_writel(0x1FF, MD32_CLK_CTRL_BASE+0x030);
 	mt_reg_sync_writel(0x1, MD32_BASE+0x008);
@@ -547,58 +534,23 @@ int reboot_load_md32(void)
 		reg &= ~(0x1 << i);
 		mt_reg_sync_writel(reg, MD32_CLK_CTRL_BASE+0x02C);
 	}
-	/*
-	d_sz = get_md32_img_sz(MD32_DATA_IMAGE_PATH);
-	if (d_sz < 0) {
-		pr_err("[MD32] MD32 boot up failed --> can not get data image size\n");
-		ret = d_sz;
-		goto err_get_data;
-	}
-	d_sz = ((d_sz + 63) >> 6) << 6;
 
-	md32_data_image = vmalloc((size_t)d_sz+1);
-	if (!md32_data_image) {
-		ret = -1;
-		goto err_get_data;
-	}
-	ret = load_md32(MD32_DATA_IMAGE_PATH, md32_data_image, d_sz);
-	if (ret < 0) {
-		pr_err("[MD32] MD32 boot up failed --> load data image failed!\n");
-		goto err_load_data;
+	ret = load_md32_fw(dev, MD32_DATA_IMAGE, &d_sz);
+	if (ret != 0) {
+	/* Change from '<' to '!=', since err ret is a positive number */
+		pr_err("boot up failed --> load data image failed!\n");
+		goto load_error;
 	}
 
-	if (d_sz > MD32_DTCM_SIZE)
-		d_sz = MD32_DTCM_SIZE;
-	*/
-	memcpy_to_md32((void *)MD32_DTCM, (const void *)md32_firmware_d, md32_firmware_d_len);
-	/*
-	p_sz = get_md32_img_sz(MD32_PROGRAM_IMAGE_PATH);
-	if (p_sz < 0) {
-		pr_err("[MD32] MD32 boot up failed --> can not get program image size\n");
-		ret = p_sz;
-		goto err_get_program;
+	ret = load_md32_fw(dev, MD32_PROGRAM_IMAGE, &p_sz);
+	if (ret != 0) {
+	/* Change from '<' to '!=', since err ret is a positive number */
+		pr_err("boot up failed --> load program image failed!\n");
+		goto load_error;
 	}
-	p_sz = ((p_sz + 63) >> 6) << 6;
-
-	md32_program_image = vmalloc((size_t)p_sz+1);
-	if (!md32_program_image) {
-		ret = -2;
-		goto err_get_program;
-	}
-	
-	ret = load_md32(MD32_PROGRAM_IMAGE_PATH, md32_program_image, p_sz);
-	if (ret < 0) {
-		pr_err("[MD32] MD32 boot up failed --> load program image failed!\n");
-		goto err_load_program;
-	}
-
-	if (p_sz > MD32_PTCM_SIZE)
-		p_sz = MD32_PTCM_SIZE;
-	*/
-	memcpy_to_md32((void *)MD32_PTCM, (const void *)md32_firmware_p, md32_firmware_p_len);
 
 	/* Turn on the power of ptcm block. 32K for one block */
-	p_num = (md32_firmware_p_len / (32*1024)) + 1;
+	p_num = (p_sz / (32*1024)) + 1;
 	reg = readl(MD32_CLK_CTRL_BASE+0x02C);
 	for (i = p_num; i < 3; ++i) {
 		reg |= (0x1 << i);
@@ -606,7 +558,7 @@ int reboot_load_md32(void)
 	}
 
 	/* Turn on the power of dtcm block.  32K for one block */
-	d_num = (md32_firmware_d_len / (32*1024)) + 1;
+	d_num = (d_sz / (32*1024)) + 1;
 	reg = readl(MD32_CLK_CTRL_BASE+0x02C);
 	for (i = 6-d_num; i > 2; --i) {
 		reg |= (0x1 << i);
@@ -615,14 +567,10 @@ int reboot_load_md32(void)
 
 	/* boot up MD32 */
 	md32_boot_up();
-/*
-err_load_program:
-	//vfree(md32_program_image);
-err_get_program:
-err_load_data:
-	//vfree(md32_data_image);
-err_get_data:
-*/
+	return ret;
+
+load_error:
+	pr_err("boot up failed!!!\n");
 	return ret;
 }
 
@@ -639,7 +587,7 @@ static inline ssize_t md32_boot_show(struct device *kobj,
 		return sprintf(buf, "MD32 is running...\n");
 }
 
-static ssize_t md32_boot_store(struct device *kobj,
+static ssize_t md32_boot_store(struct device *dev,
 			       struct device_attribute *attr,
 			       const char *buf, size_t n)
 {
@@ -654,7 +602,7 @@ static ssize_t md32_boot_store(struct device *kobj,
 	sw_rstn = readl(MD32_BASE);
 	if (sw_rstn == 0x0) {
 		pr_debug("[MD32] Enable MD32\n");
-		if (reboot_load_md32() < 0) {
+		if (reboot_load_md32(dev) < 0) {
 			pr_err("[MD32] Enable MD32 fail\n");
 			return -EINVAL;
 		}
@@ -673,10 +621,9 @@ static inline ssize_t md32_mobile_log_show(struct device *kobj,
 {
 	unsigned int enable_md32_mobile_log = 0;
 
-	if (md32_mobile_log_ready) {
+	if (md32_mobile_log_ready)
 		enable_md32_mobile_log = readl((void __iomem *)(MD32_DTCM +
 					       enable_md32_mobile_log_addr));
-	}
 
 	if (enable_md32_mobile_log == 0x0)
 		return sprintf(buf, "MD32 mobile log is disabled\n");
@@ -790,18 +737,20 @@ int md32_dt_init(struct platform_device *pdev)
 	return ret;
 }
 
-static int md32_pm_event(struct notifier_block *notifier,
+static int md32_pm_event(struct notifier_block *nb,
 			 unsigned long pm_event, void *unused)
 {
 	int retval;
+	struct mtk_md32 *md32_dev = container_of(nb, struct mtk_md32,
+						    pm_nb);
 
 	switch (pm_event) {
 	case PM_POST_HIBERNATION:
-		pr_debug("[MD32] md32_pm_event MD32 reboot\n");
-		retval = reboot_load_md32();
+		pr_debug("[MD32] %s reboot\n", __func__);
+		retval = reboot_load_md32(md32_dev->dev);
 		if (retval < 0) {
 			retval = -EINVAL;
-			pr_err("[MD32] md32_pm_event MD32 reboot Fail\n");
+			pr_err("[MD32] md32_pm_event reboot Fail\n");
 		}
 		return NOTIFY_DONE;
 	}
@@ -818,6 +767,7 @@ static int md32_probe(struct platform_device *pdev)
 	int ret = 0, i;
 	struct device *dev;
 	unsigned int reg;
+	struct mtk_md32 *md32_dev;
 
 	init_waitqueue_head(&logwait);
 
@@ -832,8 +782,12 @@ static int md32_probe(struct platform_device *pdev)
 		pr_err("[MD32] Device Init Fail\n");
 		return ret;
 	}
+	md32_dev = kzalloc(sizeof(*md32_dev), GFP_KERNEL);
+	if (!md32_dev)
+		return -ENOMEM;
 
 	dev = &pdev->dev;
+	md32_dev->dev = &pdev->dev;
 
 	/*MD32 clock */
 	md32_clksys = devm_clk_get(dev, "sys");
@@ -850,25 +804,20 @@ static int md32_probe(struct platform_device *pdev)
 	}
 
 	md32_send_buff = vmalloc((size_t)64);
-	if (!md32_send_buff) {
-		pr_err("[MD32] send_buff malloc fail\n");
+	if (!md32_send_buff)
 		return -ENOMEM;
-	}
+
 	md32_recv_buff = vmalloc((size_t)64);
-	if (!md32_recv_buff) {
-		pr_err("[MD32] recv_buff malloc fail\n");
+	if (!md32_recv_buff)
 		return -ENOMEM;
-	}
+
 	g_md32_log_buf = vmalloc(MD32_LOG_BUF_MAX_LEN+1);
-	if (!g_md32_log_buf) {
-		pr_err("[MD32] md32_log_buf malloc fail\n");
+	if (!g_md32_log_buf)
 		return -ENOMEM;
-	}
+
 	g_md32_dump_log_buf = vmalloc(MD32_LOG_DUMP_SIZE+1);
-	if (!g_md32_dump_log_buf) {
-		pr_err("[MD32] dump_log_buf malloc fail\n");
+	if (!g_md32_dump_log_buf)
 		return -ENOMEM;
-	}
 
 	/* Enable peripherals' clock */
 	mt_reg_sync_writel(0x1FF, MD32_CLK_CTRL_BASE+0x030);
@@ -883,7 +832,7 @@ static int md32_probe(struct platform_device *pdev)
 		mt_reg_sync_writel(reg, MD32_CLK_CTRL_BASE+0x02C);
 	}
 
-	md32_irq_init();
+	md32_irq_init(md32_dev);
 	md32_ipi_init();
 	md32_ocd_init();
 
@@ -910,12 +859,12 @@ static int md32_probe(struct platform_device *pdev)
 		pr_err("[MD32] failed to register PM notifier %d\n", ret);
 
 	ret = devm_request_irq(dev, md32reg.irq, md32_irq_handler, 0,
-			       pdev->name, NULL);
+			       pdev->name, md32_dev);
 	if (ret)
 		dev_err(&pdev->dev, "[MD32] failed to request irq\n");
 
-	pr_debug("[MD32] start run MD32 firmware\n");
-	reboot_load_md32();
+//	pr_debug("[MD32] start run MD32 firmware\n");
+//	reboot_load_md32(&pdev->dev);
 
 	return ret;
 }
@@ -947,3 +896,4 @@ static struct platform_driver md32_driver = {
 };
 
 module_platform_driver(md32_driver);
+

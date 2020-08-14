@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _MUSBFSH_ICUSB_H
 #define _MUSBFSH_ICUSB_H
 
@@ -42,9 +55,9 @@ enum IC_USB_CMD_TYPE {
 
 /* --- non sysfs controlable feature --- */
 /*
-#define MTK_ICUSB_TAKE_WAKE_LOCK
-#define MTK_ICUSB_BABBLE_RECOVER
-*/
+ *#define MTK_ICUSB_TAKE_WAKE_LOCK
+ *#define MTK_ICUSB_BABBLE_RECOVER
+ */
 
 struct my_attr {
 	struct attribute attr;
@@ -91,12 +104,13 @@ extern struct my_attr hw_dbg_attr;
 extern struct my_attr skip_port_pm_attr;
 
 /*== ===================
-*  ic_usb_status :
-*		Byte4 : wait disconnect status
-*		Byte3 Byte2 : get interface power reqest data field
-*		Byte1 : power negotiation result
-*
-*=====================*/
+ *  ic_usb_status :
+ *		Byte4 : wait disconnect status
+ *		Byte3 Byte2 : get interface power reqest data field
+ *		Byte1 : power negotiation result
+ *
+ *=====================
+ */
 
 #define PREFER_VOL_STS_SHIFT (0)
 #define PREFER_VOL_STS_MSK (0x3)

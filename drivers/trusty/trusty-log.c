@@ -17,11 +17,12 @@
 #include <linux/notifier.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
+#include <linux/module.h>
 #include <linux/log2.h>
 #include <asm/page.h>
 #include "trusty-log.h"
 
-#define TRUSTY_LOG_SIZE (PAGE_SIZE * 2)
+#define TRUSTY_LOG_SIZE (PAGE_SIZE * 32)
 #define TRUSTY_LINE_BUFFER_SIZE 256
 
 struct trusty_log_state {
@@ -178,7 +179,7 @@ static int trusty_log_probe(struct platform_device *pdev)
 	s->dev = &pdev->dev;
 	s->trusty_dev = s->dev->parent;
 	s->get = 0;
-	s->log_pages = alloc_pages(GFP_KERNEL | __GFP_ZERO,
+	s->log_pages = alloc_pages(GFP_KERNEL | __GFP_ZERO | GFP_DMA,
 				   get_order(TRUSTY_LOG_SIZE));
 	if (!s->log_pages) {
 		result = -ENOMEM;
@@ -189,7 +190,7 @@ static int trusty_log_probe(struct platform_device *pdev)
 	pa = page_to_phys(s->log_pages);
 	result = trusty_std_call32(s->trusty_dev,
 				   SMC_SC_SHARED_LOG_ADD,
-				   (u32)(pa), (u32)(pa >> 32),
+				   (u32)(pa), (u32)((u64)pa >> 32),
 				   TRUSTY_LOG_SIZE);
 	if (result < 0) {
 		pr_err("trusty std call (SMC_SC_SHARED_LOG_ADD) failed: %d %pa\n",
@@ -222,7 +223,7 @@ error_panic_notifier:
 	trusty_call_notifier_unregister(s->trusty_dev, &s->call_notifier);
 error_call_notifier:
 	trusty_std_call32(s->trusty_dev, SMC_SC_SHARED_LOG_RM,
-			  (u32)pa, (u32)(pa >> 32), 0);
+			  (u32)pa, (u32)((u64)pa >> 32), 0);
 error_std_call:
 	__free_pages(s->log_pages, get_order(TRUSTY_LOG_SIZE));
 error_alloc_log:
@@ -244,7 +245,7 @@ static int trusty_log_remove(struct platform_device *pdev)
 	trusty_call_notifier_unregister(s->trusty_dev, &s->call_notifier);
 
 	result = trusty_std_call32(s->trusty_dev, SMC_SC_SHARED_LOG_RM,
-				   (u32)pa, (u32)(pa >> 32), 0);
+				   (u32)pa, (u32)((u64)pa >> 32), 0);
 	if (result) {
 		pr_err("trusty std call (SMC_SC_SHARED_LOG_RM) failed: %d\n",
 		       result);

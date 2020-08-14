@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
@@ -22,30 +35,24 @@
 
 #include "mach/emi_mpu.h"
 #include <mt-plat/dma.h>
-#include <mt-plat/mt_io.h>
+#include <mt-plat/mtk_io.h>
 #include <mt-plat/sync_write.h>
-#include <mt-plat/mt_device_apc.h>
 
 
 #ifdef CONFIG_MTK_IN_HOUSE_TEE_SUPPORT
-#include "trustzone/kree/system.h"
-#include "trustzone/tz_cross/trustzone.h"
-#include "trustzone/tz_cross/ta_emi.h"
+#include <mt-plat/trustzone/kree/system.h>
+#include <mt-plat/trustzone/tz_cross/trustzone.h>
+#include <mt-plat/trustzone/tz_cross/ta_emi.h>
 #endif
 
 
-#define ENABLE_EMI_CHKER
-#define ENABLE_EMI_WATCH_POINT
-#define NR_REGION_ABORT 15
+void __iomem *EMI_BASE_ADDR;
 #define MAX_EMI_MPU_STORE_CMD_LEN 128
-#define TIMEOUT 100
-#define AXI_VIO_MONITOR_TIME (1 * HZ)
-
-static struct work_struct emi_mpu_work;
-static struct workqueue_struct *emi_mpu_workqueue;
-
-static unsigned int vio_addr;
 static unsigned int emi_physical_offset;
+static DEFINE_MUTEX(emi_mpu_lock);
+
+#ifndef DISABLE_IRQ
+static unsigned int vio_addr;
 
 struct mst_tbl_entry {
 	u32 master;
@@ -53,11 +60,6 @@ struct mst_tbl_entry {
 	u32 id_mask;
 	u32 id_val;
 	char *name;
-};
-
-struct emi_mpu_notifier_block {
-	struct list_head list;
-	emi_mpu_notifier notifier;
 };
 
 static const struct mst_tbl_entry mst_tbl[] = {
@@ -186,37 +188,45 @@ static const struct mst_tbl_entry mst_tbl[] = {
 
 /* struct list_head emi_mpu_notifier_list[NR_MST]; */
 static const char *UNKNOWN_MASTER = "unknown";
-static spinlock_t emi_mpu_lock;
 
-#ifdef ENABLE_EMI_CHKER
-struct timer_list emi_axi_vio_timer;
-#endif
+char *smi_larb0_port[17] = {"disp_ovl_0", "disp_rdma_0", "disp_wdma_0",
+				"disp_ovl_1", "disp_rdma_1", "disp_wdma_1",
+				"ufod_rdma0", "ufod_rdma1", "ufod_rdma2",
+				"ufod_rdma3", "ufod_rdma4", "ufod_rdma5",
+				"ufod_rdma6", "ufod_rdma7", "mdp_rdma",
+				"mdp_wdma", "mdp_wrot"};
 
-char *smi_larb0_port[17] = {"disp_ovl_0", "disp_rdma_0", "disp_wdma_0", "disp_ovl_1",
-							"disp_rdma_1", "disp_wdma_1", "ufod_rdma0", "ufod_rdma1",
-							"ufod_rdma2", "ufod_rdma3", "ufod_rdma4", "ufod_rdma5",
-							"ufod_rdma6", "ufod_rdma7", "mdp_rdma", "mdp_wdma", "mdp_wrot"};
+char *smi_larb1_port[9] =  {"hw_vdec_mc_ext", "hw_vdec_pp_ext",
+				"hw_vdec_vld_ext", "hw_vdec_avc_mv_ext",
+				"hw_vdec_pred_rd_ext",
+				"hw_vdec_pred_wr_ext", "hw_vdec_ppwarp_ext" };
 
-char *smi_larb1_port[9] =  {"hw_vdec_mc_ext", "hw_vdec_pp_ext", "hw_vdec_vld_ext",
-							"hw_vdec_avc_mv_ext" , "hw_vdec_pred_rd_ext",
-							"hw_vdec_pred_wr_ext", "hw_vdec_ppwarp_ext" };
+char *smi_larb2_port[21] = {"cam_imgo", "cam_img2o", "cam_isci",
+				"cam_imgi", "cam_esfko", "cam_aao"};
 
-char *smi_larb2_port[21] = {"cam_imgo", "cam_img2o", "cam_isci", "cam_imgi",
-							"cam_esfko", "cam_aao"};
+char *smi_larb3_port[19] = {"venc_rcpu", "venc_rec", "venc_bsdma",
+				"venc_sv_comv", "vend_rd_comv",
+				"jpgenc_rdma", "jpgenc_bsdma", "jpgdec_wdma",
+				"jpgdec_bsdma", "venc_cur_luma",
+				"venc_cur_chroma", "venc_ref_luma",
+				"vend_ref_chroma"};
 
-char *smi_larb3_port[19] = {"venc_rcpu", "venc_rec", "venc_bsdma", "venc_sv_comv",
-							"vend_rd_comv", "jpgenc_rdma", "jpgenc_bsdma", "jpgdec_wdma",
-							"jpgdec_bsdma", "venc_cur_luma", "venc_cur_chroma",
-							"venc_ref_luma", "vend_ref_chroma"};
+char *smi_larb4_port[4] = {"mjc_mv_rd", "mjc_mv_wr",
+				"mjc_dma_rd", "mjc_dma_wr"};
 
-char *smi_larb4_port[4] = {"mjc_mv_rd", "mjc_mv_wr", "mjc_dma_rd", "mjc_dma_wr"};
+
 
 static int __match_id(u32 axi_id, int tbl_idx, u32 port_ID)
 {
-	u32 mm_larb;
-	u32 smi_port;
+	u32 mm_larb = 0;
+	u32 smi_port = 0;
 
-	if (((axi_id & mst_tbl[tbl_idx].id_mask) == mst_tbl[tbl_idx].id_val) && (port_ID == mst_tbl[tbl_idx].port)) {
+	if(tbl_idx < 0){
+		pr_err("[EMI MPU ERROR] Invalidate tbl_idx para!\n");
+		return 0;
+	}
+	if (((axi_id & mst_tbl[tbl_idx].id_mask) == mst_tbl[tbl_idx].id_val)
+		&& (port_ID == mst_tbl[tbl_idx].port)) {
 		switch (port_ID) {
 		case 0: /* ARM */
 		case 1: /* Peripheral */
@@ -225,52 +235,59 @@ static int __match_id(u32 axi_id, int tbl_idx, u32 port_ID)
 		case 4: /* MD HW (2G/3G) */
 		case 6: /* MFG */
 		case 7: /* MD */
-			pr_err("Violation master name is %s.\n", mst_tbl[tbl_idx].name);
+			pr_err("Violation master name is %s.\n",
+					mst_tbl[tbl_idx].name);
 			break;
 		case 5: /* MM */
 			mm_larb = axi_id>>7;
 			smi_port = (axi_id & 0x7F) >> 2;
 			if (mm_larb == 0x0) {
 				if (smi_port >= ARRAY_SIZE(smi_larb0_port)) {
-					pr_err("[EMI MPU ERROR] Invalidate master ID! lookup smi table failed!\n");
+					pr_err("[EMI MPU ERROR] Invalidate master ID!\n");
 					return 0;
 				}
-				pr_err("Violation master name is %s (%s).\n", mst_tbl[tbl_idx].name,
-						smi_larb0_port[smi_port]);
+				pr_err("Violation master name is %s (%s).\n",
+					mst_tbl[tbl_idx].name,
+					smi_larb0_port[smi_port]);
 			} else if (mm_larb == 0x1) {
 				if (smi_port >= ARRAY_SIZE(smi_larb1_port)) {
-					pr_err("[EMI MPU ERROR] Invalidate master ID! lookup smi table failed!\n");
+					pr_err("[EMI MPU ERROR] Invalidate master ID!\n");
 					return 0;
 				}
-					pr_err("Violation master name is %s (%s).\n", mst_tbl[tbl_idx].name,
-							smi_larb1_port[smi_port]);
+					pr_err("Violation master name is %s (%s).\n",
+					mst_tbl[tbl_idx].name,
+					smi_larb1_port[smi_port]);
 			} else if (mm_larb == 0x2) {
 				if (smi_port >= ARRAY_SIZE(smi_larb2_port)) {
-					pr_err("[EMI MPU ERROR] Invalidate master ID! lookup smi table failed!\n");
+					pr_err("[EMI MPU ERROR] Invalidate master ID!\n");
 					return 0;
 				}
-				pr_err("Violation master name is %s (%s).\n", mst_tbl[tbl_idx].name,
-						smi_larb2_port[smi_port]);
+				pr_err("Violation master name is %s (%s).\n",
+					mst_tbl[tbl_idx].name,
+					smi_larb2_port[smi_port]);
 			} else if (mm_larb == 0x3) {
 				if (smi_port >= ARRAY_SIZE(smi_larb3_port)) {
-					pr_err("[EMI MPU ERROR] Invalidate master ID! lookup smi table failed!\n");
+					pr_err("[EMI MPU ERROR] Invalidate master ID!\n");
 					return 0;
 				}
-					pr_err("Violation master name is %s (%s).\n", mst_tbl[tbl_idx].name,
-							smi_larb3_port[smi_port]);
+					pr_err("Violation master name is %s (%s).\n",
+					mst_tbl[tbl_idx].name,
+					smi_larb3_port[smi_port]);
 			} else if (mm_larb == 0x4) {
 				if (smi_port >= ARRAY_SIZE(smi_larb4_port)) {
-					pr_err("[EMI MPU ERROR] Invalidate master ID! lookup smi table failed!\n");
+					pr_err("[EMI MPU ERROR] Invalidate master ID!\n");
 					return 0;
 				}
-				pr_err("Violation master name is %s (%s).\n", mst_tbl[tbl_idx].name,
-						smi_larb4_port[smi_port]);
+				pr_err("Violation master name is %s (%s).\n",
+					mst_tbl[tbl_idx].name,
+					smi_larb4_port[smi_port]);
 			} else /*M4U*/ {
-				pr_err("Violation master name is %s.\n", mst_tbl[tbl_idx].name);
+				pr_err("Violation master name is %s.\n",
+					mst_tbl[tbl_idx].name);
 			}
 			break;
 		default:
-				pr_err("[EMI MPU ERROR] Invalidate port ID! lookup bus ID table failed!\n");
+				pr_err("[EMI MPU ERROR] Invalidate port ID!\n");
 				break;
 		}
 		return 1;
@@ -278,8 +295,9 @@ static int __match_id(u32 axi_id, int tbl_idx, u32 port_ID)
 	return 0;
 }
 
-#ifdef CONFIG_MTK_IN_HOUSE_TEE_SUPPORT
+
 #ifdef CONFIG_MTK_AEE_FEATURE
+
 static u32 __id2mst(u32 id)
 {
 	int i;
@@ -296,8 +314,6 @@ static u32 __id2mst(u32 id)
 	return MST_INVALID;
 }
 #endif
-#endif
-
 static char *__id2name(u32 id)
 {
 	int i;
@@ -307,10 +323,6 @@ static char *__id2name(u32 id)
 	axi_ID = (id >> 3) & 0x00001FFF;
 	port_ID = id & 0x00000007;
 
-    /*MDHW disable
-	if (port_ID == 4)
-		disable_irq_nosync(APARM_DOMAIN_IRQ_BIT_ID);
-	*/
 	for (i = 0; i < ARRAY_SIZE(mst_tbl); i++) {
 		if (__match_id(axi_ID, i, port_ID))
 			return mst_tbl[i].name;
@@ -318,6 +330,7 @@ static char *__id2name(u32 id)
 
 	return (char *)UNKNOWN_MASTER;
 }
+#endif
 
 static unsigned int emi_reg_read(void __iomem *addr)
 {
@@ -327,8 +340,8 @@ static unsigned int emi_reg_read(void __iomem *addr)
 	reg_val = readl(IOMEM(addr));
 #else
 	KREE_SESSION_HANDLE emi_session;
-	MTEEC_PARAM param[4];
-	TZ_RESULT ret;
+	union MTEEC_PARAM param[4];
+	int ret;
 
 	ret = KREE_CreateSession(TZ_TA_EMI_UUID, &emi_session);
 	if (ret != TZ_RESULT_SUCCESS)
@@ -355,8 +368,8 @@ static void emi_reg_write(unsigned int val, void __iomem *addr)
 	mt_reg_sync_writel(val, addr);
 #else
 	KREE_SESSION_HANDLE emi_session;
-	MTEEC_PARAM param[4];
-	TZ_RESULT ret;
+	union MTEEC_PARAM param[4];
+	int ret;
 
 	ret = KREE_CreateSession(TZ_TA_EMI_UUID, &emi_session);
 	if (ret != TZ_RESULT_SUCCESS)
@@ -365,7 +378,8 @@ static void emi_reg_write(unsigned int val, void __iomem *addr)
 	param[0].value.a = (uint32_t)((unsigned long)(addr) & 0xFFF);
 	param[0].value.b = (uint32_t)val;
 	ret = KREE_TeeServiceCall(emi_session, TZCMD_EMI_WR,
-		TZ_ParamTypes4(TZPT_VALUE_INOUT, TZPT_VALUE_INOUT, TZPT_VALUE_INOUT, TZPT_VALUE_INOUT),
+		TZ_ParamTypes4(TZPT_VALUE_INOUT,
+		TZPT_VALUE_INOUT, TZPT_VALUE_INOUT, TZPT_VALUE_INOUT),
 		param);
 
 	ret = KREE_CloseSession(emi_session);
@@ -374,28 +388,23 @@ static void emi_reg_write(unsigned int val, void __iomem *addr)
 #endif
 }
 
-/*
-static void __clear_emi_mpu_vio(void)
-{
-
-
-}
-*/
-
-#ifdef CONFIG_MTK_IN_HOUSE_TEE_SUPPORT
+#ifndef DISABLE_IRQ
 
 /*EMI MPU violation handler*/
 static irqreturn_t mpu_violation_irq(int irq, void *dev_id)
 {
-	u32 dbg_s, dbg_t, dbg_pqry;
-	u32 master_ID, domain_ID, wr_vio;
-	s32 region;
-	char *master_name;
-
-	KREE_SESSION_HANDLE emi_session;
-	MTEEC_PARAM param[4];
-	TZ_RESULT ret;
-
+	u32 dbg_s = 0;
+	u32 dbg_t = 0;
+	u32 dbg_pqry = 0;
+	u32 master_ID = 0;
+	u32 domain_ID = 0;
+	u32 wr_vio = 0;
+	s32 region = 0;
+	char *master_name = NULL;
+	KREE_SESSION_HANDLE emi_session = 0;
+	union MTEEC_PARAM param[4];
+	int ret = 0;
+	memset(param,0,sizeof(param));
 
 	pr_err("[EMI MPU] Violation information from TA.\n");
 
@@ -424,13 +433,13 @@ static irqreturn_t mpu_violation_irq(int irq, void *dev_id)
 		return IRQ_NONE;
 	}
 
-
-
 	/*TBD: print the abort region*/
-	pr_err("[EMI MPU] Debug info start ----------------------------------------\n");
+	pr_err("[EMI MPU] Debug info start -------------------------\n");
 	pr_err("EMI_MPUS = %x, EMI_MPUT = %x.\n", dbg_s, dbg_t);
-	pr_err("Current process is \"%s \" (pid: %i).\n", current->comm, current->pid);
-	pr_err("Violation address is 0x%x.\n", dbg_t + emi_physical_offset);
+	pr_err("Current process is \"%s \" (pid: %i).\n",
+		current->comm, current->pid);
+	pr_err("Violation address is 0x%x.\n",
+		dbg_t + emi_physical_offset);
 	pr_err("Violation master ID is 0x%x.\n", master_ID);
 	/*print out the murderer name*/
 	master_name = __id2name(master_ID);
@@ -440,117 +449,20 @@ static irqreturn_t mpu_violation_irq(int irq, void *dev_id)
 	if (dbg_pqry & OOR_VIO)
 		pr_err("Out of range violation.\n");
 
-	pr_err("[EMI MPU] Debug info end------------------------------------------\n");
+	pr_err("[EMI MPU] Debug info end----------------------------\n");
 
 #ifdef CONFIG_MTK_AEE_FEATURE
 	/*FIXME: skip ca53 violation to trigger root-cause KE*/
-	if ((0 != dbg_s) && (__id2mst(master_ID) != MST_ID_APMCU_0) && (__id2mst(master_ID) != MST_ID_APMCU_1)) {
-		/*aee_kernel_exception("EMI MPU", "EMI MPU violation.\nEMP_MPUS = 0x%x,
-		EMI_MPUT = 0x%x, EMI_MPU(PQR).\n", dbg_s, dbg_t+emi_physical_offset, dbg_pqry);*/
-		aee_kernel_exception("EMI MPU", "EMI MPU violation.\nEMI_MPUS = 0x%x, EMI_MPUT = 0x%x, module is %s.\n",
-		dbg_s, dbg_t+emi_physical_offset, master_name);
+	if ((dbg_s != 0) && (__id2mst(master_ID) != MST_ID_APMCU_0)
+		&& (__id2mst(master_ID) != MST_ID_APMCU_1)) {
+		aee_kernel_exception("EMI MPU", "EMI MPU violation.\n");
 	}
 #endif
-
 	vio_addr = dbg_t + emi_physical_offset;
 
 	return IRQ_HANDLED;
 }
 #endif
-
-/* Acquire DRAM Setting for PASR/DPD */
-void acquire_dram_setting(struct basic_dram_setting *pasrdpd)
-{
-	int ch_nr = MAX_CHANNELS;
-	unsigned int emi_cona, emi_conh, col_bit, row_bit;
-	unsigned int ch0_rank0_size, ch0_rank1_size, ch1_rank0_size, ch1_rank1_size;
-
-	pasrdpd->channel_nr = ch_nr;
-
-	emi_cona = readl(IOMEM(EMI_CONA));
-	emi_conh = readl(IOMEM(EMI_CONH));
-
-	/* unit 2Gb */
-	ch0_rank0_size = (emi_conh >> 16) & 0xf;
-	ch0_rank1_size = (emi_conh >> 20) & 0xf;
-	ch1_rank0_size = (emi_conh >> 24) & 0xf;
-	ch1_rank1_size = (emi_conh >> 28) & 0xf;
-
-	/* channel 0 */
-	{
-		/* rank 0, 32 bits * 8 banks, unit Gb */
-		pasrdpd->channel[0].rank[0].valid_rank = true;
-		pasrdpd->channel[0].rank[0].segment_nr = 8;
-
-		if (ch0_rank0_size == 0) {
-			col_bit = ((emi_cona >> 4) & 0x03) + 9;
-			row_bit = ((emi_cona >> 12) & 0x03) + 13;
-			pasrdpd->channel[0].rank[0].rank_size = (1 << (row_bit + col_bit)) >> 22;
-		} else {
-			pasrdpd->channel[0].rank[0].rank_size = (ch0_rank0_size * 2);
-		}
-
-		/* rank 1 , 32 bits * 8 banks, unit Gb */
-		if (0 != (emi_cona &  (1 << 17))) {
-			pasrdpd->channel[0].rank[1].valid_rank = true;
-			pasrdpd->channel[0].rank[1].segment_nr = 8;
-
-			if (ch0_rank1_size == 0) {
-				col_bit = ((emi_cona >> 6) & 0x03) + 9;
-				row_bit = ((emi_cona >> 14) & 0x03) + 13;
-				pasrdpd->channel[0].rank[1].rank_size = (1 << (row_bit + col_bit)) >> 22;
-			} else {
-				pasrdpd->channel[0].rank[1].rank_size = (ch0_rank1_size * 2);
-			}
-		} else {
-			pasrdpd->channel[0].rank[1].valid_rank = false;
-			pasrdpd->channel[0].rank[1].segment_nr = 0;
-			pasrdpd->channel[0].rank[1].rank_size = 0;
-		}
-	}
-
-	/* channel 1 exist */
-	if (0 != (emi_cona & 0x01)) {
-		/* rank0 setting, 32 bits * 8 banks, unit Gb */
-		pasrdpd->channel[1].rank[0].valid_rank = true;
-		pasrdpd->channel[1].rank[0].segment_nr = 8;
-
-		if (ch1_rank0_size == 0) {
-			col_bit = ((emi_cona >> 20) & 0x03) + 9;
-			row_bit = ((emi_cona >> 28) & 0x03) + 13;
-			pasrdpd->channel[1].rank[0].rank_size = (1 << (row_bit + col_bit)) >> 22;
-		} else {
-			pasrdpd->channel[1].rank[0].rank_size = (ch1_rank0_size * 2);
-		}
-		/* rank 1 exist, 32 bits * 8 banks, unit Gb */
-		if (0 != (emi_cona &  (1 << 16))) {
-			pasrdpd->channel[1].rank[1].valid_rank = true;
-			pasrdpd->channel[1].rank[1].segment_nr = 8;
-			if (ch1_rank1_size == 0) {
-				col_bit = ((emi_cona >> 22) & 0x03) + 9;
-				row_bit = ((emi_cona >> 30) & 0x03) + 13;
-				pasrdpd->channel[1].rank[1].rank_size = (1 << (row_bit + col_bit)) >> 22;
-			} else {
-				pasrdpd->channel[1].rank[1].rank_size = (ch1_rank1_size * 2);
-			}
-		} else {
-			pasrdpd->channel[1].rank[1].valid_rank = false;
-			pasrdpd->channel[1].rank[1].segment_nr = 0;
-			pasrdpd->channel[1].rank[1].rank_size = 0;
-		}
-	}
-	/* channel 2 does not exist */
-	else {
-		pasrdpd->channel[1].rank[0].valid_rank = false;
-		pasrdpd->channel[1].rank[0].segment_nr = 0;
-		pasrdpd->channel[1].rank[0].rank_size = 0;
-
-		pasrdpd->channel[1].rank[1].valid_rank = false;
-		pasrdpd->channel[1].rank[1].segment_nr = 0;
-		pasrdpd->channel[1].rank[1].rank_size = 0;
-	}
-}
-
 
 /*
  * emi_mpu_set_region_protection: protect a region.
@@ -560,12 +472,12 @@ void acquire_dram_setting(struct basic_dram_setting *pasrdpd)
  * @access_permission: EMI MPU access permission
  * Return 0 for success, otherwise negative status code.
  */
-int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int region, unsigned int access_permission)
+int emi_mpu_set_region_protection(unsigned int start,
+unsigned int end, int region, unsigned int access_permission)
 {
 	int ret = 0;
 	unsigned int tmp, tmp2;
 	unsigned int ax_pm, ax_pm2;
-	unsigned long flags;
 
 	if ((end != 0) || (start != 0)) {
 		/*Address 64KB alignment*/
@@ -580,11 +492,10 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 	ax_pm = (access_permission << 16) >> 16;
 	ax_pm2 = (access_permission >> 16);
 
-	spin_lock_irqsave(&emi_mpu_lock, flags);
+	mutex_lock(&emi_mpu_lock);
 
 	switch (region) {
 	case 0:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUI) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUI_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUI);
@@ -595,7 +506,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 1:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUI) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUI_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUI);
@@ -606,7 +516,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 2:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUJ) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUJ_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUJ);
@@ -617,7 +526,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 3:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUJ) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUJ_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUJ);
@@ -628,7 +536,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 4:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUK) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUK_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUK);
@@ -639,7 +546,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 5:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUK) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUK_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUK);
@@ -650,7 +556,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 6:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUL) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUL_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUL);
@@ -661,7 +566,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 7:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUL) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUL_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUL);
@@ -672,7 +576,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 8:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUI2) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUI2_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUI2);
@@ -683,7 +586,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 9:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUI2) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUI2_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUI2);
@@ -694,7 +596,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 10:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUJ2) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUJ2_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUJ2);
@@ -705,7 +606,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 11:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUJ2) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUJ2_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUJ2);
@@ -716,7 +616,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 12:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUK2) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUK2_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUK2);
@@ -727,7 +626,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 13:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUK2) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUK2_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUK2);
@@ -738,7 +636,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 14:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUL2) & 0xFFFF0000;
 		tmp2 = emi_reg_read(EMI_MPUL2_2ND) & 0xFFFF0000;
 		emi_reg_write(0, EMI_MPUL2);
@@ -749,7 +646,6 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 
 	case 15:
-		/* Marcos: Clear access right before setting MPU address (Mt6582 design) */
 		tmp = emi_reg_read(EMI_MPUL2) & 0x0000FFFF;
 		tmp2 = emi_reg_read(EMI_MPUL2_2ND) & 0x0000FFFF;
 		emi_reg_write(0, EMI_MPUL2);
@@ -764,47 +660,11 @@ int emi_mpu_set_region_protection(unsigned int start, unsigned int end, int regi
 		break;
 	}
 
-	spin_unlock_irqrestore(&emi_mpu_lock, flags);
+	mutex_unlock(&emi_mpu_lock);
 
 	return ret;
 }
 EXPORT_SYMBOL(emi_mpu_set_region_protection);
-
-
-
-#if 0
-/*
- * emi_mpu_notifier_register: register a notifier.
- * master: MST_ID_xxx
- * notifier: the callback function
- * Return 0 for success, otherwise negative error code.
- */
-
-int emi_mpu_notifier_register(int master, emi_mpu_notifier notifier)
-{
-	struct emi_mpu_notifier_block *block;
-	static int emi_mpu_notifier_init;
-	int i;
-
-	if (master >= MST_INVALID)
-		return -EINVAL;
-
-	block = kmalloc(sizeof(struct emi_mpu_notifier_block), GFP_KERNEL);
-	if (!block)
-		return -ENOMEM;
-
-	if (!emi_mpu_notifier_init) {
-		for (i = 0; i < NR_MST; i++)
-			INIT_LIST_HEAD(&(emi_mpu_notifier_list[i]));
-		emi_mpu_notifier_init = 1;
-	}
-
-	block->notifier = notifier;
-	list_add(&(block->list), &(emi_mpu_notifier_list[master]));
-
-	return 0;
-}
-#endif
 
 static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 {
@@ -915,9 +775,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 0 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 0 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -928,9 +790,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 1 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 1 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	reg_value = emi_reg_read(EMI_MPUJ);
 	reg_value2 = emi_reg_read(EMI_MPUJ_2ND);
@@ -943,9 +807,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 2 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 2 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -956,9 +822,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 3 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 3 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	reg_value = emi_reg_read(EMI_MPUK);
 	reg_value2 = emi_reg_read(EMI_MPUK_2ND);
@@ -971,9 +839,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 4 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 4 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -984,9 +854,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 5 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 5 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	reg_value = emi_reg_read(EMI_MPUL);
 	reg_value2 = emi_reg_read(EMI_MPUL_2ND);
@@ -999,9 +871,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 6 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 6 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -1012,9 +886,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 7 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 7 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	reg_value = emi_reg_read(EMI_MPUI2);
 	reg_value2 = emi_reg_read(EMI_MPUI2_2ND);
@@ -1027,9 +903,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 8 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 8 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -1040,9 +918,11 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
 	ptr += sprintf(ptr, "Region 9 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
 	ptr += sprintf(ptr, "Region 9 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	reg_value = emi_reg_read(EMI_MPUJ2);
 	reg_value2 = emi_reg_read(EMI_MPUJ2_2ND);
@@ -1054,10 +934,14 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d5 = (reg_value2 >> 3) & 0x7;
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
-	ptr += sprintf(ptr, "Region 10 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
-	ptr += sprintf(ptr, "Region 10 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+	ptr += sprintf(ptr,
+		"Region 10 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
+	ptr += sprintf(ptr,
+		"Region 10 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -1067,10 +951,14 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d5 = ((reg_value2>>16) >> 3) & 0x7;
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
-	ptr += sprintf(ptr, "Region 11 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
-	ptr += sprintf(ptr, "Region 11 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+	ptr += sprintf(ptr,
+		"Region 11 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
+	ptr += sprintf(ptr,
+		"Region 11 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 
 	reg_value = emi_reg_read(EMI_MPUK2);
@@ -1083,10 +971,14 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d5 = (reg_value2 >> 3) & 0x7;
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
-	ptr += sprintf(ptr, "Region 12 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
-	ptr += sprintf(ptr, "Region 12 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+	ptr += sprintf(ptr,
+		"Region 12 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
+	ptr += sprintf(ptr,
+		"Region 12 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -1096,10 +988,14 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d5 = ((reg_value2>>16) >> 3) & 0x7;
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
-	ptr += sprintf(ptr, "Region 13 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
-	ptr += sprintf(ptr, "Region 13 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+	ptr += sprintf(ptr,
+		"Region 13 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
+	ptr += sprintf(ptr,
+		"Region 13 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	reg_value = emi_reg_read(EMI_MPUL2);
 	reg_value2 = emi_reg_read(EMI_MPUL2_2ND);
@@ -1111,10 +1007,14 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d5 = (reg_value2 >> 3) & 0x7;
 	d6 = (reg_value2 >> 6) & 0x7;
 	d7 = (reg_value2 >> 9) & 0x7;
-	ptr += sprintf(ptr, "Region 14 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
-	ptr += sprintf(ptr, "Region 14 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+	ptr += sprintf(ptr,
+		"Region 14 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
+	ptr += sprintf(ptr,
+		"Region 14 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	d0 = ((reg_value>>16) & 0x7);
 	d1 = ((reg_value>>16) >> 3) & 0x7;
@@ -1124,17 +1024,23 @@ static ssize_t emi_mpu_show(struct device_driver *driver, char *buf)
 	d5 = ((reg_value2>>16) >> 3) & 0x7;
 	d6 = ((reg_value2>>16) >> 6) & 0x7;
 	d7 = ((reg_value2>>16) >> 9) & 0x7;
-	ptr += sprintf(ptr, "Region 15 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
-					permission[d0],  permission[d1],  permission[d2], permission[d3]);
-	ptr += sprintf(ptr, "Region 15 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
-					permission[d4],  permission[d5],  permission[d6], permission[d7]);
+	ptr += sprintf(ptr,
+		"Region 15 --> d0 = %s, d1 = %s, d2 = %s, d3 = %s\n",
+		permission[d0],  permission[d1],
+		permission[d2], permission[d3]);
+	ptr += sprintf(ptr,
+		"Region 15 --> d4 = %s, d5 = %s, d6 = %s, d7 = %s\n",
+		permission[d4],  permission[d5],
+		permission[d6], permission[d7]);
 
 	return strlen(buf);
 }
 
-static ssize_t emi_mpu_store(struct device_driver *driver, const char *buf, size_t count)
+static ssize_t emi_mpu_store(struct device_driver *driver,
+	const char *buf, size_t count)
 {
 	int i;
+	int ret = 0;
 	unsigned int start_addr;
 	unsigned int end_addr;
 	unsigned int region;
@@ -1153,7 +1059,7 @@ static ssize_t emi_mpu_store(struct device_driver *driver, const char *buf, size
 	if (!command)
 		return count;
 
-	strcpy(command, buf);
+	strncpy(command, buf, MAX_EMI_MPU_STORE_CMD_LEN);
 	ptr = (char *)buf;
 
 	if (!strncmp(buf, EN_MPU_STR, strlen(EN_MPU_STR))) {
@@ -1167,13 +1073,26 @@ static ssize_t emi_mpu_store(struct device_driver *driver, const char *buf, size
 		for (i = 0; i < 5; i++)
 			pr_devel("token[%d] = %s\n", i, token[i]);
 
-		start_addr = kstrtoul(token[1], 16, (unsigned long *) &token[1]);
-		end_addr = kstrtoul(token[2], 16, (unsigned long *) &token[2]);
-		region = kstrtoul(token[3], 16, (unsigned long *) &token[3]);
-		access_permission = kstrtoul(token[4], 16, (unsigned long *) &token[4]);
-		emi_mpu_set_region_protection(start_addr, end_addr, region, access_permission);
-		pr_err("Set EMI_MPU: start: 0x%x, end: 0x%x, region: %d, permission: 0x%x.\n",
-				start_addr, end_addr, region, access_permission);
+		ret += kstrtoul(token[1], 16,
+			(unsigned long *) &start_addr);
+		ret += kstrtoul(token[2], 16,
+			(unsigned long *) &end_addr);
+		ret += kstrtoul(token[3], 16,
+			(unsigned long *) &region);
+		ret += kstrtoul(token[4], 16,
+			(unsigned long *) &access_permission);
+
+		if (ret) {
+			pr_err("fail to parse command.\n");
+			kfree(command);
+			return -1;
+		}
+
+		emi_mpu_set_region_protection(start_addr, end_addr,
+			region, access_permission);
+		pr_err("EMI_MPU: start: 0x%x, end: 0x%x, region: %d, permission: 0x%x.\n",
+			 start_addr, end_addr,
+			region, access_permission);
 	} else if (!strncmp(buf, DIS_MPU_STR, strlen(DIS_MPU_STR))) {
 		i = 0;
 		while (ptr != NULL) {
@@ -1185,14 +1104,21 @@ static ssize_t emi_mpu_store(struct device_driver *driver, const char *buf, size
 		for (i = 0; i < 5; i++)
 			pr_devel("token[%d] = %s\n", i, token[i]);
 
-		start_addr = kstrtoul(token[1], 16, (unsigned long *) &token[1]);
-		end_addr = kstrtoul(token[2], 16, (unsigned long *) &token[2]);
-		region = kstrtoul(token[3], 16, (unsigned long *) &token[3]);
+		ret += kstrtoul(token[1], 16, (unsigned long *) &start_addr);
+		ret += kstrtoul(token[2], 16, (unsigned long *) &end_addr);
+		ret += kstrtoul(token[3], 16, (unsigned long *) &region);
+
+		if (ret) {
+			pr_err("fail to parse command.\n");
+			kfree(command);
+			return -1;
+		}
+
 		emi_mpu_set_region_protection(0x0, 0x0, region,
-							SET_ACCESS_PERMISSON(NO_PROTECTION,
-							NO_PROTECTION, NO_PROTECTION, NO_PROTECTION,
-							NO_PROTECTION, NO_PROTECTION, NO_PROTECTION,
-							NO_PROTECTION));
+				SET_ACCESS_PERMISSON(NO_PROTECTION,
+				NO_PROTECTION, NO_PROTECTION, NO_PROTECTION,
+				NO_PROTECTION, NO_PROTECTION, NO_PROTECTION,
+				NO_PROTECTION));
 	} else
 		pr_err("Unknown emi_mpu command.\n");
 
@@ -1203,393 +1129,6 @@ static ssize_t emi_mpu_store(struct device_driver *driver, const char *buf, size
 
 DRIVER_ATTR(mpu_config, 0644, emi_mpu_show, emi_mpu_store);
 
-void mtk_search_full_pgtab(void)
-{
-	pgd_t *pgd;
-	pud_t *pud;
-	pmd_t *pmd;
-	unsigned long addr;
-#ifndef CONFIG_ARM_LPAE
-	pte_t *pte;
-	unsigned long addr_2nd, addr_2nd_end;
-#endif
-	unsigned int v_addr = vio_addr;
-
-	for (addr = 0xC0000000; addr < 0xFFF00000; addr += 0x100000) {
-		pgd = pgd_offset(&init_mm, addr);
-		if (pgd_none(*pgd) || !pgd_present(*pgd))
-			continue;
-
-		pud = pud_offset(pgd, addr);
-		if (pud_none(*pud) || !pud_present(*pud))
-			continue;
-
-		pmd = pmd_offset(pud, addr);
-		if (pmd_none(*pmd) || !pmd_present(*pmd))
-			continue;
-
-#ifndef CONFIG_ARM_LPAE
-		if ((pmd_val(*pmd) & PMD_TYPE_MASK) == PMD_TYPE_TABLE) {
-			/* Page table entry*/
-			addr_2nd = addr;
-			addr_2nd_end = addr_2nd + 0x100000;
-			for (; addr_2nd < (addr_2nd_end); addr_2nd += 0x1000) {
-				pte = pte_offset_map(pmd, addr_2nd);
-				if (((unsigned long)v_addr & PAGE_MASK)
-						== ((unsigned long)pte_val(*(pte)) & PAGE_MASK)) {
-					return;
-				}
-			}
-		} else if (((unsigned long)pmd_val(*(pmd)) & SECTION_MASK)
-						== ((unsigned long)v_addr & SECTION_MASK)) {
-			return;
-		}
-	}
-#else
-	/* TBD */
-#endif
-
-}
-
-void emi_mpu_work_callback(struct work_struct *work)
-{
-	mtk_search_full_pgtab();
-}
-
-static ssize_t pgt_scan_show(struct device_driver *driver, char *buf)
-{
-	return 0;
-}
-
-static ssize_t pgt_scan_store(struct device_driver *driver, const char *buf, size_t count)
-{
-	unsigned int value;
-	unsigned int ret;
-
-	if (unlikely(kstrtoint(buf, 0, &value) != 1))
-		return -EINVAL;
-
-	if (value == 1)
-		ret = queue_work(emi_mpu_workqueue, &emi_mpu_work);
-
-	if (!ret)
-		pr_devel("EMI MPU submit workqueue failed, ret = %d\n", ret);
-
-	return count;
-}
-DRIVER_ATTR(pgt_scan, 0644, pgt_scan_show, pgt_scan_store);
-
-#ifdef ENABLE_EMI_CHKER
-static void emi_axi_set_chker(const unsigned int setting)
-{
-	int value;
-
-	value = emi_reg_read(EMI_CHKER);
-	value &= ~(0x7 << 16);
-	value |= (setting);
-	emi_reg_write(value, EMI_CHKER);
-}
-
-static void emi_axi_set_master(const unsigned int setting)
-{
-	int value;
-
-	value = emi_reg_read(EMI_CHKER);
-	value &= ~(0x0F << AXI_NON_ALIGN_CHK_MST);
-	value |= (setting & 0xF) << AXI_NON_ALIGN_CHK_MST;
-	emi_reg_write(value, EMI_CHKER);
-}
-
-static void emi_axi_dump_info(int aee_ke_en)
-{
-	int value, master_ID;
-	char *master_name;
-
-	value = emi_reg_read(EMI_CHKER);
-	master_ID = (value & 0x0000FFFF);
-
-	if (value & 0x0000FFFF) {
-		pr_err("AXI violation.\n");
-		pr_err("[EMI MPU AXI] Debug info start ----------------------------------------\n");
-		pr_err("EMI_CHKER = %x.\n", value);
-		pr_err("Violation address is 0x%x.\n", emi_reg_read(EMI_CHKER_ADR));
-		pr_err("Violation master ID is 0x%x.\n", master_ID);
-		pr_err("Violation type is: AXI_ADR_CHK_EN(%d), AXI_LOCK_CHK_EN(%d), AXI_NON_ALIGN_CHK_EN(%d).\n",
-				(value & (1 << AXI_ADR_VIO)) ? 1 : 0, (value & (1 << AXI_LOCK_ISSUE)) ? 1 : 0,
-				(value & (1 << AXI_NON_ALIGN_ISSUE)) ? 1 : 0);
-		pr_err("%s violation.\n", (value & (1 << AXI_VIO_WR)) ?  "Write" : "Read");
-		pr_err("[EMI MPU AXI] Debug info end ----------------------------------------\n");
-
-		master_name = __id2name(master_ID);
-
-#ifdef CONFIG_MTK_AEE_FEATURE
-		if (aee_ke_en)
-			aee_kernel_exception("EMI MPU AXI", "AXI violation.\EMI_CHKER = 0x%x, module is %s.\n",
-								value, master_name);
-#endif
-		/* clear AXI checker status */
-		emi_reg_write((1 << AXI_VIO_CLR) | emi_reg_read(EMI_CHKER), EMI_CHKER);
-	}
-}
-
-static void emi_axi_vio_timer_func(unsigned long a)
-{
-	emi_axi_dump_info(1);
-	mod_timer(&emi_axi_vio_timer, jiffies + AXI_VIO_MONITOR_TIME);
-}
-
-static ssize_t emi_axi_vio_show(struct device_driver *driver, char *buf)
-{
-	int value;
-
-	value = emi_reg_read(EMI_CHKER);
-	emi_axi_dump_info(0);
-
-	return snprintf(buf, PAGE_SIZE, "AXI vio setting is: ADR_CHK_EN %s, LOCK_CHK_EN %s, NON_ALIGN_CHK_EN %s\n",
-					(value & (1 << AXI_ADR_CHK_EN)) ? "ON" : "OFF",
-					(value & (1 << AXI_LOCK_CHK_EN)) ? "ON" : "OFF",
-					(value & (1 << AXI_NON_ALIGN_CHK_EN)) ? "ON" : "OFF");
-}
-
-ssize_t emi_axi_vio_store(struct device_driver *driver, const char *buf, size_t count)
-{
-	int value;
-	/*assign timer to CPU0 to avoid CPU plug-out and timer will be unavailable*/
-	int cpu = 0;
-
-	value = emi_reg_read(EMI_CHKER);
-
-	if (!strncmp(buf, "ADR_CHK_ON", strlen("ADR_CHK_ON"))) {
-		emi_axi_set_chker(1 << AXI_ADR_CHK_EN);
-		add_timer_on(&emi_axi_vio_timer, cpu);
-	} else if (!strncmp(buf, "LOCK_CHK_ON", strlen("LOCK_CHK_ON"))) {
-		emi_axi_set_chker(1 << AXI_LOCK_CHK_EN);
-		add_timer_on(&emi_axi_vio_timer, cpu);
-	} else if (!strncmp(buf, "NON_ALIGN_CHK_ON", strlen("NON_ALIGN_CHK_ON"))) {
-		emi_axi_set_chker(1 << AXI_NON_ALIGN_CHK_EN);
-		add_timer_on(&emi_axi_vio_timer, cpu);
-	} else if (!strncmp(buf, "OFF", strlen("OFF"))) {
-		emi_axi_set_chker(0);
-		del_timer(&emi_axi_vio_timer);
-	}
-	return count;
-}
-
-DRIVER_ATTR(emi_axi_vio, 0644, emi_axi_vio_show,       emi_axi_vio_store);
-
-#endif /*ifdef ENABLE_EMI_CHKER*/
-
-#ifdef ENABLE_EMI_WATCH_POINT
-static void emi_wp_set_address(unsigned int address)
-{
-	emi_reg_write(address - emi_physical_offset, EMI_WP_ADR);
-}
-
-/* 2^ range bytes */
-static void emi_wp_set_range(unsigned int range)
-{
-	unsigned int value;
-
-	value = emi_reg_read(EMI_WP_CTRL);
-	value = (value & (~EMI_WP_RANGE)) | range;
-	emi_reg_write(value, EMI_WP_CTRL);
-}
-
-static void emi_wp_set_monitor_type(unsigned int type)
-{
-	unsigned int value;
-
-	value = emi_reg_read(EMI_WP_CTRL);
-	value = (value & (~EMI_WP_RW_MONITOR)) | (type << EMI_WP_RW_MONITOR_SHIFT);
-	emi_reg_write(value, EMI_WP_CTRL);
-}
-
-static void emi_wp_enable(int enable)
-{
-	unsigned int value;
-
-    /* Enable WP */
-	value = emi_reg_read(EMI_CHKER);
-	value = (value & ~(1 << EMI_WP_ENABLE_SHIFT)) | (enable << EMI_WP_ENABLE_SHIFT);
-	emi_reg_write(value, EMI_CHKER);
-}
-
-static void emi_wp_slave_error_enable(unsigned int enable)
-{
-	unsigned int value;
-
-	value = emi_reg_read(EMI_WP_CTRL);
-	value = (value & ~(1 << EMI_WP_SLVERR_SHIFT)) | (enable << EMI_WP_SLVERR_SHIFT);
-	emi_reg_write(value, EMI_WP_CTRL);
-}
-
-static void emi_wp_int_enable(unsigned int enable)
-{
-	unsigned int value;
-
-	value = emi_reg_read(EMI_WP_CTRL);
-	value = (value & ~(1 << EMI_WP_INT_SHIFT)) | (enable << EMI_WP_INT_SHIFT);
-	emi_reg_write(value, EMI_WP_CTRL);
-}
-
-static void emi_wp_clr_status(void)
-{
-	unsigned int value;
-	int result;
-
-	value = emi_reg_read(EMI_CHKER);
-	value |= 1 << EMI_WP_VIO_CLR_SHIFT;
-	emi_reg_write(value, EMI_CHKER);
-
-	result = emi_reg_read(EMI_CHKER) & EMI_WP_AXI_ID;
-	result |= emi_reg_read(EMI_CHKER_TYPE);
-	result |= emi_reg_read(EMI_CHKER_ADR);
-
-	if (result)
-		pr_err("[EMI_WP] Clear WP status fail!!!!!!!!!!!!!!\n");
-}
-
-void emi_wp_get_status(void)
-{
-	unsigned int value, master_ID;
-	char *master_name;
-
-	value = emi_reg_read(EMI_CHKER);
-
-	if ((value & 0x80000000) == 0) {
-		pr_err("[EMI_WP] No watch point hit\n");
-		return;
-	}
-
-	master_ID = (value & EMI_WP_AXI_ID);
-	pr_err("[EMI_WP] Violation master ID is 0x%x.\n", master_ID);
-	pr_err("[EMI_WP] Violation Address is : 0x%X\n", emi_reg_read(EMI_CHKER_ADR) + emi_physical_offset);
-
-	master_name = __id2name(master_ID);
-	pr_err("[EMI_WP] EMI_CHKER = 0x%x, module is %s.\n", value, master_name);
-
-	value = emi_reg_read(EMI_CHKER_TYPE);
-	pr_err("[EMI_WP] Transaction Type is : %d beat, %d byte, %s burst type (0x%X)\n", (value & 0xF) + 1,
-			1 << ((value >> 4) & 0x7), (value >> 7 & 1) ? "INCR" : "WRAP", value);
-
-	emi_wp_clr_status();
-}
-
-static int emi_wp_set(unsigned int enable, unsigned int address, unsigned int range, unsigned int rw)
-{
-	if (address < emi_physical_offset) {
-		pr_err("[EMI_WP] Address error, you can't set address less than 0x%X\n", emi_physical_offset);
-		return -1;
-	}
-	if (range < 4 || range > 32) {
-		pr_err("[EMI_WP] Range error, you can't set range less than 16 bytes and more than 4G bytes\n");
-		return -1;
-	}
-
-	emi_wp_set_monitor_type(rw);
-	emi_wp_set_address(address);
-	emi_wp_set_range(range);
-	emi_wp_slave_error_enable(1);
-	emi_wp_int_enable(0);
-	emi_wp_enable(enable);
-
-	return 0;
-}
-
-static ssize_t emi_wp_vio_show(struct device_driver *driver, char *buf)
-{
-	unsigned int value, master_ID, type, vio_addr;
-	char *master_name;
-
-	value = emi_reg_read(EMI_CHKER);
-
-	if ((value & 0x80000000) == 0)
-		return snprintf(buf, PAGE_SIZE, "[EMI_WP] No watch point hit\n");
-
-	master_ID = (value & EMI_WP_AXI_ID);
-	master_name = __id2name(master_ID);
-
-	type = emi_reg_read(EMI_CHKER_TYPE);
-	vio_addr = emi_reg_read(EMI_CHKER_ADR) + emi_physical_offset;
-	emi_wp_clr_status();
-	return snprintf(buf, PAGE_SIZE,
-	"[EMI WP] vio setting is: CHKER 0x%X, module is %s, Address is : 0x%X, Transaction Type is : %d beat, %d byte, %s burst type (0x%X)\n",
-					value, master_name, vio_addr, (type & 0xF) + 1, 1 << ((type >> 4) & 0x7),
-					(type >> 7 & 1) ? "INCR" : "WRAP", type);
-}
-
-ssize_t emi_wp_vio_store(struct device_driver *driver, const char *buf, size_t count)
-{
-	int i;
-	unsigned int wp_addr;
-	unsigned int range, start_addr, end_addr;
-	unsigned int rw;
-	char *command;
-	char *ptr;
-	char *token[5];
-
-	if ((strlen(buf) + 1) > MAX_EMI_MPU_STORE_CMD_LEN) {
-		pr_err("emi_wp_store command overflow.");
-		return count;
-	}
-	pr_err("emi_wp_store: %s\n", buf);
-
-	command = kmalloc((size_t)MAX_EMI_MPU_STORE_CMD_LEN, GFP_KERNEL);
-	if (!command)
-		return count;
-
-	strcpy(command, buf);
-	ptr = (char *)buf;
-
-	if (!strncmp(buf, EN_WP_STR, strlen(EN_WP_STR))) {
-		i = 0;
-		while (ptr != NULL) {
-			ptr = strsep(&command, " ");
-			token[i] = ptr;
-			pr_devel("token[%d] = %s\n", i, token[i]);
-			i++;
-		}
-		for (i = 0; i < 4; i++)
-			pr_devel("token[%d] = %s\n", i, token[i]);
-
-		wp_addr = kstrtoul(token[1], 16, (unsigned long *) &token[1]);
-		range = kstrtoul(token[2], 16, (unsigned long *) &token[2]);
-		rw = kstrtoul(token[3], 16, (unsigned long *) &token[3]);
-		emi_wp_set(1, wp_addr, range, rw);
-		start_addr = (wp_addr >> range) << range;
-		end_addr = start_addr + (1 << range)     - 1;
-		pr_err("Set EMI_WP: address: 0x%x, range:%d, start addr: 0x%x, end addr: 0x%x,  rw: %d .\n",
-				wp_addr, range, start_addr, end_addr, rw);
-	} else if (!strncmp(buf, DIS_WP_STR, strlen(DIS_WP_STR))) {
-			i = 0;
-			while (ptr != NULL) {
-				ptr = strsep(&command, " ");
-				token[i] = ptr;
-				pr_devel("token[%d] = %s\n", i, token[i]);
-				i++;
-			}
-			for (i = 0; i < 4; i++)
-				pr_devel("token[%d] = %s\n", i, token[i]);
-
-			wp_addr = kstrtoul(token[1], 16, (unsigned long *) &token[1]);
-			range = kstrtoul(token[2], 16, (unsigned long *) &token[2]);
-			rw = kstrtoul(token[3], 16, (unsigned long *) &token[3]);
-			emi_wp_set(0, 0x40000000, 4, 2);
-
-	} else
-		pr_err("Unknown emi_wp command.\n");
-
-	kfree(command);
-
-	return count;
-}
-
-
-DRIVER_ATTR(emi_wp_vio, 0644, emi_wp_vio_show, emi_wp_vio_store);
-#endif /*#ifdef ENABLE_EMI_WATCH_POINT */
-
-
-#define AP_REGION_ID 15
 static void protect_ap_region(void)
 {
 	unsigned int ap_mem_mpu_id, ap_mem_mpu_attr;
@@ -1617,11 +1156,9 @@ static struct platform_driver emi_mpu_ctrl_platform_drv = {
 static int __init emi_mpu_mod_init(void)
 {
 	int ret;
-	struct basic_dram_setting DRAM_setting;
 	struct device_node *node;
 	unsigned int mpu_irq = 0;
 
-	/* DTS version */
 	node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-emi");
 	if (node) {
 		mpu_irq = irq_of_parse_and_map(node, 0);
@@ -1631,43 +1168,21 @@ static int __init emi_mpu_mod_init(void)
 			return -1;
 	}
 
-	spin_lock_init(&emi_mpu_lock);
+	emi_physical_offset = 0x40000000;
 
-	if (1)
-		emi_physical_offset = 0x40000000;
-	else {/*enable 4G*/
-		emi_physical_offset = 0;
-	}
+	protect_ap_region();
 
 	/*emi will not request irq when tee config is disable*/
-#ifdef CONFIG_MTK_IN_HOUSE_TEE_SUPPORT
-	ret = request_irq(mpu_irq, (irq_handler_t)mpu_violation_irq,
-						IRQF_TRIGGER_LOW | IRQF_SHARED, "mt_emi_mpu",
-						&emi_mpu_ctrl_platform_drv);
+#ifndef DISABLE_IRQ
+	ret = request_irq(mpu_irq,
+	(irq_handler_t)mpu_violation_irq,
+	IRQF_TRIGGER_LOW | IRQF_SHARED, "mt_emi_mpu",
+	&emi_mpu_ctrl_platform_drv);
+
 	if (ret != 0) {
 		pr_err("Fail to request EMI_MPU interrupt. Error = %d.\n", ret);
 		return ret;
 	}
-#endif
-
-	protect_ap_region();
-	acquire_dram_setting(&DRAM_setting);
-
-#ifdef ENABLE_EMI_CHKER
-    /* AXI violation monitor setting and timer function create */
-	emi_reg_write((1 << AXI_VIO_CLR) | emi_reg_read(EMI_CHKER), EMI_CHKER);
-	emi_axi_set_master(MASTER_ALL);
-	init_timer(&emi_axi_vio_timer);
-	emi_axi_vio_timer.expires = jiffies + AXI_VIO_MONITOR_TIME;
-	emi_axi_vio_timer.function = &emi_axi_vio_timer_func;
-	emi_axi_vio_timer.data = ((unsigned long) 0);
-#endif /*#ifdef ENABLE_EMI_CHKER*/
-
-#if !defined(USER_BUILD_KERNEL)
-#ifdef ENABLE_EMI_CHKER
-    /* Enable AXI 4KB boundary violation monitor timer */
-	emi_axi_set_chker(1 << AXI_ADR_CHK_EN);
-    /* add_timer_on(&emi_axi_vio_timer, 0); */
 #endif
 
     /* register driver and create sysfs files */
@@ -1675,31 +1190,13 @@ static int __init emi_mpu_mod_init(void)
 	if (ret)
 		pr_err("Fail to register EMI_MPU driver.\n");
 
-	ret = driver_create_file(&emi_mpu_ctrl_platform_drv.driver, &driver_attr_mpu_config);
+	ret = driver_create_file(&emi_mpu_ctrl_platform_drv.driver,
+		&driver_attr_mpu_config);
+
 	if (ret)
 		pr_err("Fail to create MPU config sysfs file.\n");
 
-#ifdef ENABLE_EMI_CHKER
-	ret = driver_create_file(&emi_mpu_ctrl_platform_drv.driver, &driver_attr_emi_axi_vio);
-	if (ret)
-		pr_err("Fail to create AXI violation monitor sysfs file.\n");
 
-#endif
-	ret = driver_create_file(&emi_mpu_ctrl_platform_drv.driver, &driver_attr_pgt_scan);
-	if (ret)
-		pr_err("Fail to create pgt scan sysfs file.\n");
-
-#ifdef ENABLE_EMI_WATCH_POINT
-	ret = driver_create_file(&emi_mpu_ctrl_platform_drv.driver, &driver_attr_emi_wp_vio);
-	if (ret)
-		pr_err("Fail to create WP violation monitor sysfs file.\n");
-
-#endif
-#endif
-
-    /* Create a workqueue to search pagetable entry */
-	emi_mpu_workqueue = create_singlethread_workqueue("emi_mpu");
-	INIT_WORK(&emi_mpu_work, emi_mpu_work_callback);
 	return 0;
 }
 

@@ -1,120 +1,137 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #define LOG_TAG "ddp_drv"
 
+#include <generated/autoconf.h>
+#include <linux/cdev.h>
+#include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/dma-mapping.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/ioport.h>
+#include <linux/kdev_t.h>
 #include <linux/kernel.h>
+#include <linux/kthread.h>
 #include <linux/mm.h>
 #include <linux/mm_types.h>
 #include <linux/module.h>
-#include <generated/autoconf.h>
-#include <linux/init.h>
-#include <linux/types.h>
-#include <linux/cdev.h>
-#include <linux/kdev_t.h>
-#include <linux/delay.h>
-#include <linux/ioport.h>
-#include <linux/platform_device.h>
-#include <linux/dma-mapping.h>
-#include <linux/device.h>
-#include <linux/fs.h>
-#include <linux/interrupt.h>
-#include <linux/wait.h>
-#include <linux/spinlock.h>
 #include <linux/param.h>
-#include <linux/uaccess.h>
+#include <linux/platform_device.h>
+#include <linux/sched.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/kthread.h>
+#include <linux/spinlock.h>
 #include <linux/timer.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+#include <linux/wait.h>
 
-
-#include <linux/proc_fs.h>	/* proc file use */
 #include <linux/miscdevice.h>
+#include <linux/proc_fs.h> /* proc file use */
 /* ION */
 /* #include <linux/ion.h> */
 /* #include <linux/ion_drv.h> */
-#include <linux/vmalloc.h>
+/* #include <asm/io.h> */
+#include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <linux/of.h>
-#include <linux/of_irq.h>
 #include <linux/of_address.h>
-#include <asm/io.h>
+#include <linux/of_irq.h>
+#include <linux/vmalloc.h>
 #ifdef CONFIG_MTK_CLKMGR
-#include <mach/mt_clkmgr.h>	/* ???? */
+#include <mach/mt_clkmgr.h> /* ???? */
 #endif
-#include <mt-plat/sync_write.h>
 #include "m4u.h"
+#include <mt-plat/sync_write.h>
 
-#include "ddp_drv.h"
-#include "ddp_reg.h"
-#include "ddp_hal.h"
-#include "ddp_log.h"
-#include "ddp_irq.h"
-#include "ddp_info.h"
 #include "ddp_dpi_reg.h"
-
+#include "ddp_drv.h"
+#include "ddp_hal.h"
+#include "ddp_info.h"
+#include "ddp_irq.h"
+#include "ddp_log.h"
+#include "ddp_reg.h"
 
 #define DISP_DEVNAME "DISPSYS"
 
-typedef struct {
+struct disp_node_struct {
 	pid_t open_pid;
 	pid_t open_tgid;
 	struct list_head testList;
 	spinlock_t node_lock;
-} disp_node_struct;
+};
 #if 0
 static unsigned int ddp_ms2jiffies(unsigned long ms)
 {
 	return ((ms * HZ + 512) >> 10);
 }
 #endif
-static long disp_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long disp_unlocked_ioctl(struct file *file, unsigned int cmd,
+				unsigned long arg)
 {
-	/*disp_node_struct *pNode = (disp_node_struct *)file->private_data; */
+	/*
+	 * struct disp_node_struct *pNode = (struct disp_node_struct
+	 * *)file->private_data;
+	 */
 
 	return 0;
 }
 
 static int disp_open(struct inode *inode, struct file *file)
 {
-	disp_node_struct *pNode = NULL;
+	struct disp_node_struct *pNode = NULL;
 
 	DDPDBG("enter disp_open() process:%s\n", current->comm);
 
 	/* Allocate and initialize private data */
-	file->private_data = kmalloc(sizeof(disp_node_struct), GFP_ATOMIC);
-	if (NULL == file->private_data) {
+	file->private_data =
+		kmalloc(sizeof(struct disp_node_struct), GFP_ATOMIC);
+	if (file->private_data == NULL) {
 		DDPMSG("Not enough entry for DDP open operation\n");
 		return -ENOMEM;
 	}
 
-	pNode = (disp_node_struct *) file->private_data;
+	pNode = (struct disp_node_struct *)file->private_data;
 	pNode->open_pid = current->pid;
 	pNode->open_tgid = current->tgid;
 	INIT_LIST_HEAD(&(pNode->testList));
 	spin_lock_init(&pNode->node_lock);
 
 	return 0;
-
 }
 
-static ssize_t disp_read(struct file *file, char __user *data, size_t len, loff_t *ppos)
+static ssize_t disp_read(struct file *file, char __user *data, size_t len,
+			 loff_t *ppos)
 {
 	return 0;
 }
 
 static int disp_release(struct inode *inode, struct file *file)
 {
-	disp_node_struct *pNode = NULL;
+	struct disp_node_struct *pNode = NULL;
 
 	DDPDBG("enter disp_release() process:%s\n", current->comm);
 
-	pNode = (disp_node_struct *) file->private_data;
+	pNode = (struct disp_node_struct *)file->private_data;
 
 	spin_lock(&pNode->node_lock);
 
 	spin_unlock(&pNode->node_lock);
 
-	if (NULL != file->private_data) {
+	if (file->private_data != NULL) {
 		kfree(file->private_data);
 		file->private_data = NULL;
 	}
@@ -134,8 +151,7 @@ static int disp_mmap(struct file *file, struct vm_area_struct *a_pstVMArea)
 #if defined(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT)
 #ifdef DISP_SVP_DEBUG
 	a_pstVMArea->vm_page_prot = pgprot_noncached(a_pstVMArea->vm_page_prot);
-	if (remap_pfn_range(a_pstVMArea,
-			    a_pstVMArea->vm_start,
+	if (remap_pfn_range(a_pstVMArea, a_pstVMArea->vm_start,
 			    a_pstVMArea->vm_pgoff,
 			    (a_pstVMArea->vm_end - a_pstVMArea->vm_start),
 			    a_pstVMArea->vm_page_prot)) {
@@ -157,29 +173,25 @@ struct dispsys_device {
 };
 static struct dispsys_device *dispsys_dev;
 static int nr_dispsys_dev;
-unsigned int dispsys_irq[DISP_REG_NUM] = { 0 };
-unsigned long dispsys_reg[DISP_REG_NUM] = { 0 };
+unsigned int dispsys_irq[DISP_REG_NUM] = {0};
+unsigned long dispsys_reg[DISP_REG_NUM] = {0};
 
-unsigned long mipi_tx_reg = 0;
-unsigned long dsi_reg_va = 0;
-
+unsigned long mipi_tx_reg;
+unsigned long dsi_reg_va;
 
 /* from DTS, for debug */
 unsigned int ddp_reg_pa_base[DISP_REG_NUM] = {
-	0x14007000, 0x14008000, 0x14009000, 0x1400A000,
-	0x1400B000, 0x1400C000, 0x1400D000, 0x1400E000,
-	0x1400F000, 0x14010000, 0x14011000, 0x14014000,
-	0x14018000, 0x14015000, 0x14012000, 0x14013000, 0x1401c000,
-	0x14000000, 0x14016000, 0x14017000, 0x10206000, 0x10000000, 0x100020F0, 0x10215000,
-	    0x10215800, 0x14016200
-};
+	0x14007000, 0x14008000, 0x14009000, 0x1400A000, 0x1400B000, 0x1400C000,
+	0x1400D000, 0x1400E000, 0x1400F000, 0x14010000, 0x14011000, 0x14014000,
+	0x14018000, 0x14015000, 0x14012000, 0x14013000, 0x1401c000, 0x14000000,
+	0x14016000, 0x14017000, 0x10206000, 0x10000000, 0x100020F0, 0x10215000,
+	0x10215800, 0x14016200};
 
 unsigned int ddp_irq_num[DISP_REG_NUM] = {
-	184, 185, 186, 187, 188, 189, 190, 191, 192, 193,
-	194, 0, 198, 177, 195, 196, 201, 197, 0, 0, 0, 0, 0, 0, 0, 0
-};
+	184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 0, 198,
+	177, 195, 196, 201, 197, 0,   0,   0,   0,   0,   0,   0, 0};
 
-static int disp_is_intr_enable(DISP_REG_ENUM module)
+static int disp_is_intr_enable(enum DISP_REG_ENUM module)
 {
 	switch (module) {
 	case DISP_REG_OVL0:
@@ -192,7 +204,11 @@ static int disp_is_intr_enable(DISP_REG_ENUM module)
 	case DISP_REG_CONFIG:
 		return 1;
 	case DISP_REG_WDMA0:
-	case DISP_REG_WDMA1:	/* FIXME: WDMA1 intr is abonrmal FPGA so mark first, enable after EVB works */
+	case DISP_REG_WDMA1:
+		/*
+		 * FIXME: WDMA1 intr is abonrmal FPGA so mark
+		 * first, enable after EVB works
+		 */
 	case DISP_REG_COLOR:
 	case DISP_REG_CCORR:
 	case DISP_REG_GAMMA:
@@ -213,9 +229,10 @@ static int disp_is_intr_enable(DISP_REG_ENUM module)
 	}
 }
 
-m4u_callback_ret_t disp_m4u_callback(int port, unsigned int mva, void *data)
+enum m4u_callback_ret_t disp_m4u_callback(int port, unsigned int mva,
+		void *data)
 {
-	DISP_MODULE_ENUM module = DISP_MODULE_OVL0;
+	enum DISP_MODULE_ENUM module = DISP_MODULE_OVL0;
 
 	DDPERR("fault call port=%d, mva=0x%x, data=0x%p\n", port, mva, data);
 	switch (port) {
@@ -249,7 +266,10 @@ m4u_callback_ret_t disp_m4u_callback(int port, unsigned int mva, void *data)
 	else if (module == DISP_MODULE_OVL1)
 		ddp_dump_analysis(DISP_MODULE_OVL0);
 	/* m4u_enable_tf(port, 0);*/
-	/*disable translation fault after it happens to avoid prinkt too much issues(log is override) */
+	/*
+	 * disable translation fault after it happens to avoid prinkt too much
+	 * issues(log is override)
+	 */
 	return 0;
 }
 
@@ -258,7 +278,7 @@ m4u_callback_ret_t disp_m4u_callback(int port, unsigned int mva, void *data)
 static struct miscdevice disp_misc_dev;
 #endif
 #endif
-const char *ddp_reg_name_spy(DISP_REG_ENUM reg)
+const char *ddp_reg_name_spy(enum DISP_REG_ENUM reg)
 {
 	switch (reg) {
 	case DISP_REG_CONFIG:
@@ -327,15 +347,14 @@ const char *ddp_reg_name_spy(DISP_REG_ENUM reg)
 }
 
 /* Kernel interface */
-static const struct file_operations disp_fops = {
-	.owner = THIS_MODULE,
-	.unlocked_ioctl = disp_unlocked_ioctl,
-	.open = disp_open,
-	.release = disp_release,
-	.flush = disp_flush,
-	.read = disp_read,
-	.mmap = disp_mmap
-};
+static const struct file_operations disp_fops = {.owner = THIS_MODULE,
+						 .unlocked_ioctl =
+							 disp_unlocked_ioctl,
+						 .open = disp_open,
+						 .release = disp_release,
+						 .flush = disp_flush,
+						 .read = disp_read,
+						 .mmap = disp_mmap};
 
 static int disp_probe(struct platform_device *pdev)
 {
@@ -365,7 +384,10 @@ static int disp_probe(struct platform_device *pdev)
 #endif
 
 	new_count = nr_dispsys_dev + 1;
-	/*dispsys_dev = krealloc(dispsys_dev, sizeof(struct dispsys_device) * new_count, GFP_KERNEL);*/
+	/*
+	 * dispsys_dev = krealloc(dispsys_dev, sizeof(struct dispsys_device) *
+	 * new_count, GFP_KERNEL);
+	 */
 	dispsys_dev = kcalloc(new_count, sizeof(*dispsys_dev), GFP_KERNEL);
 	if (!dispsys_dev) {
 		DDPERR("Unable to allocate dispsys_dev\n");
@@ -380,7 +402,10 @@ static int disp_probe(struct platform_device *pdev)
 
 		np = of_find_compatible_node(NULL, NULL, ddp_reg_name_spy(i));
 		if (np == NULL) {
-			/* DDPERR("DT %s is not config\n", dpmgr_module_name_spy(i)); */
+			/*
+			 * DDPERR("DT %s is not config\n",
+			 * dpmgr_module_name_spy(i));
+			 */
 			continue;
 		}
 
@@ -389,7 +414,9 @@ static int disp_probe(struct platform_device *pdev)
 
 		dispsys_dev->regs[i] = of_iomap(np, 0);
 		if (!dispsys_dev->regs[i]) {
-			DDPERR("Unable to ioremap registers, of_iomap fail, i=%d\n", i);
+			DDPERR(
+				"Unable to ioremap registers, of_iomap fail, i=%d\n",
+			       i);
 			return -ENOMEM;
 		}
 		dispsys_reg[i] = (unsigned long)dispsys_dev->regs[i];
@@ -400,36 +427,43 @@ static int disp_probe(struct platform_device *pdev)
 			dispsys_irq[i] = dispsys_dev->irq[i];
 #ifndef CONFIG_FPGA_EARLY_PORTING
 			if (disp_is_intr_enable(i) == 1) {
-				ret = request_irq(dispsys_dev->irq[i],
-					(irq_handler_t) disp_irq_handler, IRQF_TRIGGER_NONE, DISP_DEVNAME, NULL);
-				/* IRQF_TRIGGER_NONE dose not take effect here, real trigger mode set in dts file */
+				ret = request_irq(
+					dispsys_dev->irq[i],
+					(irq_handler_t)disp_irq_handler,
+					IRQF_TRIGGER_NONE, DISP_DEVNAME, NULL);
+				/*
+				 * IRQF_TRIGGER_NONE dose not take effect here,
+				 * real trigger mode set in dts file
+				 */
 				if (ret) {
-					DDPERR
-					    ("Unable to request IRQ, request_irq fail, i=%d, irq=%d\n",
-					     i, dispsys_dev->irq[i]);
+					DDPERR(
+						"Unable to request IRQ, request_irq fail, i=%d, irq=%d\n",
+					       i, dispsys_dev->irq[i]);
 					return ret;
 				}
 			}
 #endif
 		}
-		DDPMSG("DT, i=%d, module=%s, map_addr=%p, map_irq=%d, reg_pa=0x%x, irq=%d\n",
-		       i, ddp_get_reg_module_name(i), dispsys_dev->regs[i], dispsys_dev->irq[i],
-		       ddp_reg_pa_base[i], ddp_irq_num[i]);
+		DDPMSG(
+			"DT, i=%d, module=%s, map_addr=%p, map_irq=%d, reg_pa=0x%x, irq=%d\n",
+		       i, ddp_get_reg_module_name(i), dispsys_dev->regs[i],
+		       dispsys_dev->irq[i], ddp_reg_pa_base[i], ddp_irq_num[i]);
 	}
 	nr_dispsys_dev = new_count;
 	/* mipi tx reg map here */
 	dsi_reg_va = dispsys_reg[DISP_REG_DSI0];
 	mipi_tx_reg = dispsys_reg[DISP_REG_MIPI];
-	DPI_REG[0] = (struct DPI_REGS *) dispsys_reg[DISP_REG_DPI0];
-	DPI_REG[1] = (struct DPI_REGS *) dispsys_reg[DISP_REG_DPI1];
+	DPI_REG[0] = (struct DPI_REGS *)dispsys_reg[DISP_REG_DPI0];
+	DPI_REG[1] = (struct DPI_REGS *)dispsys_reg[DISP_REG_DPI1];
 
-	/* //// power on MMSYS for early porting */
+/* //// power on MMSYS for early porting */
 #ifdef CONFIG_FPGA_EARLY_PORTING
-	pr_debug("[DISP Probe] power MMSYS:0x%lx,0x%lx\n", DISP_REG_CONFIG_MMSYS_CG_CLR0,
-		 DISP_REG_CONFIG_MMSYS_CG_CLR1);
+	pr_debug("[DISP Probe] power MMSYS:0x%lx,0x%lx\n",
+		 DISP_REG_CONFIG_MMSYS_CG_CLR0, DISP_REG_CONFIG_MMSYS_CG_CLR1);
 	DISP_REG_SET(0, DISP_REG_CONFIG_MMSYS_CG_CLR0, 0xFFFFFFFF);
 	DISP_REG_SET(0, DISP_REG_CONFIG_MMSYS_CG_CLR1, 0xFFFFFFFF);
-	DISP_REG_SET(0, DISPSYS_CONFIG_BASE + 0xC04, 0x1C000);	/* fpga should set this register */
+	DISP_REG_SET(0, DISPSYS_CONFIG_BASE + 0xC04,
+		     0x1C000); /* fpga should set this register */
 #endif
 	/* //// */
 
@@ -445,16 +479,21 @@ static int disp_probe(struct platform_device *pdev)
 	m4u_register_fault_callback(M4U_PORT_DISP_RDMA1, disp_m4u_callback, 0);
 	m4u_register_fault_callback(M4U_PORT_DISP_WDMA1, disp_m4u_callback, 0);
 
-
 	DDPMSG("dispsys probe done.\n");
 	/* NOT_REFERENCED(class_dev); */
 
 	/* bus hang issue error intr enable */
-	/* when MMSYS clock off but GPU/MJC/PWM clock on, avoid display hang and trigger error intr */
+	/*
+	 * when MMSYS clock off but GPU/MJC/PWM clock on, avoid display hang and
+	 * trigger error intr
+	 */
 	{
-		DISP_REG_SET_FIELD(0, MMSYS_TO_MFG_TX_ERROR, DISP_REG_CONFIG_MMSYS_INTEN, 1);
-		DISP_REG_SET_FIELD(0, MMSYS_TO_MJC_TX_ERROR, DISP_REG_CONFIG_MMSYS_INTEN, 1);
-		DISP_REG_SET_FIELD(0, PWM0_APB_TX_ERROR, DISP_REG_CONFIG_MMSYS_INTEN, 1);
+		DISP_REG_SET_FIELD(0, MMSYS_TO_MFG_TX_ERROR,
+				   DISP_REG_CONFIG_MMSYS_INTEN, 1);
+		DISP_REG_SET_FIELD(0, MMSYS_TO_MJC_TX_ERROR,
+				   DISP_REG_CONFIG_MMSYS_INTEN, 1);
+		DISP_REG_SET_FIELD(0, PWM0_APB_TX_ERROR,
+				   DISP_REG_CONFIG_MMSYS_INTEN, 1);
 
 		DISP_REG_SET_FIELD(0, MFG_APB_TX_CON_FLD_MFG_APB_COUNTER_EN,
 				   DISP_REG_CONFIG_MFG_APB_TX_CON, 1);
@@ -464,7 +503,6 @@ static int disp_probe(struct platform_device *pdev)
 
 	return 0;
 }
-
 
 static int disp_remove(struct platform_device *pdev)
 {
@@ -481,12 +519,10 @@ static void disp_shutdown(struct platform_device *pdev)
 	/* Nothing yet */
 }
 
-
 /* PM suspend */
 static int disp_suspend(struct platform_device *pdev, pm_message_t mesg)
 {
 	pr_debug("\n\n==== DISP suspend is called ====\n");
-
 
 	return 0;
 }
@@ -496,22 +532,23 @@ static int disp_resume(struct platform_device *pdev)
 {
 	pr_debug("\n\n==== DISP resume is called ====\n");
 
-
 	return 0;
 }
 
-
 static const struct of_device_id dispsys_of_ids[] = {
-	{.compatible = "mediatek,mt8163-dispsys",},
-	{}
-};
+	{
+		.compatible = "mediatek,mt8163-dispsys",
+	},
+	{} };
 
 static struct platform_driver dispsys_of_driver = {
 	.driver = {
-		   .name = DISP_DEVNAME,
-		   .owner = THIS_MODULE,
-		   .of_match_table = dispsys_of_ids,
-		   },
+
+
+			.name = DISP_DEVNAME,
+			.owner = THIS_MODULE,
+			.of_match_table = dispsys_of_ids,
+		},
 	.probe = disp_probe,
 	.remove = disp_remove,
 	.shutdown = disp_shutdown,

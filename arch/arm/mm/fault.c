@@ -25,6 +25,7 @@
 #include <asm/system_misc.h>
 #include <asm/system_info.h>
 #include <asm/tlbflush.h>
+#include <mt-plat/aee.h>
 
 #include "fault.h"
 
@@ -63,9 +64,9 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 	if (!mm)
 		mm = &init_mm;
 
-	printk(KERN_ALERT "pgd = %p\n", mm->pgd);
+	pr_alert("pgd = %p\n", mm->pgd);
 	pgd = pgd_offset(mm, addr);
-	printk(KERN_ALERT "[%08lx] *pgd=%08llx",
+	pr_alert("[%08lx] *pgd=%08llx",
 			addr, (long long)pgd_val(*pgd));
 
 	do {
@@ -77,31 +78,31 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 			break;
 
 		if (pgd_bad(*pgd)) {
-			printk("(bad)");
+			pr_cont("(bad)");
 			break;
 		}
 
 		pud = pud_offset(pgd, addr);
 		if (PTRS_PER_PUD != 1)
-			printk(", *pud=%08llx", (long long)pud_val(*pud));
+			pr_cont(", *pud=%08llx", (long long)pud_val(*pud));
 
 		if (pud_none(*pud))
 			break;
 
 		if (pud_bad(*pud)) {
-			printk("(bad)");
+			pr_cont("(bad)");
 			break;
 		}
 
 		pmd = pmd_offset(pud, addr);
 		if (PTRS_PER_PMD != 1)
-			printk(", *pmd=%08llx", (long long)pmd_val(*pmd));
+			pr_cont(", *pmd=%08llx", (long long)pmd_val(*pmd));
 
 		if (pmd_none(*pmd))
 			break;
 
 		if (pmd_bad(*pmd)) {
-			printk("(bad)");
+			pr_cont("(bad)");
 			break;
 		}
 
@@ -110,15 +111,15 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 			break;
 
 		pte = pte_offset_map(pmd, addr);
-		printk(", *pte=%08llx", (long long)pte_val(*pte));
+		pr_cont(", *pte=%08llx", (long long)pte_val(*pte));
 #ifndef CONFIG_ARM_LPAE
-		printk(", *ppte=%08llx",
+		pr_cont(", *ppte=%08llx",
 		       (long long)pte_val(pte[PTE_HWTABLE_PTRS]));
 #endif
 		pte_unmap(pte);
 	} while(0);
 
-	printk("\n");
+	pr_cont("\n");
 }
 #else					/* CONFIG_MMU */
 void show_pte(struct mm_struct *mm, unsigned long addr)
@@ -142,10 +143,9 @@ __do_kernel_fault(struct mm_struct *mm, unsigned long addr, unsigned int fsr,
 	 * No handler, we'll have to terminate things with extreme prejudice.
 	 */
 	bust_spinlocks(1);
-	printk(KERN_ALERT
-		"Unable to handle kernel %s at virtual address %08lx\n",
-		(addr < PAGE_SIZE) ? "NULL pointer dereference" :
-		"paging request", addr);
+	pr_alert("Unable to handle kernel %s at virtual address %08lx\n",
+		 (addr < PAGE_SIZE) ? "NULL pointer dereference" :
+		 "paging request", addr);
 
 	show_pte(mm, addr);
 	die("Oops", regs, fsr);
@@ -244,7 +244,7 @@ good_area:
 		goto out;
 	}
 
-	return handle_mm_fault(mm, vma, addr & PAGE_MASK, flags);
+	return handle_mm_fault(vma, addr & PAGE_MASK, flags);
 
 check_stack:
 	/* Don't allow expansion below FIRST_USER_ADDRESS */
@@ -277,7 +277,7 @@ do_page_fault(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 	 * If we're in an interrupt, or have no irqs, or have no user
 	 * context, we must not take the fault..
 	 */
-	if (in_atomic() || irqs_disabled() || !mm)
+	if (faulthandler_disabled() || irqs_disabled() || !mm)
 		goto no_context;
 
 	if (user_mode(regs))
@@ -350,7 +350,7 @@ retry:
 	up_read(&mm->mmap_sem);
 
 	/*
-	 * Handle the "normal" case first - VM_FAULT_MAJOR / VM_FAULT_MINOR
+	 * Handle the "normal" case first - VM_FAULT_MAJOR
 	 */
 	if (likely(!(fault & (VM_FAULT_ERROR | VM_FAULT_BADMAP | VM_FAULT_BADACCESS))))
 		return 0;
@@ -484,6 +484,66 @@ bad_area:
 	do_bad_area(addr, fsr, regs);
 	return 0;
 }
+
+#if defined(CONFIG_MTK_AEE_FEATURE) && defined(CONFIG_MODULES)
+int __kprobes
+do_translation_fault_preconditioner(unsigned long addr)
+{
+	unsigned int index;
+	pgd_t *pgd, *pgd_k;
+	pud_t *pud, *pud_k;
+	pmd_t *pmd, *pmd_k;
+
+	if (addr < TASK_SIZE)
+		goto bad_ret;
+
+	index = pgd_index(addr);
+
+	pgd = cpu_get_pgd() + index;
+	pgd_k = init_mm.pgd + index;
+
+	if (pgd_none(*pgd_k))
+		goto bad_ret;
+	if (!pgd_present(*pgd))
+		set_pgd(pgd, *pgd_k);
+
+	pud = pud_offset(pgd, addr);
+	pud_k = pud_offset(pgd_k, addr);
+
+	if (pud_none(*pud_k))
+		goto bad_ret;
+	if (!pud_present(*pud))
+		set_pud(pud, *pud_k);
+
+	pmd = pmd_offset(pud, addr);
+	pmd_k = pmd_offset(pud_k, addr);
+
+#ifdef CONFIG_ARM_LPAE
+	/*
+	 * Only one hardware entry per PMD with LPAE.
+	 */
+	index = 0;
+#else
+	/*
+	 * On ARM one Linux PGD entry contains two hardware entries (see page
+	 * tables layout in pgtable.h). We normally guarantee that we always
+	 * fill both L1 entries. But create_mapping() doesn't follow the rule.
+	 * It can create inidividual L1 entries, so here we have to call
+	 * pmd_none() check for the entry really corresponded to address, not
+	 * for the first of pair.
+	 */
+	index = (addr >> SECTION_SHIFT) & 1;
+#endif
+	if (pmd_none(pmd_k[index]))
+		goto bad_ret;
+
+	copy_pmd(pmd, pmd_k);
+	return 0;
+
+bad_ret:
+	return -1;
+}
+#endif
 #else					/* CONFIG_MMU */
 static int
 do_translation_fault(unsigned long addr, unsigned int fsr,
@@ -548,14 +608,37 @@ hook_fault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *)
 asmlinkage void __exception
 do_DataAbort(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
 {
+	struct thread_info *thread = current_thread_info();
 	const struct fsr_info *inf = fsr_info + fsr_fs(fsr);
 	struct siginfo info;
 
-	if (!inf->fn(addr, fsr & ~FSR_LNX_PF, regs))
-		return;
+	if (!user_mode(regs)) {
+		thread->cpu_excp++;
+		if (thread->cpu_excp == 1) {
+			thread->regs_on_excp = (void *)regs;
+			aee_excp_regs = (void *)regs;
+		}
+		/*
+		 * NoteXXX: The data abort exception may happen twice
+		 *          when calling probe_kernel_address() in which.
+		 *          __copy_from_user_inatomic() is used and the
+		 *          fixup table lookup may be performed.
+		 *          Check if the nested panic happens via
+		 *          (cpu_excp >= 3).
+		 */
+		if (thread->cpu_excp >= 3)
+			aee_stop_nested_panic(regs);
+	}
 
-	printk(KERN_ALERT "Unhandled fault: %s (0x%03x) at 0x%08lx\n",
+	if (!inf->fn(addr, fsr & ~FSR_LNX_PF, regs)) {
+		if (!user_mode(regs))
+			thread->cpu_excp--;
+		return;
+	}
+
+	pr_alert("Unhandled fault: %s (0x%03x) at 0x%08lx\n",
 		inf->name, fsr, addr);
+	show_pte(current->mm, addr);
 
 	info.si_signo = inf->sig;
 	info.si_errno = 0;
@@ -580,13 +663,33 @@ hook_ifault_code(int nr, int (*fn)(unsigned long, unsigned int, struct pt_regs *
 asmlinkage void __exception
 do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 {
+	struct thread_info *thread = current_thread_info();
 	const struct fsr_info *inf = ifsr_info + fsr_fs(ifsr);
 	struct siginfo info;
 
-	if (!inf->fn(addr, ifsr | FSR_LNX_PF, regs))
-		return;
+	if (!user_mode(regs)) {
+		thread->cpu_excp++;
+		if (thread->cpu_excp == 1)
+			thread->regs_on_excp = (void *)regs;
+		/*
+		 * NoteXXX: The data abort exception may happen twice
+		 *          when calling probe_kernel_address() in which.
+		 *          __copy_from_user_inatomic() is used and the
+		 *          fixup table lookup may be performed.
+		 *          Check if the nested panic happens via
+		 *          (cpu_excp >= 3).
+		 */
+		if (thread->cpu_excp >= 3)
+			aee_stop_nested_panic(regs);
+	}
 
-	printk(KERN_ALERT "Unhandled prefetch abort: %s (0x%03x) at 0x%08lx\n",
+	if (!inf->fn(addr, ifsr | FSR_LNX_PF, regs)) {
+		if (!user_mode(regs))
+			thread->cpu_excp--;
+		return;
+	}
+
+	pr_alert("Unhandled prefetch abort: %s (0x%03x) at 0x%08lx\n",
 		inf->name, ifsr, addr);
 
 	info.si_signo = inf->sig;
@@ -594,6 +697,28 @@ do_PrefetchAbort(unsigned long addr, unsigned int ifsr, struct pt_regs *regs)
 	info.si_code  = inf->code;
 	info.si_addr  = (void __user *)addr;
 	arm_notify_die("", regs, &info, ifsr, 0);
+}
+
+/*
+ * Abort handler to be used only during first unmasking of asynchronous aborts
+ * on the boot CPU. This makes sure that the machine will not die if the
+ * firmware/bootloader left an imprecise abort pending for us to trip over.
+ */
+static int __init early_abort_handler(unsigned long addr, unsigned int fsr,
+				      struct pt_regs *regs)
+{
+	pr_warn("Hit pending asynchronous external abort (FSR=0x%08x) during "
+		"first unmask, this is most likely caused by a "
+		"firmware/bootloader bug.\n", fsr);
+
+	return 0;
+}
+
+void __init early_abt_enable(void)
+{
+	fsr_info[FSR_FS_AEA].fn = early_abort_handler;
+	local_abt_enable();
+	fsr_info[FSR_FS_AEA].fn = do_bad;
 }
 
 #ifndef CONFIG_ARM_LPAE

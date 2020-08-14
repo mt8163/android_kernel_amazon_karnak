@@ -5,16 +5,18 @@
 
 #include <linux/mm_types.h>
 #include <linux/scatterlist.h>
-#include <linux/dma-attrs.h>
 #include <linux/dma-debug.h>
 
-#include <asm-generic/dma-coherent.h>
 #include <asm/memory.h>
 
 #include <xen/xen.h>
 #include <asm/xen/hypervisor.h>
 
-#define DMA_ERROR_CODE	(~0)
+#ifdef CONFIG_MTK_BOUNCING_CHECK
+#include "../../../../drivers/misc/mediatek/include/mt-plat/aee.h"
+#endif
+
+#define DMA_ERROR_CODE	(~(dma_addr_t)0x0)
 extern struct dma_map_ops arm_dma_ops;
 extern struct dma_map_ops arm_coherent_dma_ops;
 
@@ -39,12 +41,8 @@ static inline void set_dma_ops(struct device *dev, struct dma_map_ops *ops)
 	dev->archdata.dma_ops = ops;
 }
 
-#include <asm-generic/dma-mapping-common.h>
-
-static inline int dma_set_mask(struct device *dev, u64 mask)
-{
-	return get_dma_ops(dev)->set_dma_mask(dev, mask);
-}
+#define HAVE_ARCH_DMA_SUPPORTED 1
+extern int dma_supported(struct device *dev, u64 mask);
 
 #ifdef __arch_page_to_dma
 #error Please update to __arch_pfn_to_dma
@@ -121,14 +119,18 @@ static inline unsigned long dma_max_pfn(struct device *dev)
 }
 #define dma_max_pfn(dev) dma_max_pfn(dev)
 
-static inline void arch_setup_dma_ops(struct device *dev, u64 dma_base,
-				      u64 size, struct iommu_ops *iommu,
-				      bool coherent)
-{
-	if (coherent)
-		set_dma_ops(dev, &arm_coherent_dma_ops);
-}
 #define arch_setup_dma_ops arch_setup_dma_ops
+extern void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
+			       const struct iommu_ops *iommu, bool coherent);
+
+#define arch_teardown_dma_ops arch_teardown_dma_ops
+extern void arch_teardown_dma_ops(struct device *dev);
+
+/* do not use this function in a driver */
+static inline bool is_device_dma_coherent(struct device *dev)
+{
+	return dev->archdata.dma_coherent;
+}
 
 static inline dma_addr_t phys_to_dma(struct device *dev, phys_addr_t paddr)
 {
@@ -146,50 +148,37 @@ static inline bool dma_capable(struct device *dev, dma_addr_t addr, size_t size)
 {
 	u64 limit, mask;
 
-	if (!dev->dma_mask)
+	if (!dev->dma_mask) {
+#ifdef CONFIG_MTK_BOUNCING_CHECK
+		aee_kernel_warning("Bounce Buffering", "NULL dma_mask");
+#endif
 		return 0;
+	}
 
 	mask = *dev->dma_mask;
 
 	limit = (mask + 1) & ~mask;
-	if (limit && size > limit)
+	if (limit && size > limit) {
+#ifdef CONFIG_MTK_BOUNCING_CHECK
+		aee_kernel_warning("Bounce Buffering",
+				"Incorrect dma_mask(%llx): limit(%llx), size(%llx)",
+				mask, limit, size);
+#endif
 		return 0;
+	}
 
-	if ((addr | (addr + size - 1)) & ~mask)
+	if ((addr | (addr + size - 1)) & ~mask) {
+#ifdef CONFIG_MTK_BOUNCING_CHECK
+		aee_kernel_warning("Bounce Buffering",
+				"Incorrect dma_mask(%llx): addr(%llx), size(%llx)",
+				mask, addr, size);
+#endif
 		return 0;
-
+	}
 	return 1;
 }
 
 static inline void dma_mark_clean(void *addr, size_t size) { }
-
-/*
- * DMA errors are defined by all-bits-set in the DMA address.
- */
-static inline int dma_mapping_error(struct device *dev, dma_addr_t dma_addr)
-{
-	debug_dma_mapping_error(dev, dma_addr);
-	return dma_addr == DMA_ERROR_CODE;
-}
-
-/*
- * Dummy noncoherent implementation.  We don't provide a dma_cache_sync
- * function so drivers using this API are highlighted with build warnings.
- */
-static inline void *dma_alloc_noncoherent(struct device *dev, size_t size,
-		dma_addr_t *handle, gfp_t gfp)
-{
-	return NULL;
-}
-
-static inline void dma_free_noncoherent(struct device *dev, size_t size,
-		void *cpu_addr, dma_addr_t handle)
-{
-}
-
-extern int dma_supported(struct device *dev, u64 mask);
-
-extern int arm_dma_set_mask(struct device *dev, u64 dma_mask);
 
 /**
  * arm_dma_alloc - allocate consistent memory for DMA
@@ -203,22 +192,7 @@ extern int arm_dma_set_mask(struct device *dev, u64 dma_mask);
  * to be the device-viewed address.
  */
 extern void *arm_dma_alloc(struct device *dev, size_t size, dma_addr_t *handle,
-			   gfp_t gfp, struct dma_attrs *attrs);
-
-#define dma_alloc_coherent(d, s, h, f) dma_alloc_attrs(d, s, h, f, NULL)
-
-static inline void *dma_alloc_attrs(struct device *dev, size_t size,
-				       dma_addr_t *dma_handle, gfp_t flag,
-				       struct dma_attrs *attrs)
-{
-	struct dma_map_ops *ops = get_dma_ops(dev);
-	void *cpu_addr;
-	BUG_ON(!ops);
-
-	cpu_addr = ops->alloc(dev, size, dma_handle, flag, attrs);
-	debug_dma_alloc_coherent(dev, size, *dma_handle, cpu_addr);
-	return cpu_addr;
-}
+			   gfp_t gfp, unsigned long attrs);
 
 /**
  * arm_dma_free - free memory allocated by arm_dma_alloc
@@ -235,20 +209,7 @@ static inline void *dma_alloc_attrs(struct device *dev, size_t size,
  * during and after this call executing are illegal.
  */
 extern void arm_dma_free(struct device *dev, size_t size, void *cpu_addr,
-			 dma_addr_t handle, struct dma_attrs *attrs);
-
-#define dma_free_coherent(d, s, c, h) dma_free_attrs(d, s, c, h, NULL)
-
-static inline void dma_free_attrs(struct device *dev, size_t size,
-				     void *cpu_addr, dma_addr_t dma_handle,
-				     struct dma_attrs *attrs)
-{
-	struct dma_map_ops *ops = get_dma_ops(dev);
-	BUG_ON(!ops);
-
-	debug_dma_free_coherent(dev, size, cpu_addr, dma_handle);
-	ops->free(dev, size, cpu_addr, dma_handle, attrs);
-}
+			 dma_addr_t handle, unsigned long attrs);
 
 /**
  * arm_dma_mmap - map a coherent DMA allocation into user space
@@ -265,7 +226,7 @@ static inline void dma_free_attrs(struct device *dev, size_t size,
  */
 extern int arm_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 			void *cpu_addr, dma_addr_t dma_addr, size_t size,
-			struct dma_attrs *attrs);
+			unsigned long attrs);
 
 /*
  * This can be called during early boot to increase the size of the atomic
@@ -319,16 +280,16 @@ extern void dmabounce_unregister_dev(struct device *);
  * The scatter list versions of the above methods.
  */
 extern int arm_dma_map_sg(struct device *, struct scatterlist *, int,
-		enum dma_data_direction, struct dma_attrs *attrs);
+		enum dma_data_direction, unsigned long attrs);
 extern void arm_dma_unmap_sg(struct device *, struct scatterlist *, int,
-		enum dma_data_direction, struct dma_attrs *attrs);
+		enum dma_data_direction, unsigned long attrs);
 extern void arm_dma_sync_sg_for_cpu(struct device *, struct scatterlist *, int,
 		enum dma_data_direction);
 extern void arm_dma_sync_sg_for_device(struct device *, struct scatterlist *, int,
 		enum dma_data_direction);
 extern int arm_dma_get_sgtable(struct device *dev, struct sg_table *sgt,
 		void *cpu_addr, dma_addr_t dma_addr, size_t size,
-		struct dma_attrs *attrs);
+		unsigned long attrs);
 
 #endif /* __KERNEL__ */
 #endif

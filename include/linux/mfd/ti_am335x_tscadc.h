@@ -52,6 +52,7 @@
 
 /* IRQ enable */
 #define IRQENB_HW_PEN		BIT(0)
+#define IRQENB_EOS		BIT(1)
 #define IRQENB_FIFO0THRES	BIT(2)
 #define IRQENB_FIFO0OVRRUN	BIT(3)
 #define IRQENB_FIFO0UNDRFLW	BIT(4)
@@ -107,7 +108,7 @@
 /* Charge delay */
 #define CHARGEDLY_OPEN_MASK	(0x3FFFF << 0)
 #define CHARGEDLY_OPEN(val)	((val) << 0)
-#define CHARGEDLY_OPENDLY	CHARGEDLY_OPEN(1)
+#define CHARGEDLY_OPENDLY	CHARGEDLY_OPEN(0x400)
 
 /* Control register */
 #define CNTRLREG_TSCSSENB	BIT(0)
@@ -127,6 +128,7 @@
 
 /* Sequencer Status */
 #define SEQ_STATUS BIT(5)
+#define CHARGE_STEP		0x11
 
 #define ADC_CLK			3000000
 #define TOTAL_STEPS		16
@@ -136,22 +138,22 @@
 /*
  * time in us for processing a single channel, calculated as follows:
  *
- * num cycles = open delay + (sample delay + conv time) * averaging
+ * max num cycles = open delay + (sample delay + conv time) * averaging
  *
- * num cycles: 152 + (1 + 13) * 16 = 376
+ * max num cycles: 262143 + (255 + 13) * 16 = 266431
  *
  * clock frequency: 26MHz / 8 = 3.25MHz
  * clock period: 1 / 3.25MHz = 308ns
  *
- * processing time: 376 * 308ns = 116us
+ * max processing time: 266431 * 308ns = 83ms(approx)
  */
-#define IDLE_TIMEOUT 116 /* microsec */
+#define IDLE_TIMEOUT 83 /* milliseconds */
 
 #define TSCADC_CELLS		2
 
 struct ti_tscadc_dev {
 	struct device *dev;
-	struct regmap *regmap_tscadc;
+	struct regmap *regmap;
 	void __iomem *tscadc_base;
 	int irq;
 	int used_cells;	/* 1-2 */

@@ -25,7 +25,7 @@
 #include <drm/drmP.h>
 #include <linux/dma-buf.h>
 
-#include "nouveau_drm.h"
+#include "nouveau_drv.h"
 #include "nouveau_gem.h"
 
 struct sg_table *nouveau_gem_prime_get_sg_table(struct drm_gem_object *obj)
@@ -93,7 +93,7 @@ int nouveau_gem_prime_pin(struct drm_gem_object *obj)
 	int ret;
 
 	/* pin buffer into GTT */
-	ret = nouveau_bo_pin(nvbo, TTM_PL_FLAG_TT);
+	ret = nouveau_bo_pin(nvbo, TTM_PL_FLAG_TT, false);
 	if (ret)
 		return -EINVAL;
 

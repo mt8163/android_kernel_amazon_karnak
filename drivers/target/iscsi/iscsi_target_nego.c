@@ -23,7 +23,7 @@
 #include <target/target_core_fabric.h>
 #include <target/iscsi/iscsi_transport.h>
 
-#include "iscsi_target_core.h"
+#include <target/iscsi/iscsi_target_core.h>
 #include "iscsi_target_parameters.h"
 #include "iscsi_target_login.h"
 #include "iscsi_target_nego.h"
@@ -269,6 +269,7 @@ int iscsi_target_check_login_request(
 
 	return 0;
 }
+EXPORT_SYMBOL(iscsi_target_check_login_request);
 
 static int iscsi_target_check_first_request(
 	struct iscsi_conn *conn,
@@ -341,7 +342,6 @@ static int iscsi_target_check_first_request(
 static int iscsi_target_do_tx_login_io(struct iscsi_conn *conn, struct iscsi_login *login)
 {
 	u32 padding = 0;
-	struct iscsi_session *sess = conn->sess;
 	struct iscsi_login_rsp *login_rsp;
 
 	login_rsp = (struct iscsi_login_rsp *) login->rsp;
@@ -353,7 +353,7 @@ static int iscsi_target_do_tx_login_io(struct iscsi_conn *conn, struct iscsi_log
 	login_rsp->itt			= login->init_task_tag;
 	login_rsp->statsn		= cpu_to_be32(conn->stat_sn++);
 	login_rsp->exp_cmdsn		= cpu_to_be32(conn->sess->exp_cmd_sn);
-	login_rsp->max_cmdsn		= cpu_to_be32(conn->sess->max_cmd_sn);
+	login_rsp->max_cmdsn		= cpu_to_be32((u32) atomic_read(&conn->sess->max_cmd_sn));
 
 	pr_debug("Sending Login Response, Flags: 0x%02x, ITT: 0x%08x,"
 		" ExpCmdSN; 0x%08x, MaxCmdSN: 0x%08x, StatSN: 0x%08x, Length:"
@@ -382,10 +382,6 @@ static int iscsi_target_do_tx_login_io(struct iscsi_conn *conn, struct iscsi_log
 		goto err;
 
 	login->rsp_length		= 0;
-	mutex_lock(&sess->cmdsn_mutex);
-	login_rsp->exp_cmdsn		= cpu_to_be32(sess->exp_cmd_sn);
-	login_rsp->max_cmdsn		= cpu_to_be32(sess->max_cmd_sn);
-	mutex_unlock(&sess->cmdsn_mutex);
 
 	return 0;
 
@@ -887,7 +883,8 @@ static int iscsi_target_handle_csg_zero(
 			SENDER_TARGET,
 			login->rsp_buf,
 			&login->rsp_length,
-			conn->param_list);
+			conn->param_list,
+			conn->tpg->tpg_attrib.login_keys_workaround);
 	if (ret < 0)
 		return -1;
 
@@ -957,7 +954,8 @@ static int iscsi_target_handle_csg_one(struct iscsi_conn *conn, struct iscsi_log
 			SENDER_TARGET,
 			login->rsp_buf,
 			&login->rsp_length,
-			conn->param_list);
+			conn->param_list,
+			conn->tpg->tpg_attrib.login_keys_workaround);
 	if (ret < 0) {
 		iscsit_tx_login_rsp(conn, ISCSI_STATUS_CLS_INITIATOR_ERR,
 				ISCSI_LOGIN_STATUS_INIT_ERR);

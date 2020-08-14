@@ -110,8 +110,6 @@ static u8 *ieee80211_wep_add_iv(struct ieee80211_local *local,
 	    (info->control.hw_key->flags & IEEE80211_KEY_FLAG_PUT_IV_SPACE))
 		return newhdr + hdrlen;
 
-	skb_set_network_header(skb, skb_network_offset(skb) +
-				    IEEE80211_WEP_IV_LEN);
 	ieee80211_wep_get_iv(local, keylen, keyidx, newhdr + hdrlen);
 	return newhdr + hdrlen;
 }
@@ -295,7 +293,8 @@ ieee80211_crypto_wep_decrypt(struct ieee80211_rx_data *rx)
 			return RX_DROP_UNUSABLE;
 		ieee80211_wep_remove_iv(rx->local, rx->skb, rx->key);
 		/* remove ICV */
-		if (pskb_trim(rx->skb, rx->skb->len - IEEE80211_WEP_ICV_LEN))
+		if (!(status->flag & RX_FLAG_ICV_STRIPPED) &&
+		    pskb_trim(rx->skb, rx->skb->len - IEEE80211_WEP_ICV_LEN))
 			return RX_DROP_UNUSABLE;
 	}
 

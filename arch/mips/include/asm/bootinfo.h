@@ -70,10 +70,7 @@ enum loongson_machine_type {
 	MACH_DEXXON_GDIUM2F10,
 	MACH_LEMOTE_NAS,
 	MACH_LEMOTE_LL2F,
-	MACH_LEMOTE_A1004,
-	MACH_LEMOTE_A1101,
-	MACH_LEMOTE_A1201,
-	MACH_LEMOTE_A1205,
+	MACH_LOONGSON_GENERIC,
 	MACH_LOONGSON_END
 };
 
@@ -101,16 +98,16 @@ extern unsigned long mips_machtype;
 struct boot_mem_map {
 	int nr_map;
 	struct boot_mem_map_entry {
-		phys_t addr;	/* start of memory segment */
-		phys_t size;	/* size of memory segment */
+		phys_addr_t addr;	/* start of memory segment */
+		phys_addr_t size;	/* size of memory segment */
 		long type;		/* type of memory segment */
 	} map[BOOT_MEM_MAP_MAX];
 };
 
 extern struct boot_mem_map boot_mem_map;
 
-extern void add_memory_region(phys_t start, phys_t size, long type);
-extern void detect_memory_region(phys_t start, phys_t sz_min,  phys_t sz_max);
+extern void add_memory_region(phys_addr_t start, phys_addr_t size, long type);
+extern void detect_memory_region(phys_addr_t start, phys_addr_t sz_min,  phys_addr_t sz_max);
 
 extern void prom_init(void);
 extern void prom_free_prom_memory(void);
@@ -130,6 +127,10 @@ extern char arcs_cmdline[COMMAND_LINE_SIZE];
  */
 extern unsigned long fw_arg0, fw_arg1, fw_arg2, fw_arg3;
 
+#ifdef CONFIG_USE_OF
+extern unsigned long fw_passed_dtb;
+#endif
+
 /*
  * Platform memory detection hook called by setup_arch
  */
@@ -146,5 +147,23 @@ extern void plat_swiotlb_setup(void);
 static inline void plat_swiotlb_setup(void) {}
 
 #endif /* CONFIG_SWIOTLB */
+
+#ifdef CONFIG_USE_OF
+/**
+ * plat_get_fdt() - Return a pointer to the platform's device tree blob
+ *
+ * This function provides a platform independent API to get a pointer to the
+ * flattened device tree blob. The interface between bootloader and kernel
+ * is not consistent across platforms so it is necessary to provide this
+ * API such that common startup code can locate the FDT.
+ *
+ * This is used by the KASLR code to get command line arguments and random
+ * seed from the device tree. Any platform wishing to use KASLR should
+ * provide this API and select SYS_SUPPORTS_RELOCATABLE.
+ *
+ * Return: Pointer to the flattened device tree blob.
+ */
+extern void *plat_get_fdt(void);
+#endif /* CONFIG_USE_OF */
 
 #endif /* _ASM_BOOTINFO_H */

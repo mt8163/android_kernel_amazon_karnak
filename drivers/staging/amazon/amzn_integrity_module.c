@@ -1,17 +1,3 @@
-/*
- * Copyright (C) 2019 Amazon.com, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- */
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/wait.h>
@@ -454,21 +440,25 @@ static int get_battery_property(struct integrity_driver_data *data, int type)
 	if (!data->batt_psy)
 		return -1;
 
-	psy = data->batt_psy;
 	switch (type) {
 	case TYPE_SOC:
+		psy = data->batt_psy;
 		property = POWER_SUPPLY_PROP_CAPACITY;
 		break;
 	case TYPE_VBAT:
+		psy = data->batt_psy;
 		property = POWER_SUPPLY_PROP_InstatVolt;
 		break;
 	case TYPE_TBAT:
+		psy = data->batt_psy;
 		property = POWER_SUPPLY_PROP_TEMP;
 		break;
 	case TYPE_CHG_STATE:
+		psy = data->batt_psy;
 		property = POWER_SUPPLY_PROP_STATUS;
 		break;
 	case TYPE_VBUS:
+		psy = data->batt_psy;
 		property = POWER_SUPPLY_PROP_ChargerVoltage;
 		break;
 	default:
@@ -476,7 +466,7 @@ static int get_battery_property(struct integrity_driver_data *data, int type)
 		return -1;
 	}
 
-	ret = psy->get_property(psy, property, &val);
+	ret = power_supply_get_property(psy, property, &val);
 	if (ret) {
 		pr_err("%s: can't find property[%d]\n", __func__, property);
 		return -1;

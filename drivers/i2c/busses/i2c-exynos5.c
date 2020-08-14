@@ -457,7 +457,7 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 			goto stop;
 		} else if (int_status & HSI2C_INT_TIMEOUT) {
 			dev_dbg(i2c->dev, "Accessing device timed out\n");
-			i2c->state = -EAGAIN;
+			i2c->state = -ETIMEDOUT;
 			goto stop;
 		}
 	} else if (int_status & HSI2C_INT_I2C) {
@@ -476,7 +476,7 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 			goto stop;
 		} else if (trans_status & HSI2C_TIMEOUT_AUTO) {
 			dev_dbg(i2c->dev, "Accessing device timed out\n");
-			i2c->state = -EAGAIN;
+			i2c->state = -ETIMEDOUT;
 			goto stop;
 		} else if (trans_status & HSI2C_TRANS_DONE) {
 			i2c->trans_done = 1;
@@ -796,10 +796,8 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	exynos5_i2c_reset(i2c);
 
 	ret = i2c_add_adapter(&i2c->adap);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "failed to add bus to i2c core\n");
+	if (ret < 0)
 		goto err_clk;
-	}
 
 	platform_set_drvdata(pdev, i2c);
 
@@ -861,21 +859,14 @@ static int exynos5_i2c_resume_noirq(struct device *dev)
 #endif
 
 static const struct dev_pm_ops exynos5_i2c_dev_pm_ops = {
-#ifdef CONFIG_PM_SLEEP
-	.suspend_noirq = exynos5_i2c_suspend_noirq,
-	.resume_noirq = exynos5_i2c_resume_noirq,
-	.freeze_noirq = exynos5_i2c_suspend_noirq,
-	.thaw_noirq = exynos5_i2c_resume_noirq,
-	.poweroff_noirq = exynos5_i2c_suspend_noirq,
-	.restore_noirq = exynos5_i2c_resume_noirq,
-#endif
+	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(exynos5_i2c_suspend_noirq,
+				      exynos5_i2c_resume_noirq)
 };
 
 static struct platform_driver exynos5_i2c_driver = {
 	.probe		= exynos5_i2c_probe,
 	.remove		= exynos5_i2c_remove,
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= "exynos5-hsi2c",
 		.pm	= &exynos5_i2c_dev_pm_ops,
 		.of_match_table = exynos5_i2c_match,

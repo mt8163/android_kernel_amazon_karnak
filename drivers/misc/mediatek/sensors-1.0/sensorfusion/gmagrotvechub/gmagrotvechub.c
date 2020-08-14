@@ -1,15 +1,19 @@
 /* gmagrotvechub motion sensor driver
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
+
+#define pr_fmt(fmt) "[gamerotvechub] " fmt
 
 #include <hwmsensor.h>
 #include "gmagrotvechub.h"
@@ -18,35 +22,26 @@
 #include <linux/notifier.h>
 #include "scp_helper.h"
 
-
-#define GMAGROTVEC_TAG                  "[gmagrotvechub] "
-#define GMAGROTVEC_FUN(f)               pr_debug(GMAGROTVEC_TAG"%s\n", __func__)
-#define GMAGROTVEC_ERR(fmt, args...)    pr_err(GMAGROTVEC_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
-#define GMAGROTVEC_LOG(fmt, args...)    pr_debug(GMAGROTVEC_TAG fmt, ##args)
-
 static struct fusion_init_info gmagrotvechub_init_info;
 
-static int gmagrotvec_get_data(int *x, int *y, int *z, int *scalar, int *status)
+static int gmagrotvec_get_data(int *x, int *y, int *z,
+	int *scalar, int *status)
 {
 	int err = 0;
 	struct data_unit_t data;
 	uint64_t time_stamp = 0;
-	uint64_t time_stamp_gpt = 0;
 
 	err = sensor_get_data_from_hub(ID_GEOMAGNETIC_ROTATION_VECTOR, &data);
 	if (err < 0) {
-		GMAGROTVEC_ERR("sensor_get_data_from_hub fail!!\n");
+		pr_err("sensor_get_data_from_hub fail!!\n");
 		return -1;
 	}
 	time_stamp		= data.time_stamp;
-	time_stamp_gpt	= data.time_stamp_gpt;
 	*x				= data.magnetic_t.azimuth;
 	*y				= data.magnetic_t.pitch;
 	*z				= data.magnetic_t.roll;
 	*scalar				= data.magnetic_t.scalar;
 	*status		= data.magnetic_t.status;
-	/* GMAGROTVEC_LOG("recv ipi: timestamp: %lld, timestamp_gpt: %lld, x: %d, y: %d, z: %d!\n",
-		time_stamp, time_stamp_gpt, *x, *y, *z); */
 	return 0;
 }
 static int gmagrotvec_open_report_data(int open)
@@ -70,12 +65,14 @@ static int gmagrotvec_set_delay(u64 delay)
 	return 0;
 #endif
 }
-static int gmagrotvec_batch(int flag, int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
+static int gmagrotvec_batch(int flag,
+	int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
 {
 #if defined CONFIG_MTK_SCP_SENSORHUB_V1
 	gmagrotvec_set_delay(samplingPeriodNs);
 #endif
-	return sensor_batch_to_hub(ID_GEOMAGNETIC_ROTATION_VECTOR, flag, samplingPeriodNs, maxBatchReportLatencyNs);
+	return sensor_batch_to_hub(ID_GEOMAGNETIC_ROTATION_VECTOR,
+		flag, samplingPeriodNs, maxBatchReportLatencyNs);
 }
 
 static int gmagrotvec_flush(void)
@@ -88,9 +85,10 @@ static int gmagrotvec_recv_data(struct data_unit_t *event, void *reserved)
 	int err = 0;
 
 	if (event->flush_action == DATA_ACTION)
-		err = gmrv_data_report(event->magnetic_t.x, event->magnetic_t.y, event->magnetic_t.z,
+		err = gmrv_data_report(event->magnetic_t.x,
+			event->magnetic_t.y, event->magnetic_t.z,
 			event->magnetic_t.scalar, event->magnetic_t.status,
-			(int64_t)(event->time_stamp + event->time_stamp_gpt));
+			(int64_t)event->time_stamp);
 	else if (event->flush_action == FLUSH_ACTION)
 		err = gmrv_flush_report();
 
@@ -115,9 +113,10 @@ static int gmagrotvechub_local_init(void)
 	ctl.is_support_batch = false;
 #else
 #endif
-	err = fusion_register_control_path(&ctl, ID_GEOMAGNETIC_ROTATION_VECTOR);
+	err = fusion_register_control_path(&ctl,
+		ID_GEOMAGNETIC_ROTATION_VECTOR);
 	if (err) {
-		GMAGROTVEC_ERR("register gmagrotvec control path err\n");
+		pr_err("register gmagrotvec control path err\n");
 		goto exit;
 	}
 
@@ -125,12 +124,13 @@ static int gmagrotvechub_local_init(void)
 	data.vender_div = 1000000;
 	err = fusion_register_data_path(&data, ID_GEOMAGNETIC_ROTATION_VECTOR);
 	if (err) {
-		GMAGROTVEC_ERR("register gmagrotvec data path err\n");
+		pr_err("register gmagrotvec data path err\n");
 		goto exit;
 	}
-	err = scp_sensorHub_data_registration(ID_GEOMAGNETIC_ROTATION_VECTOR, gmagrotvec_recv_data);
+	err = scp_sensorHub_data_registration(ID_GEOMAGNETIC_ROTATION_VECTOR,
+		gmagrotvec_recv_data);
 	if (err < 0) {
-		GMAGROTVEC_ERR("SCP_sensorHub_data_registration failed\n");
+		pr_err("SCP_sensorHub_data_registration failed\n");
 		goto exit;
 	}
 	return 0;
@@ -150,13 +150,14 @@ static struct fusion_init_info gmagrotvechub_init_info = {
 
 static int __init gmagrotvechub_init(void)
 {
-	fusion_driver_add(&gmagrotvechub_init_info, ID_GEOMAGNETIC_ROTATION_VECTOR);
+	fusion_driver_add(&gmagrotvechub_init_info,
+		ID_GEOMAGNETIC_ROTATION_VECTOR);
 	return 0;
 }
 
 static void __exit gmagrotvechub_exit(void)
 {
-	GMAGROTVEC_FUN();
+	pr_debug("%s\n", __func__);
 }
 
 module_init(gmagrotvechub_init);

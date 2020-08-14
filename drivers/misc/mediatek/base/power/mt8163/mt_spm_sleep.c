@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -6,16 +19,15 @@
 #include <linux/string.h>
 #include <linux/i2c.h>
 #include <linux/of_fdt.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_address.h>
 #include <asm/setup.h>
 
-/* TODO: wait irq/cirq driver ready */
-/* #include <irq.h> */
 #include <mt-plat/aee.h>
-#include <mt-plat/mt_cirq.h>
-/* #include <mt-plat/upmu_common.h> */
+#include <mt-plat/mtk_cirq.h>
 
 #include <mach/wd_api.h>
-/* #include <mach/eint.h> */
 #ifdef CONFIG_MD32_SUPPORT
 #include <mach/md32_helper.h>
 #endif
@@ -48,13 +60,13 @@
 #define I2C_CHANNEL 1
 
 int spm_dormant_sta = MT_CPU_DORMANT_RESET;
-int spm_ap_mdsrc_req_cnt = 0;
-u32 spm_suspend_flag = 0;
+int spm_ap_mdsrc_req_cnt;
+u32 spm_suspend_flag;
 
 struct wake_status suspend_info[20];
-u32 log_wakesta_cnt = 0;
-u32 log_wakesta_index = 0;
-u8 spm_snapshot_golden_setting = 0;
+u32 log_wakesta_cnt;
+u32 log_wakesta_index;
+u8 spm_snapshot_golden_setting;
 
 /**********************************************************
  * PCM code for suspend
@@ -245,10 +257,10 @@ static struct pcm_desc suspend_pcm = {
 
 #define SPM_WAKE_PERIOD         600	/* sec */
 
-#define WAKE_SRC_FOR_SUSPEND                                                          \
-		(WAKE_SRC_MD32_WDT | WAKE_SRC_KP | WAKE_SRC_CONN2AP | WAKE_SRC_EINT | WAKE_SRC_CONN_WDT |\
-		WAKE_SRC_MD32_SPM | WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN |\
-		WAKE_SRC_ALL_MD32)
+#define WAKE_SRC_FOR_SUSPEND \
+	    (WAKE_SRC_MD32_WDT | WAKE_SRC_KP | WAKE_SRC_CONN2AP |\
+	    WAKE_SRC_EINT | WAKE_SRC_CONN_WDT | WAKE_SRC_MD32_SPM |\
+	    WAKE_SRC_USB_CD | WAKE_SRC_USB_PDN | WAKE_SRC_ALL_MD32)
 
 #define WAKE_SRC_FOR_MD32  0                                          \
 				/* (WAKE_SRC_AUD_MD32) */
@@ -294,121 +306,6 @@ struct spm_lp_scen __spm_suspend = {
 	.wakestatus = &suspend_info[0],
 };
 
-#if 0
-void spm_i2c_control(u32 channel, bool onoff)
-{
-	/* static int pdn = 0; */
-	static bool i2c_onoff;
-#ifdef CONFIG_OF
-	void __iomem *base;
-#else
-	u32 base;		/* , i2c_clk; */
-#endif
-	switch (channel) {
-	case 0:
-		base = SPM_I2C0_BASE;
-		/* i2c_clk = MT_CG_INFRA_I2C0; */
-		break;
-	case 1:
-		base = SPM_I2C1_BASE;
-		/* i2c_clk = MT_CG_INFRA_I2C1; */
-		break;
-	case 2:
-		base = SPM_I2C2_BASE;
-		/* i2c_clk = MT_CG_INFRA_I2C2; */
-		break;
-	default:
-		base = SPM_I2C2_BASE;
-		break;
-	}
-
-	if ((1 == onoff) && (0 == i2c_onoff)) {
-		i2c_onoff = 1;
-#if 0
-#if 1
-		pdn = spm_read(INFRA_PDN_STA0) & (1U << i2c_clk);
-		spm_write(INFRA_PDN_CLR0, pdn);	/* power on I2C */
-#else
-		pdn = clock_is_on(i2c_clk);
-		if (!pdn)
-			enable_clock(i2c_clk, "spm_i2c");
-#endif
-#endif
-		spm_write(base + OFFSET_CONTROL, 0x0);	/* init I2C_CONTROL */
-		spm_write(base + OFFSET_TRANSAC_LEN, 0x1);	/* init I2C_TRANSAC_LEN */
-		spm_write(base + OFFSET_EXT_CONF, 0x0);	/* init I2C_EXT_CONF */
-		spm_write(base + OFFSET_IO_CONFIG, 0x0);	/* init I2C_IO_CONFIG */
-		spm_write(base + OFFSET_HS, 0x102);	/* init I2C_HS */
-	} else if ((0 == onoff) && (1 == i2c_onoff)) {
-		i2c_onoff = 0;
-#if 0
-#if 1
-		spm_write(INFRA_PDN_SET0, pdn);	/* restore I2C power */
-#else
-		if (!pdn)
-			disable_clock(i2c_clk, "spm_i2c");
-#endif
-#endif
-	} else
-		ASSERT(1);
-}
-
-enum mempll_type {
-	MEMP26MHZ = 0,
-	MEMPLL3PLL = 1,
-	MEMPLL1PLL = 2,
-};
-#ifdef CONFIG_OF
-static int dt_scan_memory(unsigned long node, const char *uname, int depth, void *data)
-{
-	char *type = (char *)of_get_flat_dt_prop(node, "device_type", NULL);
-	__be32 *reg, *endp;
-	int l;
-	dram_info_t *dram_info = NULL;
-
-	/* We are scanning "memory" nodes only */
-	if (type == NULL) {
-		/*
-		 * The longtrail doesn't have a device_type on the
-		 * /memory node, so look for the node called /memory@0.
-		 */
-		if (depth != 1 || strcmp(uname, "memory@0") != 0)
-			return 0;
-	} else if (strcmp(type, "memory") != 0)
-		return 0;
-
-	reg = (__be32 *) of_get_flat_dt_prop(node, "reg", (int *)&l);
-	if (reg == NULL)
-		return 0;
-
-	endp = reg + (l / sizeof(__be32));
-
-	if (node) {
-		/* orig_dram_info */
-		dram_info = (dram_info_t *) of_get_flat_dt_prop(node, "orig_dram_info", NULL);
-	}
-
-	/*SPM dummy read rank selection */
-	spm_suspend_flag &=
-	    ~(SPM_DRAM_RANK1_ADDR_SEL0 | SPM_DRAM_RANK1_ADDR_SEL1 | SPM_DRAM_RANK1_ADDR_SEL2);
-
-	if (dram_info->rank_info[1].start == 0x60000000)
-		spm_suspend_flag |= SPM_DRAM_RANK1_ADDR_SEL0;
-	else if (dram_info->rank_info[1].start == 0x80000000)
-		spm_suspend_flag |= SPM_DRAM_RANK1_ADDR_SEL1;
-	else if (dram_info->rank_info[1].start == 0xc0000000)
-		spm_suspend_flag |= SPM_DRAM_RANK1_ADDR_SEL2;
-	else if (dram_info->rank_info[1].size != 0x0) {
-		spm_err("dram rank1_info_error: 0x%llx\n", dram_info->rank_info[1].start);
-		BUG_ON(1);
-		/* return false; */
-	}
-
-	return node;
-}
-#endif
-#endif
-
 static bool spm_set_suspend_pcm_ver(u32 *suspend_flags)
 {
 	u32 flag;
@@ -416,7 +313,7 @@ static bool spm_set_suspend_pcm_ver(u32 *suspend_flags)
 	flag = *suspend_flags;
 
 	__spm_suspend.pcmdesc = &suspend_pcm;
-/* flag |= SPM_VCORE_DVS_DIS; */
+	/* flag |= SPM_VCORE_DVS_DIS; */
 
 	*suspend_flags = flag;
 	return true;
@@ -441,12 +338,14 @@ static void spm_kick_pcm_to_run(struct pwr_ctrl *pwrctrl)
 	{
 		u32 con1;
 
-		con1 = spm_read(SPM_PCM_CON1) & ~(CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
+		con1 = spm_read(SPM_PCM_CON1) &
+			~(CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
 		spm_write(SPM_PCM_CON1, CON1_CFG_KEY | con1);
 
 		if (spm_read(SPM_PCM_TIMER_VAL) > PCM_TIMER_MAX)
 			spm_write(SPM_PCM_TIMER_VAL, PCM_TIMER_MAX);
-		spm_write(SPM_PCM_WDT_TIMER_VAL, spm_read(SPM_PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
+		spm_write(SPM_PCM_WDT_TIMER_VAL,
+			spm_read(SPM_PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
 		spm_write(SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_PCM_WDT_EN);
 	}
 #endif
@@ -469,7 +368,7 @@ static void spm_trigger_wfi_for_sleep(struct pwr_ctrl *pwrctrl)
 #endif
 
 	if (is_cpu_pdn(pwrctrl->pcm_flags)) {
-		spm_dormant_sta = mt_cpu_dormant(CPU_SHUTDOWN_MODE /* | DORMANT_SKIP_WFI */);
+		spm_dormant_sta = mt_cpu_dormant(CPU_SHUTDOWN_MODE);
 		switch (spm_dormant_sta) {
 		case MT_CPU_DORMANT_RESET:
 			break;
@@ -488,14 +387,15 @@ static void spm_trigger_wfi_for_sleep(struct pwr_ctrl *pwrctrl)
 	}
 
 	if (is_infra_pdn(pwrctrl->pcm_flags))
-		mtk_uart_restore();
+		mtk8250_restore_dev();
 }
 
 static void spm_clean_after_wakeup(void)
 {
 	/* disable PCM WDT to stop count if needed */
 #if SPM_PCMWDT_EN
-	spm_write(SPM_PCM_CON1, CON1_CFG_KEY | (spm_read(SPM_PCM_CON1) & ~CON1_PCM_WDT_EN));
+	spm_write(SPM_PCM_CON1, CON1_CFG_KEY |
+		(spm_read(SPM_PCM_CON1) & ~CON1_PCM_WDT_EN));
 #endif
 
 	__spm_clean_after_wakeup();
@@ -506,19 +406,22 @@ static void spm_clean_after_wakeup(void)
 #endif
 }
 
-static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct pcm_desc *pcmdesc)
+static int
+	    spm_output_wake_reason(struct wake_status *wakesta,
+			struct pcm_desc *pcmdesc)
 {
-	wake_reason_t wr;
+	int wr;
 	u32 md32_flag = 0;
 	u32 md32_flag2 = 0;
 
 	wr = __spm_output_wake_reason(wakesta, pcmdesc, true);
 
 #if 1
-	memcpy(&suspend_info[log_wakesta_cnt], wakesta, sizeof(struct wake_status));
+	memcpy(&suspend_info[log_wakesta_cnt],
+		wakesta, sizeof(struct wake_status));
 	suspend_info[log_wakesta_cnt].log_index = log_wakesta_index;
 
-	if (10 <= log_wakesta_cnt) {
+	if (log_wakesta_cnt >= 10) {
 		log_wakesta_cnt = 0;
 		spm_snapshot_golden_setting = 0;
 	} else {
@@ -526,7 +429,7 @@ static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct 
 		log_wakesta_index++;
 	}
 
-	if (0xFFFFFFF0 <= log_wakesta_index)
+	if (log_wakesta_index >= 0xFFFFFFF0)
 		log_wakesta_index = 0;
 #endif
 
@@ -534,22 +437,23 @@ static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct 
 	md32_flag = read_md32_cfgreg(0x2C);
 	md32_flag2 = read_md32_cfgreg(0x30);
 #endif
-	spm_crit2
-	    ("suspend dormant state = %d, md32_flag = 0x%x, md32_flag2 = %d\n",
-	     spm_dormant_sta, md32_flag, md32_flag2);
-/* TODO: eint may need to provide new APIs
+	spm_crit2("suspend dormant state = %d, ",
+		spm_dormant_sta);
+	spm_crit2("md32_flag = 0x%x, md32_flag2 = %d\n",
+		md32_flag, md32_flag2);
+#if 0
 	if (wakesta->r12 & WAKE_SRC_EINT)
 		mt_eint_print_status();
-*/
+#endif
 #if 0
 	if (wakesta->debug_flag & (1 << 18)) {
 		spm_crit2("MD32 suspned pmic wrapper error");
-		BUG();
+		WARN_ON(1);
 	}
 
 	if (wakesta->debug_flag & (1 << 19)) {
 		spm_crit2("MD32 resume pmic wrapper error");
-		BUG();
+		WARN_ON(1);
 	}
 #endif
 
@@ -557,13 +461,14 @@ static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct 
 }
 
 #if SPM_PWAKE_EN
-static u32 spm_get_wake_period(int pwake_time, wake_reason_t last_wr)
+static u32 spm_get_wake_period(int pwake_time, int last_wr)
 {
 	int period = SPM_WAKE_PERIOD;
 
 	if (pwake_time < 0) {
 		/* use FG to get the period of 1% battery decrease */
-		period = get_dynamic_period(last_wr != WR_PCM_TIMER ? 1 : 0, SPM_WAKE_PERIOD, 1);
+		period = get_dynamic_period(
+			last_wr != WR_PCM_TIMER ? 1 : 0, SPM_WAKE_PERIOD, 1);
 		if (period <= 0) {
 			spm_warn("CANNOT GET PERIOD FROM FUEL GAUGE\n");
 			period = SPM_WAKE_PERIOD;
@@ -617,22 +522,34 @@ u32 spm_get_sleep_wakesrc(void)
 	return __spm_suspend.pwrctrl->wake_src;
 }
 
-wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
+static u32 last_wakesrc;
+
+u32 spm_get_last_wakeup_src(void)
+{
+	return last_wakesrc;
+}
+EXPORT_SYMBOL(spm_get_last_wakeup_src);
+
+int spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 {
 	u32 sec = 2;
+#if 0
 	int wd_ret;
+#endif
 	struct wake_status wakesta;
 	unsigned long flags;
-/* TODO: wait irq driver ready
+#if 1
 	struct mtk_irq_mask mask;
-*/
+	struct irq_desc *desc = irq_to_desc(spm_irq_0);
+#endif
+#if 0
 	struct wd_api *wd_api;
-	static wake_reason_t last_wr = WR_NONE;
+#endif
+	static int last_wr = WR_NONE;
 	struct pcm_desc *pcmdesc;
 	struct pwr_ctrl *pwrctrl;
 
 	if (spm_set_suspend_pcm_ver(&spm_flags) == false) {
-		spm_crit2("mempll setting error %x\n", mt_get_clk_mem_sel());
 		last_wr = WR_UNKNOWN;
 		return last_wr;
 	}
@@ -644,19 +561,20 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 	set_pwrctrl_pcm_data(pwrctrl, spm_data);
 
 #if SPM_PWAKE_EN
-	sec = spm_get_wake_period(-1 /* FIXME */ , last_wr);
+	sec = spm_get_wake_period(-1/* FIXME */, last_wr);
 #endif
 	pwrctrl->timer_val = sec * 32768;
 
+#if 0
 	wd_ret = get_wd_api(&wd_api);
 	if (!wd_ret)
 		wd_api->wd_suspend_notify();
+#endif
 
 	spin_lock_irqsave(&__spm_lock, flags);
-/* TODO: wait irq driver ready
 	mt_irq_mask_all(&mask);
-	mt_irq_unmask_for_sleep(SPM_IRQ0_ID);
-*/
+	if (desc)
+		unmask_irq(desc);
 	mt_cirq_clone_gic();
 	mt_cirq_enable();
 
@@ -666,7 +584,7 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 		  sec, pwrctrl->wake_src, is_cpu_pdn(pwrctrl->pcm_flags),
 		  is_infra_pdn(pwrctrl->pcm_flags));
 
-	if (request_uart_to_sleep()) {
+	if (mtk8250_request_to_sleep()) {
 		last_wr = WR_UART_BUSY;
 		goto RESTORE_IRQ;
 	}
@@ -689,23 +607,24 @@ wake_reason_t spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 
 	__spm_get_wakeup_status(&wakesta);
 
+	last_wakesrc = wakesta.r12;
+
 	spm_clean_after_wakeup();
 
-	request_uart_to_wakeup();
+	mtk8250_request_to_wakeup();
 
 	last_wr = spm_output_wake_reason(&wakesta, pcmdesc);
 
 RESTORE_IRQ:
 	mt_cirq_flush();
 	mt_cirq_disable();
-/* TODO: wait irq driver ready
 	mt_irq_mask_restore(&mask);
-*/
 	spin_unlock_irqrestore(&__spm_lock, flags);
 
+#if 0
 	if (!wd_ret)
 		wd_api->wd_resume_notify();
-
+#endif
 	return last_wr;
 }
 
@@ -771,7 +690,7 @@ bool spm_set_suspned_pcm_init_flag(u32 *suspend_flags)
 	node = of_scan_flat_dt(dt_scan_memory, NULL);
 #else
 	spm_err("dram rank1_info_error: no rank info\n");
-	BUG_ON(1);
+	WARN_ON(1);
 	/* return false; */
 #endif
 
@@ -782,15 +701,18 @@ bool spm_set_suspned_pcm_init_flag(u32 *suspend_flags)
 		flag |= SPM_BUCK_SEL;
 #endif
 
-	*suspend_flags = spm_suspend_flag;	/* spm_suspend_flag would be set in dt_scan_memory */
+	/* spm_suspend_flag would be set in dt_scan_memory */
+	*suspend_flags = spm_suspend_flag;
 	return true;
 }
 #endif
 
 void spm_output_sleep_option(void)
 {
-	spm_notice("PWAKE_EN:%d, PCMWDT_EN:%d, BYPASS_SYSPWREQ:%d, I2C_CHANNEL:%d\n",
-		   SPM_PWAKE_EN, SPM_PCMWDT_EN, SPM_BYPASS_SYSPWREQ, I2C_CHANNEL);
+	spm_notice("PWAKE_EN:%d, PCMWDT_EN:%d, ",
+		   SPM_PWAKE_EN, SPM_PCMWDT_EN);
+	spm_notice("BYPASS_SYSPWREQ:%d, I2C_CHANNEL:%d\n",
+		   SPM_BYPASS_SYSPWREQ, I2C_CHANNEL);
 }
 
 MODULE_DESCRIPTION("SPM-Sleep Driver v0.1");

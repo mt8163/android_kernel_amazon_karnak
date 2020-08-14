@@ -1,40 +1,16 @@
-/*****************************************************************************
+/*
+ * Copyright (C) 2016 MediaTek Inc.
  *
- * Filename:
- * ---------
- *    charging.h
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * Project:
- * --------
- *   Maui_Software
- *
- * Description:
- * ------------
- *   This Module defines bmt internal charger hw setting function.
- *
- * Author:
- * -------
- *  Oscar Liu
- *
- *============================================================================
- *             HISTORY
- * Below this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
- *------------------------------------------------------------------------------
- * Revision:   1.0
- * Modtime:   11 Aug 2005 10:28:16
- * Log:   //mtkvs01/vmdata/Maui_sw/archives/mcu/hal/peripheral/inc/bmt_chr_setting.h-arc
- *
- * 05 15 2015 wy.chuang
- * [ALPS01990538] [MP Feature Patch Back]MT6312 driver & MT6328 init setting & charging setting
- * .
- *
- * 03 04 2015 wy.chuang
- * [ALPS01921641] [L1_merge] for PMIC and charging
- * .
- *------------------------------------------------------------------------------
- * Upper this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
- *============================================================================
- ****************************************************************************/
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #ifndef CHARGING_H
 #define CHARGING_H
 
@@ -51,7 +27,7 @@
 /* ============================================================ */
 /* ENUM */
 /* ============================================================ */
-typedef enum {
+enum CHARGING_CTRL_CMD {
 	CHARGING_CMD_INIT,
 	CHARGING_CMD_DUMP_REGISTER,
 	CHARGING_CMD_ENABLE,
@@ -80,17 +56,18 @@ typedef enum {
 	CHARGING_CMD_GET_FAULT_TYPE,
 	CHARGING_CMD_GET_SW_AICL_SUPPORT,
 	CHARGING_CMD_GET_VBUS_STAT,
+	CHARGING_CMD_SET_ITERM,
 	CHARGING_CMD_NUMBER
-} CHARGING_CTRL_CMD;
+};
 
-typedef enum {
+enum VBUS_STAT_TYPE {
 	VBUS_STAT_NONE = 0,
 	VBUS_STAT_SDP,
 	VBUS_STAT_AC,
 	VBUS_STAT_OTG,
-} VBUS_STAT_TYPE;
+};
 
-typedef enum {
+enum CHARGER_TYPE {
 	CHARGER_UNKNOWN = 0,
 	STANDARD_HOST,		/* USB : 450mA */
 	CHARGING_HOST,
@@ -100,11 +77,11 @@ typedef enum {
 	APPLE_1_0A_CHARGER,	/* 1A apple charger */
 	APPLE_0_5A_CHARGER,	/* 0.5A apple charger */
 	WIRELESS_CHARGER,
-} CHARGER_TYPE;
+};
 
 
 /* Enum of Voltage List */
-typedef enum {
+enum BATTERY_VOLTAGE_ENUM {
 	BATTERY_VOLT_00_000000_V = 0,
 	BATTERY_VOLT_00_100000_V = 100000,
 	BATTERY_VOLT_00_200000_V = 200000,
@@ -241,22 +218,33 @@ typedef enum {
 	BATTERY_VOLT_03_740000_V = 3740000,
 	BATTERY_VOLT_03_750000_V = 3750000,
 	BATTERY_VOLT_03_760000_V = 3760000,
+	BATTERY_VOLT_03_762500_V = 3762500,
 	BATTERY_VOLT_03_775000_V = 3775000,
 	BATTERY_VOLT_03_780000_V = 3780000,
+	BATTERY_VOLT_03_787500_V = 3787500,
 	BATTERY_VOLT_03_800000_V = 3800000,
+	BATTERY_VOLT_03_812500_V = 3812500,
 	BATTERY_VOLT_03_820000_V = 3820000,
 	BATTERY_VOLT_03_825000_V = 3825000,
+	BATTERY_VOLT_03_837500_V = 3837500,
 	BATTERY_VOLT_03_840000_V = 3840000,
 	BATTERY_VOLT_03_850000_V = 3850000,
 	BATTERY_VOLT_03_860000_V = 3860000,
+	BATTERY_VOLT_03_862500_V = 3862500,
+	BATTERY_VOLT_03_875000_V = 3875000,
 	BATTERY_VOLT_03_880000_V = 3880000,
+	BATTERY_VOLT_03_887500_V = 3887500,
 	BATTERY_VOLT_03_900000_V = 3900000,
+	BATTERY_VOLT_03_912500_V = 3912500,
 	BATTERY_VOLT_03_920000_V = 3920000,
+	BATTERY_VOLT_03_925000_V = 3925000,
+	BATTERY_VOLT_03_937500_V = 3937500,
 	BATTERY_VOLT_03_940000_V = 3940000,
 	BATTERY_VOLT_03_950000_V = 3950000,
 	BATTERY_VOLT_03_960000_V = 3960000,
 	BATTERY_VOLT_03_975000_V = 3975000,
 	BATTERY_VOLT_03_980000_V = 3980000,
+	BATTERY_VOLT_03_987500_V = 3987500,
 	BATTERY_VOLT_04_000000_V = 4000000,
 	BATTERY_VOLT_04_012500_V = 4012500,
 	BATTERY_VOLT_04_020000_V = 4020000,
@@ -322,7 +310,10 @@ typedef enum {
 	BATTERY_VOLT_04_480000_V = 4480000,
 	BATTERY_VOLT_04_487500_V = 4487500,
 	BATTERY_VOLT_04_500000_V = 4500000,
+	BATTERY_VOLT_04_512500_V = 4512500,
 	BATTERY_VOLT_04_520000_V = 4520000,
+	BATTERY_VOLT_04_525000_V = 4525000,
+	BATTERY_VOLT_04_537500_V = 4537500,
 	BATTERY_VOLT_04_540000_V = 4540000,
 	BATTERY_VOLT_04_550000_V = 4550000,
 	BATTERY_VOLT_04_560000_V = 4560000,
@@ -359,11 +350,11 @@ typedef enum {
 	BATTERY_VOLT_10_500000_V = 10500000,
 	BATTERY_VOLT_MAX,
 	BATTERY_VOLT_INVALID
-} BATTERY_VOLTAGE_ENUM;
+};
 
 
 /* Enum of charger current List */
-typedef enum {
+enum CHR_CURRENT_ENUM {
 	CHARGE_CURRENT_0_00_MA = 0,
 	CHARGE_CURRENT_50_00_MA = 5000,
 	CHARGE_CURRENT_62_50_MA = 6250,
@@ -456,8 +447,9 @@ typedef enum {
 	CHARGE_CURRENT_2900_00_MA = 290000,
 	CHARGE_CURRENT_3000_00_MA = 300000,
 	CHARGE_CURRENT_3100_00_MA = 310000,
+	CHARGE_CURRENT_3200_00_MA = 320000,
 	CHARGE_CURRENT_MAX
-} CHR_CURRENT_ENUM;
+};
 
 /* ============================================================ */
 /* structure */
@@ -467,7 +459,7 @@ typedef enum {
 /* ============================================================ */
 /* typedef */
 /* ============================================================ */
-typedef signed int(*CHARGING_CONTROL) (CHARGING_CTRL_CMD cmd, void *data);
+typedef signed int(*CHARGING_CONTROL) (int cmd, void *data);
 
 /* ============================================================ */
 /* External Variables */
@@ -477,21 +469,22 @@ extern bool chargin_hw_init_done;
 /* ============================================================ */
 /* External function */
 /* ============================================================ */
-extern signed int chr_control_interface(CHARGING_CTRL_CMD cmd, void *data);
+extern signed int chr_control_interface(int cmd, void *data);
 extern unsigned int upmu_get_reg_value(unsigned int reg);
 extern void Charger_Detect_Init(void);
 extern void Charger_Detect_Release(void);
-extern CHARGER_TYPE hw_charger_type_detection(void);
+extern enum CHARGER_TYPE hw_charger_type_detection(void);
 extern void mt_power_off(void);
 extern unsigned int mt6311_get_chip_id(void);
 extern int is_mt6311_exist(void);
 extern int is_mt6311_sw_ready(void);
 #if defined(CONFIG_MTK_BQ25601_SUPPORT)
 extern bool is_bq25601_exist(void);
-extern signed int bq25601_control_interface(CHARGING_CTRL_CMD cmd, void *data);
+extern signed int bq25601_control_interface(int cmd, void *data);
 #else
 static inline bool is_bq25601_exist(void) { return false; }
-static inline signed int bq25601_control_interface(CHARGING_CTRL_CMD cmd, void *data) { return 0; }
+static inline signed int bq25601_control_interface
+	(int cmd, void *data) { return 0; }
 #endif
 
-#endif				/* #ifndef _CHARGING_H */
+#endif /* #ifndef _CHARGING_H */

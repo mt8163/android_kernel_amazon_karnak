@@ -8,13 +8,28 @@ config MTK_LEDS
 	  Mediatek LED module includes backlight, indicate LED, keypad LED, button LED etc.
 
 config LIGHTNESS_MAPPING_VALUE
-	int "LIGHTNESS_MAPPING_VALUE"
+	int "Backlight brightness mapping value"
 	default 255
- 	---help---
+	---help---
 	  Backlight brightness mapping value, from 0 to 255.
 
 config BACKLIGHT_SUPPORT_LP8557
 	bool "Support backlight lp8557 board"
+	default n
+	---help---
+	  LED driver for LP8557 support.
+	  Set y to support.
+	  Set n to disable.
+	  For pwm external backlight.
+
+config BACKLIGHT_SUPPORT_LM3697
+	bool "LM3697(DW8832) Support"
+	default n
+	---help---
+	  LED driver for lm3697(dw8832) support.
+	  Set y to support.
+	  Set n to disable.
+	  Charge pump driver for external backlight.
 
 config ENABLE_BACKLIGHT_FACTOR
 	tristate "MediaTek LED Support"
@@ -22,9 +37,3 @@ config ENABLE_BACKLIGHT_FACTOR
 	---help---
 	  Support backlight of factor,and adapt to different manufacturers to adajust to
 	  the led brightness.
-
-config MTK_LEDS_DEFAULT_BRIGHTNESS
-	bool "MediaTek Led Support Default Brightness"
-	default n
-	---help---
-	  Support setting a default brightness on boot for each led.

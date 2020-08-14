@@ -9,6 +9,7 @@
 
 #include <linux/workqueue.h>
 #include <linux/kthread.h>
+#include <linux/preempt.h>
 
 struct worker_pool;
 
@@ -59,7 +60,7 @@ struct worker {
  */
 static inline struct worker *current_wq_worker(void)
 {
-	if (current->flags & PF_WQ_WORKER)
+	if (in_task() && (current->flags & PF_WQ_WORKER))
 		return kthread_data(current);
 	return NULL;
 }
@@ -69,6 +70,6 @@ static inline struct worker *current_wq_worker(void)
  * sched/core.c and workqueue.c.
  */
 void wq_worker_waking_up(struct task_struct *task, int cpu);
-struct task_struct *wq_worker_sleeping(struct task_struct *task, int cpu);
+struct task_struct *wq_worker_sleeping(struct task_struct *task);
 
 #endif /* _KERNEL_WORKQUEUE_INTERNAL_H */

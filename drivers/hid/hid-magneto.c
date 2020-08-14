@@ -21,10 +21,8 @@
 #include <linux/hid.h>
 #include <linux/module.h>
 #include <linux/delay.h>
+#include <linux/version.h>
 #include "hid-ids.h"
-#include <linux/input.h>
-#include <linux/kernel.h>
-#include <linux/hidraw.h>
 
 /* Firmware version */
 #define PMX_DRV_VERSION "2014-09-18_01.06"
@@ -139,12 +137,22 @@ static int pmx_raw_event(struct hid_device *hdev, struct hid_report *report,
 				/* Current Caps status: On ==> changed to Off */
 				DEBUG_MSG("%s: CapsLock status: On ---> Off\n", __func__);
 				caps_status = CAPS_OFF;
-				ret = hdev->ll_driver->output_report(hdev, buf_off, sizeof(buf_off));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
+				ret = hid_hw_raw_request(hdev, buf_off[0], buf_off, sizeof(buf_off),
+							HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+#else
+				ret = hdev->hid_output_raw_report(hdev, buf_off, sizeof(buf_off), HID_FEATURE_REPORT);
+#endif
 			} else {
 				/* Current Caps status: Off ==> changed to On */
 				DEBUG_MSG("%s: CapsLock status: Off ---> On\n", __func__);
 				caps_status = CAPS_ON;
-				ret = hdev->ll_driver->output_report(hdev, buf_on, sizeof(buf_on));
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0))
+				ret = hid_hw_raw_request(hdev, buf_on[0], buf_on, sizeof(buf_on),
+							HID_FEATURE_REPORT, HID_REQ_SET_REPORT);
+#else
+				ret = hdev->hid_output_raw_report(hdev, buf_on, sizeof(buf_on), HID_FEATURE_REPORT);
+#endif
 			}
 
 			if (ret < 0) {
@@ -409,8 +417,8 @@ static void pmx_remove(struct hid_device *hdev)
  * Device list that matches this driver
  */
 static const struct hid_device_id pmx_devices[] = {
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126_KB, USB_DEVICE_ID_LAB126_US_KB) },
-	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126_KB, USB_DEVICE_ID_LAB126_UK_KB) },
+	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126, USB_DEVICE_ID_LAB126_US_KB) },
+	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_LAB126, USB_DEVICE_ID_LAB126_UK_KB) },
 	{ }	/* Terminating entry */
 };
 MODULE_DEVICE_TABLE(hid, pmx_devices);

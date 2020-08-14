@@ -154,8 +154,6 @@ static int fec_decode_bufs(struct dm_verity *v, struct dm_verity_fec_io *fio,
 		block = fec_buffer_rs_block(v, fio, n, i);
 		res = fec_decode_rs8(v, fio, block, &par[offset], neras);
 		if (res < 0) {
-			dm_bufio_release(buf);
-
 			r = res;
 			goto error;
 		}
@@ -180,6 +178,8 @@ static int fec_decode_bufs(struct dm_verity *v, struct dm_verity_fec_io *fio,
 done:
 	r = corrected;
 error:
+	dm_bufio_release(buf);
+
 	if (r < 0 && neras)
 		DMERR_LIMIT("%s: FEC %llu: failed to correct: %d",
 			    v->data_dev->name, (unsigned long long)rsb, r);
@@ -279,7 +279,7 @@ static int fec_read_bufs(struct dm_verity *v, struct dm_verity_io *io,
 					  &is_zero) == 0) {
 			/* skip known zero blocks entirely */
 			if (is_zero)
-				continue;
+				goto done;
 
 			/*
 			 * skip if we have already found the theoretical
@@ -466,10 +466,10 @@ static int fec_log_errors(struct dm_verity *v, enum verity_block_type type,
 	}
 
 	DMERR("%s: %s block %llu is corrupted", v->data_dev->name, type_str,
-		block);
+		(unsigned long long)block);
 
 	snprintf(verity_env, FEC_ENV_LENGTH, "%s=%d,%llu",
-		FEC_ENV_VAR_NAME, type, block);
+		FEC_ENV_VAR_NAME, type, (unsigned long long)block);
 	kobject_uevent_env(&disk_to_dev(dm_disk(md))->kobj, KOBJ_CHANGE, envp);
 
 	return 0;
@@ -916,7 +916,7 @@ int verity_fec_ctr(struct dm_verity *v)
 	}
 
 	/* Reserve space for our per-bio data */
-	ti->per_bio_data_size += sizeof(struct dm_verity_fec_io);
+	ti->per_io_data_size += sizeof(struct dm_verity_fec_io);
 
 	return 0;
 }

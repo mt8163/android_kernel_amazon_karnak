@@ -1,0 +1,34 @@
+Device-Tree bindings for gating.c driver
+
+Required properties:
+	- compatible = "amazon-gating";
+	- state-gpios: gpio to determine Gating state.
+	- enable-gpios: gpio to enable Gating state.
+	- input_event
+
+Subnode properties:
+
+	- label: Descriptive name of the key.
+	- linux,code: Keycode to emit.
+
+Optional subnode-properties:
+	- debounce-interval: Debouncing interval time in milliseconds.
+	  If not specified defaults to 5.
+	- wakeup-source: MUTE button is enabled as wakeup source.
+
+Example nodes:
+		gating {
+			compatible = "amazon-gating";
+			state-gpios = <&pio 18 GPIO_ACTIVE_HIGH>;
+			enable-gpios = <&pio 107 GPIO_ACTIVE_LOW>;
+			status="okay";
+
+			input_event {
+				label = "mute";
+				linux,code = <113>;
+				debounce-interval = <200>;
+				wakeup-source;
+			};
+		};
+
+		...

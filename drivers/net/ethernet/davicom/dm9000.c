@@ -36,6 +36,9 @@
 #include <linux/platform_device.h>
 #include <linux/irq.h>
 #include <linux/slab.h>
+#include <linux/regulator/consumer.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 #include <asm/delay.h>
 #include <asm/irq.h>
@@ -963,7 +966,7 @@ dm9000_init_dm9000(struct net_device *dev)
 	/* Init Driver variable */
 	db->tx_pkt_cnt = 0;
 	db->queue_pkt_len = 0;
-	dev->trans_start = jiffies;
+	netif_trans_update(dev);
 }
 
 /* Our watchdog timed out. Called by the networking layer */
@@ -982,7 +985,7 @@ static void dm9000_timeout(struct net_device *dev)
 	dm9000_init_dm9000(dev);
 	dm9000_unmask_interrupts(db);
 	/* We can accept TX packets again */
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	netif_wake_queue(dev);
 
 	/* Restore previous register address */
@@ -1222,7 +1225,7 @@ static irqreturn_t dm9000_interrupt(int irq, void *dev_id)
 	if (int_status & ISR_PRS)
 		dm9000_rx(dev);
 
-	/* Trnasmit Interrupt check */
+	/* Transmit Interrupt check */
 	if (int_status & ISR_PTS)
 		dm9000_tx_done(dev, db);
 
@@ -1422,11 +1425,49 @@ dm9000_probe(struct platform_device *pdev)
 	struct dm9000_plat_data *pdata = dev_get_platdata(&pdev->dev);
 	struct board_info *db;	/* Point a board information structure */
 	struct net_device *ndev;
+	struct device *dev = &pdev->dev;
 	const unsigned char *mac_src;
 	int ret = 0;
 	int iosize;
 	int i;
 	u32 id_val;
+	int reset_gpios;
+	enum of_gpio_flags flags;
+	struct regulator *power;
+	bool inv_mac_addr = false;
+
+	power = devm_regulator_get(dev, "vcc");
+	if (IS_ERR(power)) {
+		if (PTR_ERR(power) == -EPROBE_DEFER)
+			return -EPROBE_DEFER;
+		dev_dbg(dev, "no regulator provided\n");
+	} else {
+		ret = regulator_enable(power);
+		if (ret != 0) {
+			dev_err(dev,
+				"Failed to enable power regulator: %d\n", ret);
+			return ret;
+		}
+		dev_dbg(dev, "regulator enabled\n");
+	}
+
+	reset_gpios = of_get_named_gpio_flags(dev->of_node, "reset-gpios", 0,
+					      &flags);
+	if (gpio_is_valid(reset_gpios)) {
+		ret = devm_gpio_request_one(dev, reset_gpios, flags,
+					    "dm9000_reset");
+		if (ret) {
+			dev_err(dev, "failed to request reset gpio %d: %d\n",
+				reset_gpios, ret);
+			return -ENODEV;
+		}
+
+		/* According to manual PWRST# Low Period Min 1ms */
+		msleep(2);
+		gpio_set_value(reset_gpios, 1);
+		/* Needs 3ms to read eeprom when PWRST is deasserted */
+		msleep(4);
+	}
 
 	if (!pdata) {
 		pdata = dm9000_parse_dt(&pdev->dev);
@@ -1648,9 +1689,7 @@ dm9000_probe(struct platform_device *pdev)
 	}
 
 	if (!is_valid_ether_addr(ndev->dev_addr)) {
-		dev_warn(db->dev, "%s: Invalid ethernet MAC address. Please "
-			 "set using ifconfig\n", ndev->name);
-
+		inv_mac_addr = true;
 		eth_hw_addr_random(ndev);
 		mac_src = "random";
 	}
@@ -1659,11 +1698,15 @@ dm9000_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, ndev);
 	ret = register_netdev(ndev);
 
-	if (ret == 0)
+	if (ret == 0) {
+		if (inv_mac_addr)
+			dev_warn(db->dev, "%s: Invalid ethernet MAC address. Please set using ip\n",
+				 ndev->name);
 		printk(KERN_INFO "%s: dm9000%c at %p,%p IRQ %d MAC: %pM (%s)\n",
 		       ndev->name, dm9000_type_to_char(db->type),
 		       db->io_addr, db->io_data, ndev->irq,
 		       ndev->dev_addr, mac_src);
+	}
 	return 0;
 
 out:
@@ -1751,7 +1794,6 @@ MODULE_DEVICE_TABLE(of, dm9000_of_matches);
 static struct platform_driver dm9000_driver = {
 	.driver	= {
 		.name    = "dm9000",
-		.owner	 = THIS_MODULE,
 		.pm	 = &dm9000_drv_pm_ops,
 		.of_match_table = of_match_ptr(dm9000_of_matches),
 	},

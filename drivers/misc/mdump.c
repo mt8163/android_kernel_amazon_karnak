@@ -16,7 +16,7 @@
 #include <linux/dma-mapping.h>
 
 #ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
-#include "mediatek/include/mt-plat/mt_boot_common.h"
+#include "mediatek/include/mt-plat/mtk_boot_common.h"
 #endif
 
 #ifdef CONFIG_MDUMP_COMPRESS
@@ -45,6 +45,15 @@ struct mdcompbinattr {
 
 static struct mdump_buffer *s_mdump_buffer;
 static struct kobject s_mdump_kobj;
+
+static void mdump_dma_cache_flush_range(void *start, size_t size)
+{
+#ifdef CONFIG_ARM64
+	__dma_flush_area((void *)start, size);
+#else
+	dmac_flush_range((void *)start, (void *)(start + size));
+#endif
+}
 
 static ssize_t mdump_binary_read(struct file *filp,
 		struct kobject *kobj,
@@ -131,14 +140,14 @@ static ssize_t mdump_compdump_binary_read(struct file *filp,
 	if (off + count > mdcattr->binattr.size)
 		count = mdcattr->binattr.size - off;
 	expbase = (off & (~(PHYMEM_MAP_CHUNK-1))) + COMPRESS_START_ADDRESS;
-	if (expbase > (unsigned int)(mdcattr->paddr)) {
+	if (expbase > (unsigned int)(unsigned long)(mdcattr->paddr)) {
 		vunmap((void *)mdcattr->vaddr);
 		mdcattr->vaddr = remap_lowmem((phys_addr_t)expbase, (phys_addr_t)PHYMEM_MAP_CHUNK);
 		if (mdcattr->vaddr == NULL) {
 			pr_err("compress dump function can not map physicall addr: 0x%x\n", expbase);
 			return 0;
 		}
-		mdcattr->paddr = (void *)expbase;
+		mdcattr->paddr = (void *)(unsigned long)expbase;
 	}
 	/* make sure not to read beyond the mapped memory region */
 	if ((off - (expbase - COMPRESS_START_ADDRESS) + count) > PHYMEM_MAP_CHUNK)
@@ -147,7 +156,7 @@ static ssize_t mdump_compdump_binary_read(struct file *filp,
 	if (count != 0) {
 		memcpy(buf, mdcattr->vaddr + off-(expbase-COMPRESS_START_ADDRESS), count);
 		memset(mdcattr->vaddr + off-(expbase-COMPRESS_START_ADDRESS), 0, count);
-		__dma_flush_range(mdcattr->vaddr + off-(expbase-COMPRESS_START_ADDRESS), mdcattr->vaddr + off-(expbase-COMPRESS_START_ADDRESS) + count -1);
+		mdump_dma_cache_flush_range(mdcattr->vaddr + off-(expbase-COMPRESS_START_ADDRESS), count);
 	}
 
 	if ((off % PHYMEM_MAP_CHUNK) == 0)
@@ -210,7 +219,7 @@ static void check_compress_dump(void)
 	/* create bin file style sysfs node */
 	s_mdump_compdump.paddr = (void *) COMPRESS_START_ADDRESS;
 	s_mdump_compdump.binattr.size = compresshdr->total_file_size;
-	pr_info("%s: compression dump size is: 0x%x\n", __func__, s_mdump_compdump.binattr.size);
+	pr_info("%s: compression dump size is: 0x%lx\n", __func__, (long)s_mdump_compdump.binattr.size);
 	if (sysfs_create_bin_file(&s_mdump_kobj, &s_mdump_compdump.binattr) == 0)
 		return;
 
@@ -273,7 +282,7 @@ static ssize_t mdump_enable_store(void *ud, const char *buffer, size_t size)
 		pr_err("Unknown store value: %s\n", buffer);
 	if (flags != s_mdump_buffer->enable_flags) {
 		s_mdump_buffer->enable_flags = flags;
-		flush_cache_all();
+		mdump_dma_cache_flush_range((void*)s_mdump_buffer, sizeof(*s_mdump_buffer));
 	}
 	return size;
 }
@@ -324,7 +333,7 @@ void mdump_mark_reboot_reason(int reason)
 	if ((s_mdump_buffer != NULL) 
 		&& (reason < s_mdump_buffer->reboot_reason)) {
 		s_mdump_buffer->reboot_reason = (u8) reason;
-		flush_cache_all();
+		mdump_dma_cache_flush_range((void*)s_mdump_buffer, sizeof(*s_mdump_buffer));
 	}
 }
 

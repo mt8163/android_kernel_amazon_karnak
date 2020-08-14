@@ -20,6 +20,13 @@
 #define MAX_BRIGHTNESS		255
 #define MAX_NUM_COOLER_LCD_BACKLIGHT 2
 
+#if (defined(CONFIG_THERMAL_abc123) || defined(CONFIG_THERMAL_abc123))
+#define CUR_STATE0_BRIGHTNESS 255
+#define CUR_STATE1_BRIGHTNESS 200
+#define CUR_STATE2_BRIGHTNESS 165
+#define CUR_STATE3_BRIGHTNESS 90
+#endif
+
 static struct mutex bl_update_lock;
 static struct mtk_cooler_platform_data cool_dev[MAX_NUM_COOLER_LCD_BACKLIGHT] = {
 	{
@@ -83,7 +90,23 @@ static int virtual_sensor_set_cur_state(struct thermal_cooling_device *cdev,
 
 	max_state = pdata->max_state;
 	pdata->state = (state > max_state) ? max_state : state;
-
+#if (defined(CONFIG_THERMAL_abc123) || defined(CONFIG_THERMAL_abc123))
+	switch ((int)pdata->state)
+	{
+		case 1:
+			level = CUR_STATE1_BRIGHTNESS;
+			break;
+		case 2:
+			level = CUR_STATE2_BRIGHTNESS;
+			break;
+		case 3:
+			level = CUR_STATE3_BRIGHTNESS;
+			break;
+		default:
+			level = CUR_STATE0_BRIGHTNESS;
+			break;
+	}
+#else
 	if (!pdata->state)
 		level = MAX_BRIGHTNESS;
 	else
@@ -95,6 +118,7 @@ static int virtual_sensor_set_cur_state(struct thermal_cooling_device *cdev,
 	pdata->level = level;
 
 	level = thermal_level_compare(pdata, &backlight_list_head, true);
+#endif
 
 	setMaxbrightness(level, 1);
 

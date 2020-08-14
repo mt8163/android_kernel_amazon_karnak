@@ -123,7 +123,7 @@ static const struct snd_kcontrol_new aic31xx_snd_controls[] = {
 			 7, 1, 0),
 	SOC_SINGLE("ADC_A Right Mute", ADC_ADC_FGA(0),
 			 3, 1, 0),
-
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 	SOC_DOUBLE_R_SX_TLV("ADC_B Digital Volume Control",
 			    ADC_LADC_VOL(1), ADC_RADC_VOL(1), 0, 0x28,
 			    0x68, adc_3101_vol_tlv),
@@ -148,7 +148,7 @@ static const struct snd_kcontrol_new aic31xx_snd_controls[] = {
 			 7, 1, 0),
 	SOC_SINGLE("ADC_B Right Mute", ADC_ADC_FGA(1),
 			 3, 1, 0),
-
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 	SOC_DOUBLE_R_SX_TLV("ADC_C Digital Volume Control",
 			    ADC_LADC_VOL(2), ADC_RADC_VOL(2), 0, 0x28,
@@ -246,6 +246,7 @@ static const struct snd_kcontrol_new adc_a_right_input_dmic_controls[] = {
 	SOC_DAPM_SINGLE("ADC_A Right ADC switch", ADC_ADC_DIGITAL(0), 2, 0x1, 0),
 };
 
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 /* ADC B Left input selection, Single Ended inputs and Differential inputs */
 static const struct snd_kcontrol_new adc_b_left_input_mixer_controls[] = {
 	SOC_DAPM_SINGLE("ADC_B IN1_L switch", ADC_LEFT_PGA_SEL_1(1), 1, 0x1, 1),
@@ -277,7 +278,7 @@ static const struct snd_kcontrol_new adc_b_left_input_dmic_controls[] = {
 static const struct snd_kcontrol_new adc_b_right_input_dmic_controls[] = {
 	SOC_DAPM_SINGLE("ADC_B Right ADC switch", ADC_ADC_DIGITAL(1), 2, 0x1, 0),
 };
-
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 /* ADC C Left input selection, Single Ended inputs and Differential inputs */
 static const struct snd_kcontrol_new adc_c_left_input_mixer_controls[] = {
@@ -436,6 +437,7 @@ static const u8 aic31xx_reg[AIC31XX_CACHEREGNUM] = {
 	0x00, 0x00, 0x00, 0x00,	/* 244, PAGE1-116 */
 	0x00, 0x00, 0x00, 0x00,	/* 248, PAGE1-120 */
 	0x00, 0x00, 0x00, 0x00,	/* 252, PAGE1-124 */
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 	0x00, 0x00, 0x00, 0x00,	/* 0 *//* ADC_B regsiters start here */
 	0x00, 0x11, 0x04, 0x00,	/* 4 */
 	0x00, 0x00, 0x00, 0x00,	/* 8 */
@@ -500,6 +502,7 @@ static const u8 aic31xx_reg[AIC31XX_CACHEREGNUM] = {
 	0x00, 0x00, 0x00, 0x00,	/* 244, PAGE1-116 */
 	0x00, 0x00, 0x00, 0x00,	/* 248, PAGE1-120 */
 	0x00, 0x00, 0x00, 0x00,	/* 252, PAGE1-124 */
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 	0x00, 0x00, 0x00, 0x00,	/* 0 *//*ADC_C registers start here */
 	0x00, 0x11, 0x04, 0x00,	/* 4 */
@@ -672,6 +675,7 @@ static const struct aic31xx_configs biquad_settings[] = {
 	{0x2055, 0x21},		/* reg[4][85] = 33 */
 	{0x2056, 0x81},		/* reg[4][86] = 129 */
 	{0x2057, 0xba},		/* reg[4][87] = 186 */
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 	/*	Coefficient write to 3101-B ADC Left
 		Page change to 4
 	 */
@@ -698,6 +702,7 @@ static const struct aic31xx_configs biquad_settings[] = {
 	{0x2155, 0x21},		/* reg[4][85] = 33 */
 	{0x2156, 0x81},		/* reg[4][86] = 129 */
 	{0x2157, 0xba},		/* reg[4][87] = 186 */
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 	/*	Coefficient write to 3101-C ADC Left
 		Page change to 4
@@ -801,7 +806,7 @@ static const struct snd_soc_dapm_widget adc31xx_dapm_widgets_a[] = {
 	SND_SOC_DAPM_INPUT("ADC_A_DMic_L"),
 	SND_SOC_DAPM_INPUT("ADC_A_DMic_R"),
 };
-
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 /* adc31xx_b Widget structure */
 static const struct snd_soc_dapm_widget adc31xx_dapm_widgets_b[] = {
 
@@ -849,7 +854,7 @@ static const struct snd_soc_dapm_widget adc31xx_dapm_widgets_b[] = {
 	SND_SOC_DAPM_INPUT("ADC_B_DMic_L"),
 	SND_SOC_DAPM_INPUT("ADC_B_DMic_R"),
 };
-
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 /* adc31xx_c Widget structure */
 static const struct snd_soc_dapm_widget adc31xx_dapm_widgets_c[] = {
@@ -977,7 +982,7 @@ static const struct snd_soc_dapm_route intercon_a[] = {
 	/* Right DMic to right ADC */
 	{"ADC_A Right ADC", NULL, "ADC_A Right DMic Ip"},
 };
-
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 /* DAPM Routing related array declaration for ADC_B */
 static const struct snd_soc_dapm_route intercon_b[] = {
 
@@ -1023,7 +1028,7 @@ static const struct snd_soc_dapm_route intercon_b[] = {
 	/* Right DMic to right ADC */
 	{"ADC_B Right ADC", NULL, "ADC_B Right DMic Ip"},
 };
-
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 /* DAPM Routing related array declaration for ADC_C */
 static const struct snd_soc_dapm_route intercon_c[] = {
@@ -1247,16 +1252,24 @@ static int adc31xx_change_page(unsigned int device, struct snd_soc_codec *codec,
 {
 	struct aic31xx_priv *adc31xx = snd_soc_codec_get_drvdata(codec);
 
-	u8 data[2];
+	u8* w_buf = NULL;
+	const unsigned int w_len = 2;
 
-	data[0] = 0x0;
-	data[1] = new_page;
-
-	if (i2c_master_send(adc31xx->adc_control_data[device], data, 2) != 2) {
-		dev_err(codec->dev, "adc31xx_change_page %d: I2C Wrte Error\n",
-			device);
+	w_buf = kzalloc(w_len, GFP_KERNEL);
+	if (w_buf == NULL) {
+		dev_err(codec->dev, "%s can't allocate buffer for i2c_master_send\n", __func__);
 		return -1;
 	}
+	w_buf[0] = 0x0;
+	w_buf[1] = new_page;
+
+	if (i2c_master_send(adc31xx->adc_control_data[device], w_buf, w_len) != w_len) {
+		dev_err(codec->dev, "adc31xx_change_page %d: I2C Wrte Error\n",
+			device);
+		kfree(w_buf);
+		return -EIO;
+	}
+	kfree(w_buf);
 	adc31xx->adc_page_no[device] = new_page;
 	return 0;
 }
@@ -1338,7 +1351,8 @@ static int aic31xx_write(struct snd_soc_codec *codec, unsigned int reg,
 			 unsigned int value)
 {
 	int ret = 0;
-	u8 data[2];
+	u8 *w_buf= NULL;
+	const unsigned int w_len = 2;
 	u16 page;
 	u16 device;
 	unsigned int reg_no;
@@ -1346,6 +1360,12 @@ static int aic31xx_write(struct snd_soc_codec *codec, unsigned int reg,
 	struct i2c_client *i2cdev;
 
 	if (!aic31xx) {
+		return -ENODEV;
+	}
+
+	w_buf = kzalloc(w_len, GFP_KERNEL);
+	if (w_buf == NULL) {
+		dev_err(codec->dev, "%s, can't allocate buf for i2c write \n", __func__);
 		return -ENODEV;
 	}
 
@@ -1378,10 +1398,10 @@ static int aic31xx_write(struct snd_soc_codec *codec, unsigned int reg,
 	 *   D15..D8 register offset
 	 *   D7...D0 register data
 	 */
-	data[0] = reg_no;
-	data[1] = value;
+	w_buf[0] = reg_no;
+	w_buf[1] = value;
 
-	if (i2c_master_send(i2cdev, data, 2) != 2) {
+	if (i2c_master_send(i2cdev, w_buf, w_len) != w_len) {
 		dev_err(codec->dev, "Error in i2c write in i2c dev: %x \n",
 			device);
 
@@ -1391,6 +1411,7 @@ static int aic31xx_write(struct snd_soc_codec *codec, unsigned int reg,
 		aic31xx_write_reg_cache(codec, device, page, reg_no, value);
 	}
 
+	kfree(w_buf);
 	mutex_unlock(&aic31xx->codecMutex);
 
 	return ret;
@@ -1404,20 +1425,22 @@ static int aic31xx_write(struct snd_soc_codec *codec, unsigned int reg,
  */
 static int aic31xx_add_widgets(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 	dev_dbg(codec->dev, "###aic31xx_add_widgets\n");
 
 	snd_soc_dapm_new_controls(dapm, adc31xx_dapm_widgets_a,
 				  ARRAY_SIZE(adc31xx_dapm_widgets_a));
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 	snd_soc_dapm_new_controls(dapm, adc31xx_dapm_widgets_b,
 				  ARRAY_SIZE(adc31xx_dapm_widgets_b));
-
+#endif
 	/* set up audio path interconnects */
 	snd_soc_dapm_add_routes(dapm, intercon_a,
 				ARRAY_SIZE(intercon_a));
+#if defined CONFIG_SND_SOC_8_MICS || defined CONFIG_SND_SOC_4_MICS
 	snd_soc_dapm_add_routes(dapm, intercon_b,
 				ARRAY_SIZE(intercon_b));
-
+#endif
 #ifdef CONFIG_SND_SOC_8_MICS
 	snd_soc_dapm_new_controls(dapm, adc31xx_dapm_widgets_c,
 				  ARRAY_SIZE(adc31xx_dapm_widgets_c));
@@ -2004,7 +2027,7 @@ static int aic31xx_set_bias_level(struct snd_soc_codec *codec,
 		ret =  -EINVAL;
 	}
 
-	codec->dapm.bias_level = level;
+	// codec->dapm.bias_level = level;
 
 	return ret;
 }
@@ -2064,7 +2087,7 @@ static int tlv320aic3101_init(struct snd_soc_codec *codec)
 	}
 
 	aic31xx_set_bias_level(codec, SND_SOC_BIAS_OFF);
-	codec->dapm.idle_bias_off = true;
+	// codec->dapm.idle_bias_off = true;
 
 	return ret;
 }
@@ -2114,8 +2137,10 @@ static struct snd_soc_codec_driver soc_codec_driver_aic31xx = {
 	.suspend		= aic31xx_suspend,
 	.resume			= aic31xx_resume,
 	.set_bias_level		= aic31xx_set_bias_level,
-	.controls		= aic31xx_snd_controls,
-	.num_controls		= ARRAY_SIZE(aic31xx_snd_controls),
+	.component_driver = {
+		.controls		= aic31xx_snd_controls,
+		.num_controls		= ARRAY_SIZE(aic31xx_snd_controls),
+	},
 	.read			= aic31xx_read_reg_cache,
 	.write			= aic31xx_write,
 	.reg_cache_size		= ARRAY_SIZE(aic31xx_reg),
@@ -2155,7 +2180,7 @@ static struct snd_soc_dai_driver tlv320aic3101_dai_driver[] = {
 		.channels_min	= 1,
 #if defined CONFIG_SND_SOC_8_MICS
 		.channels_max	= 9,
-#elif defined CONFIG_SND_I2S_MCLK
+#elif defined CONFIG_SND_SOC_4_MICS
 		.channels_max	= 6,
 #else
 		.channels_max	= 4,
@@ -2257,7 +2282,8 @@ static int aic31xx_i2c_probe(struct i2c_client *pdev,
 			return -EINVAL;
 		}
 	} else {
-		aic31xx_global->adc_control_data[i] = pdev;
+		if (i >= 0 && i < NUM_ADC3101)
+			aic31xx_global->adc_control_data[i] = pdev;
 	}
 
 	i++;

@@ -31,16 +31,14 @@
 #include <linux/security.h>
 #include <linux/random.h>
 #include <linux/elf.h>
+#include <linux/elf-randomize.h>
 #include <linux/utsname.h>
 #include <linux/coredump.h>
 #include <linux/sched.h>
+#include <linux/dax.h>
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
-
-#ifdef CONFIG_MTK_EXTMEM
-#include <linux/exm_driver.h>
-#endif
 
 #ifndef user_long_t
 #define user_long_t long
@@ -98,10 +96,9 @@ static int set_brk(unsigned long start, unsigned long end)
 	start = ELF_PAGEALIGN(start);
 	end = ELF_PAGEALIGN(end);
 	if (end > start) {
-		unsigned long addr;
-		addr = vm_brk(start, end - start);
-		if (BAD_ADDR(addr))
-			return addr;
+		int error = vm_brk(start, end - start);
+		if (error)
+			return error;
 	}
 	current->mm->start_brk = current->mm->brk = end;
 	return 0;
@@ -390,6 +387,129 @@ static unsigned long total_mapping_size(struct elf_phdr *cmds, int nr)
 				ELF_PAGESTART(cmds[first_idx].p_vaddr);
 }
 
+/**
+ * load_elf_phdrs() - load ELF program headers
+ * @elf_ex:   ELF header of the binary whose program headers should be loaded
+ * @elf_file: the opened ELF binary file
+ *
+ * Loads ELF program headers from the binary file elf_file, which has the ELF
+ * header pointed to by elf_ex, into a newly allocated array. The caller is
+ * responsible for freeing the allocated data. Returns an ERR_PTR upon failure.
+ */
+static struct elf_phdr *load_elf_phdrs(struct elfhdr *elf_ex,
+				       struct file *elf_file)
+{
+	struct elf_phdr *elf_phdata = NULL;
+	int retval, size, err = -1;
+
+	/*
+	 * If the size of this structure has changed, then punt, since
+	 * we will be doing the wrong thing.
+	 */
+	if (elf_ex->e_phentsize != sizeof(struct elf_phdr))
+		goto out;
+
+	/* Sanity check the number of program headers... */
+	if (elf_ex->e_phnum < 1 ||
+		elf_ex->e_phnum > 65536U / sizeof(struct elf_phdr))
+		goto out;
+
+	/* ...and their total size. */
+	size = sizeof(struct elf_phdr) * elf_ex->e_phnum;
+	if (size > ELF_MIN_ALIGN)
+		goto out;
+
+	elf_phdata = kmalloc(size, GFP_KERNEL);
+	if (!elf_phdata)
+		goto out;
+
+	/* Read in the program headers */
+	retval = kernel_read(elf_file, elf_ex->e_phoff,
+			     (char *)elf_phdata, size);
+	if (retval != size) {
+		err = (retval < 0) ? retval : -EIO;
+		goto out;
+	}
+
+	/* Success! */
+	err = 0;
+out:
+	if (err) {
+		kfree(elf_phdata);
+		elf_phdata = NULL;
+	}
+	return elf_phdata;
+}
+
+#ifndef CONFIG_ARCH_BINFMT_ELF_STATE
+
+/**
+ * struct arch_elf_state - arch-specific ELF loading state
+ *
+ * This structure is used to preserve architecture specific data during
+ * the loading of an ELF file, throughout the checking of architecture
+ * specific ELF headers & through to the point where the ELF load is
+ * known to be proceeding (ie. SET_PERSONALITY).
+ *
+ * This implementation is a dummy for architectures which require no
+ * specific state.
+ */
+struct arch_elf_state {
+};
+
+#define INIT_ARCH_ELF_STATE {}
+
+/**
+ * arch_elf_pt_proc() - check a PT_LOPROC..PT_HIPROC ELF program header
+ * @ehdr:	The main ELF header
+ * @phdr:	The program header to check
+ * @elf:	The open ELF file
+ * @is_interp:	True if the phdr is from the interpreter of the ELF being
+ *		loaded, else false.
+ * @state:	Architecture-specific state preserved throughout the process
+ *		of loading the ELF.
+ *
+ * Inspects the program header phdr to validate its correctness and/or
+ * suitability for the system. Called once per ELF program header in the
+ * range PT_LOPROC to PT_HIPROC, for both the ELF being loaded and its
+ * interpreter.
+ *
+ * Return: Zero to proceed with the ELF load, non-zero to fail the ELF load
+ *         with that return code.
+ */
+static inline int arch_elf_pt_proc(struct elfhdr *ehdr,
+				   struct elf_phdr *phdr,
+				   struct file *elf, bool is_interp,
+				   struct arch_elf_state *state)
+{
+	/* Dummy implementation, always proceed */
+	return 0;
+}
+
+/**
+ * arch_check_elf() - check an ELF executable
+ * @ehdr:	The main ELF header
+ * @has_interp:	True if the ELF has an interpreter, else false.
+ * @interp_ehdr: The interpreter's ELF header
+ * @state:	Architecture-specific state preserved throughout the process
+ *		of loading the ELF.
+ *
+ * Provides a final opportunity for architecture code to reject the loading
+ * of the ELF & cause an exec syscall to return an error. This is called after
+ * all program headers to be checked by arch_elf_pt_proc have been.
+ *
+ * Return: Zero to proceed with the ELF load, non-zero to fail the ELF load
+ *         with that return code.
+ */
+static inline int arch_check_elf(struct elfhdr *ehdr, bool has_interp,
+				 struct elfhdr *interp_ehdr,
+				 struct arch_elf_state *state)
+{
+	/* Dummy implementation, always proceed */
+	return 0;
+}
+
+#endif /* !CONFIG_ARCH_BINFMT_ELF_STATE */
 
 /* This is much more generalized than the library routine read function,
    so we keep this separate.  Technically the library read function
@@ -398,16 +518,15 @@ static unsigned long total_mapping_size(struct elf_phdr *cmds, int nr)
 
 static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 		struct file *interpreter, unsigned long *interp_map_addr,
-		unsigned long no_base)
+		unsigned long no_base, struct elf_phdr *interp_elf_phdata)
 {
-	struct elf_phdr *elf_phdata;
 	struct elf_phdr *eppnt;
 	unsigned long load_addr = 0;
 	int load_addr_set = 0;
 	unsigned long last_bss = 0, elf_bss = 0;
 	unsigned long error = ~0UL;
 	unsigned long total_size;
-	int retval, i, size;
+	int i;
 
 	/* First of all, some simple consistency checks */
 	if (interp_elf_ex->e_type != ET_EXEC &&
@@ -418,40 +537,14 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 	if (!interpreter->f_op->mmap)
 		goto out;
 
-	/*
-	 * If the size of this structure has changed, then punt, since
-	 * we will be doing the wrong thing.
-	 */
-	if (interp_elf_ex->e_phentsize != sizeof(struct elf_phdr))
-		goto out;
-	if (interp_elf_ex->e_phnum < 1 ||
-		interp_elf_ex->e_phnum > 65536U / sizeof(struct elf_phdr))
-		goto out;
-
-	/* Now read in all of the header information */
-	size = sizeof(struct elf_phdr) * interp_elf_ex->e_phnum;
-	if (size > ELF_MIN_ALIGN)
-		goto out;
-	elf_phdata = kmalloc(size, GFP_KERNEL);
-	if (!elf_phdata)
-		goto out;
-
-	retval = kernel_read(interpreter, interp_elf_ex->e_phoff,
-			     (char *)elf_phdata, size);
-	error = -EIO;
-	if (retval != size) {
-		if (retval < 0)
-			error = retval;	
-		goto out_close;
-	}
-
-	total_size = total_mapping_size(elf_phdata, interp_elf_ex->e_phnum);
+	total_size = total_mapping_size(interp_elf_phdata,
+					interp_elf_ex->e_phnum);
 	if (!total_size) {
 		error = -EINVAL;
-		goto out_close;
+		goto out;
 	}
 
-	eppnt = elf_phdata;
+	eppnt = interp_elf_phdata;
 	for (i = 0; i < interp_elf_ex->e_phnum; i++, eppnt++) {
 		if (eppnt->p_type == PT_LOAD) {
 			int elf_type = MAP_PRIVATE | MAP_DENYWRITE;
@@ -478,7 +571,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 				*interp_map_addr = map_addr;
 			error = map_addr;
 			if (BAD_ADDR(map_addr))
-				goto out_close;
+				goto out;
 
 			if (!load_addr_set &&
 			    interp_elf_ex->e_type == ET_DYN) {
@@ -497,7 +590,7 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 			    eppnt->p_memsz > TASK_SIZE ||
 			    TASK_SIZE - eppnt->p_memsz < k) {
 				error = -ENOMEM;
-				goto out_close;
+				goto out;
 			}
 
 			/*
@@ -512,37 +605,36 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 			 * Do the same thing for the memory mapping - between
 			 * elf_bss and last_bss is the bss section.
 			 */
-			k = load_addr + eppnt->p_memsz + eppnt->p_vaddr;
+			k = load_addr + eppnt->p_vaddr + eppnt->p_memsz;
 			if (k > last_bss)
 				last_bss = k;
 		}
 	}
 
+	/*
+	 * Now fill out the bss section: first pad the last page from
+	 * the file up to the page boundary, and zero it from elf_bss
+	 * up to the end of the page.
+	 */
+	if (padzero(elf_bss)) {
+		error = -EFAULT;
+		goto out;
+	}
+	/*
+	 * Next, align both the file and mem bss up to the page size,
+	 * since this is where elf_bss was just zeroed up to, and where
+	 * last_bss will end after the vm_brk() below.
+	 */
+	elf_bss = ELF_PAGEALIGN(elf_bss);
+	last_bss = ELF_PAGEALIGN(last_bss);
+	/* Finally, if there is still more bss to allocate, do it. */
 	if (last_bss > elf_bss) {
-		/*
-		 * Now fill out the bss section.  First pad the last page up
-		 * to the page boundary, and then perform a mmap to make sure
-		 * that there are zero-mapped pages up to and including the
-		 * last bss page.
-		 */
-		if (padzero(elf_bss)) {
-			error = -EFAULT;
-			goto out_close;
-		}
-
-		/* What we have mapped so far */
-		elf_bss = ELF_PAGESTART(elf_bss + ELF_MIN_ALIGN - 1);
-
-		/* Map the last of the bss segment */
 		error = vm_brk(elf_bss, last_bss - elf_bss);
-		if (BAD_ADDR(error))
-			goto out_close;
+		if (error)
+			goto out;
 	}
 
 	error = load_addr;
-
-out_close:
-	kfree(elf_phdata);
 out:
 	return error;
 }
@@ -562,7 +654,7 @@ static unsigned long randomize_stack_top(unsigned long stack_top)
 
 	if ((current->flags & PF_RANDOMIZE) &&
 		!(current->personality & ADDR_NO_RANDOMIZE)) {
-		random_variable = (unsigned long) get_random_int();
+		random_variable = get_random_long();
 		random_variable &= STACK_RND_MASK;
 		random_variable <<= PAGE_SHIFT;
 	}
@@ -580,10 +672,9 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	int load_addr_set = 0;
 	char * elf_interpreter = NULL;
 	unsigned long error;
-	struct elf_phdr *elf_ppnt, *elf_phdata;
+	struct elf_phdr *elf_ppnt, *elf_phdata, *interp_elf_phdata = NULL;
 	unsigned long elf_bss, elf_brk;
 	int retval, i;
-	unsigned int size;
 	unsigned long elf_entry;
 	unsigned long interp_load_addr = 0;
 	unsigned long start_code, end_code, start_data, end_data;
@@ -594,6 +685,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		struct elfhdr elf_ex;
 		struct elfhdr interp_elf_ex;
 	} *loc;
+	struct arch_elf_state arch_state = INIT_ARCH_ELF_STATE;
 
 	loc = kmalloc(sizeof(*loc), GFP_KERNEL);
 	if (!loc) {
@@ -616,25 +708,9 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	if (!bprm->file->f_op->mmap)
 		goto out;
 
-	/* Now read in all of the header information */
-	if (loc->elf_ex.e_phentsize != sizeof(struct elf_phdr))
-		goto out;
-	if (loc->elf_ex.e_phnum < 1 ||
-	 	loc->elf_ex.e_phnum > 65536U / sizeof(struct elf_phdr))
-		goto out;
-	size = loc->elf_ex.e_phnum * sizeof(struct elf_phdr);
-	retval = -ENOMEM;
-	elf_phdata = kmalloc(size, GFP_KERNEL);
+	elf_phdata = load_elf_phdrs(&loc->elf_ex, bprm->file);
 	if (!elf_phdata)
 		goto out;
-
-	retval = kernel_read(bprm->file, loc->elf_ex.e_phoff,
-			     (char *)elf_phdata, size);
-	if (retval != size) {
-		if (retval >= 0)
-			retval = -EIO;
-		goto out_free_ph;
-	}
 
 	elf_ppnt = elf_phdata;
 	elf_bss = 0;
@@ -687,16 +763,16 @@ static int load_elf_binary(struct linux_binprm *bprm)
 			 */
 			would_dump(bprm, interpreter);
 
-			retval = kernel_read(interpreter, 0, bprm->buf,
-					     BINPRM_BUF_SIZE);
-			if (retval != BINPRM_BUF_SIZE) {
+			/* Get the exec headers */
+			retval = kernel_read(interpreter, 0,
+					     (void *)&loc->interp_elf_ex,
+					     sizeof(loc->interp_elf_ex));
+			if (retval != sizeof(loc->interp_elf_ex)) {
 				if (retval >= 0)
 					retval = -EIO;
 				goto out_free_dentry;
 			}
 
-			/* Get the exec headers */
-			loc->interp_elf_ex = *((struct elfhdr *)bprm->buf);
 			break;
 		}
 		elf_ppnt++;
@@ -704,11 +780,20 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
 	elf_ppnt = elf_phdata;
 	for (i = 0; i < loc->elf_ex.e_phnum; i++, elf_ppnt++)
-		if (elf_ppnt->p_type == PT_GNU_STACK) {
+		switch (elf_ppnt->p_type) {
+		case PT_GNU_STACK:
 			if (elf_ppnt->p_flags & PF_X)
 				executable_stack = EXSTACK_ENABLE_X;
 			else
 				executable_stack = EXSTACK_DISABLE_X;
+			break;
+
+		case PT_LOPROC ... PT_HIPROC:
+			retval = arch_elf_pt_proc(&loc->elf_ex, elf_ppnt,
+						  bprm->file, false,
+						  &arch_state);
+			if (retval)
+				goto out_free_dentry;
 			break;
 		}
 
@@ -721,7 +806,37 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		/* Verify the interpreter has a valid arch */
 		if (!elf_check_arch(&loc->interp_elf_ex))
 			goto out_free_dentry;
+
+		/* Load the interpreter program headers */
+		interp_elf_phdata = load_elf_phdrs(&loc->interp_elf_ex,
+						   interpreter);
+		if (!interp_elf_phdata)
+			goto out_free_dentry;
+
+		/* Pass PT_LOPROC..PT_HIPROC headers to arch code */
+		elf_ppnt = interp_elf_phdata;
+		for (i = 0; i < loc->interp_elf_ex.e_phnum; i++, elf_ppnt++)
+			switch (elf_ppnt->p_type) {
+			case PT_LOPROC ... PT_HIPROC:
+				retval = arch_elf_pt_proc(&loc->interp_elf_ex,
+							  elf_ppnt, interpreter,
+							  true, &arch_state);
+				if (retval)
+					goto out_free_dentry;
+				break;
+			}
 	}
+
+	/*
+	 * Allow arch code to reject the ELF at this point, whilst it's
+	 * still possible to return an error to the code that invoked
+	 * the exec syscall.
+	 */
+	retval = arch_check_elf(&loc->elf_ex,
+				!!interpreter, &loc->interp_elf_ex,
+				&arch_state);
+	if (retval)
+		goto out_free_dentry;
 
 	/* Flush all traces of the currently running executable */
 	retval = flush_old_exec(bprm);
@@ -730,7 +845,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 
 	/* Do this immediately, since STACK_TOP as used in setup_arg_pages
 	   may depend on the personality.  */
-	SET_PERSONALITY(loc->elf_ex);
+	SET_PERSONALITY2(loc->elf_ex, &arch_state);
 	if (elf_read_implies_exec(loc->elf_ex, executable_stack))
 		current->personality |= READ_IMPLIES_EXEC;
 
@@ -796,28 +911,60 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		elf_flags = MAP_PRIVATE | MAP_DENYWRITE | MAP_EXECUTABLE;
 
 		vaddr = elf_ppnt->p_vaddr;
+		/*
+		 * If we are loading ET_EXEC or we have already performed
+		 * the ET_DYN load_addr calculations, proceed normally.
+		 */
 		if (loc->elf_ex.e_type == ET_EXEC || load_addr_set) {
 			elf_flags |= MAP_FIXED;
 		} else if (loc->elf_ex.e_type == ET_DYN) {
-			/* Try and get dynamic programs out of the way of the
-			 * default mmap base, as well as whatever program they
-			 * might try to exec.  This is because the brk will
-			 * follow the loader, and is not movable.  */
-#ifdef CONFIG_ARCH_BINFMT_ELF_RANDOMIZE_PIE
-			/* Memory randomization might have been switched off
-			 * in runtime via sysctl or explicit setting of
-			 * personality flags.
-			 * If that is the case, retain the original non-zero
-			 * load_bias value in order to establish proper
-			 * non-randomized mappings.
+			/*
+			 * This logic is run once for the first LOAD Program
+			 * Header for ET_DYN binaries to calculate the
+			 * randomization (load_bias) for all the LOAD
+			 * Program Headers, and to calculate the entire
+			 * size of the ELF mapping (total_size). (Note that
+			 * load_addr_set is set to true later once the
+			 * initial mapping is performed.)
+			 *
+			 * There are effectively two types of ET_DYN
+			 * binaries: programs (i.e. PIE: ET_DYN with INTERP)
+			 * and loaders (ET_DYN without INTERP, since they
+			 * _are_ the ELF interpreter). The loaders must
+			 * be loaded away from programs since the program
+			 * may otherwise collide with the loader (especially
+			 * for ET_EXEC which does not have a randomized
+			 * position). For example to handle invocations of
+			 * "./ld.so someprog" to test out a new version of
+			 * the loader, the subsequent program that the
+			 * loader loads must avoid the loader itself, so
+			 * they cannot share the same load range. Sufficient
+			 * room for the brk must be allocated with the
+			 * loader as well, since brk must be available with
+			 * the loader.
+			 *
+			 * Therefore, programs are loaded offset from
+			 * ELF_ET_DYN_BASE and loaders are loaded into the
+			 * independently randomized mmap region (0 load_bias
+			 * without MAP_FIXED).
 			 */
-			if (current->flags & PF_RANDOMIZE)
+			if (elf_interpreter) {
+				load_bias = ELF_ET_DYN_BASE;
+				if (current->flags & PF_RANDOMIZE)
+					load_bias += arch_mmap_rnd();
+				elf_flags |= MAP_FIXED;
+			} else
 				load_bias = 0;
-			else
-				load_bias = ELF_PAGESTART(ELF_ET_DYN_BASE - vaddr);
-#else
-			load_bias = ELF_PAGESTART(ELF_ET_DYN_BASE - vaddr);
-#endif
+
+			/*
+			 * Since load_bias is used for all subsequent loading
+			 * calculations, we must lower it by the first vaddr
+			 * so that the remaining calculations based on the
+			 * ELF vaddrs will be correctly offset. The result
+			 * is then page aligned.
+			 */
+			load_bias = ELF_PAGESTART(load_bias - vaddr);
+
 			total_size = total_mapping_size(elf_phdata,
 							loc->elf_ex.e_phnum);
 			if (!total_size) {
@@ -903,7 +1050,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		elf_entry = load_elf_interp(&loc->interp_elf_ex,
 					    interpreter,
 					    &interp_map_addr,
-					    load_bias);
+					    load_bias, interp_elf_phdata);
 		if (!IS_ERR((void *)elf_entry)) {
 			/*
 			 * load_elf_interp() returns relocation
@@ -930,6 +1077,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		}
 	}
 
+	kfree(interp_elf_phdata);
 	kfree(elf_phdata);
 
 	set_binfmt(&elf_format);
@@ -951,27 +1099,13 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	current->mm->end_data = end_data;
 	current->mm->start_stack = bprm->p;
 
-#ifdef arch_randomize_brk
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {
-		int rand_tries = 0;
-
-		while (++rand_tries < 32) {
-			current->mm->brk = current->mm->start_brk =
-				arch_randomize_brk(current->mm);
-
-			if (find_vma_intersection(current->mm, current->mm->brk,
-						  current->mm->brk + PAGE_SIZE) &&
-			    rand_tries < 32) {
-				current->mm->brk = current->mm->start_brk = elf_brk;
-				continue;
-			} else
-				break;
-		}
-#ifdef CONFIG_COMPAT_BRK
+		current->mm->brk = current->mm->start_brk =
+			arch_randomize_brk(current->mm);
+#ifdef compat_brk_randomized
 		current->brk_randomized = 1;
 #endif
 	}
-#endif
 
 	if (current->personality & MMAP_PAGE_ZERO) {
 		/* Why this, you ask???  Well SVr4 maps page 0 as read-only,
@@ -1005,6 +1139,7 @@ out_ret:
 
 	/* error cleanup */
 out_free_dentry:
+	kfree(interp_elf_phdata);
 	allow_write_access(interpreter);
 	if (interpreter)
 		fput(interpreter);
@@ -1082,11 +1217,13 @@ static int load_elf_library(struct file *file)
 		goto out_free_ph;
 	}
 
-	len = ELF_PAGESTART(eppnt->p_filesz + eppnt->p_vaddr +
-			    ELF_MIN_ALIGN - 1);
-	bss = eppnt->p_memsz + eppnt->p_vaddr;
-	if (bss > len)
-		vm_brk(len, bss - len);
+	len = ELF_PAGEALIGN(eppnt->p_filesz + eppnt->p_vaddr);
+	bss = ELF_PAGEALIGN(eppnt->p_memsz + eppnt->p_vaddr);
+	if (bss > len) {
+		error = vm_brk(len, bss - len);
+		if (error)
+			goto out_free_ph;
+	}
 	error = 0;
 
 out_free_ph:
@@ -1132,11 +1269,6 @@ static bool always_dump_vma(struct vm_area_struct *vma)
 	if (arch_vma_name(vma))
 		return true;
 
-#ifdef CONFIG_MTK_EXTMEM
-	if (extmem_in_mspace(vma))
-		return true;
-#endif
-
 	return false;
 }
 
@@ -1154,6 +1286,15 @@ static unsigned long vma_dump_size(struct vm_area_struct *vma,
 
 	if (vma->vm_flags & VM_DONTDUMP)
 		return 0;
+
+	/* support for DAX */
+	if (vma_is_dax(vma)) {
+		if ((vma->vm_flags & VM_SHARED) && FILTER(DAX_SHARED))
+			goto whole;
+		if (!(vma->vm_flags & VM_SHARED) && FILTER(DAX_PRIVATE))
+			goto whole;
+		return 0;
+	}
 
 	/* Hugetlb memory check */
 	if (vma->vm_flags & VM_HUGETLB) {
@@ -1449,7 +1590,7 @@ static int fill_files_note(struct memelfnote *note)
 		file = vma->vm_file;
 		if (!file)
 			continue;
-		filename = d_path(&file->f_path, name_curpos, remaining);
+		filename = file_path(file, name_curpos, remaining);
 		if (IS_ERR(filename)) {
 			if (PTR_ERR(filename) == -ENAMETOOLONG) {
 				vfree(data);
@@ -1459,7 +1600,7 @@ static int fill_files_note(struct memelfnote *note)
 			continue;
 		}
 
-		/* d_path() fills at the end, move name down */
+		/* file_path() fills at the end, move name down */
 		/* n = strlen(filename) + 1: */
 		n = (name_curpos + remaining) - filename;
 		remaining = filename - name_curpos;
@@ -1525,20 +1666,12 @@ static void do_thread_regset_writeback(struct task_struct *task,
 		regset->writeback(task, regset, 1);
 }
 
-#ifndef PR_REG_SIZE
-#define PR_REG_SIZE(S) sizeof(S)
-#endif
-
 #ifndef PRSTATUS_SIZE
-#define PRSTATUS_SIZE(S) sizeof(S)
-#endif
-
-#ifndef PR_REG_PTR
-#define PR_REG_PTR(S) (&((S)->pr_reg))
+#define PRSTATUS_SIZE(S, R) sizeof(S)
 #endif
 
 #ifndef SET_PR_FPVALID
-#define SET_PR_FPVALID(S, V) ((S)->pr_fpvalid = (V))
+#define SET_PR_FPVALID(S, V, R) ((S)->pr_fpvalid = (V))
 #endif
 
 static int fill_thread_core_info(struct elf_thread_core_info *t,
@@ -1546,6 +1679,7 @@ static int fill_thread_core_info(struct elf_thread_core_info *t,
 				 long signr, size_t *total)
 {
 	unsigned int i;
+	unsigned int regset_size = view->regsets[0].n * view->regsets[0].size;
 
 	/*
 	 * NT_PRSTATUS is the one special case, because the regset data
@@ -1554,12 +1688,11 @@ static int fill_thread_core_info(struct elf_thread_core_info *t,
 	 * We assume that regset 0 is NT_PRSTATUS.
 	 */
 	fill_prstatus(&t->prstatus, t->task, signr);
-	(void) view->regsets[0].get(t->task, &view->regsets[0],
-				    0, PR_REG_SIZE(t->prstatus.pr_reg),
-				    PR_REG_PTR(&t->prstatus), NULL);
+	(void) view->regsets[0].get(t->task, &view->regsets[0], 0, regset_size,
+				    &t->prstatus.pr_reg, NULL);
 
 	fill_note(&t->notes[0], "CORE", NT_PRSTATUS,
-		  PRSTATUS_SIZE(t->prstatus), &t->prstatus);
+		  PRSTATUS_SIZE(t->prstatus, regset_size), &t->prstatus);
 	*total += notesize(&t->notes[0]);
 
 	do_thread_regset_writeback(t->task, &view->regsets[0]);
@@ -1573,7 +1706,7 @@ static int fill_thread_core_info(struct elf_thread_core_info *t,
 		const struct user_regset *regset = &view->regsets[i];
 		do_thread_regset_writeback(t->task, regset);
 		if (regset->core_note_type && regset->get &&
-		    (!regset->active || regset->active(t->task, regset) > 0)) {
+		    (!regset->active || regset->active(t->task, regset))) {
 			int ret;
 			size_t size = regset->n * regset->size;
 			void *data = kmalloc(size, GFP_KERNEL);
@@ -1589,7 +1722,8 @@ static int fill_thread_core_info(struct elf_thread_core_info *t,
 						  regset->core_note_type,
 						  size, data);
 				else {
-					SET_PR_FPVALID(&t->prstatus, 1);
+					SET_PR_FPVALID(&t->prstatus,
+							1, regset_size);
 					fill_note(&t->notes[i], "CORE",
 						  NT_PRFPREG, size, data);
 				}
@@ -2023,18 +2157,6 @@ static void fill_extnum_info(struct elfhdr *elf, struct elf_shdr *shdr4extnum,
 	shdr4extnum->sh_info = segs;
 }
 
-static size_t elf_core_vma_data_size(struct vm_area_struct *gate_vma,
-				     unsigned long mm_flags)
-{
-	struct vm_area_struct *vma;
-	size_t size = 0;
-
-	for (vma = first_vma(current, gate_vma); vma != NULL;
-	     vma = next_vma(vma, gate_vma))
-		size += vma_dump_size(vma, mm_flags);
-	return size;
-}
-
 /*
  * Actual dumper
  *
@@ -2046,7 +2168,8 @@ static int elf_core_dump(struct coredump_params *cprm)
 {
 	int has_dumped = 0;
 	mm_segment_t fs;
-	int segs;
+	int segs, i;
+	size_t vma_data_size = 0;
 	struct vm_area_struct *vma, *gate_vma;
 	struct elfhdr *elf = NULL;
 	loff_t offset = 0, dataoff;
@@ -2055,6 +2178,7 @@ static int elf_core_dump(struct coredump_params *cprm)
 	struct elf_shdr *shdr4extnum = NULL;
 	Elf_Half e_phnum;
 	elf_addr_t e_shoff;
+	elf_addr_t *vma_filesz = NULL;
 
 	/*
 	 * We no longer stop all VM operations.
@@ -2122,7 +2246,20 @@ static int elf_core_dump(struct coredump_params *cprm)
 
 	dataoff = offset = roundup(offset, ELF_EXEC_PAGESIZE);
 
-	offset += elf_core_vma_data_size(gate_vma, cprm->mm_flags);
+	vma_filesz = vmalloc((segs - 1) * sizeof(*vma_filesz));
+	if (!vma_filesz)
+		goto end_coredump;
+
+	for (i = 0, vma = first_vma(current, gate_vma); vma != NULL;
+			vma = next_vma(vma, gate_vma)) {
+		unsigned long dump_size;
+
+		dump_size = vma_dump_size(vma, cprm->mm_flags);
+		vma_filesz[i++] = dump_size;
+		vma_data_size += dump_size;
+	}
+
+	offset += vma_data_size;
 	offset += elf_core_extra_data_size();
 	e_shoff = offset;
 
@@ -2142,7 +2279,7 @@ static int elf_core_dump(struct coredump_params *cprm)
 		goto end_coredump;
 
 	/* Write program headers for segments dump */
-	for (vma = first_vma(current, gate_vma); vma != NULL;
+	for (i = 0, vma = first_vma(current, gate_vma); vma != NULL;
 			vma = next_vma(vma, gate_vma)) {
 		struct elf_phdr phdr;
 
@@ -2150,7 +2287,7 @@ static int elf_core_dump(struct coredump_params *cprm)
 		phdr.p_offset = offset;
 		phdr.p_vaddr = vma->vm_start;
 		phdr.p_paddr = 0;
-		phdr.p_filesz = vma_dump_size(vma, cprm->mm_flags);
+		phdr.p_filesz = vma_filesz[i++];
 		phdr.p_memsz = vma->vm_end - vma->vm_start;
 		offset += phdr.p_filesz;
 		phdr.p_flags = vma->vm_flags & VM_READ ? PF_R : 0;
@@ -2175,32 +2312,15 @@ static int elf_core_dump(struct coredump_params *cprm)
 		goto end_coredump;
 
 	/* Align to page */
-	if (!dump_skip(cprm, dataoff - cprm->written))
+	if (!dump_skip(cprm, dataoff - cprm->pos))
 		goto end_coredump;
 
-	for (vma = first_vma(current, gate_vma); vma != NULL;
+	for (i = 0, vma = first_vma(current, gate_vma); vma != NULL;
 			vma = next_vma(vma, gate_vma)) {
 		unsigned long addr;
 		unsigned long end;
 
-		end = vma->vm_start + vma_dump_size(vma, cprm->mm_flags);
-
-#ifdef CONFIG_MTK_EXTMEM
-		if (extmem_in_mspace(vma)) {
-			void *extmem_va = (void *)get_virt_from_mspace(vma->vm_pgoff << PAGE_SHIFT);
-
-			for (addr = vma->vm_start; addr < end; addr += PAGE_SIZE, extmem_va += PAGE_SIZE) {
-				int stop = !dump_emit(cprm, extmem_va, PAGE_SIZE);
-
-				if (stop) {
-					pr_err("[EXT_MEM]stop addr:0x%lx, extmem_va:0x%p, vm_start:0x%lx, vm_end:0x%lx\n",
-						addr, extmem_va, vma->vm_start, end);
-					goto end_coredump;
-				}
-			}
-			continue;
-		}
-#endif
+		end = vma->vm_start + vma_filesz[i++];
 
 		for (addr = vma->vm_start; addr < end; addr += PAGE_SIZE) {
 			struct page *page;
@@ -2211,13 +2331,18 @@ static int elf_core_dump(struct coredump_params *cprm)
 				void *kaddr = kmap(page);
 				stop = !dump_emit(cprm, kaddr, PAGE_SIZE);
 				kunmap(page);
-				page_cache_release(page);
+				put_page(page);
 			} else
 				stop = !dump_skip(cprm, PAGE_SIZE);
-			if (stop)
+			if (stop) {
+				pr_info("%s: stop:0x%lx, vm_start:0x%lx, vm_end:0x%lx\n",
+					__func__, addr,
+					vma->vm_start, vma->vm_end);
 				goto end_coredump;
+			}
 		}
 	}
+	dump_truncate(cprm);
 
 	if (!elf_core_write_extra_data(cprm))
 		goto end_coredump;
@@ -2233,6 +2358,7 @@ end_coredump:
 cleanup:
 	free_note_info(&info);
 	kfree(shdr4extnum);
+	vfree(vma_filesz);
 	kfree(phdr4note);
 	kfree(elf);
 out:

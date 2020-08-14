@@ -194,7 +194,7 @@ static ssize_t write_hw(struct file *file, struct kobject *kobj,
 	int length = min(sizeof(struct atto_ioctl), count);
 
 	if (!a->local_atto_ioctl) {
-		a->local_atto_ioctl = kzalloc(sizeof(struct atto_ioctl),
+		a->local_atto_ioctl = kmalloc(sizeof(struct atto_ioctl),
 					      GFP_KERNEL);
 		if (a->local_atto_ioctl == NULL) {
 			esas2r_log(ESAS2R_LOG_WARN,
@@ -246,7 +246,7 @@ static struct scsi_host_template driver_template = {
 	.eh_target_reset_handler	= esas2r_target_reset,
 	.can_queue			= 128,
 	.this_id			= -1,
-	.sg_tablesize			= SCSI_MAX_SG_SEGMENTS,
+	.sg_tablesize			= SG_CHUNK_SIZE,
 	.cmd_per_lun			=
 		ESAS2R_DEFAULT_CMD_PER_LUN,
 	.present			= 0,
@@ -254,11 +254,7 @@ static struct scsi_host_template driver_template = {
 	.use_clustering			= ENABLE_CLUSTERING,
 	.emulated			= 0,
 	.proc_name			= ESAS2R_DRVR_NAME,
-	.slave_configure		= esas2r_slave_configure,
-	.slave_alloc			= esas2r_slave_alloc,
-	.slave_destroy			= esas2r_slave_destroy,
-	.change_queue_depth		= esas2r_change_queue_depth,
-	.change_queue_type		= esas2r_change_queue_type,
+	.change_queue_depth		= scsi_change_queue_depth,
 	.max_sectors			= 0xFFFF,
 };
 
@@ -275,7 +271,7 @@ module_param(num_sg_lists, int, 0);
 MODULE_PARM_DESC(num_sg_lists,
 		 "Number of scatter/gather lists.  Default 1024.");
 
-int sg_tablesize = SCSI_MAX_SG_SEGMENTS;
+int sg_tablesize = SG_CHUNK_SIZE;
 module_param(sg_tablesize, int, 0);
 MODULE_PARM_DESC(sg_tablesize,
 		 "Maximum number of entries in a scatter/gather table.");
@@ -752,7 +748,7 @@ int esas2r_show_info(struct seq_file *m, struct Scsi_Host *sh)
 	if (dev_count == 0)
 		seq_puts(m, "none\n");
 
-	seq_puts(m, "\n");
+	seq_putc(m, '\n');
 	return 0;
 
 }
@@ -1257,60 +1253,6 @@ int esas2r_target_reset(struct scsi_cmnd *cmd)
 	esas2r_log(ESAS2R_LOG_INFO, "target_reset (%p)", cmd);
 
 	return esas2r_dev_targ_reset(cmd, true);
-}
-
-int esas2r_change_queue_depth(struct scsi_device *dev, int depth, int reason)
-{
-	esas2r_log(ESAS2R_LOG_INFO, "change_queue_depth %p, %d", dev, depth);
-
-	scsi_adjust_queue_depth(dev, scsi_get_tag_type(dev), depth);
-
-	return dev->queue_depth;
-}
-
-int esas2r_change_queue_type(struct scsi_device *dev, int type)
-{
-	esas2r_log(ESAS2R_LOG_INFO, "change_queue_type %p, %d", dev, type);
-
-	if (dev->tagged_supported) {
-		scsi_set_tag_type(dev, type);
-
-		if (type)
-			scsi_activate_tcq(dev, dev->queue_depth);
-		else
-			scsi_deactivate_tcq(dev, dev->queue_depth);
-	} else {
-		type = 0;
-	}
-
-	return type;
-}
-
-int esas2r_slave_alloc(struct scsi_device *dev)
-{
-	return 0;
-}
-
-int esas2r_slave_configure(struct scsi_device *dev)
-{
-	esas2r_log_dev(ESAS2R_LOG_INFO, &(dev->sdev_gendev),
-		       "esas2r_slave_configure()");
-
-	if (dev->tagged_supported) {
-		scsi_set_tag_type(dev, MSG_SIMPLE_TAG);
-		scsi_activate_tcq(dev, cmd_per_lun);
-	} else {
-		scsi_set_tag_type(dev, 0);
-		scsi_deactivate_tcq(dev, cmd_per_lun);
-	}
-
-	return 0;
-}
-
-void esas2r_slave_destroy(struct scsi_device *dev)
-{
-	esas2r_log_dev(ESAS2R_LOG_INFO, &(dev->sdev_gendev),
-		       "esas2r_slave_destroy()");
 }
 
 void esas2r_log_request_failure(struct esas2r_adapter *a,

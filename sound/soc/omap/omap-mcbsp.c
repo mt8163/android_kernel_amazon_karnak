@@ -530,8 +530,19 @@ static int omap_mcbsp_dai_set_dai_sysclk(struct snd_soc_dai *cpu_dai,
 
 	case OMAP_MCBSP_SYSCLK_CLKX_EXT:
 		regs->srgr2	|= CLKSM;
+		regs->pcr0	|= SCLKME;
+		/*
+		 * If McBSP is master but yet the CLKX/CLKR pin drives the SRG,
+		 * disable output on those pins. This enables to inject the
+		 * reference clock through CLKX/CLKR. For this to work
+		 * set_dai_sysclk() _needs_ to be called after set_dai_fmt().
+		 */
+		regs->pcr0	&= ~CLKXM;
+		break;
 	case OMAP_MCBSP_SYSCLK_CLKR_EXT:
 		regs->pcr0	|= SCLKME;
+		/* Disable ouput on CLKR pin in master mode */
+		regs->pcr0	&= ~CLKRM;
 		break;
 	default:
 		err = -ENODEV;
@@ -777,6 +788,7 @@ static int asoc_mcbsp_probe(struct platform_device *pdev)
 	match = of_match_device(omap_mcbsp_of_match, &pdev->dev);
 	if (match) {
 		struct device_node *node = pdev->dev.of_node;
+		struct omap_mcbsp_platform_data *pdata_quirk = pdata;
 		int buffer_size;
 
 		pdata = devm_kzalloc(&pdev->dev,
@@ -788,6 +800,8 @@ static int asoc_mcbsp_probe(struct platform_device *pdev)
 		memcpy(pdata, match->data, sizeof(*pdata));
 		if (!of_property_read_u32(node, "ti,buffer-size", &buffer_size))
 			pdata->buffer_size = buffer_size;
+		if (pdata_quirk)
+			pdata->force_ick_on = pdata_quirk->force_ick_on;
 	} else if (!pdata) {
 		dev_err(&pdev->dev, "missing platform data.\n");
 		return -EINVAL;
@@ -821,7 +835,7 @@ static int asoc_mcbsp_remove(struct platform_device *pdev)
 	if (mcbsp->pdata->ops && mcbsp->pdata->ops->free)
 		mcbsp->pdata->ops->free(mcbsp->id);
 
-	omap_mcbsp_sysfs_remove(mcbsp);
+	omap_mcbsp_cleanup(mcbsp);
 
 	clk_put(mcbsp->fclk);
 
@@ -831,7 +845,6 @@ static int asoc_mcbsp_remove(struct platform_device *pdev)
 static struct platform_driver asoc_mcbsp_driver = {
 	.driver = {
 			.name = "omap-mcbsp",
-			.owner = THIS_MODULE,
 			.of_match_table = omap_mcbsp_of_match,
 	},
 

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _VAL_TYPES_PRIVATE_H_
 #define _VAL_TYPES_PRIVATE_H_
 
@@ -17,12 +30,11 @@ extern "C" {
  * @par Description
  *   This is polling or interrupt for waiting for HW done
  */
-typedef enum _VAL_HW_COMPLETE_T {
+enum VAL_HW_COMPLETE_T {
 	VAL_POLLING_MODE = 0,                       /* /< polling */
 	VAL_INTERRUPT_MODE,                         /* /< interrupt */
 	VAL_MODE_MAX = 0xFFFFFFFF                   /* /< Max result */
-}
-VAL_HW_COMPLETE_T;
+};
 
 
 /**
@@ -33,38 +45,38 @@ VAL_HW_COMPLETE_T;
  *                    in VAL_CLOCK_T for clock setting and
  *                    in VAL_ISR_T for irq line setting
  */
-typedef enum _VAL_CODEC_TYPE_T {
-	VAL_CODEC_TYPE_NONE = 0,                    /* /< None */
-	VAL_CODEC_TYPE_MP4_ENC,                     /* /< MP4 encoder */
-	VAL_CODEC_TYPE_MP4_DEC,                     /* /< MP4 decoder */
-	VAL_CODEC_TYPE_H263_ENC,                    /* /< H.263 encoder */
-	VAL_CODEC_TYPE_H263_DEC,                    /* /< H.263 decoder */
-	VAL_CODEC_TYPE_H264_ENC,                    /* /< H.264 encoder */
-	VAL_CODEC_TYPE_H264_DEC,                    /* /< H.264 decoder */
-	VAL_CODEC_TYPE_SORENSON_SPARK_DEC,          /* /< Sorenson Spark decoder */
-	VAL_CODEC_TYPE_VC1_SP_DEC,                  /* /< VC-1 simple profile decoder */
-	VAL_CODEC_TYPE_RV9_DEC,                     /* /< RV9 decoder */
-	VAL_CODEC_TYPE_MP1_MP2_DEC,                 /* /< MPEG1/2 decoder */
-	VAL_CODEC_TYPE_XVID_DEC,                    /* /< Xvid decoder */
-	VAL_CODEC_TYPE_DIVX4_DIVX5_DEC,             /* /< Divx4/5 decoder */
-	VAL_CODEC_TYPE_VC1_MP_WMV9_DEC,             /* /< VC-1 main profile (WMV9) decoder */
-	VAL_CODEC_TYPE_RV8_DEC,                     /* /< RV8 decoder */
-	VAL_CODEC_TYPE_WMV7_DEC,                    /* /< WMV7 decoder */
-	VAL_CODEC_TYPE_WMV8_DEC,                    /* /< WMV8 decoder */
-	VAL_CODEC_TYPE_AVS_DEC,                     /* /< AVS decoder */
-	VAL_CODEC_TYPE_DIVX_3_11_DEC,               /* /< Divx3.11 decoder */
-	VAL_CODEC_TYPE_H264_DEC_MAIN,               /* /< H.264 main profile decoder (due to different packet) == 20 */
-	VAL_CODEC_TYPE_MAX = 0xFFFFFFFF             /* /< Max driver type */
-} VAL_CODEC_TYPE_T;
+enum VAL_CODEC_TYPE_T {
+	VAL_CODEC_TYPE_NONE = 0,		/* /< None */
+	VAL_CODEC_TYPE_MP4_ENC,			/* /< MP4 encoder */
+	VAL_CODEC_TYPE_MP4_DEC,			/* /< MP4 decoder */
+	VAL_CODEC_TYPE_H263_ENC,		/* /< H.263 encoder */
+	VAL_CODEC_TYPE_H263_DEC,		/* /< H.263 decoder */
+	VAL_CODEC_TYPE_H264_ENC,		/* /< H.264 encoder */
+	VAL_CODEC_TYPE_H264_DEC,		/* /< H.264 decoder */
+	VAL_CODEC_TYPE_SORENSON_SPARK_DEC,	/* /< Sorenson Spark decoder */
+	VAL_CODEC_TYPE_VC1_SP_DEC,	/* /< VC-1 simple profile decoder */
+	VAL_CODEC_TYPE_RV9_DEC,			/* /< RV9 decoder */
+	VAL_CODEC_TYPE_MP1_MP2_DEC,		/* /< MPEG1/2 decoder */
+	VAL_CODEC_TYPE_XVID_DEC,		/* /< Xvid decoder */
+	VAL_CODEC_TYPE_DIVX4_DIVX5_DEC,		/* /< Divx4/5 decoder */
+	VAL_CODEC_TYPE_VC1_MP_WMV9_DEC,	/* /< VC-1 main profile(WMV9) decoder */
+	VAL_CODEC_TYPE_RV8_DEC,			/* /< RV8 decoder */
+	VAL_CODEC_TYPE_WMV7_DEC,		/* /< WMV7 decoder */
+	VAL_CODEC_TYPE_WMV8_DEC,		/* /< WMV8 decoder */
+	VAL_CODEC_TYPE_AVS_DEC,			/* /< AVS decoder */
+	VAL_CODEC_TYPE_DIVX_3_11_DEC,		/* /< Divx3.11 decoder */
+	/* /< H.264 main profile decoder (due to different packet) == 20 */
+	VAL_CODEC_TYPE_H264_DEC_MAIN,
+	VAL_CODEC_TYPE_MAX = 0xFFFFFFFF		/* /< Max driver type */
+};
 
 
-typedef enum _VAL_CACHE_TYPE_T {
-
+enum VAL_CACHE_TYPE_T {
 	VAL_CACHE_TYPE_CACHABLE = 0,
 	VAL_CACHE_TYPE_NONCACHABLE,
 	VAL_CACHE_TYPE_MAX = 0xFFFFFFFF
 
-} VAL_CACHE_TYPE_T;
+};
 
 
 /**
@@ -72,16 +84,23 @@ typedef enum _VAL_CACHE_TYPE_T {
  *  VAL_INTMEM_T
  * @par Description
  *  This is a parameter for eVideoIntMemUsed()
+ *  pvHandle		[IN]     The video codec driver handle
+ *  u4HandleSize	[IN]     The size of video codec driver handle
+ *  u4MemSize		[OUT]    The size of internal memory
+ *  pvMemVa		[OUT]    The internal memory start virtual address
+ *  pvMemPa		[OUT]    The internal memory start physical address
+ *  pvReserved		[IN/OUT] The reserved parameter
+ *  u4ReservedSize	[IN]     The size of reserved parameter structure
  */
-typedef struct _VAL_INTMEM_T {
-	VAL_VOID_T      *pvHandle;                  /* /< [IN]     The video codec driver handle */
-	VAL_UINT32_T    u4HandleSize;               /* /< [IN]     The size of video codec driver handle */
-	VAL_UINT32_T    u4MemSize;                  /* /< [OUT]    The size of internal memory */
-	VAL_VOID_T      *pvMemVa;                   /* /< [OUT]    The internal memory start virtual address */
-	VAL_VOID_T      *pvMemPa;                   /* /< [OUT]    The internal memory start physical address */
-	VAL_VOID_T      *pvReserved;                /* /< [IN/OUT] The reserved parameter */
-	VAL_UINT32_T    u4ReservedSize;             /* /< [IN]     The size of reserved parameter structure */
-} VAL_INTMEM_T;
+struct VAL_INTMEM_T {
+	void		*pvHandle;
+	unsigned int	u4HandleSize;
+	unsigned int	u4MemSize;
+	void		*pvMemVa;
+	void		*pvMemPa;
+	void		*pvReserved;
+	unsigned int    u4ReservedSize;
+};
 
 
 /**
@@ -89,16 +108,23 @@ typedef struct _VAL_INTMEM_T {
  *  VAL_EVENT_T
  * @par Description
  *  This is a parameter for eVideoWaitEvent() and eVideoSetEvent()
+ *  pvHandle		[IN]     The video codec driver handle
+ *  u4HandleSize	[IN]     The size of video codec driver handle
+ *  pvWaitQueue		[IN]     The waitqueue discription
+ *  pvEvent		[IN]     The event discription
+ *  u4TimeoutMs		[IN]     The timeout ms
+ *  pvReserved		[IN/OUT] The reserved parameter
+ *  u4ReservedSize	[IN]     The size of reserved parameter structure
  */
-typedef struct _VAL_EVENT_T {
-	VAL_VOID_T      *pvHandle;                  /* /< [IN]     The video codec driver handle */
-	VAL_UINT32_T    u4HandleSize;               /* /< [IN]     The size of video codec driver handle */
-	VAL_VOID_T      *pvWaitQueue;               /* /< [IN]     The waitqueue discription */
-	VAL_VOID_T      *pvEvent;                   /* /< [IN]     The event discription */
-	VAL_UINT32_T    u4TimeoutMs;                /* /< [IN]     The timeout ms */
-	VAL_VOID_T      *pvReserved;                /* /< [IN/OUT] The reserved parameter */
-	VAL_UINT32_T    u4ReservedSize;             /* /< [IN]     The size of reserved parameter structure */
-} VAL_EVENT_T;
+struct VAL_EVENT_T {
+	void		*pvHandle;
+	unsigned int	u4HandleSize;
+	void		*pvWaitQueue;
+	void		*pvEvent;
+	unsigned int	u4TimeoutMs;
+	void		*pvReserved;
+	unsigned int	u4ReservedSize;
+};
 
 
 /**
@@ -106,15 +132,21 @@ typedef struct _VAL_EVENT_T {
  *  VAL_MUTEX_T
  * @par Description
  *  This is a parameter for eVideoWaitMutex() and eVideoReleaseMutex()
+ *  pvHandle		[IN]     The video codec driver handle
+ *  u4HandleSize	[IN]     The size of video codec driver handle
+ *  pvMutex		[IN]     The Mutex discriptor
+ *  u4TimeoutMs		[IN]     The timeout ms
+ *  pvReserved		[IN/OUT] The reserved parameter
+ *  u4ReservedSize	[IN]     The size of reserved parameter structure
  */
-typedef struct _VAL_MUTEX_T {
-	VAL_VOID_T      *pvHandle;                  /* /< [IN]     The video codec driver handle */
-	VAL_UINT32_T    u4HandleSize;               /* /< [IN]     The size of video codec driver handle */
-	VAL_VOID_T      *pvMutex;                   /* /< [IN]     The Mutex discriptor */
-	VAL_UINT32_T    u4TimeoutMs;                /* /< [IN]     The timeout ms */
-	VAL_VOID_T      *pvReserved;                /* /< [IN/OUT] The reserved parameter */
-	VAL_UINT32_T    u4ReservedSize;             /* /< [IN]     The size of reserved parameter structure */
-} VAL_MUTEX_T;
+struct VAL_MUTEX_T {
+	void		*pvHandle;
+	unsigned int	u4HandleSize;
+	void		*pvMutex;
+	unsigned int	u4TimeoutMs;
+	void		*pvReserved;
+	unsigned int	u4ReservedSize;
+};
 
 
 /**
@@ -122,16 +154,21 @@ typedef struct _VAL_MUTEX_T {
  *  VAL_POWER_T
  * @par Description
  *  This is a parameter for eVideoHwPowerCtrl()
+ *  pvHandle		[IN]     The video codec driver handle
+ *  u4HandleSize	[IN]     The size of video codec driver handle
+ *  eDriverType		[IN]     The driver type
+ *  fgEnable		[IN]     Enable or not.
+ *  pvReserved		[IN/OUT] The reserved parameter
+ *  u4ReservedSize	[IN]     The size of reserved parameter structure
  */
-typedef struct _VAL_POWER_T {
-	VAL_VOID_T          *pvHandle;              /* /< [IN]     The video codec driver handle */
-	VAL_UINT32_T        u4HandleSize;           /* /< [IN]     The size of video codec driver handle */
-	VAL_DRIVER_TYPE_T   eDriverType;            /* /< [IN]     The driver type */
-	VAL_BOOL_T          fgEnable;               /* /< [IN]     Enable or not. */
-	VAL_VOID_T          *pvReserved;            /* /< [IN/OUT] The reserved parameter */
-	VAL_UINT32_T        u4ReservedSize;         /* /< [IN]     The size of reserved parameter structure */
-	/* VAL_UINT32_T        u4L2CUser;              ///< [OUT]    The number of power user right now */
-} VAL_POWER_T;
+struct VAL_POWER_T {
+	void		*pvHandle;
+	unsigned int	u4HandleSize;
+	enum VAL_DRIVER_TYPE_T	eDriverType;
+	char		fgEnable;
+	void		*pvReserved;
+	unsigned int	u4ReservedSize;
+};
 
 
 /**
@@ -139,95 +176,93 @@ typedef struct _VAL_POWER_T {
  *  VAL_MMAP_T
  * @par Description
  *  This is a parameter for eVideoMMAP() and eVideoUNMAP()
+ *  pvHandle		[IN]     The video codec driver handle
+ *  u4HandleSize	[IN]     The size of video codec driver handle
+ *  pvMemPa		[IN]     The physical memory address
+ *  u4MemSize		[IN]     The memory size
+ *  pvMemVa		[IN]     The mapped virtual memory address
+ *  pvReserved		[IN/OUT] The reserved parameter
+ *  u4ReservedSize	[IN]     The size of reserved parameter structure
  */
-typedef struct _VAL_MMAP_T {
-	VAL_VOID_T      *pvHandle;                  /* /< [IN]     The video codec driver handle */
-	VAL_UINT32_T    u4HandleSize;               /* /< [IN]     The size of video codec driver handle */
-	VAL_VOID_T      *pvMemPa;                   /* /< [IN]     The physical memory address */
-	VAL_UINT32_T    u4MemSize;                  /* /< [IN]     The memory size */
-	VAL_VOID_T      *pvMemVa;                   /* /< [IN]     The mapped virtual memory address */
-	VAL_VOID_T      *pvReserved;                /* /< [IN/OUT] The reserved parameter */
-	VAL_UINT32_T    u4ReservedSize;             /* /< [IN]     The size of reserved parameter structure */
-} VAL_MMAP_T;
+struct VAL_MMAP_T {
+	void		*pvHandle;
+	unsigned int	u4HandleSize;
+	void		*pvMemPa;
+	unsigned int	u4MemSize;
+	void		*pvMemVa;
+	void		*pvReserved;
+	unsigned int	u4ReservedSize;
+};
+
+/**
+ *   u4ReadAddr		[IN]  memory source address in VA
+ *   u4ReadData		[OUT] memory data
+ */
+struct VAL_VCODEC_OAL_MEM_STAUTS_T {
+	unsigned long	u4ReadAddr;
+	unsigned int	u4ReadData;
+};
 
 
-typedef struct {
-	VAL_ULONG_T     u4ReadAddr;                 /* / [IN]  memory source address in VA */
-	VAL_UINT32_T    u4ReadData;                 /* / [OUT] memory data */
-} VAL_VCODEC_OAL_MEM_STAUTS_T;
-
-
-typedef struct {
+struct VAL_VCODEC_OAL_HW_REGISTER_T {
 	/*
-	    /< [IN/OUT] HW is Completed or not, set by driver & clear by codec
-	       (0: not completed or still in lock status;
-	       1: HW is completed or in unlock status)
-	*/
-	VAL_UINT32_T    u4HWIsCompleted;
+	 *  /< [IN/OUT] HW is Completed or not, set by driver & clear by codec
+	 *     (0: not completed or still in lock status;
+	 *     1: HW is completed or in unlock status)
+	 */
+	unsigned int	u4HWIsCompleted;
 	/*
-	    /< [OUT]    HW is Timeout or not, set by driver & clear by codec
-	       (0: not in timeout status;
-	       1: HW is in timeout status)
-	*/
-	VAL_UINT32_T    u4HWIsTimeout;
-	VAL_UINT32_T    u4NumOfRegister;            /* /< [IN]     Number of HW register need to store; */
-	VAL_VCODEC_OAL_MEM_STAUTS_T *pHWStatus;
-} VAL_VCODEC_OAL_HW_REGISTER_T;
+	 *  /< [OUT]    HW is Timeout or not, set by driver & clear by codec
+	 *     (0: not in timeout status;
+	 *     1: HW is in timeout status)
+	 */
+	unsigned int	u4HWIsTimeout;
+	/* /< [IN]     Number of HW register need to store; */
+	unsigned int	u4NumOfRegister;
+	struct VAL_VCODEC_OAL_MEM_STAUTS_T *pHWStatus;
+};
 
 
-typedef struct {
-	VAL_VCODEC_OAL_HW_REGISTER_T    *Oal_HW_reg;
-	VAL_UINT32_T                    *Oal_HW_mem_reg;
-	VAL_UINT32_T                    *kva_Oal_HW_mem_reg;
-	VAL_ULONG_T                     pa_Oal_HW_mem_reg;
-	VAL_ULONG_T                     ObjId;
-	VAL_EVENT_T                     IsrEvent;
-	VAL_UINT32_T                    slotindex;
-	VAL_UINT32_T                    u4VCodecThreadNum;
-	VAL_UINT32_T                    u4VCodecThreadID[VCODEC_THREAD_MAX_NUM];
-	VAL_HANDLE_T                    pvHandle;   /* physical address of the owner handle */
-	VAL_UINT32_T                    u4NumOfRegister;
+struct VAL_VCODEC_OAL_HW_CONTEXT_T {
+	struct VAL_VCODEC_OAL_HW_REGISTER_T	*Oal_HW_reg;
+	unsigned int			*Oal_HW_mem_reg;
+	unsigned int			*kva_Oal_HW_mem_reg;
+	unsigned long			pa_Oal_HW_mem_reg;
+	unsigned long			ObjId;
+	struct VAL_EVENT_T			IsrEvent;
+	unsigned int			slotindex;
+	unsigned int			u4VCodecThreadNum;
+	unsigned int			u4VCodecThreadID[VCODEC_THREAD_MAX_NUM];
+	/* physical address of the owner handle */
+	unsigned long			pvHandle;
+	unsigned int			u4NumOfRegister;
 	/* MAX 16 items could be read; //kernel space access register */
-	VAL_VCODEC_OAL_MEM_STAUTS_T     oalmem_status[OALMEM_STATUS_NUM];
-	VAL_ULONG_T                     kva_u4HWIsCompleted;
-	VAL_ULONG_T                     kva_u4HWIsTimeout;
-	VAL_UINT32_T                    tid1;
-	VAL_UINT32_T                    tid2;
+	struct VAL_VCODEC_OAL_MEM_STAUTS_T oalmem_status[OALMEM_STATUS_NUM];
+	unsigned long			kva_u4HWIsCompleted;
+	unsigned long			kva_u4HWIsTimeout;
+	unsigned int			tid1;
+	unsigned int			tid2;
 
 	/* record VA, PA */
-	VAL_UINT32_T                    *va1;
-	VAL_UINT32_T                    *va2;
-	VAL_UINT32_T                    *va3;
-	VAL_UINT32_T                    pa1;
-	VAL_UINT32_T                    pa2;
-	VAL_UINT32_T                    pa3;
-
-} VAL_VCODEC_OAL_HW_CONTEXT_T;
-
-
-typedef struct {
-	int     CPUid;                              /* [in] */
-	int     Loading;                            /* [out] */
-} VAL_VCODEC_CORE_LOADING_T;
-
-typedef void (*ena)(int);
-typedef void (*disa)(int);
-typedef void (*ena_timeout)(int, int);
-typedef int (*user_reg)(int, int);
-typedef void (*user_unreg)(int);
-typedef void (*user_enable)(int);
-typedef void (*user_disable)(int);
-typedef void (*user_enable_timeout)(int, int);
-typedef int (*user_reg_scn)(void);
-typedef void (*user_reg_scn_config)(int, int, int, int, int, int);
-typedef void (*user_unreg_scn)(int);
+	unsigned int			*va1;
+	unsigned int			*va2;
+	unsigned int			*va3;
+	unsigned int			pa1;
+	unsigned int			pa2;
+	unsigned int			pa3;
+};
 
 
+struct VAL_VCODEC_CORE_LOADING_T {
+	int CPUid;                              /* [in] */
+	int Loading;                            /* [out] */
+};
 
-typedef struct _VAL_INIT_HANDLE {
+
+struct VAL_INIT_HANDLE {
 	int i4DriverType;
 	int i4VENCLivePhoto;
-} VAL_INIT_HANDLE;
+};
 #ifdef __cplusplus
 }
 #endif

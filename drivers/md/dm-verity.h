@@ -63,14 +63,14 @@ struct dm_verity {
 	sector_t hash_level_block[DM_VERITY_MAX_LEVELS];
 
 	struct dm_verity_fec *fec;	/* forward error correction */
+	unsigned long *validated_blocks; /* bitset blocks validated */
 };
 
 struct dm_verity_io {
 	struct dm_verity *v;
 
-	/* original values of bio->bi_end_io and bio->bi_private */
+	/* original value of bio->bi_end_io */
 	bio_end_io_t *orig_bi_end_io;
-	void *orig_bi_private;
 
 	sector_t block;
 	unsigned n_blocks;
@@ -129,10 +129,8 @@ extern int verity_hash_for_block(struct dm_verity *v, struct dm_verity_io *io,
 
 extern void verity_status(struct dm_target *ti, status_type_t type,
 			unsigned status_flags, char *result, unsigned maxlen);
-extern int verity_ioctl(struct dm_target *ti, unsigned cmd,
-			unsigned long arg);
-extern int verity_merge(struct dm_target *ti, struct bvec_merge_data *bvm,
-			struct bio_vec *biovec, int max_size);
+extern int verity_prepare_ioctl(struct dm_target *ti,
+                struct block_device **bdev, fmode_t *mode);
 extern int verity_iterate_devices(struct dm_target *ti,
 				iterate_devices_callout_fn fn, void *data);
 extern void verity_io_hints(struct dm_target *ti, struct queue_limits *limits);

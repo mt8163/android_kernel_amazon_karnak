@@ -1,34 +1,41 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
-#include <linux/switch.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
-#ifdef CONFIG_OF
+#include <linux/irq.h>
 #include <linux/of.h>
-#include <linux/of_irq.h>
-#include <linux/of_address.h>
-#endif
+#include <linux/of_gpio.h>
+#include <linux/platform_device.h>
 #include <mt-plat/charging.h>
 #include "bq25601.h"
 
 struct bq25601_data_info {
 	struct i2c_client	*client;
-	struct switch_dev	bq_reg09;
 	bool			init_done;
 	u8			part_num;
-	u8			reg[BQ25601_REG_NUM];
 };
 static struct bq25601_data_info bq25601_data = {
 	.part_num = 0xF,
 	.init_done = false,
 };
 static struct bq25601_data_info *bdata = &bq25601_data;
-
-static DEFINE_MUTEX(bq25601_i2c_access);
 
 int bq25601_read_byte(unsigned char cmd, unsigned char *returnData)
 {
@@ -76,14 +83,13 @@ int bq25601_write_byte(unsigned char cmd, unsigned char writeData)
 		pr_notice("%s: err=%d\n", __func__, ret);
 
 	return ret == 2 ? 1 : 0;
-
 }
 
 /**********************************************************
-  *
-  *   [Read / Write Function]
-  *
-  *********************************************************/
+ *
+ *   [Read / Write Function]
+ *
+ *********************************************************/
 int bq25601_read_interface(u8 reg, u8 *val, u8 mask, u8 shift)
 {
 	u8 reg_val = 0;
@@ -113,10 +119,10 @@ int bq25601_config_interface(u8 reg, u8 val, u8 mask, u8 shift)
 }
 
 /**********************************************************
-  *
-  *   [Internal Function]
-  *
-  *********************************************************/
+ *
+ *   [Internal Function]
+ *
+ *********************************************************/
 /* CON0---------------------------------------------------- */
 
 void bq25601_set_en_hiz(u32 val)
@@ -620,8 +626,10 @@ static u8 bq25601_get_reg9_fault_type(u8 reg9)
 u8 bq25601_get_fault_type(void)
 {
 	unsigned char type = 0;
+	u8 reg9 = 0;
 
-	type = bq25601_get_reg9_fault_type(bdata->reg[BQ25601_CON9]);
+	bq25601_read_byte(BQ25601_CON9, &reg9);
+	type = bq25601_get_reg9_fault_type(reg9);
 	return type;
 }
 
@@ -633,7 +641,6 @@ void bq25601_polling_reg09(void)
 
 	for (i2 = i = 0; i < 4 && i2 < 10; i++, i2++) {
 		bq25601_read_byte((u8)(BQ25601_CON9), &reg9);
-		bdata->reg[BQ25601_CON9] = reg9;
 		/* BOOST_FAULT bit */
 		if ((reg9 & BOOST_FAULT) != 0) {
 			/* Disable OTG */
@@ -654,13 +661,9 @@ void bq25601_polling_reg09(void)
 			i = 0;
 			/* need filter fault type here */
 			err_code =  bq25601_get_reg9_fault_type(reg9);
-			switch_set_state(&bdata->bq_reg09,  err_code);
 		}
 		msleep(20);
 	}
-
-	/* send normal fault state to UI */
-	switch_set_state(&bdata->bq_reg09, BQ_NORMAL_FAULT);
 }
 
 static irqreturn_t ops_bq25601_int_handler(int irq, void *dev_id)
@@ -672,10 +675,12 @@ static irqreturn_t ops_bq25601_int_handler(int irq, void *dev_id)
 void bq25601_dump_register(void)
 {
 	int i = 0;
+	u8 val;
 
 	for (i = 0; i < BQ25601_REG_NUM; i++) {
-		bq25601_read_byte(i, &bdata->reg[i]);
-		pr_debug("%s: [0x%x]=0x%x\n", __func__, i, bdata->reg[i]);
+		val = 0;
+		bq25601_read_byte(i, &val);
+		pr_debug("%s: [0x%x]=0x%x\n", __func__, i, val);
 	}
 }
 
@@ -683,12 +688,14 @@ static ssize_t show_dump_register(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	int i = 0;
+	u8 val;
 	char temp_info[200] = "";
 
 	for (i = 0; i < BQ25601_REG_NUM; i++) {
-		bq25601_read_byte(i, &bdata->reg[i]);
-		sprintf(temp_info, "reg[%x]=0x%x\n", i, bdata->reg[i]);
-		strcat(buf, temp_info);
+		val = 0;
+		bq25601_read_byte(i, &val);
+		sprintf(temp_info, "reg[%x]=0x%x\n", i, val);
+		strncat(buf, temp_info, strlen(temp_info));
 	}
 	return strlen(buf);
 }
@@ -728,7 +735,7 @@ static void bq25601_parse_customer_setting(void)
 #endif
 }
 
-unsigned char g_reg_value_bq25601 = 0;
+unsigned char g_reg_value_bq25601;
 static ssize_t show_bq25601_access(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -829,15 +836,6 @@ static int bq25601_driver_probe(struct i2c_client *client,
 
 	bq25601_parse_customer_setting();
 	bq25601_dump_register();
-
-	bdata->bq_reg09.name = "bq25601_reg09";
-	bdata->bq_reg09.index = 0;
-	bdata->bq_reg09.state = 0;
-	ret = switch_dev_register(&bdata->bq_reg09);
-	if (ret < 0) {
-		pr_err("[%s] switch_dev_register() error(%d)\n", __func__, ret);
-		goto out_0;
-	}
 
 	/*bq25601 user space access interface*/
 	ret = platform_device_register(&bq25601_user_space_device);

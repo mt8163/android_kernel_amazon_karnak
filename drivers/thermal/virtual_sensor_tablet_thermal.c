@@ -17,7 +17,6 @@
  * 02110-1301 USA
  *
  */
-
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/proc_fs.h>
@@ -37,17 +36,44 @@
 
 #include <linux/platform_data/mtk_thermal.h>
 #include <linux/thermal_framework.h>
+
+#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
+#include <linux/sign_of_life.h>
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#define VIRTUAL_SENSOR_METRICS_STR_LEN 128
+/*
+ * Define the metrics log printing interval.
+ * If virtual sensor throttles, the interval
+ * is 0x3F*3 seconds(3 means polling interval of virtual_sensor).
+ * If doesn't throttle, the interval is 0x3FF*3 seconds.
+ */
+#define VIRTUAL_SENSOR_THROTTLE_TIME_MASK 0x3F
+#define VIRTUAL_SENSOR_UNTHROTTLE_TIME_MASK 0x3FF
+static unsigned long virtual_sensor_temp = 25000;
+#endif
+
 #include "thermal_core.h"
 
 #define DRIVER_NAME "virtual_sensor-thermal"
 #define THERMAL_NAME "virtual_sensor"
 #define BUF_SIZE 128
-#define DMF 2000
+#define DMF 1000
 #define MASK (0x0FFF)
 #define VIRTUAL_SENSOR_NUM_MAX 2
 
 static DEFINE_MUTEX(therm_lock);
 static unsigned int virtual_sensor_nums = 0;
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+unsigned long get_virtualsensor_temp(void)
+{
+	return virtual_sensor_temp/1000;
+}
+EXPORT_SYMBOL(get_virtualsensor_temp);
+#endif
 
 static int level_cmp(void *priv,struct list_head *a, struct list_head *b)
 {
@@ -75,7 +101,6 @@ int thermal_level_compare(struct mtk_cooler_platform_data *cooler_data, struct c
 }
 
 #define PREFIX "thermalsensor:def"
-#define MASK (0x0FFF)
 
 static int match(struct thermal_zone_device *tz,
 	  struct thermal_cooling_device *cdev)
@@ -117,7 +142,7 @@ static struct mtk_thermal_platform_data virtual_sensor_thermal_data[VIRTUAL_SENS
 };
 
 static int virtual_sensor_thermal_get_temp(struct thermal_zone_device *thermal,
-				   unsigned long *t)
+				   int *t)
 {
 	struct thermal_dev *tdev;
 	struct virtual_sensor_thermal_zone *tzone = thermal->devdata;
@@ -125,13 +150,29 @@ static int virtual_sensor_thermal_get_temp(struct thermal_zone_device *thermal,
 	long temp = 0;
 	long tempv = 0;
 	int alpha, offset, weight;
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[VIRTUAL_SENSOR_METRICS_STR_LEN];
+#endif
 
 	if (!tzone || !pdata)
 		return -EINVAL;
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	atomic_inc(&tzone->query_count);
+#endif
 
 	list_for_each_entry(tdev, &pdata->ts_list, node) {
 		temp = tdev->dev_ops->get_temp(tdev);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+		/* Log in metrics around every 1 hour normally
+			and 3 mins wheny throttling */
+		if (!(atomic_read(&tzone->query_count) & tzone->mask)) {
+			snprintf(buf, VIRTUAL_SENSOR_METRICS_STR_LEN,
+				"%s:%s_%s_temp=%ld;CT;1:NR",
+				PREFIX, thermal->type, tdev->name, temp);
+			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+		}
+#endif
 
 		alpha = tdev->tdp->alpha;
 		offset = tdev->tdp->offset;
@@ -147,7 +188,26 @@ static int virtual_sensor_thermal_get_temp(struct thermal_zone_device *thermal,
 		tempv += (weight * tdev->off_temp)/DMF;
 	}
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	/* Log in metrics around every 1 hour normally
+		and 3 mins wheny throttling */
+	if (!(atomic_read(&tzone->query_count) & tzone->mask)) {
+		snprintf(buf, VIRTUAL_SENSOR_METRICS_STR_LEN,
+			"%s:%s_temp=%ld;CT;1:NR",
+			PREFIX, thermal->type, tempv);
+		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+	}
+
+	if (tempv > pdata->trips[0].temp)
+		tzone->mask = VIRTUAL_SENSOR_THROTTLE_TIME_MASK;
+	else
+		tzone->mask = VIRTUAL_SENSOR_UNTHROTTLE_TIME_MASK;
+#endif
+
 	*t = (unsigned long) tempv;
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	virtual_sensor_temp = (unsigned long)tempv;
+#endif
 
 	return 0;
 }
@@ -174,7 +234,7 @@ static int virtual_sensor_thermal_set_mode(struct thermal_zone_device *thermal,
 	pdata->mode = mode;
 	if (mode == THERMAL_DEVICE_DISABLED) {
 		tzone->tz->polling_delay = 0;
-		thermal_zone_device_update(tzone->tz);
+		thermal_zone_device_update(tzone->tz, THERMAL_EVENT_UNSPECIFIED);
 		mutex_unlock(&therm_lock);
 		return 0;
 	}
@@ -196,7 +256,7 @@ static int virtual_sensor_thermal_get_trip_type(struct thermal_zone_device *ther
 }
 static int virtual_sensor_thermal_get_trip_temp(struct thermal_zone_device *thermal,
 					int trip,
-					unsigned long *temp)
+					int *temp)
 {
 	struct virtual_sensor_thermal_zone *tzone = thermal->devdata;
 	struct mtk_thermal_platform_data *pdata = tzone->pdata;
@@ -208,7 +268,7 @@ static int virtual_sensor_thermal_get_trip_temp(struct thermal_zone_device *ther
 }
 static int virtual_sensor_thermal_set_trip_temp(struct thermal_zone_device *thermal,
 					int trip,
-					 unsigned long temp)
+					 int temp)
 {
 	struct virtual_sensor_thermal_zone *tzone = thermal->devdata;
 	struct mtk_thermal_platform_data *pdata = tzone->pdata;
@@ -219,7 +279,7 @@ static int virtual_sensor_thermal_set_trip_temp(struct thermal_zone_device *ther
 	return 0;
 }
 static int virtual_sensor_thermal_get_crit_temp(struct thermal_zone_device *thermal,
-					unsigned long *temp)
+					int *temp)
 {
 	int i;
 	struct virtual_sensor_thermal_zone *tzone = thermal->devdata;
@@ -235,7 +295,7 @@ static int virtual_sensor_thermal_get_crit_temp(struct thermal_zone_device *ther
 }
 static int virtual_sensor_thermal_get_trip_hyst(struct thermal_zone_device *thermal,
 					int trip,
-					unsigned long *hyst)
+					int *hyst)
 {
 	struct virtual_sensor_thermal_zone *tzone = thermal->devdata;
 	struct mtk_thermal_platform_data *pdata = tzone->pdata;
@@ -247,7 +307,7 @@ static int virtual_sensor_thermal_get_trip_hyst(struct thermal_zone_device *ther
 }
 static int virtual_sensor_thermal_set_trip_hyst(struct thermal_zone_device *thermal,
 					int trip,
-					unsigned long hyst)
+					int hyst)
 {
 	struct virtual_sensor_thermal_zone *tzone = thermal->devdata;
 	struct mtk_thermal_platform_data *pdata = tzone->pdata;
@@ -258,6 +318,29 @@ static int virtual_sensor_thermal_set_trip_hyst(struct thermal_zone_device *ther
 	return 0;
 }
 
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+void last_kmsg_thermal_shutdown(void)
+{
+	int rc;
+	char *argv[] = {
+		"/sbin/crashreport",
+		"thermal_shutdown",
+		NULL
+	};
+
+	pr_err("%s: start to save last kmsg\n", __func__);
+	//UMH_WAIT_PROC UMH_WAIT_EXEC
+	rc = call_usermodehelper(argv[0], argv, NULL, UMH_WAIT_EXEC);
+	pr_err("%s: save last kmsg finish\n", __func__);
+
+	if (rc < 0)
+		pr_err("call /sbin/crashreport failed, rc = %d\n", rc);
+	else
+		msleep(6000); /* 6000ms */
+}
+EXPORT_SYMBOL_GPL(last_kmsg_thermal_shutdown);
+#endif
+
 static int virtual_sensor_thermal_notify(struct thermal_zone_device *thermal,
 				 int trip,
 				 enum thermal_trip_type type)
@@ -267,10 +350,18 @@ static int virtual_sensor_thermal_notify(struct thermal_zone_device *thermal,
 	snprintf(data, sizeof(data), "%s", "SHUTDOWN_WARNING");
 	kobject_uevent_env(&thermal->device.kobj, KOBJ_CHANGE, envp);
 
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
 	if (type == THERMAL_TRIP_CRITICAL) {
 		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
 		pr_err("%s: thermal_shutdown notify end\n", __func__);
 	}
+#endif
+
+#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
+	if (type == THERMAL_TRIP_CRITICAL)
+		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_PCB);
+#endif
 	return 0;
 }
 static struct thermal_zone_device_ops virtual_sensor_tz_dev_ops = {
@@ -285,7 +376,7 @@ static struct thermal_zone_device_ops virtual_sensor_tz_dev_ops = {
 	.set_trip_hyst = virtual_sensor_thermal_set_trip_hyst,
 	.notify = virtual_sensor_thermal_notify,
 };
-static int params_show(struct device *dev,
+static ssize_t params_show(struct device *dev,
 		       struct device_attribute *devattr, char *buf)
 {
 	int o = 0;
@@ -363,7 +454,7 @@ static ssize_t polling_store(struct device *dev, struct device_attribute *attr, 
 
 	pdata->polling_delay = polling_delay;
 	thermal->polling_delay = pdata->polling_delay;
-	thermal_zone_device_update(thermal);
+	thermal_zone_device_update(thermal, THERMAL_EVENT_UNSPECIFIED);
 	return count;
 }
 
@@ -398,7 +489,7 @@ static void virtual_sensor_thermal_work(struct work_struct *work)
 	if (!pdata)
 		return;
 	if (pdata->mode == THERMAL_DEVICE_ENABLED)
-		thermal_zone_device_update(tzone->tz);
+		thermal_zone_device_update(tzone->tz, THERMAL_EVENT_UNSPECIFIED);
 	mutex_unlock(&therm_lock);
 }
 
@@ -420,7 +511,8 @@ struct thermal_dev_params *thermal_sensor_dt_to_params(struct device *dev,
 			struct thermal_dev_params *params, struct thermal_dev_node_names *name_params)
 {
 	struct device_node *np = dev->of_node;
-	int invert = 0;
+	int offset_invert = 0;
+	int weight_invert = 0;
 
 	if (!params || !name_params) {
 		dev_err(dev, "the params or name_params is NULL\n");
@@ -433,10 +525,16 @@ struct thermal_dev_params *thermal_sensor_dt_to_params(struct device *dev,
 	thermal_parse_node_int(np, name_params->select_device_name, &params->select_device);
 
 	if (*name_params->offset_invert_name)
-		thermal_parse_node_int(np, name_params->offset_invert_name, &invert);
+		thermal_parse_node_int(np, name_params->offset_invert_name, &offset_invert);
 
-	if (invert)
+	if (offset_invert)
 		params->offset = 0 - params->offset;
+
+	if (*name_params->weight_invert_name)
+		thermal_parse_node_int(np, name_params->weight_invert_name, &weight_invert);
+
+	if (weight_invert)
+		params->weight = 0 - params->weight;
 
 	if (*name_params->aux_channel_num_name)
 		thermal_parse_node_int(np, name_params->aux_channel_num_name, &params->aux_channel_num);
@@ -564,7 +662,7 @@ static int virtual_sensor_thermal_init_cust_data_from_dt(struct platform_device 
 	thermal_parse_node_int(np, "num_trips", &p_virtual_sensor_thermal_data->num_trips);
 	thermal_parse_node_int(np, "mode", (int*)&p_virtual_sensor_thermal_data->mode);
 	thermal_parse_node_int(np, "polling_delay", &p_virtual_sensor_thermal_data->polling_delay);
-	virtual_sensor_thermal_parse_node_string_index(np, "governor_name", 0, &p_virtual_sensor_thermal_data->tzp.governor_name);
+	virtual_sensor_thermal_parse_node_string_index(np, "governor_name", 0, p_virtual_sensor_thermal_data->tzp.governor_name);
 	thermal_parse_node_int(np, "num_tbps", &p_virtual_sensor_thermal_data->tzp.num_tbps);
 	virtual_sensor_thermal_init_trips(np, p_virtual_sensor_thermal_data->trips);
 
@@ -582,6 +680,7 @@ static int virtual_sensor_thermal_init_cust_data_from_dt(struct platform_device 
 	return ret;
 }
 
+#ifdef DEBUG
 static void test_data(void)
 {
 	int i = 0;
@@ -595,9 +694,9 @@ static void test_data(void)
 		pr_debug("governor_name %s\n", virtual_sensor_thermal_data[i].tzp.governor_name);
 		pr_debug("num_tbps %d\n", virtual_sensor_thermal_data[i].tzp.num_tbps);
 		while (j < THERMAL_MAX_TRIPS) {
-			pr_debug("trips[%d] %lu\n", j, virtual_sensor_thermal_data[i].trips[j].temp);
+			pr_debug("trips[%d] %d\n", j, virtual_sensor_thermal_data[i].trips[j].temp);
 			pr_debug("type[%d] %d\n", j, virtual_sensor_thermal_data[i].trips[j].type);
-			pr_debug("hyst[%d] %lu\n", j, virtual_sensor_thermal_data[i].trips[j].hyst);
+			pr_debug("hyst[%d] %d\n", j, virtual_sensor_thermal_data[i].trips[j].hyst);
 			j++;
 		}
 		j = 0;
@@ -610,6 +709,7 @@ static void test_data(void)
 		h = 0;
 	}
 }
+#endif
 
 static int virtual_sensor_thermal_probe(struct platform_device *pdev)
 {
@@ -620,8 +720,12 @@ static int virtual_sensor_thermal_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 	pr_notice("virtual_sensor thermal custom init by DTS!\n");
-	if ((ret = virtual_sensor_thermal_init_cust_data_from_dt(pdev)) != 0)
+	ret = virtual_sensor_thermal_init_cust_data_from_dt(pdev);
+	if(ret)
+	{
+		pr_err("%s: init data error\n", __func__);
 		return ret;
+	}
 #endif
 	if (pdev->id < VIRTUAL_SENSOR_NUM_MAX)
 		pdata = &virtual_sensor_thermal_data[pdev->id];
@@ -657,6 +761,10 @@ static int virtual_sensor_thermal_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	tzone->tz->trips = pdata->num_trips;
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	tzone->mask = VIRTUAL_SENSOR_UNTHROTTLE_TIME_MASK;
+#endif
 	ret = virtual_sensor_create_sysfs(tzone);
 	INIT_WORK(&tzone->therm_work, virtual_sensor_thermal_work);
 	platform_set_drvdata(pdev, tzone);

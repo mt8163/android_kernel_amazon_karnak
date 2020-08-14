@@ -1,11 +1,22 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef JPEG_DEC_DRIVER
 
 #include <linux/kernel.h>
+/* #include <linux/xlog.h> */
 
-#define JPEG_MSG pr_debug
-#define JPEG_WRN pr_debug
-#define JPEG_ERR pr_debug
-#define JPEG_VEB pr_debug
+
 
 #include "jpeg_drv_common.h"
 #include "jpeg_drv_reg.h"
@@ -23,9 +34,9 @@
 #define TEST_JPEG_DEBUG_EN
 
 /* unsigned int _jpeg_dec_int_status = 0; */
-unsigned int _jpeg_dec_dump_reg_en = 0;
-kal_uint32 _jpeg_dec_int_status = 0;
-kal_uint32 _jpeg_dec_mode = 0;
+unsigned int _jpeg_dec_dump_reg_en;
+kal_uint32 _jpeg_dec_int_status;
+kal_uint32 _jpeg_dec_mode;
 
 
 int jpeg_isr_dec_lisr(void)
@@ -60,12 +71,13 @@ int jpeg_isr_dec_lisr(void)
 			IMG_REG_WRITE(tmp, REG_ADDR_JPGDEC_INTERRUPT_STATUS);
 #endif
 			return 0;
-		} else {
+		}
+		/* else { */ /* There is no need to add else here since the above if will return */
 			/* / clear the interrupt status register */
 			IMG_REG_WRITE(tmp, REG_ADDR_JPGDEC_INTERRUPT_STATUS);
 
 			return 0;
-		}
+		/* } */
 	}
 	return -1;
 }
@@ -74,13 +86,12 @@ int jpeg_isr_dec_lisr(void)
 void jpeg_drv_dec_start(void)
 {
 #ifndef JPEG_DEC_IRQ_ENHANCE
-	JPEG_MSG("JPGDC jpeg_drv_dec_start:  unmask jpeg irq!\n");
+	/*JPEG_MSG("JPGDC jpeg_drv_dec_start:  unmask jpeg irq!\n");*/
 	/* unmask jpeg irq */
 	IMG_REG_WRITE(0x37, REG_ADDR_JPGDEC_IRQ_EN);
 #else
 	unsigned int reg_value;
-
-	JPEG_MSG("JPGDC jpeg_drv_dec_start: JPEG_DEC_IRQ_ENHANCE!\n");
+	/*JPEG_MSG("JPGDC jpeg_drv_dec_start: JPEG_DEC_IRQ_ENHANCE!\n");*/
 	IMG_REG_READ(reg_value, REG_ADDR_JPGDEC_IRQ_EN);
 	reg_value |= BIT_DEC_IRQ_EN_DEBUG_BRP_FLAG;
 
@@ -196,7 +207,7 @@ void wait_pr(void)
 	}
 }
 
-void jpeg_drv_dec_set_brz_factor(unsigned char yHScale, unsigned char yVScale,
+unsigned int  jpeg_drv_dec_set_brz_factor(unsigned char yHScale, unsigned char yVScale,
 				 unsigned char cbcrHScale, unsigned char cbcrVScale)
 {
 	unsigned int u4Value;
@@ -213,75 +224,97 @@ void jpeg_drv_dec_set_brz_factor(unsigned char yHScale, unsigned char yVScale,
 		cbcrHScale++;
 	}
 #endif
+
+	if (yHScale > 3 || yVScale > 3 || cbcrHScale > 3 || cbcrVScale > 3)
+		return 0;
+
 	u4Value = (cbcrVScale << BIT_BRZ_CV_SHIFT) | (cbcrHScale << BIT_BRZ_CH_SHIFT) |
 	    (yVScale << BIT_BRZ_YV_SHIFT) | (yHScale << BIT_BRZ_YH_SHIFT);
 
 	IMG_REG_WRITE(u4Value, REG_ADDR_JPGDEC_BRZ_FACTOR);
 
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_dst_bank0(unsigned int addr_Y, unsigned int addr_U, unsigned int addr_V)
+unsigned int jpeg_drv_dec_set_dst_bank0(unsigned int addr_Y, unsigned int addr_U, unsigned int addr_V)
 {
 
+	if (addr_Y & 0xF || addr_U & 0xF || addr_V & 0xF)
+		return 0;
 
 	IMG_REG_WRITE(addr_Y, REG_ADDR_JPGDEC_DEST_ADDR0_Y);
 	IMG_REG_WRITE(addr_U, REG_ADDR_JPGDEC_DEST_ADDR0_U);
 	IMG_REG_WRITE(addr_V, REG_ADDR_JPGDEC_DEST_ADDR0_V);
 
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_dst_bank1(unsigned int addr_Y, unsigned int addr_U, unsigned int addr_V)
+unsigned int jpeg_drv_dec_set_dst_bank1(unsigned int addr_Y, unsigned int addr_U, unsigned int addr_V)
 {
-/* unsigned int u4Value; */
+
+	if (addr_Y & 0xF || addr_U & 0xF || addr_V & 0xF)
+		return 0;
 
 	IMG_REG_WRITE(addr_Y, REG_ADDR_JPGDEC_DEST_ADDR1_Y);
 	IMG_REG_WRITE(addr_U, REG_ADDR_JPGDEC_DEST_ADDR1_U);
 	IMG_REG_WRITE(addr_V, REG_ADDR_JPGDEC_DEST_ADDR1_V);
 
+	return 1;
 }
 
 
-int jpeg_drv_dec_set_memStride(unsigned int CompMemStride_Y, unsigned int CompMemStride_UV)
+unsigned int jpeg_drv_dec_set_memStride(unsigned int CompMemStride_Y, unsigned int CompMemStride_UV)
 {
+	if (CompMemStride_Y > 0x1FFFF || CompMemStride_UV > 0x1FFFF)
+		return 0;
 
-	IMG_REG_WRITE((CompMemStride_Y & 0xFFFF), REG_ADDR_JPGDEC_STRIDE_Y);
-	IMG_REG_WRITE((CompMemStride_UV & 0xFFFF), REG_ADDR_JPGDEC_STRIDE_UV);
+	IMG_REG_WRITE((CompMemStride_Y & 0x1FFFF), REG_ADDR_JPGDEC_STRIDE_Y);
+	IMG_REG_WRITE((CompMemStride_UV & 0x1FFFF), REG_ADDR_JPGDEC_STRIDE_UV);
 
-	return (int)E_HWJPG_OK;
+	return 1;
 }
 
 
-int jpeg_drv_dec_set_imgStride(unsigned int CompStride_Y, unsigned int CompStride_UV)
+unsigned int jpeg_drv_dec_set_imgStride(unsigned int CompStride_Y, unsigned int CompStride_UV)
 {
-/* unsigned int u4Reg; */
 
-	IMG_REG_WRITE((CompStride_Y & 0xFFFF), REG_ADDR_JPGDEC_IMG_STRIDE_Y);
-	IMG_REG_WRITE((CompStride_UV & 0xFFFF), REG_ADDR_JPGDEC_IMG_STRIDE_UV);
+	if (CompStride_Y > 0x1FFFF || CompStride_UV > 0x1FFFF)
+		return 0;
 
-	return (int)E_HWJPG_OK;
+	IMG_REG_WRITE((CompStride_Y & 0x1FFFF), REG_ADDR_JPGDEC_IMG_STRIDE_Y);
+	IMG_REG_WRITE((CompStride_UV & 0x1FFFF), REG_ADDR_JPGDEC_IMG_STRIDE_UV);
+
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_pause_mcu_idx(unsigned int McuIdx)
+unsigned int jpeg_drv_dec_set_pause_mcu_idx(unsigned int McuIdx)
 {
+
+	if (McuIdx > 0x3FFFFFF)
+		return 0;
 
 	IMG_REG_WRITE((McuIdx & 0x0003FFFFFF), REG_ADDR_JPGDEC_PAUSE_MCU_NUM);
 
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_dec_mode(int i4DecMode)
+unsigned int jpeg_drv_dec_set_dec_mode(int i4DecMode)
 {
 	unsigned int u4Value = i4DecMode;
 
 	/* 0: full frame, 1: direct couple mode, 2: pause/resume mode, 3: Reserved */
 
-	if (u4Value > 0x02)
+	if (u4Value > 0x02)	{
 		JPEG_WRN("Warning : try to set invalid decode mode, %d!!\n", u4Value);
+		return 0;
+	}
 	IMG_REG_WRITE((u4Value & 0x03), REG_ADDR_JPGDEC_OPERATION_MODE);
 
+	return 1;
 }
 
 void jpeg_drv_dec_set_debug_mode(void)
@@ -294,23 +327,32 @@ void jpeg_drv_dec_set_debug_mode(void)
 }
 
 
-void jpeg_drv_dec_set_bs_writePtr(unsigned int writePtr)
+unsigned int jpeg_drv_dec_set_bs_writePtr(unsigned int writePtr)
 {
 	CHECK_ALIGN(writePtr, 16, (kal_uint32) REG_ADDR_JPGDEC_FILE_BRP);
 
+	if (writePtr & 0xF)
+		return 0;
+
 	IMG_REG_WRITE((writePtr), REG_ADDR_JPGDEC_FILE_BRP);
 
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_bs_info(unsigned int bsBase, unsigned int bsSize)
+unsigned int jpeg_drv_dec_set_bs_info(unsigned int bsBase, unsigned int bsSize)
 {
 	CHECK_ALIGN(bsBase, 16, (kal_uint32) REG_ADDR_JPGDEC_FILE_ADDR);
 	CHECK_ALIGN(bsSize, 128, (kal_uint32) REG_ADDR_JPGDEC_FILE_TOTAL_SIZE);
 
+	if (bsBase & 0xF || bsSize & 0x7F)
+		return 0;
+
 	IMG_REG_WRITE((bsBase), REG_ADDR_JPGDEC_FILE_ADDR);
 
 	IMG_REG_WRITE((bsSize), REG_ADDR_JPGDEC_FILE_TOTAL_SIZE);
+
+	return 1;
 }
 
 
@@ -328,36 +370,51 @@ void jpeg_drv_dec_set_bs_info(unsigned int bsBase, unsigned int bsSize)
 /* } */
 
 
-void jpeg_drv_dec_set_comp_id(unsigned int Y_ID, unsigned int U_ID, unsigned int V_ID)
+unsigned int jpeg_drv_dec_set_comp_id(unsigned int Y_ID, unsigned int U_ID, unsigned int V_ID)
 {
 	unsigned int u4Value;
+
+	if (Y_ID > 0xff || U_ID > 0xff || V_ID > 0xff)
+		return 0;
+
 
 	u4Value = ((Y_ID & 0x00FF) << 24) | ((U_ID & 0x00FF) << 16) | ((V_ID & 0x00FF) << 8);
 	IMG_REG_WRITE((u4Value), REG_ADDR_JPGDEC_COMP_ID);
 
+	return 1;
 }
 
-void jpeg_drv_dec_set_total_mcu(unsigned int TotalMcuNum)
+unsigned int jpeg_drv_dec_set_total_mcu(unsigned int TotalMcuNum)
 {
 	unsigned int u4Value;
+
+	if (TotalMcuNum > 0xFFFFFFFF)
+		return 0;
+
 
 	u4Value = TotalMcuNum - 1;
 	IMG_REG_WRITE((u4Value), REG_ADDR_JPGDEC_TOTAL_MCU_NUM);
 
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_comp0_du(unsigned int GrayDuNum)
+unsigned int jpeg_drv_dec_set_comp0_du(unsigned int GrayDuNum)
 {
 	unsigned int u4Value;
+
+	if (GrayDuNum > 0xFFFFFFFF)
+		return 0;
+
 
 	u4Value = GrayDuNum - 1;
 	IMG_REG_WRITE((u4Value), REG_ADDR_JPGDEC_COMP0_DATA_UNIT_NUM);
 
+	return 1;
 }
 
 
-void jpeg_drv_dec_set_du_membership(unsigned int u4Membership, unsigned int GMC_en,
+unsigned int jpeg_drv_dec_set_du_membership(unsigned int u4Membership, unsigned int GMC_en,
 				    unsigned int IsGray)
 {
 #if 0
@@ -371,13 +428,18 @@ void jpeg_drv_dec_set_du_membership(unsigned int u4Membership, unsigned int GMC_
 		u4Membership = (IsGray << 31) | (GMC_en << 30) | u4Membership;
 	IMG_REG_WRITE((u4Membership), REG_ADDR_JPGDEC_DU_CTRL);	/* REG_JPGDEC_DU_CTRL = u4Membership ; */
 
+	return 1;
 }
 
 
 /* set q table for each component */
-void jpeg_drv_dec_set_q_table(kal_uint32 id0, kal_uint32 id1, kal_uint32 id2)
+unsigned int jpeg_drv_dec_set_q_table(kal_uint32 id0, kal_uint32 id1, kal_uint32 id2)
 {
 	unsigned int u4Value;
+
+	if (id0 > 0xf || id1 > 0xf || id2 > 0xf)
+		return 0;
+
 
 	u4Value = ((id0 & 0x0f) << 8) | ((id1 & 0x0f) << 4) | ((id2 & 0x0f) << 0);
 
@@ -386,6 +448,8 @@ void jpeg_drv_dec_set_q_table(kal_uint32 id0, kal_uint32 id1, kal_uint32 id2)
 	JPEG_WRN("WriteREG(VLD_REG_OFST , 32'h%08x);\n",
 		 ((id0 & 0x0f) << 8) | ((id1 & 0x0f) << 4) | ((id2 & 0x0f) << 0));
 #endif
+
+	return 1;
 }
 
 
@@ -420,7 +484,7 @@ unsigned int jpeg_drv_dec_get_decMCU(void)
 
 
 
-void jpeg_drv_dec_set_dma_group(unsigned int McuInGroup, unsigned int GroupNum,
+unsigned int jpeg_drv_dec_set_dma_group(unsigned int McuInGroup, unsigned int GroupNum,
 				unsigned int LastMcuNum)
 {
 	unsigned int McuInGroup_1 = McuInGroup - 1;
@@ -428,18 +492,22 @@ void jpeg_drv_dec_set_dma_group(unsigned int McuInGroup, unsigned int GroupNum,
 	unsigned int LastMcuNum_1 = LastMcuNum - 1;
 	unsigned int u4Value;
 
-	u4Value =
-	    ((McuInGroup_1 & 0x00FF) << 16) | ((GroupNum_1 & 0x007F) << 8) | (LastMcuNum_1 &
+	if (McuInGroup > 0xff || GroupNum > 0x1ff || LastMcuNum > 0xff)
+		return 0;
+
+	u4Value = (((GroupNum_1 & 0x0100) >> 8) << 24) |
+	    ((McuInGroup_1 & 0x00FF) << 16) | ((GroupNum_1 & 0x00FF) << 8) | (LastMcuNum_1 &
 									      0x00FF);
 
 	IMG_REG_WRITE((u4Value), REG_ADDR_JPGDEC_WDMA_CTRL);	/*  */
 
+	return 1;
 }
 
 
 
 
-void jpeg_drv_dec_set_sampling_factor(unsigned int compNum, unsigned int u4Y_H, unsigned int u4Y_V,
+unsigned int jpeg_drv_dec_set_sampling_factor(unsigned int compNum, unsigned int u4Y_H, unsigned int u4Y_V,
 				      unsigned int u4U_H, unsigned int u4U_V, unsigned int u4V_H,
 				      unsigned int u4V_V)
 {
@@ -448,6 +516,11 @@ void jpeg_drv_dec_set_sampling_factor(unsigned int compNum, unsigned int u4Y_H, 
 	unsigned int u4U_HV = (DUNUM_MAPPING(u4U_H) << 2) | DUNUM_MAPPING(u4U_V);
 	unsigned int u4V_HV = (DUNUM_MAPPING(u4V_H) << 2) | DUNUM_MAPPING(u4V_V);
 
+	if (compNum > 3 || (u4Y_H > 4 || u4Y_V > 4 || u4U_H > 4 || u4U_V > 4 || u4V_H > 4 || u4V_V > 4) ||
+		(u4Y_H == 3 || u4Y_V == 3 || u4U_H == 3 || u4U_V == 3 || u4V_H == 3 || u4V_V == 3)) {
+		return 0;
+	}
+
 	if (compNum == 1)
 		u4Value = 0;	/* u4Y_HV << 8; */
 	else
@@ -455,75 +528,78 @@ void jpeg_drv_dec_set_sampling_factor(unsigned int compNum, unsigned int u4Y_H, 
 
 	IMG_REG_WRITE((u4Value), REG_ADDR_JPGDEC_DU_SAMPLE);	/* REG_JPGDEC_DU_SAMPLE = u4Value; */
 
+	return 1;
 }
 
 
-int jpeg_drv_dec_set_config_data(JPEG_DEC_DRV_IN *config)
+unsigned int jpeg_drv_dec_set_config_data(JPEG_DEC_DRV_IN *config)
 {
-	jpeg_drv_dec_set_sampling_factor(config->componentNum,
+	kal_uint32 ret = 1;
+
+	ret &= jpeg_drv_dec_set_sampling_factor(config->componentNum,
 					 config->hSamplingFactor[0], config->vSamplingFactor[0],
 					 config->hSamplingFactor[1], config->vSamplingFactor[1],
 					 config->hSamplingFactor[2], config->vSamplingFactor[2]);
 
 	/* set BRZ factor */
-	jpeg_drv_dec_set_brz_factor(config->lumaHorDecimate, config->lumaVerDecimate,
+	ret &= jpeg_drv_dec_set_brz_factor(config->lumaHorDecimate, config->lumaVerDecimate,
 				    config->cbcrHorDecimate, config->cbcrVerDecimate);
 
 	/* set group DMA */
-	jpeg_drv_dec_set_dma_group(config->dma_McuInGroup, config->dma_GroupNum,
+	ret &= jpeg_drv_dec_set_dma_group(config->dma_McuInGroup, config->dma_GroupNum,
 				   config->dma_LastMcuNum);
 
 	/* set componet ID */
-	jpeg_drv_dec_set_comp_id(config->componentID[0], config->componentID[1],
+	ret &= jpeg_drv_dec_set_comp_id(config->componentID[0], config->componentID[1],
 				 config->componentID[2]);
 
 
 	/* set BLK membership */
-	jpeg_drv_dec_set_du_membership(config->membershipList, config->gmcEn,
+	ret &= jpeg_drv_dec_set_du_membership(config->membershipList, config->gmcEn,
 				       (config->componentNum == 1) ? 1 : 0);
 
 	/* set q table id */
-	jpeg_drv_dec_set_q_table(config->qTableSelector[0], config->qTableSelector[1],
+	ret &= jpeg_drv_dec_set_q_table(config->qTableSelector[0], config->qTableSelector[1],
 				 config->qTableSelector[2]);
 
 	/* set dst image stride  */
-	jpeg_drv_dec_set_imgStride(config->compImgStride[0], config->compImgStride[1]);
+	ret &= jpeg_drv_dec_set_imgStride(config->compImgStride[0], config->compImgStride[1]);
 
 	/* set dst Memory stride  */
 	/* if( config->pauseRow_en ){ */
 	/* jpeg_drv_dec_set_memStride(config->compTileBufStride[0], config->compTileBufStride[1]); */
 	/* }else{ */
-	jpeg_drv_dec_set_memStride(config->compMemStride[0], config->compMemStride[1]);
+	ret &= jpeg_drv_dec_set_memStride(config->compMemStride[0], config->compMemStride[1]);
 	/* } */
 
 	/* set total MCU number */
-	jpeg_drv_dec_set_total_mcu(config->totalMCU);
+	ret &= jpeg_drv_dec_set_total_mcu(config->totalMCU);
 
 	/* set Gray DU number */
-	jpeg_drv_dec_set_comp0_du(config->comp0_DU);
+	ret &= jpeg_drv_dec_set_comp0_du(config->comp0_DU);
 
 	/* set pause MCU index */
-	jpeg_drv_dec_set_pause_mcu_idx(config->pauseMCU - 1);
+	ret &= jpeg_drv_dec_set_pause_mcu_idx(config->pauseMCU - 1);
 
 	/* set bitstream base, size */
 	JPEG_MSG("[JPEGDRV] mode %d, Buf Base 0x%08x, Limit 0x%08x, Size 0x%08x!!\n",
 		 config->reg_OpMode, config->srcStreamAddrBase, config->srcStreamAddrWritePtr,
 		 config->srcStreamSize);
-	jpeg_drv_dec_set_bs_info(config->srcStreamAddrBase, config->srcStreamSize);
+	ret &= jpeg_drv_dec_set_bs_info(config->srcStreamAddrBase, config->srcStreamSize);
 
 	/* set bitstream write pointer */
-	jpeg_drv_dec_set_bs_writePtr(config->srcStreamAddrWritePtr);
+	ret &= jpeg_drv_dec_set_bs_writePtr(config->srcStreamAddrWritePtr);
 
 	/* set Decode Operation Mode */
-	jpeg_drv_dec_set_dec_mode(config->reg_OpMode);	/* set full frame or pause/resume */
+	ret &= jpeg_drv_dec_set_dec_mode(config->reg_OpMode);	/* set full frame or pause/resume */
 
 
 	/* output bank 0 */
-	jpeg_drv_dec_set_dst_bank0(config->outputBuffer0[0], config->outputBuffer0[1],
+	ret &= jpeg_drv_dec_set_dst_bank0(config->outputBuffer0[0], config->outputBuffer0[1],
 				   config->outputBuffer0[2]);
 
 	/* output bank 1 */
-	jpeg_drv_dec_set_dst_bank1(config->outputBuffer1[0], config->outputBuffer1[1],
+	ret &= jpeg_drv_dec_set_dst_bank1(config->outputBuffer1[0], config->outputBuffer1[1],
 				   config->outputBuffer1[2]);
 
 
@@ -531,7 +607,7 @@ int jpeg_drv_dec_set_config_data(JPEG_DEC_DRV_IN *config)
 	jpeg_drv_dec_set_debug_mode();
 #endif
 
-	return (int)E_HWJPG_OK;
+	return ret;
 }
 
 
@@ -598,8 +674,8 @@ int jpeg_drv_dec_wait_one_row(JPEG_DEC_DRV_IN *config)
 
 		IMG_REG_WRITE((irq_status), REG_ADDR_JPGDEC_INTERRUPT_STATUS);
 
-		    /* Debug: jpeg_drv_dec_dump_reg(); */
-		    if (timeout == 0) {
+		/* Debug: jpeg_drv_dec_dump_reg(); */
+		if (timeout == 0) {
 			JPEG_ERR("Error! Decode Timeout.\n");
 			jpeg_drv_dec_dump_reg();
 			return 0;
@@ -634,8 +710,8 @@ int jpeg_drv_dec_wait(JPEG_DEC_DRV_IN *config)
 
 	IMG_REG_WRITE((irq_status), REG_ADDR_JPGDEC_INTERRUPT_STATUS);
 
-	    /* Debug: jpeg_drv_dec_dump_reg(); */
-	    if (timeout == 0) {
+	/* Debug: jpeg_drv_dec_dump_reg(); */
+	if (timeout == 0) {
 		JPEG_ERR("Error! Decode Timeout.\n");
 		jpeg_drv_dec_dump_reg();
 		return 0;
@@ -648,8 +724,7 @@ int jpeg_drv_dec_wait(JPEG_DEC_DRV_IN *config)
 kal_uint32 jpeg_drv_dec_get_result(void)
 {
 
-	JPEG_MSG("[JPEGDRV] get_result mode %x, irq_sts %x!!\n", _jpeg_dec_mode,
-	       _jpeg_dec_int_status);
+	/* JPEG_MSG("[JPEGDRV] get_result mode %x, irq_sts %x!!\n", _jpeg_dec_mode, _jpeg_dec_int_status); */
 	/* if(_jpeg_dec_mode == 1){ */
 	/* if(_jpeg_dec_int_status & BIT_INQST_MASK_END ) */
 	/* REG_JPGDEC_INTERRUPT_STATUS = _jpeg_dec_int_status ; */
@@ -691,22 +766,34 @@ void jpeg_drv_dec_dump_key_reg(void)
 	unsigned int index = 0;
 
 	JPEG_WRN("<<<<<= JPEG DEC DUMP KEY =>>>>>\n");
-	/* bank0, bank1 address */
-	for (index = 0x140; index <= 0x154; index += 4) {
+	/* reset */
+	for (index = 0x90; index <= 0x90; index += 4) {
 		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
 		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
 		wait_pr();
 	}
-	/* pause index */
-	for (index = 0x170; index <= 0x170; index += 4) {
+	/* brz, du */
+	for (index = 0xF8; index <= 0xFC; index += 4) {
+		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
+		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
+		wait_pr();
+	}
+	/* debug 1 */
+	for (index = 0x12C; index <= 0x134; index += 4) {
+		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
+		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
+		wait_pr();
+	}
+	/* bank0, bank1 address */
+	for (index = 0x140; index <= 0x170; index += 4) {
 		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
 		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
 		wait_pr();
 	}
 
 	/* decode mode (0x17C) */
-	/* debug       (0x180) */
-	for (index = 0x17C; index <= 0x180; index += 4) {
+	/* debug 2     (0x18C) */
+	for (index = 0x17C; index <= 0x18C; index += 4) {
 		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
 		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
 		wait_pr();
@@ -719,6 +806,12 @@ void jpeg_drv_dec_dump_key_reg(void)
 		wait_pr();
 	}
 
+	/* du ctl   (0x23C) */
+	for (index = 0x23C; index <= 0x240; index += 4) {
+		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
+		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
+		wait_pr();
+	}
 	/* total MCU   (0x210) */
 	for (index = 0x210; index <= 0x210; index += 4) {
 		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
@@ -741,6 +834,12 @@ void jpeg_drv_dec_dump_key_reg(void)
 	}
 	/* MCU CNT          (0x294) */
 	for (index = 0x294; index <= 0x294; index += 4) {
+		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
+		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
+		wait_pr();
+	}
+	/* DCM CNT          (0x300) */
+	for (index = 0x300; index <= 0x310; index += 4) {
 		IMG_REG_READ(reg_value, JPEG_DEC_BASE + index);	/* reg_value = ioread32(JPEG_DEC_BASE + index); */
 		JPEG_WRN("@0x%x(%d) 0x%08x\n", index, index / 4, reg_value);
 		wait_pr();

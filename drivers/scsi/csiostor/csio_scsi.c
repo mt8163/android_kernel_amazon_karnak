@@ -152,28 +152,6 @@ csio_scsi_itnexus_loss_error(uint16_t error)
 	return 0;
 }
 
-static inline void
-csio_scsi_tag(struct scsi_cmnd *scmnd, uint8_t *tag, uint8_t hq,
-	      uint8_t oq, uint8_t sq)
-{
-	char stag[2];
-
-	if (scsi_populate_tag_msg(scmnd, stag)) {
-		switch (stag[0]) {
-		case HEAD_OF_QUEUE_TAG:
-			*tag = hq;
-			break;
-		case ORDERED_QUEUE_TAG:
-			*tag = oq;
-			break;
-		default:
-			*tag = sq;
-			break;
-		}
-	} else
-		*tag = 0;
-}
-
 /*
  * csio_scsi_fcp_cmnd - Frame the SCSI FCP command paylod.
  * @req: IO req structure.
@@ -192,11 +170,9 @@ csio_scsi_fcp_cmnd(struct csio_ioreq *req, void *addr)
 		int_to_scsilun(scmnd->device->lun, &fcp_cmnd->fc_lun);
 		fcp_cmnd->fc_tm_flags = 0;
 		fcp_cmnd->fc_cmdref = 0;
-		fcp_cmnd->fc_pri_ta = 0;
 
 		memcpy(fcp_cmnd->fc_cdb, scmnd->cmnd, 16);
-		csio_scsi_tag(scmnd, &fcp_cmnd->fc_pri_ta,
-			      FCP_PTA_HEADQ, FCP_PTA_ORDERED, FCP_PTA_SIMPLE);
+		fcp_cmnd->fc_pri_ta = FCP_PTA_SIMPLE;
 		fcp_cmnd->fc_dl = cpu_to_be32(scsi_bufflen(scmnd));
 
 		if (req->nsge)
@@ -230,10 +206,10 @@ csio_scsi_init_cmd_wr(struct csio_ioreq *req, void *addr, uint32_t size)
 	struct csio_dma_buf *dma_buf;
 	uint8_t imm = csio_hw_to_scsim(hw)->proto_cmd_len;
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_CMD_WR) |
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_CMD_WR) |
 					  FW_SCSI_CMD_WR_IMMDLEN(imm));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-					    FW_WR_LEN16(
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+					    FW_WR_LEN16_V(
 						DIV_ROUND_UP(size, 16)));
 
 	wr->cookie = (uintptr_t) req;
@@ -322,8 +298,8 @@ csio_scsi_init_ultptx_dsgl(struct csio_hw *hw, struct csio_ioreq *req,
 	struct csio_dma_buf *dma_buf;
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
-	sgl->cmd_nsge = htonl(ULPTX_CMD(ULP_TX_SC_DSGL) | ULPTX_MORE |
-				     ULPTX_NSGE(req->nsge));
+	sgl->cmd_nsge = htonl(ULPTX_CMD_V(ULP_TX_SC_DSGL) | ULPTX_MORE_F |
+				     ULPTX_NSGE_V(req->nsge));
 	/* Now add the data SGLs */
 	if (likely(!req->dcopy)) {
 		scsi_for_each_sg(scmnd, sgel, req->nsge, i) {
@@ -391,10 +367,10 @@ csio_scsi_init_read_wr(struct csio_ioreq *req, void *wrp, uint32_t size)
 	uint8_t imm = csio_hw_to_scsim(hw)->proto_cmd_len;
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_READ_WR) |
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_READ_WR) |
 				     FW_SCSI_READ_WR_IMMDLEN(imm));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-				       FW_WR_LEN16(DIV_ROUND_UP(size, 16)));
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+				       FW_WR_LEN16_V(DIV_ROUND_UP(size, 16)));
 	wr->cookie = (uintptr_t)req;
 	wr->iqid = cpu_to_be16(csio_q_physiqid(hw, req->iq_idx));
 	wr->tmo_val = (uint8_t)(req->tmo);
@@ -444,10 +420,10 @@ csio_scsi_init_write_wr(struct csio_ioreq *req, void *wrp, uint32_t size)
 	uint8_t imm = csio_hw_to_scsim(hw)->proto_cmd_len;
 	struct scsi_cmnd *scmnd = csio_scsi_cmnd(req);
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_WRITE_WR) |
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_WRITE_WR) |
 				     FW_SCSI_WRITE_WR_IMMDLEN(imm));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-				       FW_WR_LEN16(DIV_ROUND_UP(size, 16)));
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+				       FW_WR_LEN16_V(DIV_ROUND_UP(size, 16)));
 	wr->cookie = (uintptr_t)req;
 	wr->iqid = cpu_to_be16(csio_q_physiqid(hw, req->iq_idx));
 	wr->tmo_val = (uint8_t)(req->tmo);
@@ -674,9 +650,9 @@ csio_scsi_init_abrt_cls_wr(struct csio_ioreq *req, void *addr, uint32_t size,
 	struct csio_rnode *rn = req->rnode;
 	struct fw_scsi_abrt_cls_wr *wr = (struct fw_scsi_abrt_cls_wr *)addr;
 
-	wr->op_immdlen = cpu_to_be32(FW_WR_OP(FW_SCSI_ABRT_CLS_WR));
-	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID(rn->flowid) |
-					    FW_WR_LEN16(
+	wr->op_immdlen = cpu_to_be32(FW_WR_OP_V(FW_SCSI_ABRT_CLS_WR));
+	wr->flowid_len16 = cpu_to_be32(FW_WR_FLOWID_V(rn->flowid) |
+					    FW_WR_LEN16_V(
 						DIV_ROUND_UP(size, 16)));
 
 	wr->cookie = (uintptr_t) req;
@@ -1737,18 +1713,15 @@ csio_scsi_err_handler(struct csio_hw *hw, struct csio_ioreq *req)
 	}
 
 out:
-	if (req->nsge > 0) {
+	if (req->nsge > 0)
 		scsi_dma_unmap(cmnd);
-		if (req->dcopy && (host_status == DID_OK))
-			host_status = csio_scsi_copy_to_sgl(hw, req);
-	}
 
 	cmnd->result = (((host_status) << 16) | scsi_status);
 	cmnd->scsi_done(cmnd);
 
 	/* Wake up waiting threads */
 	csio_scsi_cmnd(req) = NULL;
-	complete_all(&req->cmplobj);
+	complete(&req->cmplobj);
 }
 
 /*
@@ -1972,6 +1945,7 @@ csio_eh_abort_handler(struct scsi_cmnd *cmnd)
 	ready = csio_is_lnode_ready(ln);
 	tmo = CSIO_SCSI_ABRT_TMO_MS;
 
+	reinit_completion(&ioreq->cmplobj);
 	spin_lock_irq(&hw->lock);
 	rv = csio_do_abrt_cls(hw, ioreq, (ready ? SCSI_ABORT : SCSI_CLOSE));
 	spin_unlock_irq(&hw->lock);
@@ -1991,8 +1965,6 @@ csio_eh_abort_handler(struct scsi_cmnd *cmnd)
 		goto inval_scmnd;
 	}
 
-	/* Wait for completion */
-	init_completion(&ioreq->cmplobj);
 	wait_for_completion_timeout(&ioreq->cmplobj, msecs_to_jiffies(tmo));
 
 	/* FW didnt respond to abort within our timeout */
@@ -2265,11 +2237,7 @@ csio_slave_alloc(struct scsi_device *sdev)
 static int
 csio_slave_configure(struct scsi_device *sdev)
 {
-	if (sdev->tagged_supported)
-		scsi_activate_tcq(sdev, csio_lun_qdepth);
-	else
-		scsi_deactivate_tcq(sdev, csio_lun_qdepth);
-
+	scsi_change_queue_depth(sdev, csio_lun_qdepth);
 	return 0;
 }
 

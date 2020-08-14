@@ -14,42 +14,84 @@ if INPUT_TOUCHSCREEN
 config TOUCHSCREEN_MTK
 	bool "MediaTek Touch Panel Driver"
 	help
-	Say Y here if you have MediaTek touch panel.
-
-	If unsure, say N.
-
-	To compile this dirver as a module, choose M here: the
-	module will be called.
-
-config TOUCHSCREEN_MTK_FT5X0X
-	bool "FT5X0X for Mediatek package"
-	default n
-	help
-	  Say Y here if you have FT5X0X touch panel.
+	  Say Y here if you have MediaTek touch panel.
 
 	  If unsure, say N.
 
 	  To compile this dirver as a module, choose M here: the
 	  module will be called.
 
-source "drivers/input/touchscreen/mediatek/ft5x0x/Kconfig"
+config TOUCHSCREEN_PHYSICAL_ROTATION_WITH_LCM
+	bool "MediaTek Touch Panel Rotation With LCM"
+	default y
+	help
+	  Say N here if touch panel is not physical rotated as LCM does.
+	  Physically rotated means that this driver will map
+	  the reported coordination to diagonal position.
 
-config TOUCHSCREEN_MTK_GT5668
-	bool "GT5668 for Mediatek package"
+	  If unsure, say Y.
+config TOUCHSCREEN_MTK_SOLOMON
+	bool "SOLOMON for Mediatek package"
 	default n
 	help
-	Say Y here if you have GT5668 touch panel.
+	  Say Y here if you have SOLOMON touch panel.
 
-	If unsure, say N.
+	  If unsure, say N.
 
-config TOUCHSCREEN_SET_INTERRUPT_TO_INPUT
-	bool "Set Interrupt pin to input manually"
-	depends on roc123
+	  To compile this dirver as a module, choose M here: the
+	  module will be called.
+
+source "drivers/input/touchscreen/mediatek/SOLOMON/Kconfig"
+
+config TOUCHSCREEN_MTK_FOCALTECH_TS
+	bool "FOCALTECH_TS for Mediatek package"
 	default n
 	help
-	Set to ensure interrupt pin on touch panel is set
-	to input mode using gpio subsystem.
+	  Say Y here if you have focaltech_touch touch panel.
 
-source "drivers/input/touchscreen/mediatek/GT5668/Kconfig"
+	  If unsure, say N.
+
+	  To compile this dirver as a module, choose M here: the
+	  module will be called.
+
+source "drivers/input/touchscreen/mediatek/focaltech_touch/Kconfig"
+config TOUCHSCREEN_MTK_GT1151
+	bool "GT1151 for Mediatek package"
+	default n
+	help
+	  Say Y here if you have GT1151 touch panel.
+
+	  If unsure, say N.
+
+	  To compile this dirver as a module, choose M here: the
+	  module will be called.
+
+source "drivers/input/touchscreen/mediatek/GT1151/Kconfig"
+
+config TOUCHSCREEN_MTK_NT36xxx
+	bool "NT36xxx for Mediatek package"
+	default n
+	help
+	  Say Y here if you have NT36xxx touch panel.
+
+	  If unsure, say N.
+
+	  To compile this dirver as a module, choose M here: the
+	  module will be called.
+
+source "drivers/input/touchscreen/mediatek/NT36xxx/Kconfig"
+
+config TOUCHSCREEN_FTS
+	bool "FT5266_FTS for Mediatek package"
+	default n
+	help
+	  Say Y here if you have focaltech_touch touch panel.
+
+	  If unsure, say N.
+
+	  To compile this dirver as a module, choose M here: the
+	  module will be called.
+
+source "drivers/input/touchscreen/mediatek/FT5526/Kconfig"
 
 endif

@@ -1,30 +1,14 @@
 /*
- * MUSB OTG driver register defines
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2006 by Texas Instruments
- * Copyright (C) 2006-2007 Nokia Corporation
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #ifndef __MUSBFSH_REGS_H__
@@ -106,7 +90,7 @@
 /* CSR0 in Host mode */
 #define MUSBFSH_CSR0_H_DIS_PING		0x0800
 #define MUSBFSH_CSR0_H_WR_DATATOGGLE	0x0400	/* Set to allow setting: */
-#define MUSBFSH_CSR0_H_DATATOGGLE		0x0200	/* Data toggle control */
+#define MUSBFSH_CSR0_H_DATATOGGLE 0x0200 /* Data toggle control */
 #define MUSBFSH_CSR0_H_NAKTIMEOUT		0x0080
 #define MUSBFSH_CSR0_H_STATUSPKT		0x0040
 #define MUSBFSH_CSR0_H_REQPKT		0x0020
@@ -129,14 +113,14 @@
 #define MUSBFSH_TYPE_REMOTE_END	0xf	/* Implicitly zero for ep0 */
 
 /* CONFIGDATA */
-#define MUSBFSH_CONFIGDATA_MPRXE		0x80	/* Auto bulk pkt combining */
-#define MUSBFSH_CONFIGDATA_MPTXE		0x40	/* Auto bulk pkt splitting */
+#define MUSBFSH_CONFIGDATA_MPRXE 0x80 /* Auto bulk pkt combining */
+#define MUSBFSH_CONFIGDATA_MPTXE 0x40 /* Auto bulk pkt splitting */
 #define MUSBFSH_CONFIGDATA_BIGENDIAN	0x20
 #define MUSBFSH_CONFIGDATA_HBRXE		0x10	/* HB-ISO for RX */
 #define MUSBFSH_CONFIGDATA_HBTXE		0x08	/* HB-ISO for TX */
-#define MUSBFSH_CONFIGDATA_DYNFIFO		0x04	/* Dynamic FIFO sizing */
+#define MUSBFSH_CONFIGDATA_DYNFIFO 0x04	/* Dynamic FIFO sizing */
 #define MUSBFSH_CONFIGDATA_SOFTCONE	0x02	/* SoftConnect */
-#define MUSBFSH_CONFIGDATA_UTMIDW		0x01	/* Data width 0/1 => 8/16bits */
+#define MUSBFSH_CONFIGDATA_UTMIDW 0x01 /* Data width 0/1 => 8/16bits */
 
 /* TXCSR in Peripheral and Host mode */
 #define MUSBFSH_TXCSR_AUTOSET		0x8000
@@ -239,10 +223,10 @@
 #define MUSBFSH_DEVCTL		0x60	/* 8 bit */
 
 /* These are always controlled through the INDEX register */
-#define MUSBFSH_TXFIFOSZ		0x62	/* 8-bit (see masks) */
-#define MUSBFSH_RXFIFOSZ		0x63	/* 8-bit (see masks) */
-#define MUSBFSH_TXFIFOADD		0x64	/* 16-bit offset shifted right 3 */
-#define MUSBFSH_RXFIFOADD		0x66	/* 16-bit offset shifted right 3 */
+#define MUSBFSH_TXFIFOSZ		0x62 /* 8-bit (see masks) */
+#define MUSBFSH_RXFIFOSZ		0x63 /* 8-bit (see masks) */
+#define MUSBFSH_TXFIFOADD		0x64 /* 16-bit offset shifted right 3 */
+#define MUSBFSH_RXFIFOADD		0x66 /* 16-bit offset shifted right 3 */
 
 #define MUSBFSH_EPINFO		0x78	/* 8 bit */
 #define MUSBFSH_RAMINFO		0x79	/* 8 bit */
@@ -268,11 +252,11 @@
 #define MUSBFSH_TXTYPE		0x0A
 #define MUSBFSH_TYPE0		MUSBFSH_TXTYPE	/* Re-used for EP0 */
 #define MUSBFSH_TXINTERVAL		0x0B
-#define MUSBFSH_NAKLIMIT0		MUSBFSH_TXINTERVAL	/* Re-used for EP0 */
+#define MUSBFSH_NAKLIMIT0		MUSBFSH_TXINTERVAL /* Re-used for EP0 */
 #define MUSBFSH_RXTYPE		0x0C
 #define MUSBFSH_RXINTERVAL		0x0D
 #define MUSBFSH_FIFOSIZE		0x0F
-#define MUSBFSH_CONFIGDATA		MUSBFSH_FIFOSIZE	/* Re-used for EP0 */
+#define MUSBFSH_CONFIGDATA		MUSBFSH_FIFOSIZE /* Re-used for EP0 */
 
 /* Offsets to endpoint registers in indexed model (using INDEX register) */
 #define MUSBFSH_INDEXED_OFFSET(_epnum, _offset)	\
@@ -309,7 +293,7 @@ static inline void musbfsh_write_rxfifosz(void __iomem *mbase, u8 c_size)
 	musbfsh_writeb(mbase, MUSBFSH_RXFIFOSZ, c_size);
 }
 
-static inline void  musbfsh_write_rxfifoadd(void __iomem *mbase, u16 c_off)
+static inline void musbfsh_write_rxfifoadd(void __iomem *mbase, u16 c_off)
 {
 	musbfsh_writew(mbase, MUSBFSH_RXFIFOADD, c_off);
 }
@@ -329,7 +313,7 @@ static inline u8 musbfsh_read_rxfifosz(void __iomem *mbase)
 	return musbfsh_readb(mbase, MUSBFSH_RXFIFOSZ);
 }
 
-static inline u16  musbfsh_read_rxfifoadd(void __iomem *mbase)
+static inline u16 musbfsh_read_rxfifoadd(void __iomem *mbase)
 {
 	return musbfsh_readw(mbase, MUSBFSH_RXFIFOADD);
 }
@@ -340,21 +324,23 @@ static inline u8 musbfsh_read_configdata(void __iomem *mbase)
 	return musbfsh_readb(mbase, 0x10 + MUSBFSH_CONFIGDATA);
 }
 
-static inline void __iomem *musbfsh_read_target_reg_base(u8 i, void __iomem *mbase)
+static inline void __iomem *musbfsh_read_target_reg_base(u8 i,
+							 void __iomem *mbase)
 {
 	return (MUSBFSH_BUSCTL_OFFSET(i, 0) + mbase);
 }
 
 static inline void musbfsh_write_rxfunaddr(void __iomem *mbase, u8 epnum,
-		u8 qh_addr_reg)
+					   u8 qh_addr_reg)
 {
 	musbfsh_writew(mbase, MUSBFSH_RXFUNCADDR + 8 * epnum, qh_addr_reg);
 }
 
 static inline void musbfsh_write_rxhubaddr(void __iomem *mbase, u8 epnum,
-		u8 qh_h_addr_reg)
+					   u8 qh_h_addr_reg)
 {
-	u16 rx_hub_port_addr = musbfsh_readw(mbase, MUSBFSH_RXHUBADDR + 8 * epnum);
+	u16 rx_hub_port_addr =
+	    musbfsh_readw(mbase, MUSBFSH_RXHUBADDR + 8 * epnum);
 
 	rx_hub_port_addr &= 0xff00;
 	rx_hub_port_addr |= qh_h_addr_reg;
@@ -362,41 +348,44 @@ static inline void musbfsh_write_rxhubaddr(void __iomem *mbase, u8 epnum,
 }
 
 static inline void musbfsh_write_rxhubport(void __iomem *mbase, u8 epnum,
-		u8 qh_h_port_reg)
+					   u8 qh_h_port_reg)
 {
-	u16 rx_hub_port_addr = musbfsh_readw(mbase, MUSBFSH_RXHUBADDR + 8 * epnum);
-	u16 rx_port_addr = (u16)qh_h_port_reg;
+	u16 rx_hub_port_addr =
+	    musbfsh_readw(mbase, MUSBFSH_RXHUBADDR + 8 * epnum);
+	u16 rx_port_addr = (u16) qh_h_port_reg;
 
 	rx_hub_port_addr &= 0x00ff;
 	rx_hub_port_addr |= (rx_port_addr << 8);
 	musbfsh_writew(mbase, MUSBFSH_RXHUBADDR + 8 * epnum, rx_hub_port_addr);
 }
 
-static inline void  musbfsh_write_txfunaddr(void __iomem *mbase, u8 epnum,
-		u8 qh_addr_reg)
+static inline void musbfsh_write_txfunaddr(void __iomem *mbase, u8 epnum,
+					   u8 qh_addr_reg)
 {
-	musbfsh_writew(mbase, MUSBFSH_TXFUNCADDR+8*epnum, qh_addr_reg);
+	musbfsh_writew(mbase, MUSBFSH_TXFUNCADDR + 8 * epnum, qh_addr_reg);
 }
 
-static inline void  musbfsh_write_txhubaddr(void __iomem *mbase, u8 epnum,
-		u8 qh_h_addr_reg)
+static inline void musbfsh_write_txhubaddr(void __iomem *mbase, u8 epnum,
+					   u8 qh_h_addr_reg)
 {
-	u16 tx_hub_port_addr = musbfsh_readw(mbase, MUSBFSH_TXHUBADDR + 8 * epnum);
+	u16 tx_hub_port_addr =
+	    musbfsh_readw(mbase, MUSBFSH_TXHUBADDR + 8 * epnum);
 
 	tx_hub_port_addr &= 0xff00;
 	tx_hub_port_addr |= qh_h_addr_reg;
 	musbfsh_writew(mbase, MUSBFSH_TXHUBADDR + 8 * epnum, tx_hub_port_addr);
 }
 
-static inline void  musbfsh_write_txhubport(void __iomem *mbase, u8 epnum,
-		u8 qh_h_port_reg)
+static inline void musbfsh_write_txhubport(void __iomem *mbase, u8 epnum,
+					   u8 qh_h_port_reg)
 {
-	u16 tx_hub_port_addr = musbfsh_readw(mbase, MUSBFSH_TXHUBADDR + 8 * epnum);
-	u16 tx_port_addr = (u16)qh_h_port_reg;
+	u16 tx_hub_port_addr =
+	    musbfsh_readw(mbase, MUSBFSH_TXHUBADDR + 8 * epnum);
+	u16 tx_port_addr = (u16) qh_h_port_reg;
 
 	tx_hub_port_addr &= 0x00ff;
 	tx_hub_port_addr |= (tx_port_addr << 8);
 	musbfsh_writew(mbase, MUSBFSH_TXHUBADDR + 8 * epnum, tx_hub_port_addr);
 }
 
-#endif	/* __MUSBFSH_REGS_H__ */
+#endif				/* __MUSBFSH_REGS_H__ */

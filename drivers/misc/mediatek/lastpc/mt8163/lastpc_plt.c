@@ -11,6 +11,8 @@ struct lastpc_imp {
 	void __iomem *toprgu_reg;
 };
 
+static struct lastpc_imp *drv;
+
 #define to_lastpc_imp(p)	container_of((p), struct lastpc_imp, plt)
 /*
 #define LASTPC                                0X20
@@ -29,10 +31,79 @@ static int lastpc_plt_start(struct lastpc_plt *plt)
 	return 0;
 }
 
-static char lastpc_log_buf[1024];
-char* lastpc_get_log(void)
+int get_lastpc_plt_dump(char *buf)
 {
-	return lastpc_log_buf;
+	struct lastpc_plt *plt = &drv->plt;
+	void __iomem *mcu_base = plt->common->base + 0x410;
+	int ret = -1, cnt = num_possible_cpus();
+	char *ptr = buf;
+	unsigned long pc_value;
+	unsigned long fp_value;
+	unsigned long sp_value;
+#ifdef CONFIG_ARM64
+	unsigned long pc_value_h;
+	unsigned long fp_value_h;
+	unsigned long sp_value_h;
+#endif
+	unsigned long size = 0;
+	unsigned long offset = 0;
+	char str[KSYM_SYMBOL_LEN];
+	int i;
+	int cluster, cpu_in_cluster;
+
+	if (cnt < 0)
+		return ret;
+
+#ifdef CONFIG_ARM64
+	/* Get PC, FP, SP and save to buf */
+	for (i = 0; i < cnt; i++) {
+		cluster = i / 4;
+		cpu_in_cluster = i % 4;
+		pc_value_h =
+		    readl(IOMEM((mcu_base + 0x4) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		pc_value =
+		    (pc_value_h << 32) |
+		    readl(IOMEM((mcu_base + 0x0) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		fp_value_h =
+		    readl(IOMEM((mcu_base + 0x14) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		fp_value =
+		    (fp_value_h << 32) |
+		    readl(IOMEM((mcu_base + 0x10) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		sp_value_h =
+		    readl(IOMEM((mcu_base + 0x1c) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		sp_value =
+		    (sp_value_h << 32) |
+		    readl(IOMEM((mcu_base + 0x18) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		kallsyms_lookup(pc_value, &size, &offset, NULL, str);
+		ptr +=
+		    sprintf(ptr,
+			    "[LAST PC] CORE_%d PC = 0x%lx(%s + 0x%lx), FP = 0x%lx, SP = 0x%lx\n", i,
+			    pc_value, str, offset, fp_value, sp_value);
+		pr_err("[LAST PC] CORE_%d PC = 0x%lx(%s), FP = 0x%lx, SP = 0x%lx\n", i, pc_value,
+			  str, fp_value, sp_value);
+	}
+#else
+	/* Get PC, FP, SP and save to buf */
+	for (i = 0; i < cnt; i++) {
+		cluster = i / 4;
+		cpu_in_cluster = i % 4;
+		pc_value =
+		    readl(IOMEM((mcu_base + 0x0) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		fp_value =
+		    readl(IOMEM((mcu_base + 0x8) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		sp_value =
+		    readl(IOMEM((mcu_base + 0xc) + (cpu_in_cluster << 5) + (0x100 * cluster)));
+		kallsyms_lookup((unsigned long)pc_value, &size, &offset, NULL, str);
+		ptr +=
+		    sprintf(ptr,
+			    "[LAST PC] CORE_%d PC = 0x%lx(%s + 0x%lx), FP = 0x%lx, SP = 0x%lx\n", i,
+			    pc_value, str, offset, fp_value, sp_value);
+		pr_err("[LAST PC] CORE_%d PC = 0x%lx(%s), FP = 0x%lx, SP = 0x%lx\n", i, pc_value,
+			  str, fp_value, sp_value);
+	}
+#endif
+
+	return 0;
 }
 
 static int lastpc_plt_dump(struct lastpc_plt *plt, char *buf, int len)
@@ -135,9 +206,6 @@ static int lastpc_plt_dump(struct lastpc_plt *plt, char *buf, int len)
 	}
 #endif
 
-	//save last pc to static buffer, last_kmsg will use it
-	strncpy(lastpc_log_buf, buf, sizeof(lastpc_log_buf));
-
 	return 0;
 }
 
@@ -154,7 +222,6 @@ static struct lastpc_plt_operations lastpc_ops = {
 
 static int __init lastpc_init(void)
 {
-	struct lastpc_imp *drv = NULL;
 	int ret = 0;
 
 	drv = kzalloc(sizeof(struct lastpc_imp), GFP_KERNEL);

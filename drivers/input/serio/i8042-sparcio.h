@@ -99,7 +99,6 @@ MODULE_DEVICE_TABLE(of, sparc_i8042_match);
 static struct platform_driver sparc_i8042_driver = {
 	.driver = {
 		.name = "i8042",
-		.owner = THIS_MODULE,
 		.of_match_table = sparc_i8042_match,
 	},
 	.probe		= sparc_i8042_probe,
@@ -131,7 +130,7 @@ static int __init i8042_platform_init(void)
 		}
 	}
 
-	i8042_reset = 1;
+	i8042_reset = I8042_RESET_ALWAYS;
 
 	return 0;
 }

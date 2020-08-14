@@ -1,35 +1,14 @@
 /*
- * MUSB OTG driver DMA controller abstraction
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2006 by Texas Instruments
- * Copyright (C) 2006-2007 Nokia Corporation
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #ifndef __MUSB_DMA_H__
@@ -151,21 +130,24 @@ struct dma_controller {
 					      struct musb_hw_ep *, u8 is_tx);
 	void (*channel_release)(struct dma_channel *);
 	int (*channel_program)(struct dma_channel *channel,
-				u16 maxpacket, u8 mode, dma_addr_t dma_addr, u32 length);
+				u16 maxpacket, u8 mode, dma_addr_t dma_addr,
+				u32 length);
 	int (*channel_abort)(struct dma_channel *);
 	int (*channel_pause)(struct dma_channel *);
 	int (*channel_resume)(struct dma_channel *);
 	int (*tx_status)(struct dma_channel *);
 	int (*check_residue)(struct dma_channel *, u32 residue);
-	int (*is_compatible)(struct dma_channel *channel, u16 maxpacket, void *buf, u32 length);
+	int (*is_compatible)(struct dma_channel *channel, u16 maxpacket,
+			      void *buf, u32 length);
 };
 
 /* called after channel_program(), may indicate a fault */
 extern void musb_dma_completion(struct musb *musb, u8 epnum, u8 transmit);
 
 
-extern struct dma_controller *dma_controller_create(struct musb *, void __iomem *);
+extern struct dma_controller *dma_controller_create(struct musb *musb,
+						void __iomem *base);
 
-extern void dma_controller_destroy(struct dma_controller *);
+extern void dma_controller_destroy(struct dma_controller *c);
 
 #endif				/* __MUSB_DMA_H__ */

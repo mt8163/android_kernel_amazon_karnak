@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __USB20_H__
 #define __USB20_H__
 
@@ -27,9 +40,14 @@ extern struct musb *mtk_musb;
 #endif
 #endif
 
-#if (defined(CONFIG_MTK_BQ24297_SUPPORT) || \
-	defined(CONFIG_MTK_BQ24296_SUPPORT)) && \
-	!defined(CONFIG_MTK_INTERNAL_CHARGER_SUPPORT)
+#if (defined(CONFIG_MTK_FAN5405_SUPPORT) \
+		|| defined(CONFIG_MTK_BQ24158_SUPPORT) \
+		|| defined(CONFIG_MTK_NCP1851_SUPPORT) \
+		|| defined(CONFIG_MTK_BQ24196_SUPPORT) \
+		|| defined(CONFIG_MTK_NCP1854_SUPPORT) \
+		|| defined(CONFIG_MTK_BQ24297_SUPPORT) \
+		|| defined(CONFIG_MTK_BQ24296_SUPPORT)) \
+	&& !defined(CONFIG_MTK_DUAL_INPUT_CHARGER_SUPPORT)
 #define OTG_BOOST_BY_SWITCH_CHARGER 1
 #endif
 
@@ -53,17 +71,12 @@ enum CHARGER_TYPE {
 
 extern void wake_up_bat(void);
 extern enum CHARGER_TYPE mt_charger_type_detection(void);
+extern enum CHARGER_TYPE mt_get_charger_type(void);
 extern bool bat_is_charger_exist(void);
 extern bool upmu_is_chr_det(void);
-extern kal_uint32 upmu_get_rgs_chrdet(void);
+extern unsigned int upmu_get_rgs_chrdet(void);
 extern void BATTERY_SetUSBState(int usb_state);
-extern void upmu_interrupt_chrdet_int_en(kal_uint32 val);
-
-#ifdef CONFIG_MTK_SMART_BATTERY
-extern enum CHARGER_TYPE mt_get_charger_type(void);
-#else
-#define mt_get_charger_type()	({ 1; })
-#endif
+extern void upmu_interrupt_chrdet_int_en(unsigned int val);
 
 /* specific USB fuctnion */
 enum CABLE_MODE {
@@ -93,10 +106,11 @@ extern void usb_phy_switch_to_uart(void);
 #if 0
 
 /*enum {
-usb0 = 0,
-usb_sif,
-usb_acm_temp_device,
-};*/
+ *usb0 = 0,
+ *usb_sif,
+ *usb_acm_temp_device,
+ *};
+ */
 #endif
 
 /* switch charger API*/
@@ -104,7 +118,8 @@ usb_acm_temp_device,
 extern void fan5405_set_opa_mode(unsigned int val);
 extern void fan5405_set_otg_pl(unsigned int val);
 extern void fan5405_set_otg_en(unsigned int val);
-extern unsigned int fan5405_reg_config_interface(unsigned char RegNum, unsigned char val);
+extern unsigned int fan5405_reg_config_interface(unsigned char RegNum,
+			unsigned char val);
 #elif defined(CONFIG_MTK_BQ24261_SUPPORT)
 extern void bq24261_set_en_boost(unsigned int val);
 #elif defined(CONFIG_MTK_BQ24296_SUPPORT)
@@ -127,12 +142,8 @@ extern struct clk *usb_clk;
 #endif
 
 #ifdef OTG_BOOST_BY_SWITCH_CHARGER
-extern void tbl_charger_otg_vbus(kal_uint32 mode);
-#elif defined(CONFIG_MTK_INTERNAL_CHARGER_SUPPORT)
-extern void tbl_charger_otg_vbus(kal_uint32 mode);
-extern int batt_internal_charger_detect(void);
+extern void tbl_charger_otg_vbus(unsigned int mode);
 #endif
-
 #ifdef FPGA_PLATFORM
 extern void USB_PHY_Write_Register8(UINT8 var,  UINT8 addr);
 extern UINT8 USB_PHY_Read_Register8(UINT8 addr);

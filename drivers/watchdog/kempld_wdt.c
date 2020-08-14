@@ -437,7 +437,7 @@ static struct watchdog_info kempld_wdt_info = {
 			WDIOF_PRETIMEOUT
 };
 
-static struct watchdog_ops kempld_wdt_ops = {
+static const struct watchdog_ops kempld_wdt_ops = {
 	.owner		= THIS_MODULE,
 	.start		= kempld_wdt_start,
 	.stop		= kempld_wdt_stop,
@@ -570,7 +570,6 @@ static int kempld_wdt_resume(struct platform_device *pdev)
 static struct platform_driver kempld_wdt_driver = {
 	.driver		= {
 		.name	= "kempld-wdt",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= kempld_wdt_probe,
 	.remove		= kempld_wdt_remove,

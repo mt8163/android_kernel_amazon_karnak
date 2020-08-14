@@ -62,18 +62,14 @@ static unsigned long basic_get(struct tcf_proto *tp, u32 handle)
 	struct basic_head *head = rtnl_dereference(tp->root);
 	struct basic_filter *f;
 
-	if (head == NULL)
-		return 0UL;
-
-	list_for_each_entry(f, &head->flist, link)
-		if (f->handle == handle)
+	list_for_each_entry(f, &head->flist, link) {
+		if (f->handle == handle) {
 			l = (unsigned long) f;
+			break;
+		}
+	}
 
 	return l;
-}
-
-static void basic_put(struct tcf_proto *tp, unsigned long f)
-{
 }
 
 static int basic_init(struct tcf_proto *tp)
@@ -97,34 +93,31 @@ static void basic_delete_filter(struct rcu_head *head)
 	kfree(f);
 }
 
-static void basic_destroy(struct tcf_proto *tp)
+static bool basic_destroy(struct tcf_proto *tp, bool force)
 {
 	struct basic_head *head = rtnl_dereference(tp->root);
 	struct basic_filter *f, *n;
+
+	if (!force && !list_empty(&head->flist))
+		return false;
 
 	list_for_each_entry_safe(f, n, &head->flist, link) {
 		list_del_rcu(&f->link);
 		tcf_unbind_filter(tp, &f->res);
 		call_rcu(&f->rcu, basic_delete_filter);
 	}
-	RCU_INIT_POINTER(tp->root, NULL);
 	kfree_rcu(head, rcu);
+	return true;
 }
 
 static int basic_delete(struct tcf_proto *tp, unsigned long arg)
 {
-	struct basic_head *head = rtnl_dereference(tp->root);
-	struct basic_filter *t, *f = (struct basic_filter *) arg;
+	struct basic_filter *f = (struct basic_filter *) arg;
 
-	list_for_each_entry(t, &head->flist, link)
-		if (t == f) {
-			list_del_rcu(&t->link);
-			tcf_unbind_filter(tp, &t->res);
-			call_rcu(&t->rcu, basic_delete_filter);
-			return 0;
-		}
-
-	return -ENOENT;
+	list_del_rcu(&f->link);
+	tcf_unbind_filter(tp, &f->res);
+	call_rcu(&f->rcu, basic_delete_filter);
+	return 0;
 }
 
 static const struct nla_policy basic_policy[TCA_BASIC_MAX + 1] = {
@@ -141,10 +134,12 @@ static int basic_set_parms(struct net *net, struct tcf_proto *tp,
 	struct tcf_exts e;
 	struct tcf_ematch_tree t;
 
-	tcf_exts_init(&e, TCA_BASIC_ACT, TCA_BASIC_POLICE);
-	err = tcf_exts_validate(net, tp, tb, est, &e, ovr);
+	err = tcf_exts_init(&e, TCA_BASIC_ACT, TCA_BASIC_POLICE);
 	if (err < 0)
 		return err;
+	err = tcf_exts_validate(net, tp, tb, est, &e, ovr);
+	if (err < 0)
+		goto errout;
 
 	err = tcf_em_tree_validate(tp, tb[TCA_BASIC_EMATCHES], &t);
 	if (err < 0)
@@ -188,12 +183,14 @@ static int basic_change(struct net *net, struct sk_buff *in_skb,
 			return -EINVAL;
 	}
 
-	err = -ENOBUFS;
 	fnew = kzalloc(sizeof(*fnew), GFP_KERNEL);
-	if (fnew == NULL)
+	if (!fnew)
+		return -ENOBUFS;
+
+	err = tcf_exts_init(&fnew->exts, TCA_BASIC_ACT, TCA_BASIC_POLICE);
+	if (err < 0)
 		goto errout;
 
-	tcf_exts_init(&fnew->exts, TCA_BASIC_ACT, TCA_BASIC_POLICE);
 	err = -EINVAL;
 	if (handle) {
 		fnew->handle = handle;
@@ -230,6 +227,7 @@ static int basic_change(struct net *net, struct sk_buff *in_skb,
 
 	return 0;
 errout:
+	tcf_exts_destroy(&fnew->exts);
 	kfree(fnew);
 	return err;
 }
@@ -293,7 +291,6 @@ static struct tcf_proto_ops cls_basic_ops __read_mostly = {
 	.init		=	basic_init,
 	.destroy	=	basic_destroy,
 	.get		=	basic_get,
-	.put		=	basic_put,
 	.change		=	basic_change,
 	.delete		=	basic_delete,
 	.walk		=	basic_walk,

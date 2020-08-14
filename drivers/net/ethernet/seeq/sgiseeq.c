@@ -572,7 +572,7 @@ static inline int sgiseeq_reset(struct net_device *dev)
 	if (err)
 		return err;
 
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	netif_wake_queue(dev);
 
 	return 0;
@@ -648,7 +648,7 @@ static void timeout(struct net_device *dev)
 	printk(KERN_NOTICE "%s: transmit timed out, resetting\n", dev->name);
 	sgiseeq_reset(dev);
 
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	netif_wake_queue(dev);
 }
 
@@ -826,7 +826,6 @@ static struct platform_driver sgiseeq_driver = {
 	.remove	= __exit_p(sgiseeq_remove),
 	.driver = {
 		.name	= "sgiseeq",
-		.owner	= THIS_MODULE,
 	}
 };
 

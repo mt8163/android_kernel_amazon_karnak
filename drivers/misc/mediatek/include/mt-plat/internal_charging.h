@@ -1,31 +1,16 @@
-/*****************************************************************************
+/*
+ * Copyright (C) 2016 MediaTek Inc.
  *
- * Filename:
- * ---------
- *    internal_charging.h
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * Project:
- * --------
- *   Maui_Software
- *
- * Description:
- * ------------
- *   This Module defines internal charger function.
- *
- * Author:
- * -------
- *
- *
- *============================================================================
- *             HISTORY
- * Below this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
- *------------------------------------------------------------------------------
- * Revision:   1.0
- *
- *------------------------------------------------------------------------------
- * Upper this line, this part is controlled by PVCS VM. DO NOT MODIFY!!
- *============================================================================
- ****************************************************************************/
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #ifndef INTERNAL_CHARGING_H
 #define INTERNAL_CHARGING_H
 

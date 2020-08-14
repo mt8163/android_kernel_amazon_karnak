@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/kobject.h>
@@ -54,26 +67,32 @@ static ssize_t show_pcm_desc(const struct pcm_desc *pcmdesc, char *buf)
 	p += sprintf(p, "vec6 = 0x%x\n", pcmdesc->vec6);
 	p += sprintf(p, "vec7 = 0x%x\n", pcmdesc->vec7);
 
-	BUG_ON(p - buf >= PAGE_SIZE);
+	WARN_ON(p - buf >= PAGE_SIZE);
 	return p - buf;
 }
 
-static ssize_t suspend_pcm_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t suspend_pcm_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return show_pcm_desc(__spm_suspend.pcmdesc, buf);
 }
 
-static ssize_t dpidle_pcm_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t dpidle_pcm_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return show_pcm_desc(__spm_dpidle.pcmdesc, buf);
 }
 
-static ssize_t sodi_pcm_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+#if 0
+static ssize_t sodi_pcm_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return show_pcm_desc(__spm_sodi.pcmdesc, buf);
 }
+#endif
 
-static ssize_t ddrdfs_pcm_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t ddrdfs_pcm_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 #if 0
 	return show_pcm_desc(__spm_ddrdfs.pcmdesc, buf);
@@ -135,26 +154,34 @@ static ssize_t show_pwr_ctrl(const struct pwr_ctrl *pwrctrl, char *buf)
 	p += sprintf(p, "param2 = 0x%x\n", pwrctrl->param2);
 	p += sprintf(p, "param3 = 0x%x\n", pwrctrl->param3);
 
-	BUG_ON(p - buf >= PAGE_SIZE);
+	p += sprintf(p, "enable_log = 0x%x\n", pwrctrl->enable_log);
+
+	WARN_ON(p - buf >= PAGE_SIZE);
 	return p - buf;
 }
 
-static ssize_t suspend_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t suspend_ctrl_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return show_pwr_ctrl(__spm_suspend.pwrctrl, buf);
 }
 
-static ssize_t dpidle_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t dpidle_ctrl_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return show_pwr_ctrl(__spm_dpidle.pwrctrl, buf);
 }
 
-static ssize_t sodi_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+#if 0
+static ssize_t sodi_ctrl_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 	return show_pwr_ctrl(__spm_sodi.pwrctrl, buf);
 }
+#endif
 
-static ssize_t ddrdfs_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t ddrdfs_ctrl_show
+	(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
 #if 0
 	return show_pwr_ctrl(__spm_ddrdfs.pwrctrl, buf);
@@ -167,7 +194,8 @@ static ssize_t ddrdfs_ctrl_show(struct kobject *kobj, struct kobj_attribute *att
 /**************************************
  * xxx_ctrl_store Function
  **************************************/
-static ssize_t store_pwr_ctrl(struct pwr_ctrl *pwrctrl, const char *buf, size_t count)
+static ssize_t store_pwr_ctrl
+	(struct pwr_ctrl *pwrctrl, const char *buf, size_t count)
 {
 	u32 val;
 	char cmd[32];
@@ -260,32 +288,41 @@ static ssize_t store_pwr_ctrl(struct pwr_ctrl *pwrctrl, const char *buf, size_t 
 		pwrctrl->param2 = val;
 	else if (!strcmp(cmd, "param3"))
 		pwrctrl->param3 = val;
+
+	else if (!strcmp(cmd, "enable_log"))
+		pwrctrl->enable_log = val;
 	else
 		return -EINVAL;
 
 	return count;
 }
 
-static ssize_t suspend_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
-				  const char *buf, size_t count)
+static ssize_t suspend_ctrl_store
+	(struct kobject *kobj, struct kobj_attribute *attr,
+	 const char *buf, size_t count)
 {
 	return store_pwr_ctrl(__spm_suspend.pwrctrl, buf, count);
 }
 
-static ssize_t dpidle_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
-				 const char *buf, size_t count)
+static ssize_t dpidle_ctrl_store
+	(struct kobject *kobj, struct kobj_attribute *attr,
+	 const char *buf, size_t count)
 {
 	return store_pwr_ctrl(__spm_dpidle.pwrctrl, buf, count);
 }
 
-static ssize_t sodi_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
-			       const char *buf, size_t count)
+#if 0
+static ssize_t sodi_ctrl_store
+	(struct kobject *kobj, struct kobj_attribute *attr,
+	 const char *buf, size_t count)
 {
 	return store_pwr_ctrl(__spm_sodi.pwrctrl, buf, count);
 }
+#endif
 
-static ssize_t ddrdfs_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
-				 const char *buf, size_t count)
+static ssize_t ddrdfs_ctrl_store
+	(struct kobject *kobj, struct kobj_attribute *attr,
+	 const char *buf, size_t count)
 {
 #if 0
 	return store_pwr_ctrl(__spm_ddrdfs.pwrctrl, buf, count);
@@ -295,84 +332,38 @@ static ssize_t ddrdfs_ctrl_store(struct kobject *kobj, struct kobj_attribute *at
 }
 
 /**************************************
- * auto_suspend_resume_xxx Function
- **************************************/
-static ssize_t auto_suspend_resume_show(struct kobject *kobj, struct kobj_attribute *attr,
-					char *buf)
-{
-	char *p = buf;
-	u8 i;
-
-	p += sprintf(p, "auto_suspend_resume:%d times\n", 10);
-
-	for (i = 0; i < 10; i++) {
-		p += sprintf(p, "[%d]wakeup:0x%x,timer:0x%x,r13:0x%x,event=0x%x,flag=0x%x\n",
-			     __spm_suspend.wakestatus[i].log_index,
-			     __spm_suspend.wakestatus[i].r12,
-			     __spm_suspend.wakestatus[i].timer_out,
-			     __spm_suspend.wakestatus[i].r13,
-			     __spm_suspend.wakestatus[i].event_reg,
-			     __spm_suspend.wakestatus[i].debug_flag);
-		if (0x90100000 != __spm_suspend.wakestatus[i].event_reg)
-			p += sprintf(p, "SLEEP_ABORT\n");
-		else if (0xf != (__spm_suspend.wakestatus[i].debug_flag & 0xF))
-			p += sprintf(p, "NOT_DEEP_SLEEP\n");
-		else
-			p += sprintf(p, "SLEEP_PASS\n");
-	}
-
-	slp_set_auto_suspend_wakelock(0);
-
-	BUG_ON(p - buf >= PAGE_SIZE);
-	return p - buf;
-}
-
-static ssize_t auto_suspend_resume_store(struct kobject *kobj, struct kobj_attribute *attr,
-					 const char *buf, size_t count)
-{
-	u32 val, pcm_sec;
-
-	if (sscanf(buf, "%d %d", &val, &pcm_sec) != 2) {
-		spm_debug("auto_suspend_resume parameter fail\n");
-		return -EPERM;
-	}
-	spm_debug("auto_suspend_resume val = %d, pcm_sec = %d\n", val, pcm_sec);
-	__spm_suspend.pwrctrl->timer_val_cust = pcm_sec * 32768;
-	slp_create_auto_suspend_resume_thread();
-	slp_start_auto_suspend_resume_timer(val);
-
-	return count;
-}
-
-/**************************************
  * Init Function
  **************************************/
 DEFINE_ATTR_RO(suspend_pcm);
 DEFINE_ATTR_RO(dpidle_pcm);
+#if 0
 DEFINE_ATTR_RO(sodi_pcm);
+#endif
 DEFINE_ATTR_RO(ddrdfs_pcm);
 
 DEFINE_ATTR_RW(suspend_ctrl);
 DEFINE_ATTR_RW(dpidle_ctrl);
+#if 0
 DEFINE_ATTR_RW(sodi_ctrl);
+#endif
 DEFINE_ATTR_RW(ddrdfs_ctrl);
-
-DEFINE_ATTR_RW(auto_suspend_resume);
 
 static struct attribute *spm_attrs[] = {
 	/* for spm_lp_scen.pcmdesc */
 	__ATTR_OF(suspend_pcm),
 	__ATTR_OF(dpidle_pcm),
+#if 0
 	__ATTR_OF(sodi_pcm),
+#endif
 	__ATTR_OF(ddrdfs_pcm),
 
 	/* for spm_lp_scen.pwrctrl */
 	__ATTR_OF(suspend_ctrl),
 	__ATTR_OF(dpidle_ctrl),
+#if 0
 	__ATTR_OF(sodi_ctrl),
+#endif
 	__ATTR_OF(ddrdfs_ctrl),
-
-	__ATTR_OF(auto_suspend_resume),
 
 	/* must */
 	NULL,

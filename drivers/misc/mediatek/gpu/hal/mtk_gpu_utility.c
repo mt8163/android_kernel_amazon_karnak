@@ -1,20 +1,25 @@
 /*
-* Copyright (C) 2016 MediaTek Inc.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/slab.h>
+#include <linux/mutex.h>
+
 #include <mt-plat/mtk_gpu_utility.h>
+#if 0
 #include "ged_monitor_3D_fence.h"
+#endif
 
 unsigned int (*mtk_get_gpu_memory_usage_fp)(void) = NULL;
 EXPORT_SYMBOL(mtk_get_gpu_memory_usage_fp);
@@ -66,6 +71,21 @@ bool mtk_get_gpu_loading(unsigned int* pLoading)
     return false;
 }
 EXPORT_SYMBOL(mtk_get_gpu_loading);
+
+unsigned int (*mtk_get_gpu_loading2_fp)(int) = NULL;
+EXPORT_SYMBOL(mtk_get_gpu_loading2_fp);
+
+bool mtk_get_gpu_loading2(unsigned int *pLoading, int reset)
+{
+	if (mtk_get_gpu_loading2_fp != NULL) {
+		if (pLoading) {
+			*pLoading = mtk_get_gpu_loading2_fp(reset);
+			return true;
+		}
+	}
+	return false;
+}
+EXPORT_SYMBOL(mtk_get_gpu_loading2);
 
 unsigned int (*mtk_get_gpu_block_fp)(void) = NULL;
 EXPORT_SYMBOL(mtk_get_gpu_block_fp);
@@ -481,12 +501,12 @@ bool mtk_get_gpu_dvfs_from(MTK_GPU_DVFS_TYPE* peType, unsigned long *pulFreq)
 {
     if (NULL != mtk_get_gpu_dvfs_from_fp)
     {
-    	if (peType && pulFreq)
-    	{
-        	mtk_get_gpu_dvfs_from_fp(peType, pulFreq);
-        	return true;
-    	}
+        if (peType && pulFreq)
+        {
+            mtk_get_gpu_dvfs_from_fp(peType, pulFreq);
+            return true;
     }
+}
     return false;
 }
 EXPORT_SYMBOL(mtk_get_gpu_dvfs_from);
@@ -494,10 +514,10 @@ EXPORT_SYMBOL(mtk_get_gpu_dvfs_from);
 //-----------------------------------------------------------------------------
 bool mtk_get_3D_fences_count(int* pi32Count)
 {
- 	if (pi32Count)
+    if (pi32Count)
     {
-        *pi32Count = ged_monitor_3D_fence_get_count();
-		return true;
+        //*pi32Count = ged_monitor_3D_fence_get_count();
+         return true;
     }
     return false;
 }
@@ -511,11 +531,11 @@ bool mtk_get_vsync_based_target_freq(unsigned long *pulFreq)
 {
     if (NULL != mtk_get_vsync_based_target_freq_fp)
     {
-    	if (pulFreq)
-    	{
-        	*pulFreq = mtk_get_vsync_based_target_freq_fp();
-			return true;
-    	}
+        if (pulFreq)
+        {
+            *pulFreq = mtk_get_vsync_based_target_freq_fp();
+            return true;
+        }
     }
     return false;
 }
@@ -635,3 +655,158 @@ bool mtk_get_vsync_offset_debug_status(unsigned int* pui32DebugStatus)
 }
 EXPORT_SYMBOL(mtk_get_vsync_offset_debug_status);
 
+/* ----------------------------------------------------------------------------- */
+/*
+*	Get policy given targfet GPU freq in KHz
+*/
+unsigned int (*mtk_get_gpu_dvfs_cal_freq_fp)(void) = NULL;
+EXPORT_SYMBOL(mtk_get_gpu_dvfs_cal_freq_fp);
+
+bool mtk_get_gpu_dvfs_cal_freq(unsigned long *pulGpu_tar_freq)
+{
+	if (mtk_get_vsync_offset_debug_status_fp != NULL) {
+		if (pulGpu_tar_freq) {
+			*pulGpu_tar_freq = mtk_get_gpu_dvfs_cal_freq_fp();
+			return true;
+		}
+	}
+	return false;
+}
+EXPORT_SYMBOL(mtk_get_gpu_dvfs_cal_freq);
+
+
+//-----------------------------------------------------------------------------
+
+/**
+* Enable MFG performance monitor
+*
+* @brief
+* Enable MFG performance monitor for MET usage
+* Default MFG performance monitor is off
+* Each platform needs to implement corresponding function
+*
+* @param[in] enable: true for enable, false for disable
+* return 0 if change successfully or fail for other return values
+*/
+
+bool (*mtk_enable_gpu_perf_monitor_fp)(bool enable) = NULL;
+EXPORT_SYMBOL(mtk_enable_gpu_perf_monitor_fp);
+
+bool mtk_enable_gpu_perf_monitor(bool enable)
+{
+	if (NULL != mtk_enable_gpu_perf_monitor_fp)
+	{
+		return mtk_enable_gpu_perf_monitor_fp(enable);
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(mtk_enable_gpu_perf_monitor);
+
+/* ----------------------------------------------------------------------------- */
+
+int (*mtk_get_gpu_pmu_init_fp)(GPU_PMU *pmus, int pmu_size, int *ret_size);
+EXPORT_SYMBOL(mtk_get_gpu_pmu_init_fp);
+
+bool mtk_get_gpu_pmu_init(GPU_PMU *pmus, int pmu_size, int *ret_size)
+{
+	if (mtk_get_gpu_pmu_init_fp != NULL)
+		return mtk_get_gpu_pmu_init_fp(pmus, pmu_size, ret_size) == 0;
+	return false;
+}
+EXPORT_SYMBOL(mtk_get_gpu_pmu_init);
+
+/* ----------------------------------------------------------------------------- */
+
+int (*mtk_get_gpu_pmu_swapnreset_fp)(GPU_PMU *pmus, int pmu_size);
+EXPORT_SYMBOL(mtk_get_gpu_pmu_swapnreset_fp);
+
+bool mtk_get_gpu_pmu_swapnreset(GPU_PMU *pmus, int pmu_size)
+{
+	if (mtk_get_gpu_pmu_swapnreset_fp != NULL)
+		return mtk_get_gpu_pmu_swapnreset_fp(pmus, pmu_size) == 0;
+	return false;
+}
+EXPORT_SYMBOL(mtk_get_gpu_pmu_swapnreset);
+
+/* ----------------------------------------------------------------------------- */
+
+typedef struct {
+	 gpu_power_change_notify_fp callback;
+	 char name[128];
+	 struct list_head sList;
+} gpu_power_change_entry_t;
+
+static struct {
+	struct mutex lock;
+	struct list_head listen;
+} g_power_change = {
+	.lock     = __MUTEX_INITIALIZER(g_power_change.lock),
+	.listen   = LIST_HEAD_INIT(g_power_change.listen),
+};
+
+bool mtk_register_gpu_power_change(const char *name, gpu_power_change_notify_fp callback)
+{
+	gpu_power_change_entry_t *entry = NULL;
+
+	entry = kmalloc(sizeof(gpu_power_change_entry_t), GFP_KERNEL);
+	if (entry == NULL)
+		return false;
+
+	entry->callback = callback;
+	strncpy(entry->name, name, sizeof(entry->name) - 1);
+	entry->name[sizeof(entry->name) - 1] = 0;
+	INIT_LIST_HEAD(&entry->sList);
+
+	mutex_lock(&g_power_change.lock);
+
+	list_add(&entry->sList, &g_power_change.listen);
+
+	mutex_unlock(&g_power_change.lock);
+
+	return true;
+}
+EXPORT_SYMBOL(mtk_register_gpu_power_change);
+
+bool mtk_unregister_gpu_power_change(const char *name)
+{
+	struct list_head *pos, *head;
+	gpu_power_change_entry_t *entry = NULL;
+
+	mutex_lock(&g_power_change.lock);
+
+	head = &g_power_change.listen;
+	list_for_each(pos, head) {
+		entry = list_entry(pos, gpu_power_change_entry_t, sList);
+		if (strncmp(entry->name, name, sizeof(entry->name) - 1) == 0)
+			break;
+		entry = NULL;
+	}
+
+	if (entry) {
+		list_del(&entry->sList);
+		kfree(entry);
+	}
+
+	mutex_unlock(&g_power_change.lock);
+
+	return true;
+}
+EXPORT_SYMBOL(mtk_unregister_gpu_power_change);
+
+void mtk_notify_gpu_power_change(int power_on)
+{
+	struct list_head *pos, *head;
+	gpu_power_change_entry_t *entry = NULL;
+
+	mutex_lock(&g_power_change.lock);
+
+	head = &g_power_change.listen;
+	list_for_each(pos, head) {
+		entry = list_entry(pos, gpu_power_change_entry_t, sList);
+		entry->callback(power_on);
+	}
+
+	mutex_unlock(&g_power_change.lock);
+}
+EXPORT_SYMBOL(mtk_notify_gpu_power_change);

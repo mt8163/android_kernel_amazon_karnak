@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2018 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,7 +18,7 @@
 #include <linux/kobject.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/err.h>
 #include <linux/syscalls.h>
 #include <linux/uidgid.h>
@@ -27,7 +27,9 @@
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
 
-/* Extern two API functions from battery driver to limit max charging current. */
+/* Extern two API functions from battery driver
+ * to limit max charging current.
+ */
 #if 1
 /**
  *  return value means charging current in mA
@@ -54,13 +56,13 @@ set_bat_charging_current_limit(int current_limit) {
 
 struct proc_dir_entry *mtk_thermal_get_proc_drv_therm_dir_entry(void);
 
-#define mtk_cooler_bcct_dprintk_always(fmt, args...) pr_debug("thermal/cooler/bcct" fmt, ##args)
+#define mtk_cooler_bcct_dprintk_always(fmt, args...) \
+pr_debug("thermal/cooler/bcct" fmt, ##args)
 
 #define mtk_cooler_bcct_dprintk(fmt, args...) \
 do { \
-		if (1 == cl_bcct_klog_on) { \
-			pr_debug("thermal/cooler/bcct" fmt, ##args); \
-		} \
+	if (cl_bcct_klog_on == 1) \
+		pr_debug("thermal/cooler/bcct" fmt, ##args); \
 } while (0)
 
 #define MAX_NUM_INSTANCE_MTK_COOLER_BCCT  3
@@ -75,14 +77,15 @@ do { \
 {curr_state = (((unsigned long) (state))&0xFFFF); }
 
 #define MTK_CL_BCCT_SET_CURR_STATE(curr_state, state) \
-	do { if (0 == curr_state) \
+	do { if (curr_state == 0) \
 		state &= ~0x1; \
 	else \
 		state |= 0x1; \
 	} while (0)
 
 static int cl_bcct_klog_on;
-static struct thermal_cooling_device *cl_bcct_dev[MAX_NUM_INSTANCE_MTK_COOLER_BCCT] = { 0 };
+static struct thermal_cooling_device
+	*cl_bcct_dev[MAX_NUM_INSTANCE_MTK_COOLER_BCCT] = { 0 };
 static unsigned long cl_bcct_state[MAX_NUM_INSTANCE_MTK_COOLER_BCCT] = { 0 };
 
 static int cl_bcct_cur_limit = 65535;
@@ -97,7 +100,7 @@ static void mtk_cl_bcct_set_bcct_limit(void)
 		unsigned long curr_state;
 
 		MTK_CL_BCCT_GET_CURR_STATE(curr_state, cl_bcct_state[i]);
-		if (1 == curr_state) {
+		if (curr_state == 1) {
 			int limit;
 
 			MTK_CL_BCCT_GET_LIMIT(limit, cl_bcct_state[i]);
@@ -109,44 +112,58 @@ static void mtk_cl_bcct_set_bcct_limit(void)
 	if (min_limit != cl_bcct_cur_limit) {
 		cl_bcct_cur_limit = min_limit;
 #if 1
-		if (65535 <= cl_bcct_cur_limit) {
+		if (cl_bcct_cur_limit >= 65535) {
 			set_bat_charging_current_limit(-1);
-			mtk_cooler_bcct_dprintk_always("mtk_cl_bcct_set_bcct_limit() limit=-1\n");
+			mtk_cooler_bcct_dprintk_always(
+				"mtk_cl_bcct_set_bcct_limit() limit=-1\n");
 		} else {
 			set_bat_charging_current_limit(cl_bcct_cur_limit);
-			mtk_cooler_bcct_dprintk_always("mtk_cl_bcct_set_bcct_limit() limit=%d\n",
-						       cl_bcct_cur_limit);
+			mtk_cooler_bcct_dprintk_always(
+				"mtk_cl_bcct_set_bcct_limit() limit=%d\n",
+				cl_bcct_cur_limit);
 		}
 
-		mtk_cooler_bcct_dprintk_always("mtk_cl_bcct_set_bcct_limit() real limit=%d\n",
-					       get_bat_charging_current_level() / 100);
+		mtk_cooler_bcct_dprintk_always(
+			"mtk_cl_bcct_set_bcct_limit() real limit=%d\n",
+			get_bat_charging_current_level() / 100);
 #endif
 	}
 }
 
-static int mtk_cl_bcct_get_max_state(struct thermal_cooling_device *cdev, unsigned long *state)
+static int mtk_cl_bcct_get_max_state(struct thermal_cooling_device *cdev,
+	unsigned long *state)
 {
 	*state = 1;
-	mtk_cooler_bcct_dprintk("mtk_cl_bcct_get_max_state() %s %d\n", cdev->type, (int)(*state));
+	mtk_cooler_bcct_dprintk("mtk_cl_bcct_get_max_state() %s %d\n",
+		cdev->type, (int)(*state));
 	return 0;
 }
 
-static int mtk_cl_bcct_get_cur_state(struct thermal_cooling_device *cdev, unsigned long *state)
+static int mtk_cl_bcct_get_cur_state(struct thermal_cooling_device *cdev,
+	unsigned long *state)
 {
-	MTK_CL_BCCT_GET_CURR_STATE(*state, *((unsigned long *)cdev->devdata));
-	mtk_cooler_bcct_dprintk("mtk_cl_bcct_get_cur_state() %s %d\n", cdev->type, (int)(*state));
-	mtk_cooler_bcct_dprintk("mtk_cl_bcct_get_cur_state() %s limit=%d\n", cdev->type,
-				get_bat_charging_current_level() / 100);
+	MTK_CL_BCCT_GET_CURR_STATE(*state,
+		*((unsigned long *)cdev->devdata));
+	mtk_cooler_bcct_dprintk("mtk_cl_bcct_get_cur_state() %s %d\n",
+		cdev->type, (int)(*state));
+	mtk_cooler_bcct_dprintk(
+		"mtk_cl_bcct_get_cur_state() %s limit=%d\n",
+		cdev->type,
+		get_bat_charging_current_level() / 100);
 	return 0;
 }
 
-static int mtk_cl_bcct_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
+static int mtk_cl_bcct_set_cur_state(struct thermal_cooling_device *cdev,
+	unsigned long state)
 {
-	mtk_cooler_bcct_dprintk("mtk_cl_bcct_set_cur_state() %s %d\n", cdev->type, (int)state);
+	mtk_cooler_bcct_dprintk("mtk_cl_bcct_set_cur_state() %s %d\n",
+		cdev->type, (int)state);
 	MTK_CL_BCCT_SET_CURR_STATE(state, *((unsigned long *)cdev->devdata));
 	mtk_cl_bcct_set_bcct_limit();
-	mtk_cooler_bcct_dprintk("mtk_cl_bcct_set_cur_state() %s limit=%d\n", cdev->type,
-				get_bat_charging_current_level() / 100);
+	mtk_cooler_bcct_dprintk(
+		"mtk_cl_bcct_set_cur_state() %s limit=%d\n",
+		cdev->type,
+		get_bat_charging_current_level() / 100);
 
 	return 0;
 }
@@ -167,11 +184,13 @@ static int mtk_cooler_bcct_register_ltf(void)
 	for (i = MAX_NUM_INSTANCE_MTK_COOLER_BCCT; i-- > 0;) {
 		char temp[20] = { 0 };
 
-		sprintf(temp, "mtk-cl-bcct%02d", i);
+		if (sprintf(temp, "mtk-cl-bcct%02d", i) <= 0)
+			return -1;
 		/* put bcct state to cooler devdata */
 		cl_bcct_dev[i] =
-		    mtk_thermal_cooling_device_register(temp, (void *)&cl_bcct_state[i],
-							&mtk_cl_bcct_ops);
+		mtk_thermal_cooling_device_register(temp,
+		(void *)&cl_bcct_state[i],
+		&mtk_cl_bcct_ops);
 	}
 
 	return 0;
@@ -193,13 +212,14 @@ static void mtk_cooler_bcct_unregister_ltf(void)
 }
 
 #if 0
-static int _mtk_cl_bcct_proc_read(char *buf, char **start, off_t off, int count, int *eof,
-				  void *data)
+static int _mtk_cl_bcct_proc_read(char *buf, char **start,
+	off_t off, int count, int *eof, void *data)
 {
 	int len = 0;
 	char *p = buf;
 
-	mtk_cooler_bcct_dprintk("[_mtk_cl_bcct_proc_read] invoked.\n");
+	mtk_cooler_bcct_dprintk(
+		"[_mtk_cl_bcct_proc_read] invoked.\n");
 
     /**
      * The format to print out:
@@ -207,8 +227,9 @@ static int _mtk_cl_bcct_proc_read(char *buf, char **start, off_t off, int count,
      *  <mtk-cl-bcct<ID>> <bcc limit>
      *  ..
      */
-	if (NULL == data) {
-		mtk_cooler_bcct_dprintk("[_mtk_cl_bcct_proc_read] null data\n");
+	if (data == NULL) {
+		mtk_cooler_bcct_dprintk(
+			"[_mtk_cl_bcct_proc_read] null data\n");
 	} else {
 		int i = 0;
 
@@ -220,9 +241,11 @@ static int _mtk_cl_bcct_proc_read(char *buf, char **start, off_t off, int count,
 			unsigned int curr_state;
 
 			MTK_CL_BCCT_GET_LIMIT(limit, cl_bcct_state[i]);
-			MTK_CL_BCCT_GET_CURR_STATE(curr_state, cl_bcct_state[i]);
+			MTK_CL_BCCT_GET_CURR_STATE(curr_state,
+				cl_bcct_state[i]);
 
-			p += sprintf(p, "mtk-cl-bcct%02d %d mA, state %d\n", i, limit, curr_state);
+			p += sprintf(p, "mtk-cl-bcct%02d %d mA, state %d\n",
+				i, limit, curr_state);
 		}
 	}
 
@@ -237,8 +260,8 @@ static int _mtk_cl_bcct_proc_read(char *buf, char **start, off_t off, int count,
 	return len < count ? len : count;
 }
 
-static ssize_t _mtk_cl_bcct_proc_write(struct file *file, const char *buffer, unsigned long count,
-				       void *data)
+static ssize_t _mtk_cl_bcct_proc_write(struct file *file,
+	const char *buffer, unsigned long count, void *data)
 {
 	int len = 0;
 	char desc[128];
@@ -250,22 +273,29 @@ static ssize_t _mtk_cl_bcct_proc_write(struct file *file, const char *buffer, un
 	desc[len] = '\0';
 
     /**
-     * sscanf format <klog_on> <mtk-cl-bcct00 limit> <mtk-cl-bcct01 limit> ...
+     * sscanf format <klog_on> <mtk-cl-bcct00 limit>
+     * <mtk-cl-bcct01 limit> ...
      * <klog_on> can only be 0 or 1
-     * <mtk-cl-bcct00 limit> can only be positive integer or -1 to denote no limit
+     * <mtk-cl-bcct00 limit> can only be positive
+     * integer or -1 to denote no limit
      */
 
-	if (NULL == data) {
-		mtk_cooler_bcct_dprintk("[_mtk_cl_bcct_proc_write] null data\n");
+	if (data == NULL) {
+		mtk_cooler_bcct_dprintk(
+			"[_mtk_cl_bcct_proc_write] null data\n");
 		return -EINVAL;
 	}
-	/* WARNING: Modify here if MTK_THERMAL_MONITOR_COOLER_MAX_EXTRA_CONDITIONS is changed to other than 3 */
+	/* WARNING: Modify here if
+	 * MTK_THERMAL_MONITOR_COOLER_MAX_EXTRA_CONDITIONS
+	 * is changed to other than 3
+	 */
 #if (3 == MAX_NUM_INSTANCE_MTK_COOLER_BCCT)
 	MTK_CL_BCCT_SET_LIMIT(-1, cl_bcct_state[0]);
 	MTK_CL_BCCT_SET_LIMIT(-1, cl_bcct_state[1]);
 	MTK_CL_BCCT_SET_LIMIT(-1, cl_bcct_state[2]);
 
-	if (1 <= sscanf(desc, "%d %d %d %d", &klog_on, &limit0, &limit1, &limit2)) {
+	if (sscanf(desc, "%d %d %d %d",
+		&klog_on, &limit0, &limit1, &limit2) >= 1) {
 		if (klog_on == 0 || klog_on == 1)
 			cl_bcct_klog_on = klog_on;
 
@@ -279,7 +309,7 @@ static ssize_t _mtk_cl_bcct_proc_write(struct file *file, const char *buffer, un
 		return count;
 	}
 #else
-#error "Change correspondent part when changing MAX_NUM_INSTANCE_MTK_COOLER_BCCT!"
+#error "Change correspondent part change MAX_NUM_INSTANCE_MTK_COOLER_BCCT"
 #endif
 	mtk_cooler_bcct_dprintk("[_mtk_cl_bcct_proc_write] bad argument\n");
 
@@ -287,33 +317,42 @@ static ssize_t _mtk_cl_bcct_proc_write(struct file *file, const char *buffer, un
 }
 #endif
 
-static ssize_t _cl_bcct_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+static ssize_t _cl_bcct_write(struct file *filp,
+	const char __user *buf, size_t len, loff_t *data)
 {
 	/* int ret = 0; */
 	char tmp[128] = { 0 };
 	int klog_on, limit0, limit1, limit2;
-	len = (len < (128 - 1)) ? len : (128 - 1);
-	/* write data to the buffer */
+
+	len = (len < (128-1)) ? len : (128-1);
+
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
 
     /**
-     * sscanf format <klog_on> <mtk-cl-bcct00 limit> <mtk-cl-bcct01 limit> ...
+     * sscanf format <klog_on> <mtk-cl-bcct00 limit>
+     * <mtk-cl-bcct01 limit> ...
      * <klog_on> can only be 0 or 1
-     * <mtk-cl-bcct00 limit> can only be positive integer or -1 to denote no limit
+     * <mtk-cl-bcct00 limit> can only be positive
+     * integer or -1 to denote no limit
      */
 
-	if (NULL == data) {
-		mtk_cooler_bcct_dprintk("[_mtk_cl_bcct_proc_write] null data\n");
+	if (data == NULL) {
+		mtk_cooler_bcct_dprintk(
+			"[_mtk_cl_bcct_proc_write] null data\n");
 		return -EINVAL;
 	}
-	/* WARNING: Modify here if MTK_THERMAL_MONITOR_COOLER_MAX_EXTRA_CONDITIONS is changed to other than 3 */
+	/* WARNING: Modify here if
+	 * MTK_THERMAL_MONITOR_COOLER_MAX_EXTRA_CONDITIONS
+	 * is changed to other than 3
+	 */
 #if (3 == MAX_NUM_INSTANCE_MTK_COOLER_BCCT)
 	MTK_CL_BCCT_SET_LIMIT(-1, cl_bcct_state[0]);
 	MTK_CL_BCCT_SET_LIMIT(-1, cl_bcct_state[1]);
 	MTK_CL_BCCT_SET_LIMIT(-1, cl_bcct_state[2]);
 
-	if (1 <= sscanf(tmp, "%d %d %d %d", &klog_on, &limit0, &limit1, &limit2)) {
+	if (sscanf(tmp, "%d %d %d %d",
+		&klog_on, &limit0, &limit1, &limit2) >= 1) {
 		if (klog_on == 0 || klog_on == 1)
 			cl_bcct_klog_on = klog_on;
 
@@ -327,9 +366,10 @@ static ssize_t _cl_bcct_write(struct file *filp, const char __user *buf, size_t 
 		return len;
 	}
 #else
-#error "Change correspondent part when changing MAX_NUM_INSTANCE_MTK_COOLER_BCCT!"
+#error "Change correspondent when change MAX_NUM_INSTANCE_MTK_COOLER_BCCT"
 #endif
-	mtk_cooler_bcct_dprintk("[_mtk_cl_bcct_proc_write] bad argument\n");
+	mtk_cooler_bcct_dprintk(
+			"[_mtk_cl_bcct_proc_write] bad argument\n");
 
 	return -EINVAL;
 }
@@ -356,9 +396,12 @@ static int _cl_bcct_read(struct seq_file *m, void *v)
 			unsigned int curr_state;
 
 			MTK_CL_BCCT_GET_LIMIT(limit, cl_bcct_state[i]);
-			MTK_CL_BCCT_GET_CURR_STATE(curr_state, cl_bcct_state[i]);
+			MTK_CL_BCCT_GET_CURR_STATE(curr_state,
+				cl_bcct_state[i]);
 
-			seq_printf(m, "mtk-cl-bcct%02d %d mA, state %d\n", i, limit, curr_state);
+			seq_printf(m,
+				"mtk-cl-bcct%02d %d mA, state %d\n",
+				i, limit, curr_state);
 		}
 	}
 
@@ -405,13 +448,16 @@ static int __init mtk_cooler_bcct_init(void)
 
 		dir_entry = mtk_thermal_get_proc_drv_therm_dir_entry();
 		if (!dir_entry) {
-			mtk_cooler_bcct_dprintk("[%s]: mkdir /proc/driver/thermal failed\n",
-						__func__);
+			mtk_cooler_bcct_dprintk(
+				"[%s]: mkdir /proc/driver/thermal failed\n",
+				__func__);
 		}
 
-		entry = proc_create("clbcct", S_IRUGO | S_IWUSR | S_IWGRP, dir_entry, &_cl_bcct_fops);
+		entry = proc_create("clbcct", 0664, dir_entry, &_cl_bcct_fops);
 		if (!entry)
-			mtk_cooler_bcct_dprintk_always("%s clbcct creation failed\n", __func__);
+			mtk_cooler_bcct_dprintk_always(
+				"%s clbcct creation failed\n",
+				__func__);
 		else
 			proc_set_user(entry, uid, gid);
 	}

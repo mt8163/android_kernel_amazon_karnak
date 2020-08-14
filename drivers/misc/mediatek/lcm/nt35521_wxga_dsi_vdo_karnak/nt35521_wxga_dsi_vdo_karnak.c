@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef BUILD_LK
 #include <string.h>
 #include <platform/mt_gpio.h>
@@ -49,13 +62,12 @@ static int lcm_get_vio_supply(struct device *dev)
 {
 	int ret;
 
-
 	pr_debug("LCM: lcm_get_vgp_supply is going\n");
 
 	lcm_vio_ldo = devm_regulator_get(dev, "reg-lcm");
 	if (IS_ERR(lcm_vio_ldo)) {
 		ret = PTR_ERR(lcm_vio_ldo);
-		dev_err(dev, "failed to get reg-lcm LDO, %d\n", ret);
+		pr_info("failed to get reg-lcm LDO, %d\n", ret);
 		return ret;
 	}
 
@@ -66,14 +78,13 @@ static int lcm_get_vio_supply(struct device *dev)
 	return ret;
 }
 
-
 static int lcm_get_gpio(struct device *dev)
 {
 	int ret = 0;
 
 	lcmctrl = devm_pinctrl_get(dev);
 	if (IS_ERR(lcmctrl)) {
-		dev_err(dev, "Cannot find lcm pinctrl!");
+		pr_info("Cannot find lcm pinctrl!");
 		ret = PTR_ERR(lcmctrl);
 	}
 	/*lcm power pin lookup */
@@ -109,39 +120,35 @@ static int lcm_get_gpio(struct device *dev)
 		ret = PTR_ERR(lcd_pwr_n_low);
 		pr_info("%s : pinctrl err, lcd_pwr_n_low\n", __func__);
 	}
-return ret;
+
+	return ret;
 }
 
 static void lcm_set_pwr(int val)
 {
-	if (val == 0) {
+	if (val == 0)
 		pinctrl_select_state(lcmctrl, lcd_pwr_low);
-	} else {
+	else
 		pinctrl_select_state(lcmctrl, lcd_pwr_high);
-	}
 }
 
 static void lcm_set_rst(int val)
 {
-	if (val == 0) {
+	if (val == 0)
 		pinctrl_select_state(lcmctrl, lcd_rst_low);
-	} else {
+	else
 		pinctrl_select_state(lcmctrl, lcd_rst_high);
-	}
 }
-
 
 static void lcm_set_pwr_n(int val)
 {
-	if (val == 0 && (!IS_ERR(lcd_pwr_n_low)))  {
+	if (val == 0 && (!IS_ERR(lcd_pwr_n_low)))
 		pinctrl_select_state(lcmctrl, lcd_pwr_n_low);
-	} else if (val == 1 && (!IS_ERR(lcd_pwr_n_high))) {
+	else if (val == 1 && (!IS_ERR(lcd_pwr_n_high)))
 		pinctrl_select_state(lcmctrl, lcd_pwr_n_high);
-	}
 }
 
-
-static int lcm_probe(struct device *dev)
+static int lcm_driver_probe(struct device *dev, void const *data)
 {
 	lcm_get_vio_supply(dev);
 	lcm_get_gpio(dev);
@@ -154,11 +161,22 @@ static const struct of_device_id lcm_of_ids[] = {
 	{}
 };
 
+static int lcm_platform_probe(struct platform_device *pdev)
+{
+	const struct of_device_id *id;
+
+	id = of_match_node(lcm_of_ids, pdev->dev.of_node);
+	if (!id)
+		return -ENODEV;
+
+	return lcm_driver_probe(&pdev->dev, id->data);
+}
+
 static struct platform_driver lcm_driver = {
+	.probe = lcm_platform_probe,
 	.driver = {
 		   .name = "nt35521",
 		   .owner = THIS_MODULE,
-		   .probe = lcm_probe,
 #ifdef CONFIG_OF
 		   .of_match_table = lcm_of_ids,
 #endif
@@ -169,7 +187,7 @@ static int __init lcm_drv_init(void)
 {
 	pr_notice("LCM: Register lcm driver\n");
 	if (platform_driver_register(&lcm_driver)) {
-		pr_err("LCM: failed to register disp driver\n");
+		pr_info("LCM: failed to register disp driver\n");
 		return -ENODEV;
 	}
 
@@ -189,16 +207,20 @@ MODULE_LICENSE("GPL");
 
 #endif
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#endif
+
 /* ---------------------------------------------------
  *  Local Constants
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 
 #define FRAME_WIDTH				(800)
 #define FRAME_HEIGHT				(1280)
 
 #define REGFLAG_DELAY				0xFE
 #define REGFLAG_END_OF_TABLE		0x00   /* END OF REGISTERS MARKER */
-
 
 /* ID1 DAh - Vendor and Build Designation
  * Bit[7:5] - Vendor Code (Innolux, LGD, Samsung)
@@ -222,31 +244,30 @@ MODULE_LICENSE("GPL");
 #define MOVING		0x3
 /* ---------------------------------------------------
  *  Global Variables
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 
 /* ---------------------------------------------------
  *  Local Variables
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 static unsigned char lcm_id;
 static unsigned char vendor_id = 0xFF;
 static unsigned char build_id = 0xFF;
 
-static LCM_UTIL_FUNCS lcm_util = {
-	.set_reset_pin = NULL,
-	.udelay = NULL,
-	.mdelay = NULL,
-};
+static struct LCM_UTIL_FUNCS lcm_util = { 0 };
 
 static void get_lcm_id(void);
 
-#define SET_RESET_PIN(v)		(lcm_util.set_reset_pin((v)))
+#define SET_RESET_PIN(v) (lcm_util.set_reset_pin((v)))
 
-#define UDELAY(n)				(lcm_util.udelay(n))
-#define MDELAY(n)				(lcm_util.mdelay(n))
+#define UDELAY(n) (lcm_util.udelay(n))
+#define MDELAY(n) (lcm_util.mdelay(n))
 
 /* ---------------------------------------------------
  *  Local Functions
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 
 #define dsi_set_cmdq_V2(cmd, count, ppara, force_update) \
 		 (lcm_util.dsi_set_cmdq_V2(cmd, count, ppara, force_update))
@@ -260,7 +281,6 @@ static void get_lcm_id(void);
 		 (lcm_util.dsi_read_reg())
 #define read_reg_v2(cmd, buffer, buffer_size) \
 		 (lcm_util.dsi_dcs_read_lcm_reg_v2(cmd, buffer, buffer_size))
-
 
 #ifdef BUILD_LK
 static void power_on(void)
@@ -276,7 +296,7 @@ static void power_on(void)
 		dprintf(INFO, "[LK/LCM] GPIO110 - Control AVDD/AVEE/VDD\n");
 	#else
 		pr_info("[nt35521] %s, GPIO110 - Control AVDD/AVEE/VDD\n",
-				 __func__);
+			__func__);
 	#endif
 #ifdef BUILD_LK
 	mt_set_gpio_mode(GPIO_LCD_LED_EN, GPIO_MODE_00);
@@ -292,11 +312,13 @@ static void power_on(void)
 #endif
 
 	/* GHGL_EN/GPIO110 waveform has a gentle rising,
-	 * so enlarge delay time from 40ms to 50ms */
+	 * so enlarge delay time from 40ms to 50ms
+	 */
 	MDELAY(50);
 
 	/* Fixme - Turn on MIPI lanes after AVEE ready,
-	 * before Reset pin Low->High */
+	 * before Reset pin Low->High
+	 */
 	SET_RESET_PIN(1);
 	SET_RESET_PIN(0);
 	MDELAY(1);
@@ -899,18 +921,18 @@ static void init_karnak_kd_lcm(void)
 	dsi_set_cmdq(data_array, 1, 1);
 }
 
-
 /* -----------------------------------------
  *  LCM Driver Implementations
- * ----------------------------------------- */
-static void lcm_set_util_funcs(const LCM_UTIL_FUNCS *util)
+ * -----------------------------------------
+ */
+static void lcm_set_util_funcs(const struct LCM_UTIL_FUNCS *util)
 {
-	memcpy(&lcm_util, util, sizeof(LCM_UTIL_FUNCS));
+	memcpy(&lcm_util, util, sizeof(struct LCM_UTIL_FUNCS));
 }
 
-static void lcm_get_params(LCM_PARAMS *params)
+static void lcm_get_params(struct LCM_PARAMS *params)
 {
-	memset(params, 0, sizeof(LCM_PARAMS));
+	memset(params, 0, sizeof(struct LCM_PARAMS));
 
 	params->type   = LCM_TYPE_DSI;
 
@@ -951,7 +973,7 @@ static void lcm_get_params(LCM_PARAMS *params)
 	params->dsi.clk_lp_per_line_enable = 1;
 
 	//params->dsi.ssc_disable = 1;
-	params->dsi.cont_clock= 0;
+	params->dsi.cont_clock = 0;
 	params->dsi.DA_HS_EXIT = 1;
 	params->dsi.CLK_ZERO = 16;
 	params->dsi.HS_ZERO = 9;
@@ -977,7 +999,6 @@ static int __init setup_lcm_id(char *str)
 	return 0;
 }
 __setup("nt35521_id=", setup_lcm_id);
-
 
 static void get_lcm_id(void)
 {
@@ -1044,41 +1065,36 @@ static void lcm_reset(void)
 	MDELAY(20);
 }
 
-
-
-
 static void lcm_init(void)
 {
-
 #ifdef BUILD_LK
 	power_on();
 #endif
 
-
 #ifdef BUILD_LK
-
 	dprintf(CRITICAL,
-			 "[LK/LCM] %s enter, build type: %s, vendor type: %s\n",
-			 __func__,
-			 lcm_get_build_type(),
-			 lcm_get_vendor_type());
-
+		"[LK/LCM] %s enter, build type: %s, vendor type: %s\n",
+		__func__, lcm_get_build_type(), lcm_get_vendor_type());
 	init_karnak_kd_lcm(); /* KD panel */
-
 #else
 	get_lcm_id();
 
-	pr_info("[nt35521] %s enter, skip power_on & init lcm since it's done by lk\n",
-			 __func__);
+	pr_info("[nt35521]%s skip power_on & init lcm since it's done by lk\n",
+		__func__);
 	pr_info("[nt35521] build type: %s, vendor type: %s\n",
-			 lcm_get_build_type(),
-			 lcm_get_vendor_type());
+		lcm_get_build_type(), lcm_get_vendor_type());
 #endif
 }
 
 static void lcm_suspend(void)
 {
 	unsigned int data_array[16];
+	#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[128];
+
+	snprintf(buf, sizeof(buf), "%s:lcd:suspend=1;CT;1:NR", __func__);
+	log_to_metrics(ANDROID_LOG_INFO, "LCDEvent", buf);
+	#endif
 
 	#ifdef BUILD_LK
 		dprintf(INFO, "[LK/LCM] %s\n", __func__);
@@ -1093,15 +1109,21 @@ static void lcm_suspend(void)
 	data_array[0] = 0x00100500; /* Sleep In */
 	dsi_set_cmdq(data_array, 1, 1);
 	MDELAY(120);
-
 }
 
 static void lcm_resume(void)
 {
+	#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[128];
+
+	snprintf(buf, sizeof(buf), "%s:lcd:resume=1;CT;1:NR", __func__);
+	log_to_metrics(ANDROID_LOG_INFO, "LCDEvent", buf);
+	#endif
+
 	#ifdef BUILD_LK
-		dprintf(INFO, "[LK/LCM] %s\n", __func__);
+	dprintf(INFO, "[LK/LCM] %s\n", __func__);
 	#else
-		pr_info("[nt35521] %s\n", __func__);
+	pr_info("[nt35521] %s\n", __func__);
 	#endif
 
 	MDELAY(10);
@@ -1110,16 +1132,19 @@ static void lcm_resume(void)
 	init_karnak_kd_lcm(); /* KD panel */
 }
 
-/* Seperate lcm_resume_power and lcm_reset from power_on func,
+/* Separate lcm_resume_power and lcm_reset from power_on func,
  * to meet turn on MIPI lanes after AVEE ready,
- * before Reset pin Low->High */
+ * before Reset pin Low->High
+ */
 static void lcm_resume_power(void)
 {
 	int ret;
+
 	/* GHGL_EN/GPIO110 - Control AVDD/AVEE/VDD,
-	 * their sequence rests entirely on NT50357 */
+	 * their sequence rests entirely on NT50357
+	 */
 #ifdef BUILD_LK
-	dprintf(ALWAYS, "[LK/LCM] GPIO110 - Control AVDD/AVEE/VDD resume_power\n");
+	dprintf(ALWAYS, "[LK/LCM] GPIO110 - Control AVDD/AVEE/VDD power\n");
 	mt_set_gpio_mode(GPIO_LCD_LED_EN, GPIO_MODE_00);
 	mt_set_gpio_dir(GPIO_LCD_LED_EN, GPIO_DIR_OUT);
 	mt_set_gpio_out(GPIO_LCD_LED_EN, GPIO_OUT_ONE);
@@ -1130,7 +1155,7 @@ static void lcm_resume_power(void)
 	MDELAY(30);
 #else
 	pr_info("[nt35521] %s, GPIO110 - Control AVDD/AVEE/VDD\n",
-		 __func__);
+		__func__);
 	ret = regulator_enable(lcm_vio_ldo);
 	MDELAY(6);
 	lcm_set_pwr(1);
@@ -1139,8 +1164,7 @@ static void lcm_resume_power(void)
 #endif
 }
 
-
-/* Seperate lcm_suspend_power from lcm_suspend
+/* Separate lcm_suspend_power from lcm_suspend
  * to meet turn off MIPI lanes after after sleep in cmd,
  * then Reset High->Low, GHGL_EN High->Low
  */
@@ -1176,25 +1200,23 @@ static void lcm_suspend_power(void)
 
 static void lcm_set_backlight(unsigned int level)
 {
-	if(level > 255)
-	{
-		pr_debug("%s invalid brightness level=%d\n", __FUNCTION__, level);
-		return ;
+	if (level > 255)	{
+		pr_debug("%s invalid brightness level=%d\n", __func__, level);
+		return;
 	}
 	dsi_set_cmdq_V2(0x51, 1, ((unsigned char *)&level), 1);
 }
 
 static void lcm_set_backlight_mode(unsigned int mode)
 {
-	if(mode > 3)
-	{
-		pr_debug("%s invalid CABC mode=%d\n", __FUNCTION__, mode);
-		return ;
+	if (mode > 3) {
+		pr_debug("%s invalid CABC mode=%d\n", __func__, mode);
+		return;
 	}
 	dsi_set_cmdq_V2(0x55, 1, ((unsigned char *)&mode), 1);
 }
 
-LCM_DRIVER nt35521_wxga_dsi_vdo_karnak_kd_lcm_drv = {
+struct LCM_DRIVER nt35521_wxga_dsi_vdo_karnak_kd_lcm_drv = {
 	.name			= "nt35521_wxga_dsi_vdo_karnak_kd",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,

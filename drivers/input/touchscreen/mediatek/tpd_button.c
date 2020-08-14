@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include "tpd.h"
 
 /* #ifdef TPD_HAVE_BUTTON */
@@ -7,22 +20,24 @@ static unsigned int tpd_keycnt;
 static int tpd_keys[TPD_VIRTUAL_KEY_MAX] = { 0 };
 
 static int tpd_keys_dim[TPD_VIRTUAL_KEY_MAX][4];	/* = {0}; */
-static ssize_t mtk_virtual_keys_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static ssize_t mtk_virtual_keys_show(struct kobject *kobj,
+			struct kobj_attribute *attr, char *buf)
 {
 	int i, j;
 
 	for (i = 0, j = 0; i < tpd_keycnt; i++)
-		j += sprintf(buf, "%s%s:%d:%d:%d:%d:%d%s", buf,
+		j += snprintf(buf+j, PAGE_SIZE-j, "%s%s:%d:%d:%d:%d:%d%s", buf,
 			     __stringify(EV_KEY), tpd_keys[i],
 			     tpd_keys_dim[i][0], tpd_keys_dim[i][1],
-			     tpd_keys_dim[i][2], tpd_keys_dim[i][3], (i == tpd_keycnt - 1 ? "\n" : ":"));
+			     tpd_keys_dim[i][2], tpd_keys_dim[i][3],
+			     (i == tpd_keycnt - 1 ? "\n" : ":"));
 	return j;
 }
 
 static struct kobj_attribute mtk_virtual_keys_attr = {
 	.attr = {
 		 .name = "virtualkeys.mtk-tpd",
-		 .mode = S_IRUGO,
+		 .mode = 0644,
 		 },
 	.show = &mtk_virtual_keys_show,
 };
@@ -67,7 +82,8 @@ void tpd_button_init(void)
 		__set_bit(tpd_keys[i], tpd->dev->keybit);
 	properties_kobj = kobject_create_and_add("board_properties", NULL);
 	if (properties_kobj)
-		ret = sysfs_create_group(properties_kobj, &mtk_properties_attr_group);
+		ret = sysfs_create_group(properties_kobj,
+				&mtk_properties_attr_group);
 	if (!properties_kobj || ret)
 		TPD_DEBUG("failed to create board_properties\n");
 }
@@ -75,17 +91,26 @@ void tpd_button_init(void)
 void tpd_button(unsigned int x, unsigned int y, unsigned int down)
 {
 	int i;
+	bool report;
 
 	if (down) {
 		for (i = 0; i < tpd_keycnt; i++) {
-			if (x >= tpd_keys_dim[i][0] - (tpd_keys_dim[i][2] / 2) &&
-			    x <= tpd_keys_dim[i][0] + (tpd_keys_dim[i][2] / 2) &&
-			    y >= tpd_keys_dim[i][1] - (tpd_keys_dim[i][3] / 2) &&
-			    y <= tpd_keys_dim[i][1] + (tpd_keys_dim[i][3] / 2) && !(tpd->btn_state & (1 << i))) {
+			report = x >= tpd_keys_dim[i][0] -
+					(tpd_keys_dim[i][2] / 2) &&
+				x <= tpd_keys_dim[i][0] +
+					(tpd_keys_dim[i][2] / 2) &&
+				y >= tpd_keys_dim[i][1] -
+					(tpd_keys_dim[i][3] / 2) &&
+				y <= tpd_keys_dim[i][1] +
+					(tpd_keys_dim[i][3] / 2) &&
+				!(tpd->btn_state & (1 << i));
+
+			if (report) {
 				input_report_key(tpd->kpd, tpd_keys[i], 1);
 				input_sync(tpd->kpd);
 				tpd->btn_state |= (1 << i);
-				TPD_DEBUG("[mtk-tpd] press key %d (%d)\n", i, tpd_keys[i]);
+				TPD_DEBUG("press key %d (%d)\n",
+						i, tpd_keys[i]);
 			}
 		}
 	} else {
@@ -93,7 +118,8 @@ void tpd_button(unsigned int x, unsigned int y, unsigned int down)
 			if (tpd->btn_state & (1 << i)) {
 				input_report_key(tpd->kpd, tpd_keys[i], 0);
 				input_sync(tpd->kpd);
-				TPD_DEBUG("[mtk-tpd] release key %d (%d)\n", i, tpd_keys[i]);
+				TPD_DEBUG("release key %d (%d)\n",
+						i, tpd_keys[i]);
 			}
 		}
 		tpd->btn_state = 0;

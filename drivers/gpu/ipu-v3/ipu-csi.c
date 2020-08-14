@@ -202,7 +202,7 @@ static int ipu_csi_set_testgen_mclk(struct ipu_csi *csi, u32 pixel_clk,
 					u32 ipu_clk)
 {
 	u32 temp;
-	u32 div_ratio;
+	int div_ratio;
 
 	div_ratio = (ipu_clk / pixel_clk) - 1;
 
@@ -227,83 +227,80 @@ static int ipu_csi_set_testgen_mclk(struct ipu_csi *csi, u32 pixel_clk,
 static int mbus_code_to_bus_cfg(struct ipu_csi_bus_config *cfg, u32 mbus_code)
 {
 	switch (mbus_code) {
-	case V4L2_MBUS_FMT_BGR565_2X8_BE:
-	case V4L2_MBUS_FMT_BGR565_2X8_LE:
-	case V4L2_MBUS_FMT_RGB565_2X8_BE:
-	case V4L2_MBUS_FMT_RGB565_2X8_LE:
+	case MEDIA_BUS_FMT_BGR565_2X8_BE:
+	case MEDIA_BUS_FMT_BGR565_2X8_LE:
+	case MEDIA_BUS_FMT_RGB565_2X8_BE:
+	case MEDIA_BUS_FMT_RGB565_2X8_LE:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_RGB565;
 		cfg->mipi_dt = MIPI_DT_RGB565;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_RGB444_2X8_PADHI_BE:
-	case V4L2_MBUS_FMT_RGB444_2X8_PADHI_LE:
+	case MEDIA_BUS_FMT_RGB444_2X8_PADHI_BE:
+	case MEDIA_BUS_FMT_RGB444_2X8_PADHI_LE:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_RGB444;
 		cfg->mipi_dt = MIPI_DT_RGB444;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_RGB555_2X8_PADHI_BE:
-	case V4L2_MBUS_FMT_RGB555_2X8_PADHI_LE:
+	case MEDIA_BUS_FMT_RGB555_2X8_PADHI_BE:
+	case MEDIA_BUS_FMT_RGB555_2X8_PADHI_LE:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_RGB555;
 		cfg->mipi_dt = MIPI_DT_RGB555;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_UYVY8_2X8:
+	case MEDIA_BUS_FMT_UYVY8_2X8:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_YUV422_UYVY;
 		cfg->mipi_dt = MIPI_DT_YUV422;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_YUYV8_2X8:
+	case MEDIA_BUS_FMT_YUYV8_2X8:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_YUV422_YUYV;
 		cfg->mipi_dt = MIPI_DT_YUV422;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_UYVY8_1X16:
-		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_YUV422_UYVY;
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+	case MEDIA_BUS_FMT_YUYV8_1X16:
+		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_BAYER;
 		cfg->mipi_dt = MIPI_DT_YUV422;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_16;
 		break;
-	case V4L2_MBUS_FMT_YUYV8_1X16:
-		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_YUV422_YUYV;
-		cfg->mipi_dt = MIPI_DT_YUV422;
-		cfg->data_width = IPU_CSI_DATA_WIDTH_16;
-		break;
-	case V4L2_MBUS_FMT_SBGGR8_1X8:
-	case V4L2_MBUS_FMT_SGBRG8_1X8:
-	case V4L2_MBUS_FMT_SGRBG8_1X8:
-	case V4L2_MBUS_FMT_SRGGB8_1X8:
+	case MEDIA_BUS_FMT_SBGGR8_1X8:
+	case MEDIA_BUS_FMT_SGBRG8_1X8:
+	case MEDIA_BUS_FMT_SGRBG8_1X8:
+	case MEDIA_BUS_FMT_SRGGB8_1X8:
+	case MEDIA_BUS_FMT_Y8_1X8:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_BAYER;
 		cfg->mipi_dt = MIPI_DT_RAW8;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_SBGGR10_DPCM8_1X8:
-	case V4L2_MBUS_FMT_SGBRG10_DPCM8_1X8:
-	case V4L2_MBUS_FMT_SGRBG10_DPCM8_1X8:
-	case V4L2_MBUS_FMT_SRGGB10_DPCM8_1X8:
-	case V4L2_MBUS_FMT_SBGGR10_2X8_PADHI_BE:
-	case V4L2_MBUS_FMT_SBGGR10_2X8_PADHI_LE:
-	case V4L2_MBUS_FMT_SBGGR10_2X8_PADLO_BE:
-	case V4L2_MBUS_FMT_SBGGR10_2X8_PADLO_LE:
+	case MEDIA_BUS_FMT_SBGGR10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SGBRG10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SGRBG10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SRGGB10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_BE:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_LE:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADLO_BE:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADLO_LE:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_BAYER;
 		cfg->mipi_dt = MIPI_DT_RAW10;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_8;
 		break;
-	case V4L2_MBUS_FMT_SBGGR10_1X10:
-	case V4L2_MBUS_FMT_SGBRG10_1X10:
-	case V4L2_MBUS_FMT_SGRBG10_1X10:
-	case V4L2_MBUS_FMT_SRGGB10_1X10:
+	case MEDIA_BUS_FMT_SBGGR10_1X10:
+	case MEDIA_BUS_FMT_SGBRG10_1X10:
+	case MEDIA_BUS_FMT_SGRBG10_1X10:
+	case MEDIA_BUS_FMT_SRGGB10_1X10:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_BAYER;
 		cfg->mipi_dt = MIPI_DT_RAW10;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_10;
 		break;
-	case V4L2_MBUS_FMT_SBGGR12_1X12:
-	case V4L2_MBUS_FMT_SGBRG12_1X12:
-	case V4L2_MBUS_FMT_SGRBG12_1X12:
-	case V4L2_MBUS_FMT_SRGGB12_1X12:
+	case MEDIA_BUS_FMT_SBGGR12_1X12:
+	case MEDIA_BUS_FMT_SGBRG12_1X12:
+	case MEDIA_BUS_FMT_SGRBG12_1X12:
+	case MEDIA_BUS_FMT_SRGGB12_1X12:
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_BAYER;
 		cfg->mipi_dt = MIPI_DT_RAW12;
 		cfg->data_width = IPU_CSI_DATA_WIDTH_12;
 		break;
-	case V4L2_MBUS_FMT_JPEG_1X8:
+	case MEDIA_BUS_FMT_JPEG_1X8:
 		/* TODO */
 		cfg->data_fmt = CSI_SENS_CONF_DATA_FMT_JPEG;
 		cfg->mipi_dt = MIPI_DT_RAW8;
@@ -364,9 +361,13 @@ int ipu_csi_init_interface(struct ipu_csi *csi,
 {
 	struct ipu_csi_bus_config cfg;
 	unsigned long flags;
-	u32 data = 0;
+	u32 width, height, data = 0;
 
 	fill_csi_bus_cfg(&cfg, mbus_cfg, mbus_fmt);
+
+	/* set default sensor frame width and height */
+	width = mbus_fmt->width;
+	height = mbus_fmt->height;
 
 	/* Set the CSI_SENS_CONF register remaining fields */
 	data |= cfg.data_width << CSI_SENS_CONF_DATA_WIDTH_SHIFT |
@@ -385,11 +386,6 @@ int ipu_csi_init_interface(struct ipu_csi *csi,
 
 	ipu_csi_write(csi, data, CSI_SENS_CONF);
 
-	/* Setup sensor frame size */
-	ipu_csi_write(csi,
-		      (mbus_fmt->width - 1) | ((mbus_fmt->height - 1) << 16),
-		      CSI_SENS_FRM_SIZE);
-
 	/* Set CCIR registers */
 
 	switch (cfg.clk_mode) {
@@ -407,11 +403,12 @@ int ipu_csi_init_interface(struct ipu_csi *csi,
 			 * Field1BlankEnd = 0x7, Field1BlankStart = 0x3,
 			 * Field1ActiveEnd = 0x5, Field1ActiveStart = 0x1
 			 */
+			height = 625; /* framelines for PAL */
+
 			ipu_csi_write(csi, 0x40596 | CSI_CCIR_ERR_DET_EN,
 					  CSI_CCIR_CODE_1);
 			ipu_csi_write(csi, 0xD07DF, CSI_CCIR_CODE_2);
 			ipu_csi_write(csi, 0xFF0000, CSI_CCIR_CODE_3);
-
 		} else if (mbus_fmt->width == 720 && mbus_fmt->height == 480) {
 			/*
 			 * NTSC case
@@ -421,6 +418,8 @@ int ipu_csi_init_interface(struct ipu_csi *csi,
 			 * Field1BlankEnd = 0x6, Field1BlankStart = 0x2,
 			 * Field1ActiveEnd = 0x4, Field1ActiveStart = 0
 			 */
+			height = 525; /* framelines for NTSC */
+
 			ipu_csi_write(csi, 0xD07DF | CSI_CCIR_ERR_DET_EN,
 					  CSI_CCIR_CODE_1);
 			ipu_csi_write(csi, 0x40596, CSI_CCIR_CODE_2);
@@ -445,6 +444,10 @@ int ipu_csi_init_interface(struct ipu_csi *csi,
 		ipu_csi_write(csi, 0, CSI_CCIR_CODE_1);
 		break;
 	}
+
+	/* Setup sensor frame size */
+	ipu_csi_write(csi, (width - 1) | ((height - 1) << 16),
+		      CSI_SENS_FRM_SIZE);
 
 	dev_dbg(csi->ipu->dev, "CSI_SENS_CONF = 0x%08X\n",
 		ipu_csi_read(csi, CSI_SENS_CONF));
@@ -538,7 +541,7 @@ void ipu_csi_set_test_generator(struct ipu_csi *csi, bool active,
 
 	temp = ipu_csi_read(csi, CSI_TST_CTRL);
 
-	if (active == false) {
+	if (!active) {
 		temp &= ~CSI_TEST_GEN_MODE_EN;
 		ipu_csi_write(csi, temp, CSI_TST_CTRL);
 	} else {

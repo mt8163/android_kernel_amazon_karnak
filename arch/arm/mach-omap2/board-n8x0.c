@@ -21,8 +21,9 @@
 #include <linux/i2c.h>
 #include <linux/spi/spi.h>
 #include <linux/usb/musb.h>
+#include <linux/mmc/host.h>
 #include <linux/platform_data/spi-omap2-mcspi.h>
-#include <linux/platform_data/mtd-onenand-omap2.h>
+#include <linux/platform_data/mmc-omap.h>
 #include <linux/mfd/menelaus.h>
 #include <sound/tlv320aic3x.h>
 
@@ -32,7 +33,6 @@
 #include "common.h"
 #include "mmc.h"
 #include "soc.h"
-#include "gpmc-onenand.h"
 #include "common-board-devices.h"
 
 #define TUSB6010_ASYNC_CS	1
@@ -66,7 +66,7 @@ static void board_check_revision(void)
 		pr_err("Unknown board\n");
 }
 
-#if defined(CONFIG_USB_MUSB_TUSB6010) || defined(CONFIG_USB_MUSB_TUSB6010_MODULE)
+#if IS_ENABLED(CONFIG_USB_MUSB_TUSB6010)
 /*
  * Enable or disable power to TUSB6010. When enabling, turn on 3.3 V and
  * 1.5 V voltage regulators of PM companion chip. Companion chip will then
@@ -163,8 +163,7 @@ static struct spi_board_info n800_spi_board_info[] __initdata = {
 	},
 };
 
-#if defined(CONFIG_MENELAUS) &&						\
-	(defined(CONFIG_MMC_OMAP) || defined(CONFIG_MMC_OMAP_MODULE))
+#if defined(CONFIG_MENELAUS) && IS_ENABLED(CONFIG_MMC_OMAP)
 
 /*
  * On both N800 and N810, only the first of the two MMC controllers is in use.

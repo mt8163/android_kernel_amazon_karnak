@@ -8,7 +8,6 @@
  * io_apic.c.)
  */
 
-#include <linux/module.h>
 #include <linux/seq_file.h>
 #include <linux/interrupt.h>
 #include <linux/kernel_stat.h>
@@ -20,12 +19,7 @@
 #include <linux/mm.h>
 
 #include <asm/apic.h>
-
-DEFINE_PER_CPU_SHARED_ALIGNED(irq_cpustat_t, irq_stat);
-EXPORT_PER_CPU_SYMBOL(irq_stat);
-
-DEFINE_PER_CPU(struct pt_regs *, irq_regs);
-EXPORT_PER_CPU_SYMBOL(irq_regs);
+#include <asm/nospec-branch.h>
 
 #ifdef CONFIG_DEBUG_STACKOVERFLOW
 
@@ -61,31 +55,23 @@ DEFINE_PER_CPU(struct irq_stack *, softirq_stack);
 static void call_on_stack(void *func, void *stack)
 {
 	asm volatile("xchgl	%%ebx,%%esp	\n"
-		     "call	*%%edi		\n"
+		     CALL_NOSPEC
 		     "movl	%%ebx,%%esp	\n"
 		     : "=b" (stack)
 		     : "0" (stack),
-		       "D"(func)
+		       [thunk_target] "D"(func)
 		     : "memory", "cc", "edx", "ecx", "eax");
 }
-
-/* how to get the current stack pointer from C */
-#define current_stack_pointer ({		\
-	unsigned long sp;			\
-	asm("mov %%esp,%0" : "=g" (sp));	\
-	sp;					\
-})
 
 static inline void *current_stack(void)
 {
 	return (void *)(current_stack_pointer & ~(THREAD_SIZE - 1));
 }
 
-static inline int
-execute_on_irq_stack(int overflow, struct irq_desc *desc, int irq)
+static inline int execute_on_irq_stack(int overflow, struct irq_desc *desc)
 {
 	struct irq_stack *curstk, *irqstk;
-	u32 *isp, *prev_esp, arg1, arg2;
+	u32 *isp, *prev_esp, arg1;
 
 	curstk = (struct irq_stack *) current_stack();
 	irqstk = __this_cpu_read(hardirq_stack);
@@ -109,11 +95,11 @@ execute_on_irq_stack(int overflow, struct irq_desc *desc, int irq)
 		call_on_stack(print_stack_overflow, isp);
 
 	asm volatile("xchgl	%%ebx,%%esp	\n"
-		     "call	*%%edi		\n"
+		     CALL_NOSPEC
 		     "movl	%%ebx,%%esp	\n"
-		     : "=a" (arg1), "=d" (arg2), "=b" (isp)
-		     :  "0" (irq),   "1" (desc),  "2" (isp),
-			"D" (desc->handle_irq)
+		     : "=a" (arg1), "=b" (isp)
+		     :  "0" (desc),   "1" (isp),
+			[thunk_target] "D" (desc->handle_irq)
 		     : "memory", "cc", "ecx");
 	return 1;
 }
@@ -144,11 +130,9 @@ void irq_ctx_init(int cpu)
 
 void do_softirq_own_stack(void)
 {
-	struct thread_info *curstk;
 	struct irq_stack *irqstk;
 	u32 *isp, *prev_esp;
 
-	curstk = current_stack();
 	irqstk = __this_cpu_read(softirq_stack);
 
 	/* build the stack frame on the softirq stack */
@@ -161,21 +145,17 @@ void do_softirq_own_stack(void)
 	call_on_stack(__do_softirq, isp);
 }
 
-bool handle_irq(unsigned irq, struct pt_regs *regs)
+bool handle_irq(struct irq_desc *desc, struct pt_regs *regs)
 {
-	struct irq_desc *desc;
-	int overflow;
+	int overflow = check_stack_overflow();
 
-	overflow = check_stack_overflow();
-
-	desc = irq_to_desc(irq);
-	if (unlikely(!desc))
+	if (IS_ERR_OR_NULL(desc))
 		return false;
 
-	if (user_mode_vm(regs) || !execute_on_irq_stack(overflow, desc, irq)) {
+	if (user_mode(regs) || !execute_on_irq_stack(overflow, desc)) {
 		if (unlikely(overflow))
 			print_stack_overflow();
-		desc->handle_irq(irq, desc);
+		generic_handle_irq_desc(desc);
 	}
 
 	return true;

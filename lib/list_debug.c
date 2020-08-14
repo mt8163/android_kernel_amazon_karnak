@@ -34,13 +34,16 @@ void __list_add(struct list_head *new,
 	WARN(new == prev || new == next,
 	     "list_add double add: new=%p, prev=%p, next=%p.\n",
 	     new, prev, next);
-	if (next->prev != prev || prev->next != next || new == prev || new == next)
+	if (next->prev != prev ||
+		prev->next != next ||
+		new == prev ||
+		new == next)
 		BUG();
 
 	next->prev = new;
 	new->next = next;
 	new->prev = prev;
-	prev->next = new;
+	WRITE_ONCE(prev->next, new);
 }
 EXPORT_SYMBOL(__list_add);
 

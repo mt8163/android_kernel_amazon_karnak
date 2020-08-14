@@ -1,32 +1,23 @@
 config MTK_THERMAL_PA_VIA_ATCMD
-	bool "MTK_THERMAL_PA_VIA_ATCMD"
+	bool "Thermal switch for query modem RF temp"
 	help
-	  Internal switch for thermal management to query modem RF
-	  temperature via AT command.
+	  Internal switch for thermal management
+	  to query modem RF temperature
+	  via AT command.
+	  (RIL sockets)
 
-config THERMAL_abh123
-	bool "THERMAL_abh123"
-
-config THERMAL_abe123
-	bool "Thermal support for abe123"
+config CLATM_CHOOSE_HIGHER_TARGET_TJ
+	bool "adaptive cooler will choose the one who has higher target Tj"
+	help
+	  Change ATM decide TTj logic.
+	  It will choose the adaptive cooler with higher Target Tj
+	  and use the higher trip point as target Tj
+	  when more than one adaptive active.
 	default n
-	help
-	  For abe123 specific thermal configurations.
 
-config THERMAL_abc123
-	bool "Thermal support for abc123"
+config VS_BACKLIGHT_COOLER
+	bool "Virtual Sensor backlight cooler"
 	default n
-	help
-	  For abc123 specific configurations for thermal related.
-
-config THERMAL_abg123
-	bool "THERMAL_abg123"
-
-config THERMAL_KARNAK
-	bool "THERMAL_KARNAK"
-	default n
-	help
-	  For KARNAK specific configurations for thermal related.
 
 config THERMAL_abc123
 	bool "THERMAL_abc123"
@@ -34,32 +25,26 @@ config THERMAL_abc123
 	help
 	  For abc123 specific configurations for thermal related.
 
-config THERMAL_abm123
-	bool "THERMAL_abm123"
+config THERMAL_abc123
+	bool "THERMAL_abc123"
 	default n
 	help
-	  For abm123 specific configurations for thermal related.
-
-config THERMAL_WIFI_COOLER
-	bool "Wifi cooler"
-	default n
-	help
-	  Thermal cooler to support WiFi throttling. Enable this to
-	  add the driver and device for WiFi cooler.
-
-config VS_BACKLIGHT_COOLER
-	bool "Virtual Sensor backlight cooler"
-	default n
+	  For abc123 specific configurations for thermal related.
 
 config VS_BCCT_COOLER
 	bool "Virtual Sensor battery current cooler"
 	default n
 
-config THERMAL_ALT_CPU_ZONE
-	bool "Alternate CPU thermal zone"
+config THERMAL_abc123
+	bool "THERMAL_abc123"
 	default n
 	help
-	  Alternative thermal zone to track CPU temperature.
-	  Enable this flag to load the driver and device for
-	  CPU alternative thermal zone.
+	  For abc123 specific configurations for thermal related.
 
+config THERMAL_KARNAK
+	bool "THERMAL_KARNAK"
+	default n
+	help
+	  For KARNAK specific configurations for thermal related.
+
+source "drivers/misc/mediatek/thermal/tmp103/Kconfig"

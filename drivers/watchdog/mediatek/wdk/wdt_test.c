@@ -1,7 +1,19 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/rtpm_prio.h>
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -13,7 +25,6 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/spinlock.h>
-#include <linux/rtpm_prio.h>
 #include <linux/rtc.h>
 #include <linux/cpu.h>
 /*  */
@@ -31,11 +42,11 @@
 
 
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <mach/irqs.h>
 #include <mach/mt_reg_base.h>
 #include <mach/mt_typedefs.h>
-#include <mach/mt_wdt.h>
+#include <mach/mtk_wdt.h>
 #include <linux/delay.h>
 
 #include <linux/device.h>
@@ -55,7 +66,8 @@ static DEFINE_SPINLOCK(wdt_test_lock1);
 static struct task_struct *wk_tsk[2];	/* cpu: 2 */
 static int data;
 
-static int __cpuinit cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
+static int __cpuinit cpu_callback(struct notifier_block *nfb,
+	unsigned long action, void *hcpu)
 {
 	int hotcpu = (unsigned long)hcpu;
 
@@ -70,7 +82,7 @@ static int __cpuinit cpu_callback(struct notifier_block *nfb, unsigned long acti
 		if (hotcpu < nr_cpu_ids) {
 			kthread_bind(wk_tsk[hotcpu], hotcpu);
 			wake_up_process(wk_tsk[hotcpu]);
-			pr_alert("[WDK-test]cpu %d plug on ", hotcpu);
+			pr_notice("[WDK-test]cpu %d plug on ", hotcpu);
 		}
 		break;
 #ifdef CONFIG_HOTPLUG_CPU
@@ -78,7 +90,7 @@ static int __cpuinit cpu_callback(struct notifier_block *nfb, unsigned long acti
 	case CPU_UP_CANCELED_FROZEN:
 	case CPU_DEAD:
 	case CPU_DEAD_FROZEN:
-		pr_alert("[WDK-test]:start Stop CPU:%d\n", hotcpu);
+		pr_notice("[WDK-test]:start Stop CPU:%d\n", hotcpu);
 
 		break;
 #endif				/* CONFIG_HOTPLUG_CPU */
@@ -112,11 +124,11 @@ static int kwdt_thread_test(void *arg)
 		cpu = smp_processor_id();
 		spin_unlock(&wdt_test_lock0);
 
-		if (test_case == (cpu * 10 + 1)) {	/* cpu0 Preempt disale */
+		if (test_case == (cpu * 10 + 1)) {/* cpu0 Preempt disale */
 			pr_debug("CPU:%d, Preempt disable\n", cpu);
 			spin_lock(&wdt_test_lock1);
 		}
-		if (test_case == (cpu * 10 + 2)) {	/* cpu0 Preempt&irq disale */
+		if (test_case == (cpu * 10 + 2)) {/* cpu0 Preempt&irq disale */
 			pr_debug("CPU:%d, irq & Preempt disable\n", cpu);
 			spin_lock_irqsave(&wdt_test_lock1, flags);
 		}

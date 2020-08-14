@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 /**
  * @file    mt_cpufreq.c
  * @brief   Driver for CPU DVFS
@@ -16,6 +29,9 @@
 #include <linux/sched.h>
 #include <linux/init.h>
 #include <linux/cpu.h>
+#ifdef CONFIG_AMAZON_THERMAL
+#include <linux/cpu_cooling.h>
+#endif
 #include <linux/cpufreq.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
@@ -35,9 +51,6 @@
 #include <linux/jiffies.h>
 #include <linux/bitops.h>
 #include <linux/uaccess.h>
-#if 0	/* L318_Need_Related_File */
-#include <linux/aee.h>
-#endif	/* L318_Need_Related_File */
 
 #ifdef CONFIG_OF
 #include <linux/of.h>
@@ -47,20 +60,6 @@
 
 /* project includes */
 #include "mach/mt_freqhopping.h"
-#if 0	/* L318_Need_Related_File */
-#include "mach/mt_typedefs.h"
-#include "mach/irqs.h"
-#include "mach/mt_irq.h"
-#include "mach/mt_spm_idle.h"
-#include "mach/mt_pmic_wrap.h"
-#include "mach/mt_clkmgr.h"
-#include "mach/mt_ptp.h"
-/* TODO: disable to avoid build error */
-/* #include "mach/mt_static_power.h" */
-#include "mach/upmu_sw.h"
-#include "mach/mtk_rtc_hal.h"
-#include "mach/mt_rtc_hw.h"
-#endif	/* L318_Need_Related_File */
 #include "mt_hotplug_strategy.h"
 #include "mach/mt_thermal.h"
 #include "mt_static_power.h"
@@ -93,7 +92,7 @@ static void __iomem *clk_cksys_base;
 struct regulator *reg_ext_vproc;	/* sym827 */
 #endif
 
-int	regulator_ext_vproc_voltage = 0;
+int	regulator_ext_vproc_voltage;
 
 /*=============================================================*/
 /* Macro definition                                            */
@@ -103,13 +102,12 @@ int	regulator_ext_vproc_voltage = 0;
  * CONFIG
  */
 #define CONFIG_CPU_DVFS_SHOWLOG 1
-/* #define CONFIG_CPU_DVFS_BRINGUP 1 */           /* for bring up */
-/* #define CONFIG_CPU_DVFS_FFTT_TEST 1 */         /* FF TT SS volt test */
-/* #define CONFIG_CPU_DVFS_DOWNGRADE_FREQ 1 */    /* downgrade freq */
-#define CONFIG_CPU_DVFS_POWER_THROTTLING  1       /* power throttling features */
-/*  #define CONFIG_CPU_DVFS_RAMP_DOWN 1 */        /* ramp down to slow down freq change */
+/* #define CONFIG_CPU_DVFS_BRINGUP 1 */         /* for bring up */
+/* #define CONFIG_CPU_DVFS_FFTT_TEST 1 */       /* FF TT SS volt test */
+/* #define CONFIG_CPU_DVFS_DOWNGRADE_FREQ 1 */  /* downgrade freq */
+#define CONFIG_CPU_DVFS_POWER_THROTTLING  1     /* power throttling features */
 #ifdef CONFIG_MTK_RAM_CONSOLE
-#define CONFIG_CPU_DVFS_AEE_RR_REC 1              /* AEE SRAM debugging */
+#define CONFIG_CPU_DVFS_AEE_RR_REC 1            /* AEE SRAM debugging */
 #endif
 
 #define MAX(a, b) ((a) >= (b) ? (a) : (b))
@@ -132,12 +130,10 @@ int	regulator_ext_vproc_voltage = 0;
 	(((((old_volt) - (new_volt)) * 2)  / 625) + PMIC_CMD_DELAY_TIME)
 #define PLL_SETTLE_TIME         (20)
 
-#define RAMP_DOWN_TIMES         (2)             /* RAMP DOWN TIMES to postpone frequency degrade */
-#if 1 /* mt8163 */
-#define CPUFREQ_BOUNDARY_FOR_FHCTL   (CPU_DVFS_FREQ2)       /* if cross 1105MHz when DFS, don't used FHCTL */
-#else
-#define CPUFREQ_BOUNDARY_FOR_FHCTL   (CPU_DVFS_FREQ7)       /* if cross 1170MHz when DFS, don't used FHCTL */
-#endif
+/* RAMP DOWN TIMES to postpone frequency degrade */
+#define RAMP_DOWN_TIMES         (2)
+/* if cross 1105MHz when DFS, don't used FHCTL */
+#define CPUFREQ_BOUNDARY_FOR_FHCTL   (CPU_DVFS_FREQ2)
 
 #define DEFAULT_VOLT_VSRAM      (1050000)
 #define DEFAULT_VOLT_VPROC      (1000000)
@@ -147,7 +143,6 @@ int	regulator_ext_vproc_voltage = 0;
 
 /* for DVFS OPP table */
 
-#if 1 /* mt8163 */
 #define CPU_DVFS_SB_FREQ0 (1500000) /* KHz */
 #define CPU_DVFS_SB_FREQ1 (1350000) /* KHz */
 #define CPU_DVFS_SB_FREQ2 (1200000) /* KHz */
@@ -167,21 +162,6 @@ int	regulator_ext_vproc_voltage = 0;
 #define CPU_DVFS_FREQ7 (600000) /* KHz */
 
 #define CPUFREQ_LAST_FREQ_LEVEL    (CPU_DVFS_FREQ7)
-#else
-#define CPU_DVFS_FREQ0   (1994000) /* KHz */
-#define CPU_DVFS_FREQ1   (1794000) /* KHz */
-#define CPU_DVFS_FREQ2   (1690000) /* KHz */
-#define CPU_DVFS_FREQ3   (1612000) /* KHz */
-#define CPU_DVFS_FREQ4   (1560000) /* KHz */
-#define CPU_DVFS_FREQ4_2 (1495000) /* KHz */
-#define CPU_DVFS_FREQ5   (1417000) /* KHz */
-#define CPU_DVFS_FREQ6   (1287000) /* KHz */
-#define CPU_DVFS_FREQ7   (1170000) /* KHz */
-#define CPU_DVFS_FREQ8   (936000)  /* KHz */
-#define CPU_DVFS_FREQ9   (702000)  /* KHz */
-#define CPU_DVFS_FREQ10  (468000)  /* KHz */
-#define CPUFREQ_LAST_FREQ_LEVEL    (CPU_DVFS_FREQ10)
-#endif
 
 #ifdef CONFIG_CPU_DVFS_POWER_THROTTLING
 #define PWR_THRO_MODE_LBAT_936MHZ	BIT(0)
@@ -222,23 +202,26 @@ int	regulator_ext_vproc_voltage = 0;
 			pr_debug(TAG""fmt, ##args);    \
 	} while (0)
 
-#define FUNC_LV_MODULE         BIT(0)  /* module, platform driver interface */
-#define FUNC_LV_CPUFREQ        BIT(1)  /* cpufreq driver interface          */
-#define FUNC_LV_API                BIT(2)  /* mt_cpufreq driver global function */
-#define FUNC_LV_LOCAL            BIT(3)  /* mt_cpufreq driver local function  */
-#define FUNC_LV_HELP              BIT(4)  /* mt_cpufreq driver help function   */
+#define FUNC_LV_MODULE      BIT(0)  /* module, platform driver interface */
+#define FUNC_LV_CPUFREQ     BIT(1)  /* cpufreq driver interface          */
+#define FUNC_LV_API         BIT(2)  /* mt_cpufreq driver global function */
+#define FUNC_LV_LOCAL       BIT(3)  /* mt_cpufreq driver local function  */
+#define FUNC_LV_HELP        BIT(4)  /* mt_cpufreq driver help function   */
 
 /* static unsigned int func_lv_mask = (FUNC_LV_MODULE | FUNC_LV_CPUFREQ
-	| FUNC_LV_API | FUNC_LV_LOCAL | FUNC_LV_HELP); */
+ * | FUNC_LV_API | FUNC_LV_LOCAL | FUNC_LV_HELP);
+ */
 static unsigned int func_lv_mask;
 static unsigned int do_dvfs_stress_test;
 static unsigned int is_fix_freq_in_ES = 1;
 
 #ifdef CONFIG_CPU_DVFS_SHOWLOG
 #define FUNC_ENTER(lv)          \
-	do { if ((lv) & func_lv_mask) cpufreq_dbg(">> %s()\n", __func__); } while (0)
+	do { if ((lv) & func_lv_mask) \
+		cpufreq_dbg(">> %s()\n", __func__); } while (0)
 #define FUNC_EXIT(lv)           \
-	do { if ((lv) & func_lv_mask) cpufreq_dbg("<< %s():%d\n", __func__, __LINE__); } while (0)
+	do { if ((lv) & func_lv_mask) \
+		cpufreq_dbg("<< %s():%d\n", __func__, __LINE__); } while (0)
 #else
 #define FUNC_ENTER(lv)
 #define FUNC_EXIT(lv)
@@ -247,11 +230,13 @@ static unsigned int is_fix_freq_in_ES = 1;
 /*
  * BIT Operation
  */
-#define _BIT_(_bit_)                    (unsigned)(1 << (_bit_))
+#define _BIT_(_bit_)                    (unsigned int)(1 << (_bit_))
 #define _BITS_(_bits_, _val_)           \
-	((((unsigned) -1 >> (31 - ((1) ? _bits_))) & ~((1U << ((0) ? _bits_)) - 1)) & ((_val_)<<((0) ? _bits_)))
+	((((unsigned int) -1 >> (31 - ((1) ? _bits_))) \
+	& ~((1U << ((0) ? _bits_)) - 1)) & ((_val_)<<((0) ? _bits_)))
 #define _BITMASK_(_bits_)             \
-	(((unsigned) -1 >> (31 - ((1) ? _bits_))) & ~((1U << ((0) ? _bits_)) - 1))
+	(((unsigned int) -1 >> (31 - ((1) ? _bits_))) \
+	& ~((1U << ((0) ? _bits_)) - 1))
 #define _GET_BITS_VAL_(_bits_, _val_) \
 	(((_val_) & (_BITMASK_(_bits_))) >> ((0) ? _bits_))
 
@@ -262,10 +247,8 @@ static unsigned int is_fix_freq_in_ES = 1;
 #define cpufreq_read(addr)                  __raw_readl(addr)
 #define cpufreq_write(addr, val)            mt_reg_sync_writel(val, addr)
 #define cpufreq_write_mask(addr, mask, val) \
-	cpufreq_write(addr, (cpufreq_read(addr) & ~(_BITMASK_(mask))) | _BITS_(mask, val))
-
-static int system_boost;
-int _mt_cpufreq_pdrv_probed = 0;
+	cpufreq_write(addr, (cpufreq_read(addr) \
+	& ~(_BITMASK_(mask))) | _BITS_(mask, val))
 
 
 /*=============================================================*/
@@ -290,19 +273,14 @@ int _mt_cpufreq_pdrv_probed = 0;
 /*
  * LOCK
  */
-#if 0   /* spinlock */ /* TODO: FIXME, it would cause warning @ big because of i2c access with atomic operation */
-static DEFINE_SPINLOCK(cpufreq_lock);
-#define cpufreq_lock(flags) spin_lock_irqsave(&cpufreq_lock, flags)
-#define cpufreq_unlock(flags) spin_unlock_irqrestore(&cpufreq_lock, flags)
-#else   /* mutex */
 static DEFINE_MUTEX(cpufreq_mutex);
-bool is_in_cpufreq = 0;
+bool is_in_cpufreq;
 #define cpufreq_lock(flags) \
 do { \
-		/* to fix compile warning */  \
-		flags = (unsigned long)&flags; \
-		mutex_lock(&cpufreq_mutex); \
-		is_in_cpufreq = 1;\
+	/* to fix compile warning */  \
+	flags = (unsigned long)&flags; \
+	mutex_lock(&cpufreq_mutex); \
+	is_in_cpufreq = 1;\
 } while (0)
 
 #define cpufreq_unlock(flags) \
@@ -312,7 +290,6 @@ do { \
 	is_in_cpufreq = 0;\
 	mutex_unlock(&cpufreq_mutex); \
 } while (0)
-#endif
 
 /*
  * EFUSE
@@ -327,140 +304,35 @@ do { \
 #define CPU_LEVEL_1             (0x1)
 
 #define CPU_LV_TO_OPP_IDX(lv)   ((lv)) /* cpu_level to opp_idx */
-unsigned int AllowTurboMode = 0;
+unsigned int AllowTurboMode;
 
 #ifdef __KERNEL__
 static unsigned int _mt_cpufreq_get_cpu_level(void)
 {
 	unsigned int lv = 0;
 
-#if 1 /* mt8163, use efuse to decide segment, no HW bonding */
-	/* unsigned int cpu_speed_bounding = _GET_BITS_VAL_(3 : 0, get_devinfo_with_index(FUNC_CODE_EFUSE_INDEX));*/
-	unsigned int cpu_speed_bounding = get_devinfo_with_index(FUNC_CODE_EFUSE_INDEX);
+	unsigned int cpu_speed_bounding
+	= get_devinfo_with_index(FUNC_CODE_EFUSE_INDEX);
 
-	cpufreq_info("No DT, get CPU frequency bounding from efuse = %x\n", cpu_speed_bounding);
+	cpufreq_info("No DT, get CPU frequency bounding from efuse = %x\n"
+		     , cpu_speed_bounding);
 
-	#if 1
 	lv = CPU_LEVEL_1; /* 1.3G */
 	if (cpu_speed_bounding & EFUSE_BIT12) {
 		if (cpu_speed_bounding & EFUSE_BIT0)
 			lv = CPU_LEVEL_1; /* 1.3G */
 		else
 			lv = CPU_LEVEL_0; /* 1.5G */
-		cpufreq_info("No DT, get CPU frequency bounding lv = %d from efuse = %x\n"
+		cpufreq_info("No DT, get CPU frequency bounding ");
+		cpufreq_info("lv = %d from efuse = %x\n"
 			, lv, cpu_speed_bounding);
 	} else {
-		cpufreq_err("No suitable DVFS table, set to default CPU level! efuse=0x%x\n"
+		cpufreq_err("No suitable DVFS table, ");
+		cpufreq_err("set to default CPU level! efuse=0x%x\n"
 			, cpu_speed_bounding);
 	}
-	#else
-	switch (cpu_speed_bounding) {
-	case 8:
-			#if 0 /* mt8163-TBD turn on turbo mode */
-			AllowTurboMode = 1; /* 1.69 * 1.1 = 1.859G */
-			#endif
-			lv = CPU_LEVEL_0;   /* 1.5G */
-			break;
-	case 9:
-			lv = CPU_LEVEL_1;   /* 1.3G */
-			break;
-
-	default:
-			cpufreq_err("No suitable DVFS table, set to default CPU level! efuse=0x%x\n"
-				, cpu_speed_bounding);
-			lv = CPU_LEVEL_1;
-			break;
-	}
-	#endif
-	cpufreq_info("current CPU efuse is %d, AllowTurboMode=%d\n", cpu_speed_bounding, AllowTurboMode);
-
-#else
-	/* get CPU clock-frequency from DT */
-#ifdef CONFIG_OF
-	{
-		struct device_node *node = of_find_node_by_type(NULL, "cpu");
-		unsigned int cpu_speed = 0;
-			#if 0 /* mt8163-TBD turn on turbo mode */
-			unsigned int cpu_speed_bounding
-				= _GET_BITS_VAL_(3 : 0, get_devinfo_with_index(CPUFREQ_EFUSE_INDEX));
-
-			switch (cpu_speed_bounding) {
-			case 0:
-			case 1:
-			case 2:
-					AllowTurboMode = 1; /* 1.69 * 1.1 = 1.859G */
-					break;
-
-			default:
-					AllowTurboMode = 0;
-					break;
-			}
-			cpufreq_info("current CPU efuse is %d, AllowTurboMode=%d\n"
-				, cpu_speed_bounding, AllowTurboMode);
-			#endif
-
-		if (!of_property_read_u32(node, "clock-frequency", &cpu_speed))
-			cpu_speed = cpu_speed / 1000 / 1000;    /* MHz */
-		else {
-			cpufreq_err("@%s: missing clock-frequency property, use default CPU level\n", __func__);
-			return CPU_LEVEL_1;
-		}
-		cpufreq_info("CPU clock-frequency from DT = %d MHz\n", cpu_speed);
-
-			/* mt8163 limit by both efuse HW bonding & DTS */
-		if (cpu_speed >= 1500)
-			lv = CPU_LEVEL_0;   /* 1.5G */
-		else if (cpu_speed >= 1300)
-			lv = CPU_LEVEL_1;   /* 1.3G */
-		else {
-			cpufreq_err("No suitable DVFS table, set to default CPU level! clock-frequency=%d\n"
-				, cpu_speed);
-			lv = CPU_LEVEL_1;
-		}
-	}
-#else   /* CONFIG_OF */
-	/* no DT, we should check efuse for CPU speed HW bounding */
-	{
-		unsigned int cpu_speed_bounding
-			= _GET_BITS_VAL_(3 : 0, get_devinfo_with_index(CPUFREQ_EFUSE_INDEX));
-
-		cpufreq_info("No DT, get CPU frequency bounding from efuse = %x\n", cpu_speed_bounding);
-
-		switch (cpu_speed_bounding) {
-		case 0:
-		case 1:
-		case 2:
-		case 3:
-		case 4:
-		case 5:
-		case 6:
-			#if 0 /* mt8163-TBD turn on turbo mode */
-			AllowTurboMode = 1; /* 1.69 * 1.1 = 1.859G */
-			#endif
-			lv = CPU_LEVEL_0;   /* 1.5G */
-			break;
-		case 7:
-		case 8:
-			lv = CPU_LEVEL_1;   /* 1.3G */
-			break;
-
-		case 9:
-		case 10:
-		case 11:
-		case 12:
-		case 13:
-		case 14:
-		case 15:
-		default:
-			cpufreq_err("No suitable DVFS table, set to default CPU level! efuse=0x%x\n"
-				, cpu_speed_bounding);
-			lv = CPU_LEVEL_1;
-			break;
-		}
-		cpufreq_info("current CPU efuse is %d, AllowTurboMode=%d\n", cpu_speed_bounding, AllowTurboMode);
-	}
-#endif
-#endif
+	cpufreq_info("current CPU efuse is %d, AllowTurboMode=%d\n"
+		, cpu_speed_bounding, AllowTurboMode);
 
 	return lv;
 }
@@ -498,8 +370,13 @@ static void _mt_cpufreq_aee_init(void)
 #define VOLT_TO_PMIC_VAL(volt)  (((volt) - 700000 + 6250 - 1) / 6250)
 #define PMIC_VAL_TO_VOLT(pmic)  (((pmic) * 6250) + 700000)
 
-#define VOLT_TO_EXTBUCK_VAL(volt)   VOLT_TO_PMIC_VAL(volt)/* (((((volt) - 300) + 9) / 10) & 0x7F) */
-#define EXTBUCK_VAL_TO_VOLT(val)    PMIC_VAL_TO_VOLT(val)/* (300 + ((val) & 0x7F) * 10) */
+/* (((((volt) - 300) + 9) / 10) & 0x7F) */
+#define VOLT_TO_EXTBUCK_VAL(volt)   VOLT_TO_PMIC_VAL(volt)
+/* (300 + ((val) & 0x7F) * 10) */
+#define EXTBUCK_VAL_TO_VOLT(val)    PMIC_VAL_TO_VOLT(val)
+
+void __iomem *pwrap_base;
+#define PWRAP_BASE_ADDR     ((unsigned long)pwrap_base)
 
 #define PMIC_WRAP_DVFS_ADR0     (PWRAP_BASE_ADDR + 0x0E8)
 #define PMIC_WRAP_DVFS_WDATA0   (PWRAP_BASE_ADDR + 0x0EC)
@@ -529,11 +406,7 @@ static void _mt_cpufreq_aee_init(void)
 #define PMIC_ADDR_VSRAM_EN           0x0A34  /* [1] (shared with others) */
 #define PMIC_ADDR_VSRAM_FAST_TRSN_EN 0x0A62  /* [8]                      */
 #define PMIC_ADDR_VGPU_VOSEL_ON      0x0618  /* [6:0]                    */
-#if 1 /* mt8163 */
 #define PMIC_ADDR_VCORE_VOSEL_ON     0x0220  /* [6:0]                    */
-#else
-#define PMIC_ADDR_VCORE_VOSEL_ON     0x0664  /* [6:0]                    */
-#endif
 #define PMIC_ADDR_VLTE_VOSEL_ON      0x063E  /* [6:0]                    */
 
 #define NR_PMIC_WRAP_CMD 8 /* num of pmic wrap cmd (fixed value) */
@@ -557,98 +430,126 @@ struct pmic_wrap_setting {
 
 static struct pmic_wrap_setting pw = {
 	.phase = NR_PMIC_WRAP_PHASE, /* invalid setting for init */
-#if 0
-	.addr = {
-	{ PMIC_WRAP_DVFS_ADR0, PMIC_WRAP_DVFS_WDATA0, },
-	{ PMIC_WRAP_DVFS_ADR1, PMIC_WRAP_DVFS_WDATA1, },
-	{ PMIC_WRAP_DVFS_ADR2, PMIC_WRAP_DVFS_WDATA2, },
-	{ PMIC_WRAP_DVFS_ADR3, PMIC_WRAP_DVFS_WDATA3, },
-	{ PMIC_WRAP_DVFS_ADR4, PMIC_WRAP_DVFS_WDATA4, },
-	{ PMIC_WRAP_DVFS_ADR5, PMIC_WRAP_DVFS_WDATA5, },
-	{ PMIC_WRAP_DVFS_ADR6, PMIC_WRAP_DVFS_WDATA6, },
-	{ PMIC_WRAP_DVFS_ADR7, PMIC_WRAP_DVFS_WDATA7, },
-	},
-#else
 	.addr = { {0, 0} },
-#endif
 	.set[PMIC_WRAP_PHASE_NORMAL] = {
-	._[IDX_NM_VSRAM]          = { PMIC_ADDR_VSRAM_VOSEL_ON, VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VSRAM), },
-	._[IDX_NM_VPROC]          = { PMIC_ADDR_VPROC_VOSEL_ON, VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VPROC), },
-	._[IDX_NM_VGPU]           = { PMIC_ADDR_VGPU_VOSEL_ON,  VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VGPU),  },
-	._[IDX_NM_VCORE]          = { PMIC_ADDR_VCORE_VOSEL_ON, VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VCORE), },
-	._[IDX_NM_VLTE]           = { PMIC_ADDR_VLTE_VOSEL_ON,  VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VLTE),  },
-	.nr_idx = NR_IDX_NM,
+		._[IDX_NM_VSRAM]
+		= { PMIC_ADDR_VSRAM_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VSRAM), },
+		._[IDX_NM_VPROC]
+		= { PMIC_ADDR_VPROC_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VPROC), },
+		._[IDX_NM_VGPU]
+		= { PMIC_ADDR_VGPU_VOSEL_ON
+		,  VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VGPU),  },
+		._[IDX_NM_VCORE]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VCORE), },
+		._[IDX_NM_VLTE]
+		= { PMIC_ADDR_VLTE_VOSEL_ON
+		,  VOLT_TO_PMIC_VAL(DEFAULT_VOLT_VLTE),  },
+		.nr_idx = NR_IDX_NM,
 	},
 
 	.set[PMIC_WRAP_PHASE_SUSPEND] = {
-		._[IDX_SP_VPROC_PWR_ON]	= { PMIC_ADDR_VPROC_EN,			_BITS_(0  : 0,	1),	  },
-		._[IDX_SP_VPROC_SHUTDOWN]	= { PMIC_ADDR_VPROC_EN,			_BITS_(0  : 0,	0),	  },
-		._[IDX_SP_VSRAM_PWR_ON]	= { PMIC_ADDR_VSRAM_EN,			_BITS_(1  : 1,	1),	  },
-		._[IDX_SP_VSRAM_SHUTDOWN]	= { PMIC_ADDR_VSRAM_EN,			_BITS_(1  : 1,	0),	  },
-		._[IDX_SP_VCORE_NORMAL]		= { PMIC_ADDR_VCORE_VOSEL_ON,	VOLT_TO_PMIC_VAL(1150000),},
-		._[IDX_SP_VCORE_SLEEP]		= { PMIC_ADDR_VCORE_VOSEL_ON,	VOLT_TO_PMIC_VAL(1050000),},
-		._[IDX_SP_VPROC_NORMAL]		= { PMIC_ADDR_VPROC_VOSEL_CTRL, _BITS_(1  : 1,	1)		  },
-		._[IDX_SP_VPROC_SLEEP]		= { PMIC_ADDR_VPROC_VOSEL_CTRL, _BITS_(1  : 1,	0)		  },
+		._[IDX_SP_VPROC_PWR_ON]
+		= { PMIC_ADDR_VPROC_EN
+		, _BITS_(0  : 0,	1),	  },
+		._[IDX_SP_VPROC_SHUTDOWN]
+		= { PMIC_ADDR_VPROC_EN
+		, _BITS_(0  : 0,	0),	  },
+		._[IDX_SP_VSRAM_PWR_ON]
+		= { PMIC_ADDR_VSRAM_EN
+		, _BITS_(1  : 1,	1),	  },
+		._[IDX_SP_VSRAM_SHUTDOWN]
+		= { PMIC_ADDR_VSRAM_EN
+		, _BITS_(1  : 1,	0),	  },
+		._[IDX_SP_VCORE_NORMAL]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(1150000),},
+		._[IDX_SP_VCORE_SLEEP]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(1050000),},
+		._[IDX_SP_VPROC_NORMAL]
+		= { PMIC_ADDR_VPROC_VOSEL_CTRL
+		, _BITS_(1  : 1,	1)		  },
+		._[IDX_SP_VPROC_SLEEP]
+		= { PMIC_ADDR_VPROC_VOSEL_CTRL
+		, _BITS_(1  : 1,	0)		  },
 		.nr_idx = NR_IDX_SP,
 	},
 
 	.set[PMIC_WRAP_PHASE_DEEPIDLE] = {
-		._[IDX_DI_VPROC_NORMAL]		   = { PMIC_ADDR_VPROC_VOSEL_CTRL,	 _BITS_(1  : 1,  1),	   },
-		._[IDX_DI_VPROC_SLEEP]		   = { PMIC_ADDR_VPROC_VOSEL_CTRL,	 _BITS_(1  : 1,  0),	   },
-		._[IDX_DI_VSRAM_NORMAL]		   = { PMIC_ADDR_VSRAM_VOSEL_CTRL,	 _BITS_(1  : 1,  1),	   },
-		._[IDX_DI_VSRAM_SLEEP]		   = { PMIC_ADDR_VSRAM_VOSEL_CTRL,	 _BITS_(1  : 1,  0),	   },
-		._[IDX_DI_VCORE_NORMAL]		   = { PMIC_ADDR_VCORE_VOSEL_ON,	 VOLT_TO_PMIC_VAL(1150000),},
-		._[IDX_DI_VCORE_SLEEP]		   = { PMIC_ADDR_VCORE_VOSEL_ON,	 VOLT_TO_PMIC_VAL(1050000),},
-		._[IDX_DI_VSRAM_FAST_TRSN_DIS] = { PMIC_ADDR_VSRAM_FAST_TRSN_EN, _BITS_(8  : 8,  1),	   },
-		._[IDX_DI_VSRAM_FAST_TRSN_EN]  = { PMIC_ADDR_VSRAM_FAST_TRSN_EN, _BITS_(8  : 8,  0),	   },
+		._[IDX_DI_VPROC_NORMAL]
+		= { PMIC_ADDR_VPROC_VOSEL_CTRL
+		, _BITS_(1  : 1,  1),	   },
+		._[IDX_DI_VPROC_SLEEP]
+		= { PMIC_ADDR_VPROC_VOSEL_CTRL
+		, _BITS_(1  : 1,  0),	   },
+		._[IDX_DI_VSRAM_NORMAL]
+		= { PMIC_ADDR_VSRAM_VOSEL_CTRL
+		, _BITS_(1  : 1,  1),	   },
+		._[IDX_DI_VSRAM_SLEEP]
+		= { PMIC_ADDR_VSRAM_VOSEL_CTRL
+		, _BITS_(1  : 1,  0),	   },
+		._[IDX_DI_VCORE_NORMAL]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(1150000),},
+		._[IDX_DI_VCORE_SLEEP]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(1050000),},
+		._[IDX_DI_VSRAM_FAST_TRSN_DIS]
+		= { PMIC_ADDR_VSRAM_FAST_TRSN_EN
+		, _BITS_(8  : 8,  1),	   },
+		._[IDX_DI_VSRAM_FAST_TRSN_EN]
+		= { PMIC_ADDR_VSRAM_FAST_TRSN_EN
+		, _BITS_(8  : 8,  0),	   },
 		.nr_idx = NR_IDX_DI,
 	},
 
 	.set[PMIC_WRAP_PHASE_SODI] = {
-		._[IDX_DI_VPROC_NORMAL]		   = { PMIC_ADDR_VPROC_VOSEL_CTRL,	 _BITS_(1  : 1,  1),	   },
-		._[IDX_DI_VPROC_SLEEP]		   = { PMIC_ADDR_VPROC_VOSEL_CTRL,	 _BITS_(1  : 1,  0),	   },
-		._[IDX_DI_VSRAM_NORMAL]		   = { PMIC_ADDR_VSRAM_VOSEL_CTRL,	 _BITS_(1  : 1,  1),	   },
-		._[IDX_DI_VSRAM_SLEEP]		   = { PMIC_ADDR_VSRAM_VOSEL_CTRL,	 _BITS_(1  : 1,  0),	   },
-		._[IDX_DI_VCORE_NORMAL]		   = { PMIC_ADDR_VCORE_VOSEL_ON,	 VOLT_TO_PMIC_VAL(1150000),},
-		._[IDX_DI_VCORE_SLEEP]		   = { PMIC_ADDR_VCORE_VOSEL_ON,	 VOLT_TO_PMIC_VAL(1050000),},
-		._[IDX_DI_VSRAM_FAST_TRSN_DIS] = { PMIC_ADDR_VSRAM_FAST_TRSN_EN, _BITS_(8  : 8,  1),	   },
-		._[IDX_DI_VSRAM_FAST_TRSN_EN]  = { PMIC_ADDR_VSRAM_FAST_TRSN_EN, _BITS_(8  : 8,  0),	   },
+		._[IDX_DI_VPROC_NORMAL]
+		= { PMIC_ADDR_VPROC_VOSEL_CTRL
+		, _BITS_(1  : 1,  1),	   },
+		._[IDX_DI_VPROC_SLEEP]
+		= { PMIC_ADDR_VPROC_VOSEL_CTRL
+		, _BITS_(1  : 1,  0),	   },
+		._[IDX_DI_VSRAM_NORMAL]
+		= { PMIC_ADDR_VSRAM_VOSEL_CTRL
+		, _BITS_(1  : 1,  1),	   },
+		._[IDX_DI_VSRAM_SLEEP]
+		= { PMIC_ADDR_VSRAM_VOSEL_CTRL
+		, _BITS_(1  : 1,  0),	   },
+		._[IDX_DI_VCORE_NORMAL]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(1150000),},
+		._[IDX_DI_VCORE_SLEEP]
+		= { PMIC_ADDR_VCORE_VOSEL_ON
+		, VOLT_TO_PMIC_VAL(1050000),},
+		._[IDX_DI_VSRAM_FAST_TRSN_DIS]
+		= { PMIC_ADDR_VSRAM_FAST_TRSN_EN
+		, _BITS_(8  : 8,  1),	   },
+		._[IDX_DI_VSRAM_FAST_TRSN_EN]
+		= { PMIC_ADDR_VSRAM_FAST_TRSN_EN
+		, _BITS_(8  : 8,  0),	   },
 		.nr_idx = NR_IDX_DI,
 	},
 };
 
-#if 1   /* spinlock */
 static DEFINE_SPINLOCK(pmic_wrap_lock);
 #define pmic_wrap_lock(flags) spin_lock_irqsave(&pmic_wrap_lock, flags)
 #define pmic_wrap_unlock(flags) spin_unlock_irqrestore(&pmic_wrap_lock, flags)
-#else   /* mutex */
-static DEFINE_MUTEX(pmic_wrap_mutex);
-
-#define pmic_wrap_lock(flags) \
-do { \
-	/* to fix compile warning */  \
-	flags = (unsigned long)&flags; \
-	mutex_lock(&pmic_wrap_mutex); \
-} while (0)
-
-#define pmic_wrap_unlock(flags) \
-do { \
-	/* to fix compile warning */  \
-	flags = (unsigned long)&flags; \
-	mutex_unlock(&pmic_wrap_mutex); \
-} while (0)
-#endif
 
 static int _spm_dvfs_ctrl_volt(u32 value)
 {
-#define MAX_RETRY_COUNT (100)
+	#define MAX_RETRY_COUNT (100)
 
 	u32 ap_dvfs_con;
 	int retry = 0;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	spm_write(SPM_POWERON_CONFIG_SET, (SPM_PROJECT_CODE << 16) | (1U << 0)); /* TODO: FIXME */
+	spm_write(SPM_POWERON_CONFIG_SET
+		  , (SPM_PROJECT_CODE << 16) | (1U << 0));
 
 	ap_dvfs_con = spm_read(SPM_AP_DVFS_CON_SET);
 	spm_write(SPM_AP_DVFS_CON_SET, (ap_dvfs_con & ~(0x7)) | value);
@@ -661,7 +562,6 @@ static int _spm_dvfs_ctrl_volt(u32 value)
 		}
 
 		retry++;
-		/* cpufreq_dbg("wait for ACK signal from PMIC wrapper, retry = %d\n", retry); */
 
 		udelay(5);
 	}
@@ -673,7 +573,7 @@ static int _spm_dvfs_ctrl_volt(u32 value)
 
 /* Turbo Dram/GPU B */
 #define GPU800MHz_DRAM1866MHz_MASK	0x80000000
-int	GPU800MHz_DRAM1866MHz_Flag = 0;
+int	GPU800MHz_DRAM1866MHz_Flag;
 /* Turbo Dram/GPU E */
 
 void _mt_cpufreq_pmic_table_init(void)
@@ -694,8 +594,11 @@ void _mt_cpufreq_pmic_table_init(void)
 	memcpy(pw.addr, pwrap_cmd_default, sizeof(pwrap_cmd_default));
 
 	/* Turbo Dram/GPU B */
-	GPU800MHz_DRAM1866MHz_Flag = get_devinfo_with_index(CPUFREQ_EFUSE_INDEX) & GPU800MHz_DRAM1866MHz_MASK;
-	cpufreq_info("[GPU/DRAM][Turbo], GPU800MHz_DRAM1866MHz_Flag=%d\n", GPU800MHz_DRAM1866MHz_Flag);
+	GPU800MHz_DRAM1866MHz_Flag
+		= get_devinfo_with_index(CPUFREQ_EFUSE_INDEX)
+		  & GPU800MHz_DRAM1866MHz_MASK;
+	cpufreq_info("[GPU/DRAM][Turbo], GPU800MHz_DRAM1866MHz_Flag=%d\n"
+		     , GPU800MHz_DRAM1866MHz_Flag);
 	if (GPU800MHz_DRAM1866MHz_Flag) {
 		mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_DEEPIDLE, 0, 112500);
 		mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_DEEPIDLE, 1, 112500);
@@ -727,14 +630,7 @@ void mt_cpufreq_set_pmic_phase(enum pmic_wrap_phase_id phase)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(phase >= NR_PMIC_WRAP_PHASE);
-
-#if 0   /* TODO: FIXME, check IPO-H case */
-
-	if (pw.phase == phase)
-		return;
-
-#endif
+	WARN_ON(phase >= NR_PMIC_WRAP_PHASE);
 
 	if (pw.addr[0].cmd_addr == 0) {
 		cpufreq_warn("pmic table not initialized\n");
@@ -746,8 +642,10 @@ void mt_cpufreq_set_pmic_phase(enum pmic_wrap_phase_id phase)
 	pw.phase = phase;
 
 	for (i = 0; i < pw.set[phase].nr_idx; i++) {
-		cpufreq_write(pw.addr[i].cmd_addr, pw.set[phase]._[i].cmd_addr);
-		cpufreq_write(pw.addr[i].cmd_wdata, pw.set[phase]._[i].cmd_wdata);
+		cpufreq_write(pw.addr[i].cmd_addr
+			, pw.set[phase]._[i].cmd_addr);
+		cpufreq_write(pw.addr[i].cmd_wdata
+			, pw.set[phase]._[i].cmd_wdata);
 	}
 
 	pmic_wrap_unlock(flags);
@@ -757,24 +655,24 @@ void mt_cpufreq_set_pmic_phase(enum pmic_wrap_phase_id phase)
 EXPORT_SYMBOL(mt_cpufreq_set_pmic_phase);
 
 /* just set wdata value */
-void mt_cpufreq_set_pmic_cmd(enum pmic_wrap_phase_id phase, int idx, unsigned int cmd_wdata)
+void mt_cpufreq_set_pmic_cmd(enum pmic_wrap_phase_id phase
+	, int idx, unsigned int cmd_wdata)
 {
 	unsigned long flags;
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(phase >= NR_PMIC_WRAP_PHASE);
-	BUG_ON(idx >= pw.set[phase].nr_idx);
+	WARN_ON(phase >= NR_PMIC_WRAP_PHASE);
+	WARN_ON(idx >= pw.set[phase].nr_idx);
 
 	/* Turbo Dram/GPU B */
 	if (GPU800MHz_DRAM1866MHz_Flag) {
-		if ((phase == PMIC_WRAP_PHASE_NORMAL) && (idx == IDX_NM_VCORE)) {
+		if ((phase == PMIC_WRAP_PHASE_NORMAL)
+			&& (idx == IDX_NM_VCORE)) {
 			if (PMIC_VAL_TO_VOLT(cmd_wdata) > 1050000)
 				cmd_wdata = VOLT_TO_PMIC_VAL(1050000);
 		}
 	}
-	/* Turbo Dram/GPU E */
-	/* cpufreq_dbg("@%s: phase = 0x%x, idx = %d, cmd_wdata = 0x%x\n", __func__, phase, idx, cmd_wdata); */
 
 	pmic_wrap_lock(flags);
 
@@ -795,7 +693,7 @@ void mt_cpufreq_apply_pmic_cmd(int idx) /* kick spm */
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(idx >= pw.set[pw.phase].nr_idx);
+	WARN_ON(idx >= pw.set[pw.phase].nr_idx);
 
 	/* cpufreq_dbg("@%s: idx = %d\n", __func__, idx); */
 
@@ -818,70 +716,10 @@ void mt_cpufreq_setvolt_registerCB(cpuVoltsampler_func pCB)
 }
 EXPORT_SYMBOL(mt_cpufreq_setvolt_registerCB);
 
-#if 0 /* Using regulator, SDIO need get by regulator framework */
-/* SDIO */
-unsigned int mt_get_cur_volt_vcore_ao(void)
-{
-	unsigned int rdata;
-
-	FUNC_ENTER(FUNC_LV_LOCAL);
-
-	pwrap_read(PMIC_ADDR_VCORE_VOSEL_ON, &rdata);
-
-	rdata = PMIC_VAL_TO_VOLT(rdata);
-
-	FUNC_EXIT(FUNC_LV_LOCAL);
-
-	return rdata;
-}
-
-void mt_vcore_dvfs_disable_by_sdio(unsigned int type, bool disabled)
-{
-	/* empty function */
-}
-
-void mt_vcore_dvfs_volt_set_by_sdio(unsigned int volt) /* unit: mv x 1000 */
-{
-	unsigned int cur_pmic_val_vcore_ao;
-	/* unsigned int cur_pmic_val_vcore_pdn; */
-	unsigned int target_pmic_val_vcore_ao;
-	int step;
-
-	FUNC_ENTER(FUNC_LV_LOCAL);
-
-	pwrap_read(PMIC_ADDR_VCORE_VOSEL_ON, &cur_pmic_val_vcore_ao);
-	/* pwrap_read(PMIC_ADDR_VCORE_PDN_VOSEL_ON, &cur_pmic_val_vcore_pdn); */
-	target_pmic_val_vcore_ao = VOLT_TO_PMIC_VAL(volt);
-
-	step = (target_pmic_val_vcore_ao > cur_pmic_val_vcore_ao) ? 1 : -1;
-
-	while (target_pmic_val_vcore_ao != cur_pmic_val_vcore_ao) {
-		cur_pmic_val_vcore_ao += step;
-		/* cur_pmic_val_vcore_pdn += step; */
-
-		mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_NORMAL, IDX_NM_VCORE, cur_pmic_val_vcore_ao);
-		/* mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_NORMAL, IDX_NM_VCORE_PDN, cur_pmic_val_vcore_pdn); */
-
-		mt_cpufreq_apply_pmic_cmd(IDX_NM_VCORE);
-		/* mt_cpufreq_apply_pmic_cmd(IDX_NM_VCORE_PDN); */
-
-		udelay(4);
-	}
-
-	FUNC_EXIT(FUNC_LV_LOCAL);
-}
-
-unsigned int mt_vcore_dvfs_volt_get_by_sdio(void) /* unit: mv x 1000 */
-{
-	return mt_get_cur_volt_vcore_ao();
-}
-
-#else
 /* empty function */
 void mt_vcore_dvfs_disable_by_sdio(unsigned int type, bool disabled) {}
 void mt_vcore_dvfs_volt_set_by_sdio(unsigned int volt) {}
 unsigned int mt_vcore_dvfs_volt_get_by_sdio(void){return 0; }
-#endif
 
 /*
  * mt_cpufreq driver
@@ -892,19 +730,27 @@ unsigned int mt_vcore_dvfs_volt_get_by_sdio(void){return 0; }
 	.cpufreq_volt_org = volt,       \
 }
 
-#define for_each_cpu_dvfs(i, p)        for (i = 0, p = cpu_dvfs; i < NR_MT_CPU_DVFS; i++, p = &cpu_dvfs[i])
+#define for_each_cpu_dvfs(i, p)    \
+	for (i = 0, p = cpu_dvfs; i < NR_MT_CPU_DVFS; i++, p = &cpu_dvfs[i])
 #define cpu_dvfs_is(p, id)                 (p == &cpu_dvfs[id])
 #define cpu_dvfs_is_available(p)      (p->opp_tbl)
 #define cpu_dvfs_get_name(p)         (p->name)
 
-#define cpu_dvfs_get_cur_freq(p)                (p->opp_tbl[p->idx_opp_tbl].cpufreq_khz)
-#define cpu_dvfs_get_freq_by_idx(p, idx)        (p->opp_tbl[idx].cpufreq_khz)
-#define cpu_dvfs_get_max_freq(p)                (p->opp_tbl[0].cpufreq_khz)
-#define cpu_dvfs_get_normal_max_freq(p)         (p->opp_tbl[p->idx_normal_max_opp].cpufreq_khz)
-#define cpu_dvfs_get_min_freq(p)                (p->opp_tbl[p->nr_opp_tbl - 1].cpufreq_khz)
+#define cpu_dvfs_get_cur_freq(p)         \
+	(p->opp_tbl[p->idx_opp_tbl].cpufreq_khz)
+#define cpu_dvfs_get_freq_by_idx(p, idx) \
+	(p->opp_tbl[idx].cpufreq_khz)
+#define cpu_dvfs_get_max_freq(p)         \
+	(p->opp_tbl[0].cpufreq_khz)
+#define cpu_dvfs_get_normal_max_freq(p)  \
+	(p->opp_tbl[p->idx_normal_max_opp].cpufreq_khz)
+#define cpu_dvfs_get_min_freq(p)         \
+	(p->opp_tbl[p->nr_opp_tbl - 1].cpufreq_khz)
 
-#define cpu_dvfs_get_cur_volt(p)                (p->opp_tbl[p->idx_opp_tbl].cpufreq_volt)
-#define cpu_dvfs_get_volt_by_idx(p, idx)        (p->opp_tbl[idx].cpufreq_volt)
+#define cpu_dvfs_get_cur_volt(p)         \
+	(p->opp_tbl[p->idx_opp_tbl].cpufreq_volt)
+#define cpu_dvfs_get_volt_by_idx(p, idx) \
+	(p->opp_tbl[idx].cpufreq_volt)
 
 struct mt_cpu_freq_info {
 	const unsigned int cpufreq_khz;
@@ -925,13 +771,14 @@ struct mt_cpu_dvfs {
 	struct mt_cpu_dvfs_ops *ops;
 
 	/* opp (freq) table */
-	struct mt_cpu_freq_info *opp_tbl;       /* OPP table */
-	int nr_opp_tbl;                         /* size for OPP table */
-	int idx_opp_tbl;                        /* current OPP idx */
-	int idx_normal_max_opp;                 /* idx for normal max OPP */
-	int idx_opp_tbl_for_late_resume;	/* keep the setting for late resume */
+	struct mt_cpu_freq_info *opp_tbl;/* OPP table */
+	int nr_opp_tbl;                  /* size for OPP table */
+	int idx_opp_tbl;                 /* current OPP idx */
+	int idx_normal_max_opp;          /* idx for normal max OPP */
+	int idx_opp_tbl_for_late_resume; /* keep the setting for late resume */
 
-	struct cpufreq_frequency_table *freq_tbl_for_cpufreq; /* freq table for cpufreq */
+	/* freq table for cpufreq */
+	struct cpufreq_frequency_table *freq_tbl_for_cpufreq;
 
 	/* power table */
 	struct mt_cpu_power_info *power_tbl;
@@ -986,23 +833,28 @@ struct mt_cpu_dvfs {
 
 	/* power throttling */
 #ifdef CONFIG_CPU_DVFS_POWER_THROTTLING
-	int idx_opp_tbl_for_pwr_thro;           /* keep the setting for power throttling */
-	int idx_pwr_thro_max_opp;               /* idx for power throttle max OPP */
+	/* keep the setting for power throttling */
+	int idx_opp_tbl_for_pwr_thro;
+	/* idx for power throttle max OPP */
+	int idx_pwr_thro_max_opp;
 	unsigned int pwr_thro_mode;
 #endif
-
+#ifdef CONFIG_AMAZON_THERMAL
+	struct thermal_cooling_device *cdev;
+#endif
 };
 
 struct mt_cpu_dvfs_ops {
 	/* for thermal */
-	/* set power limit by thermal */ /* TODO: sync with mt_cpufreq_thermal_protect() */
+	/* set power limit by thermal */
 	void (*protect)(struct mt_cpu_dvfs *p, unsigned int limited_power);
 	/* return temperature         */ /* TODO: necessary??? */
 	unsigned int (*get_temp)(struct mt_cpu_dvfs *p);
 	int (*setup_power_table)(struct mt_cpu_dvfs *p);
 
 	/* for freq change (PLL/MUX) */
-	unsigned int (*get_cur_phy_freq)(struct mt_cpu_dvfs *p);  /* return (physical) freq (KHz) */
+	/* return (physical) freq (KHz) */
+	unsigned int (*get_cur_phy_freq)(struct mt_cpu_dvfs *p);
 	void (*set_cur_freq)(struct mt_cpu_dvfs *p, unsigned int cur_khz
 		, unsigned int target_khz); /* set freq  */
 
@@ -1019,31 +871,18 @@ static int setup_power_table(struct mt_cpu_dvfs *p);
 
 /* for freq change (PLL/MUX) */
 static unsigned int get_cur_phy_freq(struct mt_cpu_dvfs *p);
-static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned int target_khz);
+static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz
+	, unsigned int target_khz);
 
 /* for volt change (PMICWRAP/extBuck) */
-#if 0  /* kernel 3.18, define but not used */
-static unsigned int get_cur_volt_pmic_wrap(struct mt_cpu_dvfs *p);
-static int set_cur_volt_pmic_wrap(struct mt_cpu_dvfs *p, unsigned int volt); /* volt: mv * 100 */
-#endif
 static unsigned int get_cur_volt_extbuck(struct mt_cpu_dvfs *p);
 /* volt: mv * 100 */
 static int set_cur_volt_extbuck(struct mt_cpu_dvfs *p, unsigned int volt);
 
-/* for limited_max_ncpu, it will be modified at driver initialization stage if needed */
+/* for limited_max_ncpu,
+ * it will be modified at driver initialization stage if needed
+ */
 static unsigned int max_cpu_num = 8;
-
-#if 0  /* kernel 3.18, define but not used */
-static struct mt_cpu_dvfs_ops dvfs_ops_pmic_wrap = {
-	.setup_power_table = setup_power_table,
-
-	.get_cur_phy_freq = get_cur_phy_freq,
-	.set_cur_freq = set_cur_freq,
-
-	.get_cur_volt = get_cur_volt_pmic_wrap,
-	.set_cur_volt = set_cur_volt_pmic_wrap,
-};
-#endif
 
 static struct mt_cpu_dvfs_ops dvfs_ops_extbuck = {
 	.setup_power_table = setup_power_table,
@@ -1059,7 +898,7 @@ static struct mt_cpu_dvfs_ops dvfs_ops_extbuck = {
 static struct mt_cpu_dvfs cpu_dvfs[] = {
 	[MT_CPU_DVFS_LITTLE]    = {
 	.name                           = __stringify(MT_CPU_DVFS_LITTLE),
-	.cpu_id                         = MT_CPU_DVFS_LITTLE, /* TODO: FIXME */
+	.cpu_id                         = MT_CPU_DVFS_LITTLE,
 	.cpu_level                    = CPU_LEVEL_1,  /* 1.7GHz */
 	.ops                            = &dvfs_ops_extbuck,
 
@@ -1100,7 +939,6 @@ static struct mt_cpu_dvfs *id_to_cpu_dvfs(enum mt_cpu_dvfs_id id)
 #define NR_MAX_OPP_TBL  8
 #define NR_MAX_CPU      8
 
-#if 1 /* mt8163 */
 /* CPU LEVEL 0, SB, 1.5GHz segment */
 static struct mt_cpu_freq_info opp_tbl_e1_0[] = {
 	OP(CPU_DVFS_SB_FREQ0, 1300000),
@@ -1124,55 +962,6 @@ static struct mt_cpu_freq_info opp_tbl_e1_1[] = {
 	OP(CPU_DVFS_FREQ6, 1150000),
 	OP(CPU_DVFS_FREQ7, 1150000),
 };
-#else
-/* CPU LEVEL 0, 2GHz segment (useless) */
-static struct mt_cpu_freq_info opp_tbl_e1_0[] = {
-	OP(CPU_DVFS_FREQ0,  110000),
-	OP(CPU_DVFS_FREQ1,  106875),
-	OP(CPU_DVFS_FREQ3,  103750),
-	OP(CPU_DVFS_FREQ5,  100000),
-	OP(CPU_DVFS_FREQ7,  95625),
-	OP(CPU_DVFS_FREQ8,  91875),
-	OP(CPU_DVFS_FREQ9,  87500),
-	OP(CPU_DVFS_FREQ10, 83125),
-};
-
-/* CPU LEVEL 1, 1.7GHz segment */
-static struct mt_cpu_freq_info opp_tbl_e1_1[] = {
-	OP(CPU_DVFS_FREQ2,  110000),
-	OP(CPU_DVFS_FREQ4,  107500),
-	OP(CPU_DVFS_FREQ5,  104375),
-	OP(CPU_DVFS_FREQ6,  101875),
-	OP(CPU_DVFS_FREQ7,  99375),
-	OP(CPU_DVFS_FREQ8,  93750),
-	OP(CPU_DVFS_FREQ9,  88750),
-	OP(CPU_DVFS_FREQ10, 83750),
-};
-
-/* CPU LEVEL 2, 1.5GHz segment */
-static struct mt_cpu_freq_info opp_tbl_e1_2[] = {
-	OP(CPU_DVFS_FREQ4_2, 106250),
-	OP(CPU_DVFS_FREQ5,   104375),
-	OP(CPU_DVFS_FREQ6,   101875),
-	OP(CPU_DVFS_FREQ7,   99375),
-	OP(CPU_DVFS_FREQ8,   93750),
-	OP(CPU_DVFS_FREQ9,   88750),
-	OP(CPU_DVFS_FREQ10,  83750),
-	OP(CPU_DVFS_FREQ10,  83750),
-};
-
-/* CPU LEVEL 3, 1.3GHz segment */
-static struct mt_cpu_freq_info opp_tbl_e1_3[] = {
-	OP(CPU_DVFS_FREQ6,  101875),
-	OP(CPU_DVFS_FREQ7,  99375),
-	OP(CPU_DVFS_FREQ8,  93750),
-	OP(CPU_DVFS_FREQ9,  88750),
-	OP(CPU_DVFS_FREQ10, 83750),
-	OP(CPU_DVFS_FREQ10, 83750),
-	OP(CPU_DVFS_FREQ10, 83750),
-	OP(CPU_DVFS_FREQ10, 83750),
-};
-#endif
 
 struct opp_tbl_info {
 	struct mt_cpu_freq_info *const opp_tbl;
@@ -1180,14 +969,16 @@ struct opp_tbl_info {
 };
 
 static struct opp_tbl_info opp_tbls[] = {
-	[CPU_LV_TO_OPP_IDX(CPU_LEVEL_0)] = { opp_tbl_e1_0, ARRAY_SIZE(opp_tbl_e1_0)},
-	[CPU_LV_TO_OPP_IDX(CPU_LEVEL_1)] = { opp_tbl_e1_1, ARRAY_SIZE(opp_tbl_e1_1)},
+	[CPU_LV_TO_OPP_IDX(CPU_LEVEL_0)]
+		= { opp_tbl_e1_0, ARRAY_SIZE(opp_tbl_e1_0)},
+	[CPU_LV_TO_OPP_IDX(CPU_LEVEL_1)]
+	= { opp_tbl_e1_1, ARRAY_SIZE(opp_tbl_e1_1)},
 };
 
 /* for freq change (PLL/MUX) */
 #define PLL_FREQ_STEP		(13000)		/* KHz */
 
-/* #define PLL_MAX_FREQ		(1989000)	*//* KHz */ /* TODO: check max freq */
+/* #define PLL_MAX_FREQ		(1989000)	*//* KHz */
 #define PLL_MIN_FREQ		(130000)	/* KHz */
 #define PLL_DIV1_FREQ		(1001000)	/* KHz */
 #define PLL_DIV2_FREQ		(520000)	/* KHz */
@@ -1235,13 +1026,15 @@ struct turbo_mode_cfg {
 };
 
 #define TURBO_MODE_FREQ(mode, freq) \
-	(((freq * (100 + turbo_mode_cfg[mode].freq_delta)) / PLL_FREQ_STEP) / 100 * PLL_FREQ_STEP)
+	(((freq * (100 + turbo_mode_cfg[mode].freq_delta)) \
+	/ PLL_FREQ_STEP) / 100 * PLL_FREQ_STEP)
 #define TURBO_MODE_VOLT(mode, volt) (volt + turbo_mode_cfg[mode].volt_delta)
 
 static unsigned int num_online_cpus_delta;
 static bool is_in_turbo_mode;
 
-static enum turbo_mode get_turbo_mode(struct mt_cpu_dvfs *p, unsigned int target_khz)
+static enum turbo_mode get_turbo_mode(struct mt_cpu_dvfs *p
+	, unsigned int target_khz)
 {
 	enum turbo_mode mode = TURBO_MODE_NONE;
 	#ifdef CONFIG_THERMAL
@@ -1263,25 +1056,26 @@ static enum turbo_mode get_turbo_mode(struct mt_cpu_dvfs *p, unsigned int target
 		}
 	}
 
-	cpufreq_ver("%s(), mode = %d, temp = %d, target_khz = %d (%d), num_online_cpus = %d\n",
+	cpufreq_ver("%s(), mode = %d, temp = %d, target_khz = %d ",
 		__func__,
 		mode,
 		temp,
-		target_khz,
+		target_khz);
+	cpufreq_ver("(%d), num_online_cpus = %d\n",
 		TURBO_MODE_FREQ(mode, target_khz),
-		online_cpus); /* <-XXX */
+		online_cpus);
 
 	return mode;
 }
 
 /* for PTP-OD */
-static int _set_cur_volt_locked(struct mt_cpu_dvfs *p, unsigned int volt)  /* volt: mv * 1000 */
+static int _set_cur_volt_locked(struct mt_cpu_dvfs *p, unsigned int volt)
 {
 	int ret = -1;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_HELP);
@@ -1304,7 +1098,7 @@ static int _restore_default_volt(struct mt_cpu_dvfs *p)
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_HELP);
@@ -1334,14 +1128,14 @@ unsigned int mt_cpufreq_get_freq_by_idx(enum mt_cpu_dvfs_id id, int idx)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_API);
 		return 0;
 	}
 
-	BUG_ON(idx >= p->nr_opp_tbl);
+	WARN_ON(idx >= p->nr_opp_tbl);
 
 	FUNC_EXIT(FUNC_LV_API);
 
@@ -1349,7 +1143,8 @@ unsigned int mt_cpufreq_get_freq_by_idx(enum mt_cpu_dvfs_id id, int idx)
 }
 EXPORT_SYMBOL(mt_cpufreq_get_freq_by_idx);
 
-int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id, unsigned int *volt_tbl, int nr_volt_tbl)
+int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id
+	, unsigned int *volt_tbl, int nr_volt_tbl)
 {
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 	unsigned long flags;
@@ -1358,14 +1153,14 @@ int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id, unsigned int *volt_tbl, int n
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_API);
 		return 0;
 	}
 
-	BUG_ON(nr_volt_tbl > p->nr_opp_tbl);
+	WARN_ON(nr_volt_tbl > p->nr_opp_tbl);
 
 	cpufreq_lock(flags);
 
@@ -1375,8 +1170,8 @@ int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id, unsigned int *volt_tbl, int n
 
 	/* set volt */
 	ret = _set_cur_volt_locked(p,
-	   TURBO_MODE_VOLT(get_turbo_mode(p, cpu_dvfs_get_cur_freq(p)),
-	   cpu_dvfs_get_cur_volt(p)));
+		TURBO_MODE_VOLT(get_turbo_mode(p, cpu_dvfs_get_cur_freq(p)),
+		cpu_dvfs_get_cur_volt(p)));
 
 	cpufreq_unlock(flags);
 
@@ -1392,7 +1187,7 @@ void mt_cpufreq_restore_default_volt(enum mt_cpu_dvfs_id id)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_API);
@@ -1415,79 +1210,30 @@ static unsigned int _cpu_freq_calc(unsigned int con1, unsigned int ckdiv1)
 {
 	unsigned int freq = 0;
 
-#if 0   /* method 1 */
-	static const unsigned int pll_vcodivsel_map[2] = {1, 2};
-	static const unsigned int pll_prediv_map[4] = {1, 2, 4, 4};
-	static const unsigned int pll_posdiv_map[8] = {1, 2, 4, 8, 16, 16, 16, 16};
-	static const unsigned int pll_fbksel_map[4] = {1, 2, 4, 4};
-	/* assume fin = 26MHz */
-	static const unsigned int pll_n_info_map[14] = { 13000000,
-	6500000,
-	3250000,
-	1625000,
-	812500,
-	406250,
-	203125,
-	101563,
-	50782,
-	25391,
-	12696,
-	6348,
-	3174,
-	1587, };
 
-	unsigned int posdiv    = _GET_BITS_VAL_(26 : 24, con1);
-	unsigned int vcodivsel = 0; /* _GET_BITS_VAL_(19 : 19, con0); */ /* XXX: always zero */
-	unsigned int prediv    = 0; /* _GET_BITS_VAL_(5 : 4, con0);   */ /* XXX: always zero */
-	unsigned int n_info_i  = _GET_BITS_VAL_(20 : 14, con1);
-	unsigned int n_info_f  = _GET_BITS_VAL_(13 : 0, con1);
-
-	int i;
-	unsigned int mask;
-	unsigned int vco_i = 0;
-	unsigned int vco_f = 0;
-
-	posdiv = pll_posdiv_map[posdiv];
-	vcodivsel = pll_vcodivsel_map[vcodivsel];
-	prediv = pll_prediv_map[prediv];
-
-	vco_i = 26 * n_info_i;
-
-	for (i = 0; i < 14; i++) {
-		mask = 1U << (13 - i);
-
-		if (n_info_f & mask) {
-			vco_f += pll_n_info_map[i];
-
-		if (!(n_info_f & (mask - 1))) /* could break early if remaining bits are 0 */
-			break;
-		}
-	}
-
-	vco_f = (vco_f + 1000000 / 2) / 1000000; /* round up */
-
-	freq = (vco_i + vco_f) * 1000 * vcodivsel / prediv / posdiv; /* KHz */
-#else   /* method 2 */
 	con1 &= _BITMASK_(26 : 0);
 
 	if (con1 >= DDS_DIV8_FREQ) {
 		freq = DDS_DIV8_FREQ;
-		freq = PLL_DIV8_FREQ + (((con1 - freq) / 0x2000) * PLL_FREQ_STEP / 8);
+		freq = PLL_DIV8_FREQ
+			+ (((con1 - freq) / 0x2000) * PLL_FREQ_STEP / 8);
 	} else if (con1 >= DDS_DIV4_FREQ) {
 		freq = DDS_DIV4_FREQ;
-		freq = PLL_DIV4_FREQ + (((con1 - freq) / 0x2000) * PLL_FREQ_STEP / 4);
+		freq = PLL_DIV4_FREQ
+			+ (((con1 - freq) / 0x2000) * PLL_FREQ_STEP / 4);
 	} else if (con1 >= DDS_DIV2_FREQ) {
 		freq = DDS_DIV2_FREQ;
-		freq = PLL_DIV2_FREQ + (((con1 - freq) / 0x2000) * PLL_FREQ_STEP / 2);
+		freq = PLL_DIV2_FREQ
+			+ (((con1 - freq) / 0x2000) * PLL_FREQ_STEP / 2);
 	} else if (con1 >= DDS_DIV1_FREQ) {
 		freq = DDS_DIV1_FREQ;
-		freq = PLL_DIV1_FREQ + (((con1 - freq) / 0x2000) * PLL_FREQ_STEP);
+		freq = PLL_DIV1_FREQ
+			+ (((con1 - freq) / 0x2000) * PLL_FREQ_STEP);
 	} else {
 		freq = DDS_DIV1_FREQ;
-		freq = PLL_DIV1_FREQ - (((freq - con1) / 0x2000) * PLL_FREQ_STEP);
+		freq = PLL_DIV1_FREQ
+			- (((freq - con1) / 0x2000) * PLL_FREQ_STEP);
 	}
-
-#endif
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
@@ -1560,21 +1306,16 @@ static unsigned int get_cur_phy_freq(struct mt_cpu_dvfs *p)
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
-#if 0
-	/* read from freq meter */
-	cur_khz = mt_get_cpu_freq();
-	cpufreq_dbg("@%s: Meter = %d MHz\n", __func__, cur_khz);
-#else
 	con1 = cpufreq_read(ARMCA7PLL_CON1);
 	ckdiv1 = cpufreq_read(TOP_CKDIV1);
 	ckdiv1 = _GET_BITS_VAL_(4 : 0, ckdiv1);
 
 	cur_khz = _cpu_freq_calc(con1, ckdiv1);
 
-	cpufreq_ver("@%s: cur_khz = %d, con1 = 0x%x, ckdiv1_val = 0x%x\n", __func__, cur_khz, con1, ckdiv1);
-#endif
+	cpufreq_ver("@%s: cur_khz = %d, con1 = 0x%x, ckdiv1_val = 0x%x\n"
+		    , __func__, cur_khz, con1, ckdiv1);
 
 	FUNC_EXIT(FUNC_LV_LOCAL);
 
@@ -1587,29 +1328,33 @@ static unsigned int _mt_cpufreq_get_cur_phy_freq(enum mt_cpu_dvfs_id id)
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	FUNC_EXIT(FUNC_LV_LOCAL);
 
 	return p->ops->get_cur_phy_freq(p);
 }
 
-static unsigned int _cpu_dds_calc(unsigned int khz) /* XXX: NOT OK FOR 1007.5MHz */
+static unsigned int _cpu_dds_calc(unsigned int khz)
 {
 	unsigned int dds = 0;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
 	if (khz >= PLL_DIV1_FREQ)
-		dds = DDS_DIV1_FREQ + ((khz - PLL_DIV1_FREQ) / PLL_FREQ_STEP) * 0x2000;
+		dds = DDS_DIV1_FREQ
+		+ ((khz - PLL_DIV1_FREQ) / PLL_FREQ_STEP) * 0x2000;
 	else if (khz >= PLL_DIV2_FREQ)
-		dds = DDS_DIV2_FREQ + ((khz - PLL_DIV2_FREQ) * 2 / PLL_FREQ_STEP) * 0x2000;
+		dds = DDS_DIV2_FREQ
+		+ ((khz - PLL_DIV2_FREQ) * 2 / PLL_FREQ_STEP) * 0x2000;
 	else if (khz >= PLL_DIV4_FREQ)
-		dds = DDS_DIV4_FREQ + ((khz - PLL_DIV4_FREQ) * 4 / PLL_FREQ_STEP) * 0x2000;
+		dds = DDS_DIV4_FREQ
+		+ ((khz - PLL_DIV4_FREQ) * 4 / PLL_FREQ_STEP) * 0x2000;
 	else if (khz >= PLL_DIV8_FREQ)
-		dds = DDS_DIV8_FREQ + ((khz - PLL_DIV8_FREQ) * 8 / PLL_FREQ_STEP) * 0x2000;
+		dds = DDS_DIV8_FREQ
+		+ ((khz - PLL_DIV8_FREQ) * 8 / PLL_FREQ_STEP) * 0x2000;
 	else
-		BUG();
+		WARN_ON(1);
 
 	FUNC_EXIT(FUNC_LV_HELP);
 
@@ -1635,7 +1380,7 @@ static void _cpu_clock_switch(struct mt_cpu_dvfs *p, enum top_ckmuxsel sel)
 		cpufreq_write_mask(TOP_CKMUXSEL, 1 : 0, sel);
 		break;
 	default:
-		BUG();
+		WARN_ON(1);
 		break;
 	}
 
@@ -1686,27 +1431,30 @@ enum top_ckmuxsel mt_cpufreq_get_clock_switch(enum mt_cpu_dvfs_id id)
  * if cross 1209MHz, migrate to 1209MHz first.
  *
  */
-static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned int target_khz)
+static void set_cur_freq(struct mt_cpu_dvfs *p
+	, unsigned int cur_khz, unsigned int target_khz)
 {
 	unsigned int dds;
 	unsigned int is_fhctl_used;
-	unsigned int ckdiv1_val = _GET_BITS_VAL_(4 : 0, cpufreq_read(TOP_CKDIV1));
+	unsigned int ckdiv1_val = _GET_BITS_VAL_(4 : 0
+						 , cpufreq_read(TOP_CKDIV1));
 	unsigned int ckdiv1_mask = _BITMASK_(4 : 0);
 	unsigned int sel = 0;
 	unsigned int cur_volt = 0;
 	unsigned int mainpll_volt_idx = 0;
 
-#define IS_CLKDIV_USED(clkdiv)  (((clkdiv < 8) || ((clkdiv % 8) == 0)) ? 0 : 1)
+	#define IS_CLKDIV_USED(clkdiv)  \
+		(((clkdiv < 8) || ((clkdiv % 8) == 0)) ? 0 : 1)
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
 	if (cur_khz == target_khz)
 		return;
 
-	/* cpufreq_ver("cur_khz = %d, ckdiv1_val = 0x%x\n", cur_khz, ckdiv1_val); */
-
-	if (((cur_khz < CPUFREQ_BOUNDARY_FOR_FHCTL) && (target_khz > CPUFREQ_BOUNDARY_FOR_FHCTL))
-	|| ((target_khz < CPUFREQ_BOUNDARY_FOR_FHCTL) && (cur_khz > CPUFREQ_BOUNDARY_FOR_FHCTL))) {
+	if (((cur_khz < CPUFREQ_BOUNDARY_FOR_FHCTL)
+		&& (target_khz > CPUFREQ_BOUNDARY_FOR_FHCTL))
+		|| ((target_khz < CPUFREQ_BOUNDARY_FOR_FHCTL)
+		&& (cur_khz > CPUFREQ_BOUNDARY_FOR_FHCTL))) {
 		set_cur_freq(p, cur_khz, CPUFREQ_BOUNDARY_FOR_FHCTL);
 		cur_khz = CPUFREQ_BOUNDARY_FOR_FHCTL;
 	}
@@ -1714,16 +1462,14 @@ static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned i
 	is_fhctl_used = ((target_khz >= CPUFREQ_BOUNDARY_FOR_FHCTL)
 		&& (cur_khz >= CPUFREQ_BOUNDARY_FOR_FHCTL)) ? 1 : 0;
 
-	cpufreq_ver("@%s():%d, cur_khz = %d, target_khz = %d, is_fhctl_used = %d\n",
+	cpufreq_ver("@%s():%d, cur_khz = %d, target_khz = %d, ",
 		__func__,
 		__LINE__,
 		cur_khz,
-		target_khz,
-		is_fhctl_used
-		);
+		target_khz);
+	cpufreq_ver("is_fhctl_used = %d\n", is_fhctl_used);
 
 	if (!is_fhctl_used) {
-		#if 1 /* mt8163 */
 		/* target_khz > CPUFREQ_BOUNDARY_FOR_FHCTL == 1105MHz */
 		if (target_khz > 936000) { /* 936MHz is ok */
 			dds = _cpu_dds_calc(target_khz);
@@ -1733,7 +1479,6 @@ static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned i
 			sel = 10;	/* 2/4 */
 		}
 
-		/* adjust Vproc since MAINPLL is 1092 MHz (~= CPU_DVFS_FREQ2) */
 		cur_volt = p->ops->get_cur_volt(p);
 		switch (p->cpu_level) {
 		case CPU_LEVEL_0:
@@ -1747,53 +1492,10 @@ static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned i
 			break;
 		}
 		if (cur_volt < cpu_dvfs_get_volt_by_idx(p, mainpll_volt_idx))
-			p->ops->set_cur_volt(p, cpu_dvfs_get_volt_by_idx(p, mainpll_volt_idx));
+			p->ops->set_cur_volt(p
+			, cpu_dvfs_get_volt_by_idx(p, mainpll_volt_idx));
 		else
 			cur_volt = 0;
-
-		#else
-		/* set ca7_clkdiv1_sel */
-		switch (target_khz) {
-		case CPU_DVFS_FREQ7:
-			dds = _cpu_dds_calc(CPU_DVFS_FREQ7);
-			sel = 8;	/* 4/4 */
-			break;
-		case CPU_DVFS_FREQ8:
-			dds = _cpu_dds_calc(CPU_DVFS_FREQ8);
-			sel = 8;    /* 4/4 */
-			break;
-		case CPU_DVFS_FREQ9:
-			dds = _cpu_dds_calc(1404000);   /* 702 = 1404 / 2 */
-			sel = 10;    /* 2/4 */
-			break;
-		case CPU_DVFS_FREQ10:
-			dds = _cpu_dds_calc(936000);   /* 468 = 936 / 2 */
-			sel = 10;    /* 2/4 */
-			break;
-		default:
-			BUG();
-		}
-
-		/* adjust Vproc since MAINPLL is 1092 MHz (~= CPU_DVFS_FREQ7) */
-		cur_volt = p->ops->get_cur_volt(p);
-		switch (p->cpu_level) {
-		case CPU_LEVEL_0:
-		case CPU_LEVEL_1:
-			mainpll_volt_idx = 4;
-			break;
-		case CPU_LEVEL_2:
-			mainpll_volt_idx = 3;
-			break;
-		case CPU_LEVEL_3:
-		default:
-			mainpll_volt_idx = 1;
-			break;
-		}
-		if (cur_volt < cpu_dvfs_get_volt_by_idx(p, mainpll_volt_idx))
-			p->ops->set_cur_volt(p, cpu_dvfs_get_volt_by_idx(p, mainpll_volt_idx));
-		else
-			cur_volt = 0;
-		#endif
 
 		/* set ARMPLL and CLKDIV */
 		_cpu_clock_switch(p, TOP_CKMUXSEL_MAINPLL);
@@ -1807,82 +1509,17 @@ static void set_cur_freq(struct mt_cpu_dvfs *p, unsigned int cur_khz, unsigned i
 			p->ops->set_cur_volt(p, cur_volt);
 	} else {
 		dds = _cpu_dds_calc(target_khz);
-		BUG_ON(dds & _BITMASK_(26 : 24)); /* should not use posdiv */
+		WARN_ON(dds & _BITMASK_(26 : 24)); /* should not use posdiv */
 
 #if !defined(__KERNEL__) && defined(MTKDRV_FREQHOP)
 		fhdrv_dvt_dvfs_enable(ARMCA7PLL_ID, dds);
 #else  /* __KERNEL__ */
-#if 1
 		mt_dfs_armpll(FH_ARMCA7_PLLID, dds);
-#else
-		_cpu_clock_switch(p, TOP_CKMUXSEL_MAINPLL);
-		cpufreq_write(ARMCA7PLL_CON1, dds | _BIT_(31)); /* CHG */
-		udelay(PLL_SETTLE_TIME);
-		_cpu_clock_switch(p, TOP_CKMUXSEL_ARMPLL);
-#endif
 #endif /* ! __KERNEL__ */
 	}
 
 	FUNC_EXIT(FUNC_LV_LOCAL);
 }
-
-/* for volt change (PMICWRAP/extBuck) */
-
-#if 0  /* kernel 3.18, define but not used */
-static unsigned int get_cur_volt_pmic_wrap(struct mt_cpu_dvfs *p)
-{
-	unsigned int rdata = 0;
-	unsigned int retry_cnt = 5;
-
-	FUNC_ENTER(FUNC_LV_LOCAL);
-
-	pwrap_read(PMIC_ADDR_VPROC_EN, &rdata);
-
-	rdata &= _BITMASK_(0 : 0); /* enable or disable (i.e. 0mv or not) */
-
-	if (rdata) { /* enabled i.e. not 0mv */
-		do {
-			pwrap_read(PMIC_ADDR_VPROC_VOSEL_ON, &rdata);
-		} while (rdata == PMIC_VAL_TO_VOLT(0) && retry_cnt--);
-
-		rdata = PMIC_VAL_TO_VOLT(rdata);
-		/* cpufreq_ver("@%s: volt = %d\n", __func__, rdata); */
-	} else
-		cpufreq_err("@%s: read VPROC_EN failed, rdata = 0x%x\n", __func__, rdata);
-
-	FUNC_EXIT(FUNC_LV_LOCAL);
-
-	return rdata; /* vproc: mv*100 */
-}
-
-static unsigned int get_cur_vsram(struct mt_cpu_dvfs *p)
-{
-	unsigned int rdata = 0;
-	unsigned int retry_cnt = 5;
-
-	FUNC_ENTER(FUNC_LV_LOCAL);
-
-	pwrap_read(PMIC_ADDR_VSRAM_EN, &rdata);
-
-	rdata &= _BITMASK_(1 : 1); /* enable or disable (i.e. 0mv or not) */
-
-	if (rdata) { /* enabled i.e. not 0mv */
-		int ret = 0;
-
-		do {
-			ret = pwrap_read(PMIC_ADDR_VSRAM_VOSEL_ON, &rdata);
-		} while (ret && retry_cnt--);
-
-		rdata = PMIC_VAL_TO_VOLT(rdata);
-		/* cpufreq_ver("@%s: volt = %d\n", __func__, rdata); */
-	} else
-		cpufreq_err("@%s: read VSRAM_EN failed, rdata = 0x%x\n", __func__, rdata);
-
-	FUNC_EXIT(FUNC_LV_LOCAL);
-
-	return rdata; /* vproc: mv*1000 */
-}
-#endif
 
 static unsigned int get_cur_volt_extbuck(struct mt_cpu_dvfs *p)
 {
@@ -1909,8 +1546,8 @@ unsigned int mt_cpufreq_get_cur_volt(enum mt_cpu_dvfs_id id)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
-	BUG_ON(NULL == p->ops);
+	WARN_ON(p == NULL);
+	WARN_ON(p->ops == NULL);
 
 	FUNC_EXIT(FUNC_LV_API);
 
@@ -1918,112 +1555,6 @@ unsigned int mt_cpufreq_get_cur_volt(enum mt_cpu_dvfs_id id)
 	return volt_10_uV;
 }
 EXPORT_SYMBOL(mt_cpufreq_get_cur_volt);
-
-#if 0  /* kernel 3.18, define but not used */
-static unsigned int _calc_pmic_settle_time(unsigned int old_vproc, unsigned int old_vsram
-	, unsigned int new_vproc, unsigned int new_vsram)
-{
-	unsigned delay = 100;
-
-	if (new_vproc == old_vproc && new_vsram == old_vsram)
-		return 0;
-
-	/* VPROC is UP */
-	if (new_vproc >= old_vproc) {
-		/* VSRAM is UP too, choose larger one to calculate settle time */
-		if (new_vsram >= old_vsram)
-			delay = MAX(
-				PMIC_VOLT_UP_SETTLE_TIME(old_vsram, new_vsram),
-				PMIC_VOLT_UP_SETTLE_TIME(old_vproc, new_vproc));
-		/* VSRAM is DOWN, it may happen at bootup stage */
-		else
-			delay = MAX(
-			PMIC_VOLT_DOWN_SETTLE_TIME(old_vsram, new_vsram),
-			PMIC_VOLT_UP_SETTLE_TIME(old_vproc, new_vproc));
-	} else { /* VPROC is DOWN */
-	/* VSRAM is DOWN too, choose larger one to calculate settle time */
-	if (old_vsram >= new_vsram)
-		delay = MAX(
-			PMIC_VOLT_DOWN_SETTLE_TIME(old_vsram, new_vsram),
-			PMIC_VOLT_DOWN_SETTLE_TIME(old_vproc, new_vproc));
-	/* VSRAM is UP, it may happen at bootup stage */
-	else
-		delay = MAX(
-			PMIC_VOLT_UP_SETTLE_TIME(old_vsram, new_vsram),
-			PMIC_VOLT_DOWN_SETTLE_TIME(old_vproc, new_vproc));
-	}
-
-	if (delay < MIN_PMIC_SETTLE_TIME)
-		delay = MIN_PMIC_SETTLE_TIME;
-
-	return delay;
-}
-
-static int set_cur_volt_pmic_wrap(struct mt_cpu_dvfs *p, unsigned int volt) /* volt: vproc (mv*100) */
-{
-	unsigned int cur_volt = get_cur_volt_pmic_wrap(p);
-	bool is_leaving_turbo_mode = false;
-
-	FUNC_ENTER(FUNC_LV_LOCAL);
-
-#ifdef CONFIG_CPU_DVFS_AEE_RR_REC
-	aee_rr_rec_cpu_dvfs_vproc_little(VOLT_TO_PMIC_VAL(volt));
-#endif
-
-	if (is_in_turbo_mode
-	&& cur_volt > cpu_dvfs_get_volt_by_idx(p, 0)
-	&& volt <= cpu_dvfs_get_volt_by_idx(p, 0))
-		is_leaving_turbo_mode = true;
-
-	/* mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_SODI, IDX_SO_VPROC_CA7_NORMAL, VOLT_TO_PMIC_VAL(volt)); */
-	mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_NORMAL, IDX_NM_VPROC, VOLT_TO_PMIC_VAL(volt));
-	mt_cpufreq_apply_pmic_cmd(IDX_NM_VPROC);
-
-	/* delay for scaling up */
-	if (volt > cur_volt)
-		udelay(_calc_pmic_settle_time(cur_volt, 0, volt, 0));   /* vsram is autotracking, bypass it */
-
-	if (NULL != g_pCpuVoltSampler)
-		g_pCpuVoltSampler(MT_CPU_DVFS_LITTLE, volt / 100);  /* mv */
-
-	if (is_leaving_turbo_mode) {
-		/* cpufreq_dbg("@%s: turbo mode end\n", __func__); */
-
-		/* Need to delay settle time for scaling down */
-		udelay(_calc_pmic_settle_time(cur_volt, 0, volt, 0));
-		/* 0x466[15:14] = 2'b00, auto-mode at VDVFS1 and VDVFS2 */
-		pmic_config_interface(0x466, 0x0, 0x3, 0xE);
-		/* 0x462[3] = 1'b0, release force 2 phase */
-		pmic_config_interface(0x462, 0x0, 0x1, 0x3);
-
-		is_in_turbo_mode = false;
-#ifdef CONFIG_CPU_DVFS_AEE_RR_REC
-		aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status() & ~(1 << CPU_DVFS_LITTLE_IS_TURBO));
-#endif
-	}
-
-	FUNC_EXIT(FUNC_LV_LOCAL);
-
-	return 0;
-}
-
-static void dump_opp_table(struct mt_cpu_dvfs *p)
-{
-	int i;
-
-	cpufreq_err("[%s/%d]\n"
-		"cpufreq_oppidx = %d\n",
-		p->name, p->cpu_id,
-		p->idx_opp_tbl
-		);
-
-	for (i = 0; i < p->nr_opp_tbl; i++) {
-		cpufreq_err("\tOP(%d, %d),\n",
-			cpu_dvfs_get_freq_by_idx(p, i),
-			cpu_dvfs_get_volt_by_idx(p, i));
-	}
-}
-#endif
 
 #define SYM827_PRECISION	12500	/* uv */
 /* volt: vproc (mv*1000) */
@@ -2045,23 +1576,27 @@ static int set_cur_volt_extbuck(struct mt_cpu_dvfs *p, unsigned int volt)
 		is_leaving_turbo_mode = true;
 
 	/* mt8163 external buck */
-	ret = regulator_set_voltage(reg_ext_vproc, volt, volt + SYM827_PRECISION - 1);
+	ret = regulator_set_voltage(reg_ext_vproc
+				    , volt, volt + SYM827_PRECISION - 1);
 	if (ret) {
-		cpufreq_err("%s[%d], CPUFREQ, set reg_ext_vproc FAIL\n", __func__, __LINE__);
+		cpufreq_err("%s[%d], CPUFREQ, set reg_ext_vproc FAIL\n"
+			    , __func__, __LINE__);
 		regulator_ext_vproc_voltage = 0;
 		return ret;
 	}
 	regulator_ext_vproc_voltage = volt / 1000;
 
-	if (NULL != g_pCpuVoltSampler)
+	if (g_pCpuVoltSampler != NULL)
 		g_pCpuVoltSampler(MT_CPU_DVFS_LITTLE, volt / 100); /* mv */
 
-	cpufreq_ver("@%s():%d, cur_vproc = %d\n", __func__, __LINE__, cur_vproc);
+	cpufreq_ver("@%s():%d, cur_vproc = %d\n"
+		    , __func__, __LINE__, cur_vproc);
 
 	if (is_leaving_turbo_mode) {
 		is_in_turbo_mode = false;
 #ifdef CONFIG_CPU_DVFS_AEE_RR_REC
-		aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status() & ~(1 << CPU_DVFS_LITTLE_IS_TURBO));
+		aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status()
+					   & ~(1 << CPU_DVFS_LITTLE_IS_TURBO));
 #endif
 	}
 
@@ -2072,13 +1607,14 @@ static int set_cur_volt_extbuck(struct mt_cpu_dvfs *p, unsigned int volt)
 
 /* cpufreq set (freq & volt) */
 
-static unsigned int _search_available_volt(struct mt_cpu_dvfs *p, unsigned int target_khz)
+static unsigned int _search_available_volt(struct mt_cpu_dvfs *p
+	, unsigned int target_khz)
 {
 	int i;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	/* search available voltage */
 	for (i = p->nr_opp_tbl - 1; i >= 0; i--) {
@@ -2086,7 +1622,7 @@ static unsigned int _search_available_volt(struct mt_cpu_dvfs *p, unsigned int t
 			break;
 	}
 
-	BUG_ON(i < 0); /* i.e. target_khz > p->opp_tbl[0].cpufreq_khz */
+	WARN_ON(i < 0); /* i.e. target_khz > p->opp_tbl[0].cpufreq_khz */
 
 	FUNC_EXIT(FUNC_LV_HELP);
 
@@ -2100,9 +1636,6 @@ static int _cpufreq_set_locked(struct mt_cpu_dvfs *p, unsigned int cur_khz
 	int ret = 0;
 #ifdef CONFIG_CPU_FREQ
 	struct cpufreq_freqs freqs;
-	#if 0	/* not available for kernel 3.18 */
-	unsigned int cpu;
-	#endif
 	unsigned int target_khz_orig = target_khz;
 #endif
 
@@ -2113,15 +1646,15 @@ static int _cpufreq_set_locked(struct mt_cpu_dvfs *p, unsigned int cur_khz
 	volt = _search_available_volt(p, target_khz);
 
 	if (cur_khz != TURBO_MODE_FREQ(mode, target_khz))
-		cpufreq_ver("@%s(), target_khz = %d (%d), volt = %d (%d), num_online_cpus = %d, cur_khz = %d\n",
+		cpufreq_ver("@%s(), target_khz = %d (%d), volt = %d (%d), ",
 			__func__,
 			target_khz,
 			TURBO_MODE_FREQ(mode, target_khz),
 			volt,
-			TURBO_MODE_VOLT(mode, volt),
+			TURBO_MODE_VOLT(mode, volt));
+		cpufreq_ver("num_online_cpus = %d, cur_khz = %d\n",
 			num_online_cpus(),
-			cur_khz
-			);
+			cur_khz);
 
 	volt = TURBO_MODE_VOLT(mode, volt);
 	target_khz = TURBO_MODE_FREQ(mode, target_khz);
@@ -2141,20 +1674,11 @@ static int _cpufreq_set_locked(struct mt_cpu_dvfs *p, unsigned int cur_khz
 	freqs.old = cur_khz;
 	/* new freq without turbo */
 	freqs.new = target_khz_orig;
-#if 0
-	if (policy) {
-		for_each_online_cpu(cpu) {
-			freqs.cpu = cpu;
-			cpufreq_freq_transition_begin(policy);
-		}
-	}
-#else
 	/* fix notify transition hang issue for Linux-3.18 */
 	if (policy) {
 		freqs.cpu = policy->cpu;
 		cpufreq_freq_transition_begin(policy, &freqs);
 	}
-#endif
 #endif
 
 /* set freq (UP/DOWN) */
@@ -2162,18 +1686,9 @@ static int _cpufreq_set_locked(struct mt_cpu_dvfs *p, unsigned int cur_khz
 		p->ops->set_cur_freq(p, cur_khz, target_khz);
 
 #ifdef CONFIG_CPU_FREQ
-#if 0
-	if (policy) {
-		for_each_online_cpu(cpu) {
-			freqs.cpu = cpu;
-			cpufreq_freq_transition_end(policy, &freqs, 0);
-		}
-	}
-#else
 	/* fix notify transition hang issue for Linux-3.18 */
 	if (policy)
 		cpufreq_freq_transition_end(policy, &freqs, 0);
-#endif
 #endif
 
 	/* set volt (DOWN) */
@@ -2192,8 +1707,8 @@ static int _cpufreq_set_locked(struct mt_cpu_dvfs *p, unsigned int cur_khz
 
 	/* trigger exception if freq/volt not correct during stress */
 	if (do_dvfs_stress_test) {
-		BUG_ON(p->ops->get_cur_volt(p) < volt);
-		BUG_ON(p->ops->get_cur_phy_freq(p) != target_khz);
+		WARN_ON(p->ops->get_cur_volt(p) < volt);
+		WARN_ON(p->ops->get_cur_phy_freq(p) != target_khz);
 	}
 
 	FUNC_EXIT(FUNC_LV_HELP);
@@ -2215,14 +1730,14 @@ static void _mt_cpufreq_set(enum mt_cpu_dvfs_id id, int new_opp_idx)
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
-	BUG_ON(NULL == p);
-	BUG_ON(new_opp_idx >= p->nr_opp_tbl);
+	WARN_ON(p == NULL);
+	WARN_ON(new_opp_idx >= p->nr_opp_tbl);
 
 #ifdef CONFIG_CPU_FREQ
 	policy = cpufreq_cpu_get(p->cpu_id);
 #endif
 
-	cpufreq_lock(flags);	/* <-XXX */
+	cpufreq_lock(flags);
 
 	/* get current idx here to avoid idx synchronization issue */
 	if (new_opp_idx == -1)
@@ -2247,7 +1762,7 @@ static void _mt_cpufreq_set(enum mt_cpu_dvfs_id id, int new_opp_idx)
 #endif
 	p->idx_opp_tbl = new_opp_idx;
 
-	cpufreq_unlock(flags);	/* <-XXX */
+	cpufreq_unlock(flags);
 
 #ifdef CONFIG_CPU_FREQ
 	if (policy)
@@ -2257,29 +1772,28 @@ static void _mt_cpufreq_set(enum mt_cpu_dvfs_id id, int new_opp_idx)
 	FUNC_EXIT(FUNC_LV_LOCAL);
 }
 
-static int __cpuinit turbo_mode_cpu_callback(struct notifier_block *nfb,
+static int turbo_mode_cpu_callback(struct notifier_block *nfb,
 	unsigned long action, void *hcpu)
 {
-#if 1
 	unsigned int cpu = (unsigned long)hcpu;
 	unsigned int online_cpus = num_online_cpus();
 	struct device *dev;
-	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(0); /* TODO: FIXME, for E1 */
+	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(0);
 
-	cpufreq_ver("@%s():%d, cpu = %d, action = %lu, oppidx = %d, num_online_cpus = %d, num_online_cpus_delta = %d\n",
+	cpufreq_ver("@%s():%d, cpu = %d, action = %lu, oppidx = %d, ",
 				__func__,
 				__LINE__,
 				cpu,
 				action,
-				p->idx_opp_tbl,
+				p->idx_opp_tbl);
+	cpufreq_ver("num_online_cpus = %d, num_online_cpus_delta = %d\n",
 				online_cpus,
-				num_online_cpus_delta
-				); /* <-XXX */
+				num_online_cpus_delta);
 
 	dev = get_cpu_device(cpu);
 
 	if (dev) {
-		if (TURBO_MODE_BOUNDARY_CPU_NUM == online_cpus) {
+		if (online_cpus == TURBO_MODE_BOUNDARY_CPU_NUM) {
 			switch (action) {
 			case CPU_UP_PREPARE:
 			case CPU_UP_PREPARE_FROZEN:
@@ -2300,49 +1814,17 @@ static int __cpuinit turbo_mode_cpu_callback(struct notifier_block *nfb,
 		}
 	}
 
-	cpufreq_ver("@%s():%d, cpu = %d, action = %lu, oppidx = %d, num_online_cpus = %d, num_online_cpus_delta = %d\n",
+	cpufreq_ver("@%s():%d, cpu = %d, action = %lu, oppidx = %d, ",
 				__func__,
 				__LINE__,
 				cpu,
 				action,
-				p->idx_opp_tbl,
+				p->idx_opp_tbl);
+	cpufreq_ver("num_online_cpus = %d, num_online_cpus_delta = %d\n",
 				online_cpus,
-				num_online_cpus_delta
-				); /* <-XXX */
+				num_online_cpus_delta);
 	}
 
-#else	/* XXX: DON'T USE cpufreq_driver_target() for the case which cur_freq == target_freq */
-	struct cpufreq_policy *policy;
-	unsigned int cpu = (unsigned long)hcpu;
-	struct device *dev;
-	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(0); /* TODO: FIXME, for E1 */
-
-	cpufreq_ver("@%s():%d, cpu = %d, action = %d, oppidx = %d, num_online_cpus = %d\n"
-		, __func__, __LINE__, cpu, action, p->idx_opp_tbl, num_online_cpus()); /* <-XXX */
-
-	dev = get_cpu_device(cpu);
-
-	if (dev
-		&& 0 == p->idx_opp_tbl
-		&& TURBO_MODE_BOUNDARY_CPU_NUM == num_online_cpus()) {
-		switch (action) {
-		case CPU_UP_PREPARE:
-		case CPU_DEAD:
-
-			policy = cpufreq_cpu_get(p->cpu_id);
-
-			if (policy) {
-				cpufreq_driver_target(policy, cpu_dvfs_get_cur_freq(p), CPUFREQ_RELATION_L);
-				cpufreq_cpu_put(policy);
-			}
-
-			cpufreq_ver("@%s():%d, cpu = %d, action = %d, oppidx = %d, num_online_cpus = %d\n"
-				, __func__, __LINE__, cpu, action, p->idx_opp_tbl, num_online_cpus()); /* <-XXX */
-			break;
-		}
-	}
-
-#endif
 	return NOTIFY_OK;
 }
 
@@ -2354,7 +1836,7 @@ static void _set_no_limited(struct mt_cpu_dvfs *p)
 {
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	p->limited_max_freq = cpu_dvfs_get_max_freq(p);
 	p->limited_max_ncpu = max_cpu_num;
@@ -2371,73 +1853,73 @@ static void _downgrade_freq_check(enum mt_cpu_dvfs_id id)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	/* if not CPU_LEVEL0 */
 	if (p->cpu_level != CPU_LEVEL_0)
 		goto out;
 
 	/* get temp */
-#if 0 /* TODO: FIXME */
-
-	if (mt_ptp_status((MT_CPU_DVFS_LITTLE == id) ? PTP_DET_LITTLE : PTP_DET_BIG) == 1)
-		temp = (((DRV_Reg32(PTP_TEMP) & 0xff)) + 25) * 1000; /* TODO: mt_ptp.c provide mt_ptp_get_temp() */
-	else
-		temp = mtktscpu_get_Tj_temp(); /* TODO: FIXME, what is the difference for big & LITTLE */
-
-#else
 #ifdef CONFIG_THERMAL
 	temp = tscpu_get_temp_by_bank(THERMAL_BANK0);    /* bank0 for CPU */
 #endif
-#endif
 
 
-	if (temp < 0 || 125000 < temp) {
-		/* cpufreq_dbg("%d (temp) < 0 || 125000 < %d (temp)\n", temp, temp); */
+	if (temp < 0 || 125000 < temp)
 		goto out;
-	}
 
 	{
 	static enum turbo_mode pre_mode = TURBO_MODE_NONE;
 	enum turbo_mode cur_mode = get_turbo_mode(p, cpu_dvfs_get_cur_freq(p));
 
-	if (pre_mode != cur_mode) {
+		if (pre_mode != cur_mode) {
 			_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, -1);
-			cpufreq_ver("@%s():%d, oppidx = %d, num_online_cpus = %d, pre_mode = %d, cur_mode = %d\n",
+			cpufreq_ver("@%s():%d, oppidx = %d, ",
 				__func__,
 				__LINE__,
-				p->idx_opp_tbl,
+				p->idx_opp_tbl);
+			cpufreq_ver("num_online_cpus = %d, pre_mode = %d, ",
 				num_online_cpus(),
-				pre_mode,
-				cur_mode); /* <-XXX */
+				pre_mode);
+			cpufreq_ver("cur_mode = %d\n",
+				cur_mode);
 			pre_mode = cur_mode;
 		}
 	}
 
 	if (temp <= p->ptpod_temperature_limit_1) {
 		p->downgrade_freq_for_ptpod  = false;
-		/* cpufreq_dbg("%d (temp) < %d (limit_1)\n", temp, p->ptpod_temperature_limit_1); */
 		goto out;
-	} else if ((temp > p->ptpod_temperature_limit_1) && (temp < p->ptpod_temperature_limit_2)) {
-		p->downgrade_freq_counter_return_limit = p->downgrade_freq_counter_limit * p->ptpod_temperature_time_1;
-		/* cpufreq_dbg("%d (temp) > %d (limit_1)\n", temp, p->ptpod_temperature_limit_1); */
+	} else if ((temp > p->ptpod_temperature_limit_1)
+	&& (temp < p->ptpod_temperature_limit_2)) {
+		p->downgrade_freq_counter_return_limit
+			= p->downgrade_freq_counter_limit
+			* p->ptpod_temperature_time_1;
 	} else {
-		p->downgrade_freq_counter_return_limit = p->downgrade_freq_counter_limit * p->ptpod_temperature_time_2;
-		/* cpufreq_dbg("%d (temp) > %d (limit_2)\n", temp, p->ptpod_temperature_limit_2); */
+		p->downgrade_freq_counter_return_limit
+			= p->downgrade_freq_counter_limit
+			* p->ptpod_temperature_time_2;
 	}
 
 	if (p->downgrade_freq_for_ptpod == false) {
-		if ((num_online_cpus() == p->pre_online_cpu) && (cpu_dvfs_get_cur_freq(p) == p->pre_freq)) {
-			if ((num_online_cpus() >= p->over_max_cpu) && (p->idx_opp_tbl == 0)) {
+		if ((num_online_cpus() == p->pre_online_cpu)
+			&& (cpu_dvfs_get_cur_freq(p) == p->pre_freq)) {
+			if ((num_online_cpus() >= p->over_max_cpu)
+				&& (p->idx_opp_tbl == 0)) {
 				p->downgrade_freq_counter++;
 
-				if (p->downgrade_freq_counter >= p->downgrade_freq_counter_limit) {
-					p->downgrade_freq = cpu_dvfs_get_freq_by_idx(p, 1);
+				if (p->downgrade_freq_counter
+					>= p->downgrade_freq_counter_limit) {
+					p->downgrade_freq
+					= cpu_dvfs_get_freq_by_idx(p, 1);
 
 					p->downgrade_freq_for_ptpod = true;
 					p->downgrade_freq_counter = 0;
 
-					cpufreq_info("freq limit, downgrade_freq_for_ptpod = %d\n"
+					cpufreq_info("freq limit, ");
+					cpufreq_info("downgrade_");
+					cpufreq_info("freq_for_ptpod ");
+					cpufreq_info("= %d\n"
 						, p->downgrade_freq_for_ptpod);
 
 					policy = cpufreq_cpu_get(p->cpu_id);
@@ -2445,7 +1927,9 @@ static void _downgrade_freq_check(enum mt_cpu_dvfs_id id)
 					if (!policy)
 						goto out;
 
-					cpufreq_driver_target(policy, p->downgrade_freq, CPUFREQ_RELATION_L);
+					cpufreq_driver_target(policy
+						, p->downgrade_freq
+						, CPUFREQ_RELATION_L);
 
 					cpufreq_cpu_put(policy);
 				}
@@ -2460,15 +1944,11 @@ static void _downgrade_freq_check(enum mt_cpu_dvfs_id id)
 	} else {
 		p->downgrade_freq_counter_return++;
 
-	/* cpufreq_dbg("downgrade_freq_counter_return_limit = %d\n", p->downgrade_freq_counter_return_limit); */
-	/* cpufreq_dbg("downgrade_freq_counter_return = %d\n", p->downgrade_freq_counter_return); */
-
-	if (p->downgrade_freq_counter_return >= p->downgrade_freq_counter_return_limit) {
-		p->downgrade_freq_for_ptpod  = false;
-		p->downgrade_freq_counter_return = 0;
-
-		/* cpufreq_dbg("Release freq limit, downgrade_freq_for_ptpod = %d\n", p->downgrade_freq_for_ptpod); */
-	}
+		if (p->downgrade_freq_counter_return
+			>= p->downgrade_freq_counter_return_limit) {
+			p->downgrade_freq_for_ptpod  = false;
+			p->downgrade_freq_counter_return = 0;
+		}
 	}
 
 out:
@@ -2483,15 +1963,9 @@ static void _init_downgrade(struct mt_cpu_dvfs *p, unsigned int cpu_level)
 	case CPU_LEVEL_0:
 	case CPU_LEVEL_1:
 	default:
-#if 0 /* TODO: check this setting */
-		p->downgrade_freq_counter_limit = cpu_dvfs_is(p, MT_CPU_DVFS_LITTLE) ? 10 : 10;
-		p->ptpod_temperature_time_1     = cpu_dvfs_is(p, MT_CPU_DVFS_LITTLE) ? 2  : 1;
-		p->ptpod_temperature_time_2     = cpu_dvfs_is(p, MT_CPU_DVFS_LITTLE) ? 8  : 4;
-#else
 		p->downgrade_freq_counter_limit = 10;
 		p->ptpod_temperature_time_1     = 2;
 		p->ptpod_temperature_time_2     = 8;
-#endif
 		break;
 	}
 
@@ -2512,9 +1986,9 @@ static int _sync_opp_tbl_idx(struct mt_cpu_dvfs *p)
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	BUG_ON(NULL == p);
-	BUG_ON(NULL == p->opp_tbl);
-	BUG_ON(NULL == p->ops);
+	WARN_ON(p == NULL);
+	WARN_ON(p->opp_tbl == NULL);
+	WARN_ON(p->ops == NULL);
 
 	freq = p->ops->get_cur_phy_freq(p);
 
@@ -2527,7 +2001,8 @@ static int _sync_opp_tbl_idx(struct mt_cpu_dvfs *p)
 	}
 
 	if (i >= 0) {
-		cpufreq_info("%s freq = %d\n", cpu_dvfs_get_name(p), cpu_dvfs_get_cur_freq(p));
+		cpufreq_info("%s freq = %d\n", cpu_dvfs_get_name(p)
+			     , cpu_dvfs_get_cur_freq(p));
 
 	/* TODO: apply correct voltage??? */
 
@@ -2557,89 +2032,16 @@ static void _mt_cpufreq_sync_opp_tbl_idx(void)
 
 static enum mt_cpu_dvfs_id _get_cpu_dvfs_id(unsigned int cpu_id)
 {
-#if 1
 	/* Little core only for K2 */
 	return MT_CPU_DVFS_LITTLE;
-#else
-#if 1	/* TODO: FIXME, just for E1 */
-	return (enum mt_cpu_dvfs_id)((cpu_id < 4) ? 0 : 1);
-#else	/* TODO: FIXME, just for E1 */
-	struct mt_cpu_dvfs *p;
-	int i;
-
-	for_each_cpu_dvfs(i, p) {
-		if (p->cpu_id == cpu_id)
-			break;
-	}
-
-	BUG_ON(i >= NR_MT_CPU_DVFS);
-
-	return i;
-#endif	/* TODO: FIXME, just for E1 */
-#endif
 }
 
-int mt_cpufreq_state_set(int enabled) /* TODO: state set by id??? keep this function??? */
+int mt_cpufreq_state_set(int enabled)
 {
-#if 0
-	bool set_normal_max_opp = false;
-	struct mt_cpu_dvfs *p;
-	int i;
-	unsigned long flags;
-#endif
 	int ret = 0;
 
 	FUNC_ENTER(FUNC_LV_API);
 
-#if 0
-	for_each_cpu_dvfs(i, p) {
-		if (!cpu_dvfs_is_available(p))
-			continue;
-
-		cpufreq_lock(flags);
-
-		if (enabled) {
-			/* enable CPU DVFS */
-			if (p->dvfs_disable_by_suspend) {
-				p->dvfs_disable_count--;
-				cpufreq_dbg("enable %s DVFS: dvfs_disable_count = %d\n"
-					, p->name, p->dvfs_disable_count);
-
-				if (p->dvfs_disable_count <= 0)
-					p->dvfs_disable_by_suspend = false;
-				else
-					cpufreq_dbg("someone still disable %s DVFS and cant't enable it\n", p->name);
-			} else
-				cpufreq_dbg("%s DVFS already enabled\n", p->name);
-		} else {
-			/* disable DVFS */
-			p->dvfs_disable_count++;
-
-			if (p->dvfs_disable_by_suspend)
-				cpufreq_dbg("%s DVFS already disabled\n", p->name);
-			else {
-				p->dvfs_disable_by_suspend = true;
-				set_normal_max_opp = true;
-			}
-		}
-
-		cpufreq_unlock(flags);
-
-		if (set_normal_max_opp) {
-			struct cpufreq_policy *policy = cpufreq_cpu_get(p->cpu_id);
-
-			if (policy) {
-				cpufreq_driver_target(policy, cpu_dvfs_get_normal_max_freq(p), CPUFREQ_RELATION_L);
-				cpufreq_cpu_put(policy);
-			} else {
-				cpufreq_warn("can't get cpufreq policy to disable %s DVFS\n", p->name);
-				ret = -1;
-			}
-		}
-
-		set_normal_max_opp = false;
-	}
-#endif
 	FUNC_EXIT(FUNC_LV_API);
 
 	return ret;
@@ -2647,206 +2049,17 @@ int mt_cpufreq_state_set(int enabled) /* TODO: state set by id??? keep this func
 EXPORT_SYMBOL(mt_cpufreq_state_set);
 
 /* Power Table */
-#if 0
-#define P_MCU_L         (1243)  /* MCU Leakage Power          */
-#define P_MCU_T         (2900)  /* MCU Total Power            */
-#define P_CA7_L         (110)   /* CA7 Leakage Power          */
-#define P_CA7_T         (305)   /* Single CA7 Core Power      */
-
-#define P_MCL99_105C_L  (1243)  /* MCL99 Leakage Power @ 105C */
-#define P_MCL99_25C_L   (93)    /* MCL99 Leakage Power @ 25C  */
-#define P_MCL50_105C_L  (587)   /* MCL50 Leakage Power @ 105C */
-#define P_MCL50_25C_L   (35)    /* MCL50 Leakage Power @ 25C  */
-
-#define T_105           (105)   /* Temperature 105C           */
-#define T_65            (65)    /* Temperature 65C            */
-#define T_25            (25)    /* Temperature 25C            */
-
-#define P_MCU_D ((P_MCU_T - P_MCU_L) - 8 * (P_CA7_T - P_CA7_L)) /* MCU dynamic power except of CA7 cores */
-
-#define P_TOTAL_CORE_L ((P_MCL99_105C_L  * 27049) / 100000) /* Total leakage at T_65 */
-#define P_EACH_CORE_L  ((P_TOTAL_CORE_L * ((P_CA7_L * 1000) / P_MCU_L)) / 1000) /* 1 core leakage at T_65 */
-
-#define P_CA7_D_1_CORE ((P_CA7_T - P_CA7_L) * 1) /* CA7 dynamic power for 1 cores turned on */
-#define P_CA7_D_2_CORE ((P_CA7_T - P_CA7_L) * 2) /* CA7 dynamic power for 2 cores turned on */
-#define P_CA7_D_3_CORE ((P_CA7_T - P_CA7_L) * 3) /* CA7 dynamic power for 3 cores turned on */
-#define P_CA7_D_4_CORE ((P_CA7_T - P_CA7_L) * 4) /* CA7 dynamic power for 4 cores turned on */
-
-#define A_1_CORE (P_MCU_D + P_CA7_D_1_CORE) /* MCU dynamic power for 1 cores turned on */
-#define A_2_CORE (P_MCU_D + P_CA7_D_2_CORE) /* MCU dynamic power for 2 cores turned on */
-#define A_3_CORE (P_MCU_D + P_CA7_D_3_CORE) /* MCU dynamic power for 3 cores turned on */
-#define A_4_CORE (P_MCU_D + P_CA7_D_4_CORE) /* MCU dynamic power for 4 cores turned on */
-
-static void _power_calculation(struct mt_cpu_dvfs *p, int idx, int ncpu)
-{
-	int multi = 0, p_dynamic = 0, p_leakage = 0, freq_ratio = 0, volt_square_ratio = 0;
-	int possible_cpu = 0;
-
-	FUNC_ENTER(FUNC_LV_HELP);
-
-	possible_cpu = num_possible_cpus(); /* TODO: FIXME */
-
-	volt_square_ratio = (((p->opp_tbl[idx].cpufreq_volt * 100) / 1000) *
-		((p->opp_tbl[idx].cpufreq_volt * 100) / 1000)) / 100;
-	freq_ratio = (p->opp_tbl[idx].cpufreq_khz / 1700);
-
-	cpufreq_dbg("freq_ratio = %d, volt_square_ratio %d\n", freq_ratio, volt_square_ratio);
-
-	multi = ((p->opp_tbl[idx].cpufreq_volt * 100) / 1000) *
-	((p->opp_tbl[idx].cpufreq_volt * 100) / 1000) *
-	((p->opp_tbl[idx].cpufreq_volt * 100) / 1000);
-
-	switch (ncpu) {
-	case 0:
-		/* 1 core */
-		p_dynamic = (((A_1_CORE * freq_ratio) / 1000) * volt_square_ratio) / 100;
-		p_leakage = ((P_TOTAL_CORE_L - 7 * P_EACH_CORE_L) * (multi)) / (100 * 100 * 100);
-		cpufreq_dbg("p_dynamic = %d, p_leakage = %d\n", p_dynamic, p_leakage);
-		break;
-
-	case 1:
-		/* 2 core */
-		p_dynamic = (((A_2_CORE * freq_ratio) / 1000) * volt_square_ratio) / 100;
-		p_leakage = ((P_TOTAL_CORE_L - 6 * P_EACH_CORE_L) * (multi)) / (100 * 100 * 100);
-		cpufreq_dbg("p_dynamic = %d, p_leakage = %d\n", p_dynamic, p_leakage);
-		break;
-
-	case 2:
-		/* 3 core */
-		p_dynamic = (((A_3_CORE * freq_ratio) / 1000) * volt_square_ratio) / 100;
-		p_leakage = ((P_TOTAL_CORE_L - 5 * P_EACH_CORE_L) * (multi)) / (100 * 100 * 100);
-		cpufreq_dbg("p_dynamic = %d, p_leakage = %d\n", p_dynamic, p_leakage);
-		break;
-
-	case 3:
-		/* 4 core */
-		p_dynamic = (((A_4_CORE * freq_ratio) / 1000) * volt_square_ratio) / 100;
-		p_leakage = ((P_TOTAL_CORE_L - 4 * P_EACH_CORE_L) * (multi)) / (100 * 100 * 100);
-		cpufreq_dbg("p_dynamic = %d, p_leakage = %d\n", p_dynamic, p_leakage);
-		break;
-
-	default:
-		break;
-	}
-
-	p->power_tbl[idx * possible_cpu + ncpu].cpufreq_ncpu    = ncpu + 1;
-	p->power_tbl[idx * possible_cpu + ncpu].cpufreq_khz     = p->opp_tbl[idx].cpufreq_khz;
-	p->power_tbl[idx * possible_cpu + ncpu].cpufreq_power   = p_dynamic + p_leakage;
-
-	cpufreq_dbg("p->power_tbl[%d]: cpufreq_ncpu = %d, cpufreq_khz = %d, cpufreq_power = %d\n",
-		(idx * possible_cpu + ncpu),
-		p->power_tbl[idx * possible_cpu + ncpu].cpufreq_ncpu,
-		p->power_tbl[idx * possible_cpu + ncpu].cpufreq_khz,
-		p->power_tbl[idx * possible_cpu + ncpu].cpufreq_power
-		);
-
-	FUNC_EXIT(FUNC_LV_HELP);
-}
-
-static int setup_power_table(struct mt_cpu_dvfs *p)
-{
-	static const unsigned int pwr_tbl_cgf[] = { 0, 0, 1, 0, 1, 0, 1, 0, };
-	unsigned int pwr_eff_tbl[NR_MAX_OPP_TBL][NR_MAX_CPU];
-	unsigned int pwr_eff_num;
-	int possible_cpu;
-	int i, j;
-	int ret = 0;
-
-	FUNC_ENTER(FUNC_LV_LOCAL);
-
-	BUG_ON(NULL == p);
-
-	if (p->power_tbl)
-		goto out;
-
-	cpufreq_dbg("P_MCU_D = %d\n", P_MCU_D);
-	cpufreq_dbg("P_CA7_D_1_CORE = %d, P_CA7_D_2_CORE = %d, P_CA7_D_3_CORE = %d, P_CA7_D_4_CORE = %d\n"
-		, P_CA7_D_1_CORE, P_CA7_D_2_CORE, P_CA7_D_3_CORE, P_CA7_D_4_CORE);
-	cpufreq_dbg("P_TOTAL_CORE_L = %d, P_EACH_CORE_L = %d\n", P_TOTAL_CORE_L, P_EACH_CORE_L);
-	cpufreq_dbg("A_1_CORE = %d, A_2_CORE = %d, A_3_CORE = %d, A_4_CORE = %d\n"
-		, A_1_CORE, A_2_CORE, A_3_CORE, A_4_CORE);
-
-	possible_cpu = num_possible_cpus(); /* TODO: FIXME */
-
-	/* allocate power table */
-	memset((void *)pwr_eff_tbl, 0, sizeof(pwr_eff_tbl));
-	p->power_tbl = kzalloc(p->nr_opp_tbl * possible_cpu * sizeof(struct mt_cpu_power_info), GFP_KERNEL);
-
-	if (NULL == p->power_tbl) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	/* setup power efficiency array */
-	for (i = 0, pwr_eff_num = 0; i < possible_cpu; i++) {
-		if (1 == pwr_tbl_cgf[i])
-			pwr_eff_num++;
-	}
-
-	for (i = 0; i < p->nr_opp_tbl; i++) {
-		for (j = 0; j < possible_cpu; j++) {
-			if (1 == pwr_tbl_cgf[j])
-				pwr_eff_tbl[i][j] = 1;
-		}
-	}
-
-	p->nr_power_tbl = p->nr_opp_tbl * (possible_cpu - pwr_eff_num);
-
-	/* calc power and fill in power table */
-	for (i = 0; i < p->nr_opp_tbl; i++) {
-		for (j = 0; j < possible_cpu; j++) {
-			if (0 == pwr_eff_tbl[i][j])
-				_power_calculation(p, i, j);
-		}
-	}
-
-	/* sort power table */
-	for (i = p->nr_opp_tbl * possible_cpu; i > 0; i--) {
-		for (j = 1; j <= i; j++) {
-			if (p->power_tbl[j - 1].cpufreq_power < p->power_tbl[j].cpufreq_power) {
-				struct mt_cpu_power_info tmp;
-
-				tmp.cpufreq_khz                 = p->power_tbl[j - 1].cpufreq_khz;
-				tmp.cpufreq_ncpu                = p->power_tbl[j - 1].cpufreq_ncpu;
-				tmp.cpufreq_power               = p->power_tbl[j - 1].cpufreq_power;
-
-				p->power_tbl[j - 1].cpufreq_khz   = p->power_tbl[j].cpufreq_khz;
-				p->power_tbl[j - 1].cpufreq_ncpu  = p->power_tbl[j].cpufreq_ncpu;
-				p->power_tbl[j - 1].cpufreq_power = p->power_tbl[j].cpufreq_power;
-
-				p->power_tbl[j].cpufreq_khz     = tmp.cpufreq_khz;
-				p->power_tbl[j].cpufreq_ncpu    = tmp.cpufreq_ncpu;
-				p->power_tbl[j].cpufreq_power   = tmp.cpufreq_power;
-			}
-		}
-	}
-
-	/* dump power table */
-	for (i = 0; i < p->nr_opp_tbl * possible_cpu; i++) {
-		cpufreq_dbg("[%d] = { .khz = %d, .ncup = %d, .power = %d }\n",
-		p->power_tbl[i].cpufreq_khz,
-		p->power_tbl[i].cpufreq_ncpu,
-		p->power_tbl[i].cpufreq_power
-		);
-	}
-
-out:
-	FUNC_EXIT(FUNC_LV_LOCAL);
-
-	return ret;
-}
-#else
 static void _power_calculation(struct mt_cpu_dvfs *p, int oppidx, int ncpu)
 {
-/* mt8163-TBD Define power */
-#define CA53_8CORE_REF_POWER	2286	/* mW  */
-#define CA53_6CORE_REF_POWER	1736	/* mW  */
-#define CA53_4CORE_REF_POWER	1159	/* mW  */
-#define CA53_REF_FREQ	1690000 /* KHz */
-#define CA53_REF_VOLT	1000000	/* mV * 1000 */
+	/* mt8163-TBD Define power */
+	#define CA53_8CORE_REF_POWER	2286	/* mW  */
+	#define CA53_6CORE_REF_POWER	1736	/* mW  */
+	#define CA53_4CORE_REF_POWER	1159	/* mW  */
+	#define CA53_REF_FREQ	1690000 /* KHz */
+	#define CA53_REF_VOLT	1000000	/* mV * 1000 */
 
 	int p_dynamic = 0, p_leakage = 0, ref_freq, ref_volt;
-	int possible_cpu = max_cpu_num;/* num_possible_cpus(); // TODO: FIXME */
+	int possible_cpu = max_cpu_num;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
@@ -2867,11 +2080,8 @@ static void _power_calculation(struct mt_cpu_dvfs *p, int oppidx, int ncpu)
 	}
 
 	/* TODO: should not use a hardcode value for leakage power */
-#if 1
-	p_leakage = mt_spower_get_leakage(MT_SPOWER_CA7, p->opp_tbl[oppidx].cpufreq_volt / 1000, 65);
-#else
-	p_leakage = 155; /* mt8163-TBD Define power */
-#endif
+	p_leakage = mt_spower_get_leakage(MT_SPOWER_CA7
+		, p->opp_tbl[oppidx].cpufreq_volt / 1000, 65);
 
 	p_dynamic = p_dynamic *
 	(p->opp_tbl[oppidx].cpufreq_khz / 1000) / (ref_freq / 1000) *
@@ -2879,11 +2089,14 @@ static void _power_calculation(struct mt_cpu_dvfs *p, int oppidx, int ncpu)
 	p->opp_tbl[oppidx].cpufreq_volt / ref_volt +
 	p_leakage;
 
-	p->power_tbl[NR_MAX_OPP_TBL * (possible_cpu - 1 - ncpu) + oppidx].cpufreq_ncpu
+	p->power_tbl[NR_MAX_OPP_TBL
+		* (possible_cpu - 1 - ncpu) + oppidx].cpufreq_ncpu
 		= ncpu + 1;
-	p->power_tbl[NR_MAX_OPP_TBL * (possible_cpu - 1 - ncpu) + oppidx].cpufreq_khz
+	p->power_tbl[NR_MAX_OPP_TBL
+		* (possible_cpu - 1 - ncpu) + oppidx].cpufreq_khz
 		= p->opp_tbl[oppidx].cpufreq_khz;
-	p->power_tbl[NR_MAX_OPP_TBL * (possible_cpu - 1 - ncpu) + oppidx].cpufreq_power
+	p->power_tbl[NR_MAX_OPP_TBL
+		* (possible_cpu - 1 - ncpu) + oppidx].cpufreq_power
 		= p_dynamic * (ncpu + 1) / possible_cpu;
 
 	FUNC_EXIT(FUNC_LV_HELP);
@@ -2891,52 +2104,35 @@ static void _power_calculation(struct mt_cpu_dvfs *p, int oppidx, int ncpu)
 
 static int setup_power_table(struct mt_cpu_dvfs *p)
 {
-	#if 0 /* mt8163-TBD pwr_tbl_cgf NOT USED */
-	static const unsigned int pwr_tbl_cgf[NR_MAX_CPU] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-	#endif
 	unsigned int pwr_eff_tbl[NR_MAX_OPP_TBL][NR_MAX_CPU];
 	unsigned int pwr_eff_num = 0;
-	int possible_cpu = max_cpu_num; /*num_possible_cpus();*/  /* TODO: FIXME */
+	int possible_cpu = max_cpu_num; /*num_possible_cpus();*/
 	int i, j;
 	int ret = 0;
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (p->power_tbl)
 		goto out;
 
 	/* allocate power table */
 	memset((void *)pwr_eff_tbl, 0, sizeof(pwr_eff_tbl));
-	p->power_tbl = kzalloc(p->nr_opp_tbl * possible_cpu * sizeof(struct mt_cpu_power_info), GFP_KERNEL);
+	p->power_tbl = kzalloc(p->nr_opp_tbl * possible_cpu
+			       * sizeof(struct mt_cpu_power_info), GFP_KERNEL);
 
-	if (NULL == p->power_tbl) {
+	if (p->power_tbl == NULL) {
 		ret = -ENOMEM;
 		goto out;
 	}
-
-	#if 0 /* mt8163-TBD pwr_tbl_cgf NOT USED */
-	/* setup power efficiency array */
-	for (i = 0, pwr_eff_num = 0; i < possible_cpu; i++) {
-		if (1 == pwr_tbl_cgf[i])
-			pwr_eff_num++;
-	}
-
-	for (i = 0; i < p->nr_opp_tbl; i++) {
-		for (j = 0; j < possible_cpu; j++) {
-			if (1 == pwr_tbl_cgf[j])
-				pwr_eff_tbl[i][j] = 1;
-		}
-	}
-	#endif
 
 	p->nr_power_tbl = p->nr_opp_tbl * (possible_cpu - pwr_eff_num);
 
 	/* calc power and fill in power table */
 	for (i = 0; i < p->nr_opp_tbl; i++) {
 		for (j = 0; j < possible_cpu; j++) {
-			if (0 == pwr_eff_tbl[i][j])
+			if (pwr_eff_tbl[i][j] == 0)
 				_power_calculation(p, i, j);
 		}
 	}
@@ -2944,44 +2140,49 @@ static int setup_power_table(struct mt_cpu_dvfs *p)
 	/* sort power table */
 	for (i = p->nr_opp_tbl * possible_cpu; i > 0; i--) {
 		for (j = 1; j < i; j++) {
-			if (p->power_tbl[j - 1].cpufreq_power < p->power_tbl[j].cpufreq_power) {
+			if (p->power_tbl[j - 1].cpufreq_power
+				< p->power_tbl[j].cpufreq_power) {
 				struct mt_cpu_power_info tmp;
 
-				tmp.cpufreq_khz                 = p->power_tbl[j - 1].cpufreq_khz;
-				tmp.cpufreq_ncpu                = p->power_tbl[j - 1].cpufreq_ncpu;
-				tmp.cpufreq_power               = p->power_tbl[j - 1].cpufreq_power;
+				tmp.cpufreq_khz
+					= p->power_tbl[j - 1].cpufreq_khz;
+				tmp.cpufreq_ncpu
+					= p->power_tbl[j - 1].cpufreq_ncpu;
+				tmp.cpufreq_power
+					= p->power_tbl[j - 1].cpufreq_power;
 
-				p->power_tbl[j - 1].cpufreq_khz   = p->power_tbl[j].cpufreq_khz;
-				p->power_tbl[j - 1].cpufreq_ncpu  = p->power_tbl[j].cpufreq_ncpu;
-				p->power_tbl[j - 1].cpufreq_power = p->power_tbl[j].cpufreq_power;
+				p->power_tbl[j - 1].cpufreq_khz
+					= p->power_tbl[j].cpufreq_khz;
+				p->power_tbl[j - 1].cpufreq_ncpu
+					= p->power_tbl[j].cpufreq_ncpu;
+				p->power_tbl[j - 1].cpufreq_power
+					= p->power_tbl[j].cpufreq_power;
 
-				p->power_tbl[j].cpufreq_khz     = tmp.cpufreq_khz;
-				p->power_tbl[j].cpufreq_ncpu    = tmp.cpufreq_ncpu;
-				p->power_tbl[j].cpufreq_power   = tmp.cpufreq_power;
+				p->power_tbl[j].cpufreq_khz
+					= tmp.cpufreq_khz;
+				p->power_tbl[j].cpufreq_ncpu
+					= tmp.cpufreq_ncpu;
+				p->power_tbl[j].cpufreq_power
+					= tmp.cpufreq_power;
 			}
 		}
 	}
 
 	/* dump power table */
 	for (i = 0; i < p->nr_opp_tbl * possible_cpu; i++) {
-		cpufreq_info("[%d] = { .cpufreq_khz = %d,\t.cpufreq_ncpu = %d,\t.cpufreq_power = %d }\n",
+		cpufreq_info("[%d] = { .cpufreq_khz = %d,\t",
 		i,
-		p->power_tbl[i].cpufreq_khz,
+		p->power_tbl[i].cpufreq_khz);
+		cpufreq_info(".cpufreq_ncpu = %d,\t.cpufreq_power = %d }\n",
 		p->power_tbl[i].cpufreq_ncpu,
-		p->power_tbl[i].cpufreq_power
-		);
+		p->power_tbl[i].cpufreq_power);
 	}
-
-#if 0 /* def CONFIG_THERMAL // TODO: FIXME */
-	mtk_cpufreq_register(p->power_tbl, p->nr_power_tbl);
-#endif
 
 out:
 	FUNC_EXIT(FUNC_LV_LOCAL);
 
 	return ret;
 }
-#endif
 
 static int _mt_cpufreq_setup_freqs_table(struct cpufreq_policy *policy
 , struct mt_cpu_freq_info *freqs, int num)
@@ -2992,15 +2193,15 @@ static int _mt_cpufreq_setup_freqs_table(struct cpufreq_policy *policy
 
 	FUNC_ENTER(FUNC_LV_LOCAL);
 
-	BUG_ON(NULL == policy);
-	BUG_ON(NULL == freqs);
+	WARN_ON(policy == NULL);
+	WARN_ON(freqs == NULL);
 
 	p = id_to_cpu_dvfs(_get_cpu_dvfs_id(policy->cpu));
 
-	if (NULL == p->freq_tbl_for_cpufreq) {
+	if (p->freq_tbl_for_cpufreq == NULL) {
 		table = kzalloc((num + 1) * sizeof(*table), GFP_KERNEL);
 
-		if (NULL == table) {
+		if (table == NULL) {
 			ret = -ENOMEM;
 			goto out;
 		}
@@ -3010,7 +2211,7 @@ static int _mt_cpufreq_setup_freqs_table(struct cpufreq_policy *policy
 			table[i].frequency = freqs[i].cpufreq_khz;
 		}
 
-		table[num].driver_data = i; /*  TODO: FIXME, why need this??? */
+		table[num].driver_data = i;
 		table[num].frequency = CPUFREQ_TABLE_END;
 
 		p->opp_tbl = freqs;
@@ -3021,16 +2222,11 @@ static int _mt_cpufreq_setup_freqs_table(struct cpufreq_policy *policy
 #ifdef CONFIG_CPU_FREQ
 	ret = cpufreq_frequency_table_cpuinfo(policy, p->freq_tbl_for_cpufreq);
 
-#if 0	/* not available for kernel 3.18 */
-	if (!ret)
-		cpufreq_frequency_table_get_attr(p->freq_tbl_for_cpufreq, policy->cpu);
-#else
 	if (!ret)
 		policy->freq_table = table;
 #endif
-#endif
 
-	if (NULL == p->power_tbl)
+	if (p->power_tbl == NULL)
 		p->ops->setup_power_table(p);
 
 out:
@@ -3045,15 +2241,21 @@ void mt_cpufreq_enable_by_ptpod(enum mt_cpu_dvfs_id id)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	p->dvfs_disable_by_ptpod = false;
 
-	/* pmic auto mode: the variance of voltage is wide but saves more power. */
+	/* pmic auto mode: the variance of voltage
+	 * is wide but saves more power.
+	 */
 	regulator_set_mode(reg_ext_vproc, REGULATOR_MODE_NORMAL);
-	if (regulator_get_mode(reg_ext_vproc) != REGULATOR_MODE_NORMAL)
-		cpufreq_err("Vproc should be REGULATOR_MODE_NORMAL(%d), but mode = %d\n",
-			    REGULATOR_MODE_NORMAL, regulator_get_mode(reg_ext_vproc));
+	if (regulator_get_mode(reg_ext_vproc) != REGULATOR_MODE_NORMAL) {
+		cpufreq_err("Vproc should be REGULATOR_MODE_NORMAL(%d), "
+			    , REGULATOR_MODE_NORMAL);
+		cpufreq_err("but mode = %d\n"
+			    , regulator_get_mode(reg_ext_vproc));
+	}
+
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_API);
@@ -3072,38 +2274,29 @@ unsigned int mt_cpufreq_disable_by_ptpod(enum mt_cpu_dvfs_id id)
 
 	FUNC_ENTER(FUNC_LV_API);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	p->dvfs_disable_by_ptpod = true;
 
-	/* pmic PWM mode: the variance of voltage is narrow but consumes more power. */
+	/* pmic PWM mode: the variance of voltage
+	 * is narrow but consumes more power.
+	 */
 	regulator_set_mode(reg_ext_vproc, REGULATOR_MODE_FAST);
-	if (regulator_get_mode(reg_ext_vproc) != REGULATOR_MODE_FAST)
-		cpufreq_err("Vproc should be REGULATOR_MODE_FAST(%d), but mode = %d\n",
-			    REGULATOR_MODE_FAST, regulator_get_mode(reg_ext_vproc));
+	if (regulator_get_mode(reg_ext_vproc) != REGULATOR_MODE_FAST) {
+		cpufreq_err("Vproc should be REGULATOR_MODE_FAST(%d), "
+			    , REGULATOR_MODE_FAST);
+		cpufreq_err("but mode = %d\n"
+			    , regulator_get_mode(reg_ext_vproc));
+	}
 
 	if (!cpu_dvfs_is_available(p)) {
 		FUNC_EXIT(FUNC_LV_API);
 		return 0;
 	}
 
-#if 0 /* XXX: BUG_ON(irqs_disabled()) @ __cpufreq_notify_transition() */
-	{
-	struct cpufreq_policy *policy;
-
-	policy = cpufreq_cpu_get(p->cpu_id);
-
-	if (policy) {
-		cpufreq_driver_target(policy, cpu_dvfs_get_normal_max_freq(p), CPUFREQ_RELATION_L);
-		cpufreq_cpu_put(policy);
-	} else
-		cpufreq_warn("can't get cpufreq policy to disable %s DVFS\n", p->name);
-	}
-#else
 	p->idx_opp_tbl_for_late_resume = p->idx_opp_tbl;
-	_mt_cpufreq_set(id, p->idx_normal_max_opp); /* XXX: useless, decided @ _calc_new_opp_idx() */
+	_mt_cpufreq_set(id, p->idx_normal_max_opp);
 	_set_cur_volt_locked(p, 1150000); /* from YT, from HPT team */
-#endif
 
 	FUNC_EXIT(FUNC_LV_API);
 
@@ -3127,25 +2320,25 @@ void mt_cpufreq_thermal_protect(unsigned int limited_power)
 	unsigned long flag;
 	int i;
 
-	policy = cpufreq_cpu_get(0);	/* TODO: FIXME if it has more than one DVFS policy */
-	if (NULL == policy)
+	policy = cpufreq_cpu_get(0);
+	if (policy == NULL)
 		goto no_policy;
 
 	p = id_to_cpu_dvfs(_get_cpu_dvfs_id(policy->cpu));
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
-	cpufreq_lock(flag);                                     /* <- lock */
+	cpufreq_lock(flag);
 
 	/* save current oppidx */
 	if (!p->thermal_protect_limited_power)
 		p->idx_opp_tbl_for_thermal_thro = p->idx_opp_tbl;
 
 	p->thermal_protect_limited_power = limited_power;
-	possible_cpu = max_cpu_num;/* num_possible_cpus(); // TODO: FIXME */
+	possible_cpu = max_cpu_num;
 
 	/* no limited */
-	if (0 == limited_power) {
+	if (limited_power == 0) {
 		p->limited_max_ncpu = possible_cpu;
 		p->limited_max_freq = cpu_dvfs_get_max_freq(p);
 		/* restore oppidx */
@@ -3154,9 +2347,12 @@ void mt_cpufreq_thermal_protect(unsigned int limited_power)
 		for (ncpu = possible_cpu; ncpu > 0; ncpu--) {
 			for (i = 0; i < p->nr_opp_tbl * possible_cpu; i++) {
 				/* p->power_tbl[i].cpufreq_ncpu == ncpu && */
-				if (p->power_tbl[i].cpufreq_power <= limited_power) {
-					p->limited_max_ncpu = p->power_tbl[i].cpufreq_ncpu;
-					p->limited_max_freq = p->power_tbl[i].cpufreq_khz;
+				if (p->power_tbl[i].cpufreq_power
+				    <= limited_power) {
+					p->limited_max_ncpu
+					= p->power_tbl[i].cpufreq_ncpu;
+					p->limited_max_freq
+					= p->power_tbl[i].cpufreq_khz;
 					found = 1;
 					ncpu = 0; /* for break outer loop */
 					break;
@@ -3166,20 +2362,23 @@ void mt_cpufreq_thermal_protect(unsigned int limited_power)
 
 		/* not found and use lowest power limit */
 		if (!found) {
-			p->limited_max_ncpu = p->power_tbl[p->nr_power_tbl - 1].cpufreq_ncpu;
-			p->limited_max_freq = p->power_tbl[p->nr_power_tbl - 1].cpufreq_khz;
+			p->limited_max_ncpu
+			= p->power_tbl[p->nr_power_tbl - 1].cpufreq_ncpu;
+			p->limited_max_freq
+			= p->power_tbl[p->nr_power_tbl - 1].cpufreq_khz;
 		}
 	}
 
-	cpufreq_dbg("found = %d, limited_max_freq = %d, limited_max_ncpu = %d\n"
-		, found, p->limited_max_freq, p->limited_max_ncpu);
+	cpufreq_dbg("found = %d, ", found);
+	cpufreq_dbg("limited_max_freq = %d, limited_max_ncpu = %d\n"
+		    , p->limited_max_freq, p->limited_max_ncpu);
 
-	cpufreq_unlock(flag);                                   /* <- unlock */
+	cpufreq_unlock(flag);
 
 	hps_set_cpu_num_limit(LIMIT_THERMAL, p->limited_max_ncpu, 0);
 	/* correct opp idx will be calcualted in _thermal_limited_verify() */
 	_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, -1);
-	cpufreq_cpu_put(policy);                                /* <- policy put */
+	cpufreq_cpu_put(policy);
 	}
 no_policy:
 #endif
@@ -3193,7 +2392,7 @@ void mt_cpufreq_set_ramp_down_count_const(enum mt_cpu_dvfs_id id, int count)
 {
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(id);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	p->ramp_down_count_const = count;
 }
@@ -3201,18 +2400,20 @@ EXPORT_SYMBOL(mt_cpufreq_set_ramp_down_count_const);
 
 #ifdef CONFIG_CPU_DVFS_RAMP_DOWN
 /* TODO: inline @ mt_cpufreq_target() */
-static int _keep_max_freq(struct mt_cpu_dvfs *p, unsigned int freq_old, unsigned int freq_new)
+static int _keep_max_freq(struct mt_cpu_dvfs *p, unsigned int freq_old
+	, unsigned int freq_new)
 {
 	int ret = 0;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	if (RAMP_DOWN_TIMES < p->ramp_down_count_const)
+	if (p->ramp_down_count_const > RAMP_DOWN_TIMES)
 		p->ramp_down_count_const--;
 	else
 		p->ramp_down_count_const = RAMP_DOWN_TIMES;
 
-	if (freq_new < freq_old && p->ramp_down_count < p->ramp_down_count_const) {
+	if (freq_new < freq_old
+	    && p->ramp_down_count < p->ramp_down_count_const) {
 		ret = 1;
 		p->ramp_down_count++;
 	} else
@@ -3224,23 +2425,24 @@ static int _keep_max_freq(struct mt_cpu_dvfs *p, unsigned int freq_old, unsigned
 }
 #endif
 
-static int _search_available_freq_idx(struct mt_cpu_dvfs *p, unsigned int target_khz
-, unsigned int relation) /* return -1 (not found) */
+static int _search_available_freq_idx(struct mt_cpu_dvfs *p
+	, unsigned int target_khz
+	, unsigned int relation) /* return -1 (not found) */
 {
 	int new_opp_idx = -1;
 	int i;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	if (CPUFREQ_RELATION_L == relation) {
-		for (i = (signed)(p->nr_opp_tbl - 1); i >= 0; i--) {
+	if (relation == CPUFREQ_RELATION_L) {
+		for (i = (signed int)(p->nr_opp_tbl - 1); i >= 0; i--) {
 			if (cpu_dvfs_get_freq_by_idx(p, i) >= target_khz) {
 				new_opp_idx = i;
 				break;
 			}
 		}
 	} else { /* CPUFREQ_RELATION_H */
-		for (i = 0; i < (signed)p->nr_opp_tbl; i++) {
+		for (i = 0; i < (signed int)p->nr_opp_tbl; i++) {
 			if (cpu_dvfs_get_freq_by_idx(p, i) <= target_khz) {
 				new_opp_idx = i;
 				break;
@@ -3263,13 +2465,11 @@ static int _thermal_limited_verify(struct mt_cpu_dvfs *p, int new_opp_idx)
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	possible_cpu = max_cpu_num; /* num_possible_cpus(); // TODO: FIXME */
-	online_cpu = num_online_cpus(); /* TODO: FIXME */
-
-	/* cpufreq_dbg("%s(): begin, idx = %d, online_cpu = %d\n", __func__, new_opp_idx, online_cpu); */
+	possible_cpu = max_cpu_num;
+	online_cpu = num_online_cpus();
 
 	/* no limited */
-	if (0 == p->thermal_protect_limited_power)
+	if (p->thermal_protect_limited_power == 0)
 		return new_opp_idx;
 
 	for (i = 0; i < p->nr_opp_tbl * possible_cpu; i++) {
@@ -3278,8 +2478,9 @@ static int _thermal_limited_verify(struct mt_cpu_dvfs *p, int new_opp_idx)
 			break;
 	}
 
-	cpufreq_dbg("%s(): idx = %d, limited_max_ncpu = %d, limited_max_freq = %d\n"
-		, __func__, i, p->limited_max_ncpu, p->limited_max_freq);
+	cpufreq_dbg("%s(): idx = %d", __func__, i);
+	cpufreq_dbg(", limited_max_ncpu = %d, limited_max_freq = %d\n"
+		    , p->limited_max_ncpu, p->limited_max_freq);
 
 	for (; i < p->nr_opp_tbl * possible_cpu; i++) {
 		if (p->power_tbl[i].cpufreq_ncpu == online_cpu) {
@@ -3292,11 +2493,13 @@ static int _thermal_limited_verify(struct mt_cpu_dvfs *p, int new_opp_idx)
 
 	if (found) {
 		target_khz = p->power_tbl[i].cpufreq_khz;
-		cpufreq_dbg("%s(): freq found, idx = %d, target_khz = %d, online_cpu = %d\n"
-			, __func__, i, target_khz, online_cpu);
+		cpufreq_dbg("%s(): freq found, idx = %d, ", __func__, i);
+		cpufreq_dbg("target_khz = %d, online_cpu = %d\n"
+			    , target_khz, online_cpu);
 	} else {
 		target_khz = p->limited_max_freq;
-		cpufreq_dbg("%s(): freq not found, set to limited_max_freq = %d\n", __func__, target_khz);
+		cpufreq_dbg("%s(): freq not found, ", __func__);
+		cpufreq_dbg("set to limited_max_freq = %d\n", target_khz);
 	}
 
 	/* TODO: refine this function for idx searching */
@@ -3307,70 +2510,57 @@ static int _thermal_limited_verify(struct mt_cpu_dvfs *p, int new_opp_idx)
 	return i;
 }
 
-void interactive_boost_cpu(int boost)
-{
-	system_boost = boost;
-
-	if (system_boost && _mt_cpufreq_pdrv_probed) {
-		_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, 0);
-	}
-}
-
 static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx)
 {
 	int idx;
 
 	FUNC_ENTER(FUNC_LV_HELP);
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	/* for ramp down */
 #ifdef CONFIG_CPU_DVFS_RAMP_DOWN
-	if (_keep_max_freq(p, cpu_dvfs_get_cur_freq(p), cpu_dvfs_get_freq_by_idx(p, new_opp_idx))) {
-		cpufreq_dbg("%s(): ramp down, idx = %d, freq_old = %d, freq_new = %d\n",
+	if (_keep_max_freq(p, cpu_dvfs_get_cur_freq(p)
+			   , cpu_dvfs_get_freq_by_idx(p, new_opp_idx))) {
+		cpufreq_dbg("%s(): ramp down, idx = %d, freq_old = %d",
 			__func__,
 			new_opp_idx,
 			cpu_dvfs_get_cur_freq(p),
-			cpu_dvfs_get_freq_by_idx(p, new_opp_idx)
 			);
+		cpufreq_dbg(", freq_new = %d\n",
+			cpu_dvfs_get_freq_by_idx(p, new_opp_idx));
 		new_opp_idx = p->idx_opp_tbl;
 	}
 #endif
 
 	/* HEVC */
 	if (p->limited_freq_by_hevc) {
-		idx = _search_available_freq_idx(p, p->limited_freq_by_hevc, CPUFREQ_RELATION_L);
+		idx = _search_available_freq_idx(p, p->limited_freq_by_hevc
+						 , CPUFREQ_RELATION_L);
 
 		if (idx != -1) {
 			new_opp_idx = idx;
-			cpufreq_dbg("%s(): hevc limited freq, idx = %d\n", __func__, new_opp_idx);
+			cpufreq_dbg("%s(): hevc limited freq, idx = %d\n"
+				    , __func__, new_opp_idx);
 		}
 	}
 
-	if (system_boost) {
-		new_opp_idx = 0;
-	}
-
 #ifdef CONFIG_CPU_DVFS_DOWNGRADE_FREQ
-	if (true == p->downgrade_freq_for_ptpod) {
-		if (cpu_dvfs_get_freq_by_idx(p, new_opp_idx) > p->downgrade_freq) {
-			idx = _search_available_freq_idx(p, p->downgrade_freq, CPUFREQ_RELATION_H);
+	if (p->downgrade_freq_for_ptpod == true) {
+		if (cpu_dvfs_get_freq_by_idx(p, new_opp_idx)
+		    > p->downgrade_freq) {
+			idx = _search_available_freq_idx(p,
+							 p->downgrade_freq,
+							 CPUFREQ_RELATION_H);
 
 			if (idx != -1) {
 				new_opp_idx = idx;
-				cpufreq_dbg("%s(): downgrade freq, idx = %d\n", __func__, new_opp_idx);
+				cpufreq_dbg("%s(): downgrade freq, idx = %d\n"
+					    , __func__, new_opp_idx);
 			}
 		}
 	}
 #endif /* CONFIG_CPU_DVFS_DOWNGRADE_FREQ */
-
-	/* search thermal limited freq */
-	idx = _thermal_limited_verify(p, new_opp_idx);
-
-	if (idx != -1 && idx != new_opp_idx) {
-		new_opp_idx = idx;
-		cpufreq_dbg("%s(): thermal limited freq, idx = %d\n", __func__, new_opp_idx);
-	}
 
 	/* for early suspend */
 	if (p->dvfs_disable_by_early_suspend) {
@@ -3380,7 +2570,8 @@ static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx)
 			if (new_opp_idx > p->idx_normal_max_opp)
 				new_opp_idx = p->idx_normal_max_opp;
 		}
-		cpufreq_dbg("%s(): for early suspend, idx = %d\n", __func__, new_opp_idx);
+		cpufreq_dbg("%s(): for early suspend, idx = %d\n"
+			    , __func__, new_opp_idx);
 	}
 
 	/* for suspend */
@@ -3391,32 +2582,49 @@ static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx)
 #ifdef CONFIG_CPU_DVFS_POWER_THROTTLING
 	if (p->pwr_thro_mode && new_opp_idx < p->idx_pwr_thro_max_opp) {
 		new_opp_idx = p->idx_pwr_thro_max_opp;
-		cpufreq_dbg("%s(): for power throttling = %d\n", __func__, new_opp_idx);
+		cpufreq_dbg("%s(): for power throttling = %d\n"
+			    , __func__, new_opp_idx);
 	}
 #endif
 
 	/* limit max freq by user */
 	if (p->limited_max_freq_by_user) {
-		idx = _search_available_freq_idx(p, p->limited_max_freq_by_user, CPUFREQ_RELATION_H);
+		idx = _search_available_freq_idx(p, p->limited_max_freq_by_user
+						 , CPUFREQ_RELATION_H);
 
 		if (idx != -1 && new_opp_idx < idx) {
 			new_opp_idx = idx;
-			cpufreq_dbg("%s(): limited max freq by user, idx = %d\n", __func__, new_opp_idx);
+			cpufreq_dbg("%s(): limited max freq by user"
+				    , __func__);
+			cpufreq_dbg(", idx = %d\n", new_opp_idx);
 		}
 	}
+
+        /* search thermal limited freq */
+        idx = _thermal_limited_verify(p, new_opp_idx);
+        if (idx != -1 && idx != new_opp_idx) {
+                if (cpu_dvfs_get_freq_by_idx(p, idx) < cpu_dvfs_get_freq_by_idx(p, new_opp_idx)) {
+                        new_opp_idx = idx;
+                        cpufreq_dbg("%s(): thermal limited freq, idx = %d\n"
+                                    , __func__, new_opp_idx);
+                }
+        }
 
 	/* for ptpod init */
 	if (p->dvfs_disable_by_ptpod) {
 		/* at least CPU_DVFS_FREQ6 will make sure VBoot >= 1V */
-		idx = _search_available_freq_idx(p, CPU_DVFS_FREQ6, CPUFREQ_RELATION_L);
+		idx = _search_available_freq_idx(p, CPU_DVFS_FREQ6
+						 , CPUFREQ_RELATION_L);
 		if (idx != -1) {
 			new_opp_idx = idx;
-			cpufreq_info("%s(): for ptpod init, idx = %d\n", __func__, new_opp_idx);
+			cpufreq_info("%s(): for ptpod init", __func__);
+			cpufreq_info(", idx = %d\n", new_opp_idx);
 		}
 	}
 
 #ifdef CONFIG_CPU_DVFS_AEE_RR_REC
-	aee_rr_rec_cpu_dvfs_oppidx((aee_rr_curr_cpu_dvfs_oppidx() & 0xF0) | new_opp_idx);
+	aee_rr_rec_cpu_dvfs_oppidx((aee_rr_curr_cpu_dvfs_oppidx() & 0xF0)
+				   | new_opp_idx);
 #endif
 
 	FUNC_EXIT(FUNC_LV_HELP);
@@ -3424,235 +2632,8 @@ static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx)
 	return new_opp_idx;
 }
 
-#ifdef CONFIG_CPU_DVFS_POWER_THROTTLING
-#if 0 /* mt8163-TBD */
-static void _calc_power_throttle_idx(struct mt_cpu_dvfs *p)
-{
-	FUNC_ENTER(FUNC_LV_HELP);
-
-	cpufreq_dbg("%s(): original idx = %d\n", __func__, p->idx_pwr_thro_max_opp);
-
-	if (!p->pwr_thro_mode)
-		p->idx_pwr_thro_max_opp = 0;
-	else if ((p->pwr_thro_mode & PWR_THRO_MODE_LBAT_936MHZ)
-		 || (p->pwr_thro_mode & PWR_THRO_MODE_BAT_PER_936MHZ)) {
-		switch (p->cpu_level) {
-		case CPU_LEVEL_0:
-		case CPU_LEVEL_1:
-			p->idx_pwr_thro_max_opp = 5;
-			break;
-		case CPU_LEVEL_2:
-			p->idx_pwr_thro_max_opp = 4;
-			break;
-		case CPU_LEVEL_3:
-			p->idx_pwr_thro_max_opp = 2;
-			break;
-		default:
-			break;
-		}
-	} else if (p->pwr_thro_mode & PWR_THRO_MODE_BAT_OC_1170MHZ)
-		p->idx_pwr_thro_max_opp = 4;    /* 1.17G in CPU LV0 or LV1 */
-	else if (p->pwr_thro_mode & PWR_THRO_MODE_BAT_OC_1287MHZ)
-		p->idx_pwr_thro_max_opp = 2;    /* 1.287G in CPU LV2 */
-	else if (p->pwr_thro_mode & PWR_THRO_MODE_BAT_OC_1417MHZ) {
-		switch (p->cpu_level) {
-		case CPU_LEVEL_0:
-			p->idx_pwr_thro_max_opp = 3;
-			break;
-		case CPU_LEVEL_1:
-			p->idx_pwr_thro_max_opp = 2;
-			break;
-		default:
-			break;
-		}
-	}
-
-	cpufreq_dbg("%s(): new idx = %d\n", __func__, p->idx_pwr_thro_max_opp);
-
-	FUNC_EXIT(FUNC_LV_HELP);
-}
-
-static void bat_per_protection_powerlimit(BATTERY_PERCENT_LEVEL level)
-{
-	struct mt_cpu_dvfs *p;
-	int i;
-	unsigned long flags;
-
-	cpufreq_dbg("@%s: level: %d\n", __func__, level);
-
-	for_each_cpu_dvfs(i, p) {
-		if (!cpu_dvfs_is_available(p))
-			continue;
-
-		cpufreq_lock(flags);
-
-		if (!p->pwr_thro_mode)
-			p->idx_opp_tbl_for_pwr_thro = p->idx_opp_tbl;
-
-		switch (level) {
-		case BATTERY_PERCENT_LEVEL_1:
-			/* Trigger CPU Limit to under 1G */
-			p->pwr_thro_mode |= PWR_THRO_MODE_BAT_PER_936MHZ;
-			break;
-		default:
-			/* Unlimit CPU */
-			p->pwr_thro_mode &= ~PWR_THRO_MODE_BAT_PER_936MHZ;
-			break;
-		}
-
-		_calc_power_throttle_idx(p);
-
-		if (!p->pwr_thro_mode)
-			p->idx_opp_tbl = p->idx_opp_tbl_for_pwr_thro;
-
-		cpufreq_unlock(flags);
-
-		switch (level) {
-		case BATTERY_PERCENT_LEVEL_1:
-			/* Limit CPU core num to 4 */
-			hps_set_cpu_num_limit(LIMIT_LOW_BATTERY, 4, 0);
-			break;
-		default:
-			/* Unlimit CPU core num if no Lbat_protect_limit */
-			if (!(p->pwr_thro_mode & PWR_THRO_MODE_LBAT_936MHZ))
-				hps_set_cpu_num_limit(LIMIT_LOW_BATTERY, max_cpu_num, 0);
-			break;
-		}
-
-		_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, -1);
-	}
-}
-
-static void bat_oc_protection_powerlimit(BATTERY_OC_LEVEL level)
-{
-	struct mt_cpu_dvfs *p;
-	int i;
-	unsigned long flags;
-
-	cpufreq_dbg("@%s: level: %d\n", __func__, level);
-
-	for_each_cpu_dvfs(i, p) {
-		if (!cpu_dvfs_is_available(p))
-			continue;
-
-		cpufreq_lock(flags);
-
-		if (!p->pwr_thro_mode)
-			p->idx_opp_tbl_for_pwr_thro = p->idx_opp_tbl;
-
-		/* apply different OC power throttling mode according to CPU_LV and possible CPU core num */
-		switch (level) {
-		case BATTERY_OC_LEVEL_1:
-			if (max_cpu_num == 8)
-				/* Battery OC trigger CPU Limit to under 1.5G */
-				p->pwr_thro_mode |= PWR_THRO_MODE_BAT_OC_1417MHZ;
-			else if (max_cpu_num == 4 && p->cpu_level <= CPU_LEVEL_1)
-				/* Battery OC trigger CPU Limit to under 1.2G */
-				p->pwr_thro_mode |= PWR_THRO_MODE_BAT_OC_1170MHZ;
-			else if (max_cpu_num == 4 && p->cpu_level == CPU_LEVEL_2)
-				/* Battery OC trigger CPU Limit to under 1.4G */
-				p->pwr_thro_mode |= PWR_THRO_MODE_BAT_OC_1287MHZ;
-			break;
-		default:
-			/* Unlimit CPU */
-			if (max_cpu_num == 8)
-				p->pwr_thro_mode &= ~PWR_THRO_MODE_BAT_OC_1417MHZ;
-			else if (max_cpu_num == 4 && p->cpu_level <= CPU_LEVEL_1)
-				p->pwr_thro_mode &= ~PWR_THRO_MODE_BAT_OC_1170MHZ;
-			else if (max_cpu_num == 4 && p->cpu_level == CPU_LEVEL_2)
-				p->pwr_thro_mode &= ~PWR_THRO_MODE_BAT_OC_1287MHZ;
-			break;
-		}
-
-		_calc_power_throttle_idx(p);
-
-		if (!p->pwr_thro_mode)
-			p->idx_opp_tbl = p->idx_opp_tbl_for_pwr_thro;
-
-		cpufreq_unlock(flags);
-		_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, -1);
-	}
-}
-
-void Lbat_protection_powerlimit(LOW_BATTERY_LEVEL level)
-{
-	struct mt_cpu_dvfs *p;
-	int i;
-	unsigned long flags;
-
-	cpufreq_dbg("@%s: level: %d\n", __func__, level);
-
-	for_each_cpu_dvfs(i, p) {
-		if (!cpu_dvfs_is_available(p))
-			continue;
-
-		cpufreq_lock(flags);
-
-		if (!p->pwr_thro_mode)
-			p->idx_opp_tbl_for_pwr_thro = p->idx_opp_tbl;
-
-		switch (level) {
-		case LOW_BATTERY_LEVEL_1:
-		case LOW_BATTERY_LEVEL_2:
-			/* 1st and 2nd LV trigger CPU Limit to under 1.0G */
-			p->pwr_thro_mode |= PWR_THRO_MODE_LBAT_936MHZ;
-			break;
-		default:
-			/* Unlimit CPU */
-			p->pwr_thro_mode &= ~PWR_THRO_MODE_LBAT_936MHZ;
-			break;
-		}
-
-		_calc_power_throttle_idx(p);
-
-		if (!p->pwr_thro_mode)
-			p->idx_opp_tbl = p->idx_opp_tbl_for_pwr_thro;
-
-		cpufreq_unlock(flags);
-
-		switch (level) {
-		case LOW_BATTERY_LEVEL_1:
-		case LOW_BATTERY_LEVEL_2:
-			/* 1st and 2nd LV trigger limit CPU core num to 4 */
-			hps_set_cpu_num_limit(LIMIT_LOW_BATTERY, 4, 0);
-			break;
-		default:
-			/* Unlimit CPU core num if no bat_per_limit */
-			if (!(p->pwr_thro_mode & PWR_THRO_MODE_BAT_PER_936MHZ))
-				hps_set_cpu_num_limit(LIMIT_LOW_BATTERY, max_cpu_num, 0);
-			break;
-		}
-
-		_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, -1);
-	}
-}
-#endif
-#endif
-
-
 #define EMI_FREQ_CHECK  0
 unsigned int gEMI_DFS_enable = 1;
-/*
- * Return value definitions
- *  0: 26M,
- *  1: 3 PLL,
- *  2: 1 PLL
- */
-unsigned int mt_get_clk_mem_sel(void)
-{
-	unsigned int val;
-
-	/* CLK_CFG_0(0x10000040)[9:8] */
-	/* clk_mem_sel */
-	/* 2'b00:clk26m */
-	/* 2'b01:dmpll_ck->3PLL */
-	/* 2'b10:ddr_x1_ck->1PLL */
-	val = (*(volatile unsigned int *)(CLK_CFG_0));
-	val = (val>>8) & 0x3;
-
-	return val;
-}
-EXPORT_SYMBOL(mt_get_clk_mem_sel);
 
 /*
  * cpufreq driver
@@ -3666,7 +2647,7 @@ static int _mt_cpufreq_verify(struct cpufreq_policy *policy)
 
 	p = id_to_cpu_dvfs(_get_cpu_dvfs_id(policy->cpu));
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 #ifdef CONFIG_CPU_FREQ
 	ret = cpufreq_frequency_table_verify(policy, p->freq_tbl_for_cpufreq);
@@ -3680,55 +2661,61 @@ static int _mt_cpufreq_verify(struct cpufreq_policy *policy)
 static int _mt_cpufreq_target(struct cpufreq_policy *policy
 	, unsigned int target_freq, unsigned int relation)
 {
-	/* unsigned int cpu;							// XXX: move to _cpufreq_set_locked() */
-	/* struct cpufreq_freqs freqs;						// XXX: move to _cpufreq_set_locked() */
+	/* unsigned int cpu;   */
+	/* struct cpufreq_freqs freqs;   */
 	unsigned int new_opp_idx;
 
 	enum mt_cpu_dvfs_id id = _get_cpu_dvfs_id(policy->cpu);
 
-	/* unsigned long flags;							// XXX: move to _mt_cpufreq_set() */
+	/* unsigned long flags;    */
 	int ret = 0; /* -EINVAL; */
 
 	FUNC_ENTER(FUNC_LV_MODULE);
 
 	if (policy->cpu >= max_cpu_num
-		|| cpufreq_frequency_table_target(policy, id_to_cpu_dvfs(id)->freq_tbl_for_cpufreq
-		, target_freq, relation, &new_opp_idx)
-		|| (id_to_cpu_dvfs(id) && id_to_cpu_dvfs(id)->dvfs_disable_by_procfs))
+		|| (id_to_cpu_dvfs(id)
+		&& id_to_cpu_dvfs(id)->dvfs_disable_by_procfs))
 		return -EINVAL;
 
-	/* freqs.old = policy->cur;						// XXX: move to _cpufreq_set_locked() */
+	new_opp_idx = cpufreq_frequency_table_target(policy, target_freq
+						     , relation);
+	if (new_opp_idx < 0)
+		return -new_opp_idx;
+
+	/* freqs.old = policy->cur;   */
 	/* XXX: move to _cpufreq_set_locked() */
 	/* freqs.new = mt_cpufreq_max_frequency_by_DVS(id, new_opp_idx); */
-	/* freqs.cpu = policy->cpu;						// XXX: move to _cpufreq_set_locked() */
+	/* freqs.cpu = policy->cpu;   */
 
 	/* XXX: move to _cpufreq_set_locked() */
 	/* for_each_online_cpu(cpu) { // TODO: big LITTLE issue (id mapping) */
-	/* freqs.cpu = cpu;						// XXX: move to _cpufreq_set_locked() */
+	/* freqs.cpu = cpu;    */
 	/* XXX: move to _cpufreq_set_locked() */
 	/* cpufreq_notify_transition(policy, &freqs, CPUFREQ_PRECHANGE); */
-	/* }									// XXX: move to _cpufreq_set_locked() */
+	/* }    */
 
-	/* cpufreq_lock(flags);							// XXX: move to _mt_cpufreq_set() */
+	/* cpufreq_lock(flags);   */
 
 #ifdef CONFIG_CPU_DVFS_AEE_RR_REC
-	aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status() | (1 << CPU_DVFS_LITTLE_IS_DOING_DVFS));
+	aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status()
+				   | (1 << CPU_DVFS_LITTLE_IS_DOING_DVFS));
 #endif
 
 	_mt_cpufreq_set(id, new_opp_idx);
 
 #ifdef CONFIG_CPU_DVFS_AEE_RR_REC
-	aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status() & ~(1 << CPU_DVFS_LITTLE_IS_DOING_DVFS));
+	aee_rr_rec_cpu_dvfs_status(aee_rr_curr_cpu_dvfs_status()
+				   & ~(1 << CPU_DVFS_LITTLE_IS_DOING_DVFS));
 #endif
 
-	/* cpufreq_unlock(flags);						// XXX: move to _mt_cpufreq_set() */
+	/* cpufreq_unlock(flags);   */
 
 	/* XXX: move to _cpufreq_set_locked() */
-	/* for_each_online_cpu(cpu) { // TODO: big LITTLE issue (id mapping) */
-	/* freqs.cpu = cpu;						// XXX: move to _cpufreq_set_locked() */
+	/* for_each_online_cpu(cpu) { */
+	/* freqs.cpu = cpu;   */
 	/* XXX: move to _cpufreq_set_locked() */
 	/* cpufreq_notify_transition(policy, &freqs, CPUFREQ_POSTCHANGE); */
-	/* }									// XXX: move to _cpufreq_set_locked() */
+	/* }   */
 
 	FUNC_EXIT(FUNC_LV_MODULE);
 
@@ -3744,7 +2731,7 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 
 	max_cpu_num = num_possible_cpus();
 
-	if (policy->cpu >= max_cpu_num) /* TODO: FIXME */
+	if (policy->cpu >= max_cpu_num)
 		return -EINVAL;
 
 	cpufreq_info("@%s: max_cpu_num: %d\n", __func__, max_cpu_num);
@@ -3768,57 +2755,10 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 	unsigned int lv = _mt_cpufreq_get_cpu_level();
 	struct opp_tbl_info *opp_tbl_info = &opp_tbls[CPU_LV_TO_OPP_IDX(lv)];
 
-	BUG_ON(NULL == p);
-	BUG_ON(!(lv == CPU_LEVEL_0 || lv == CPU_LEVEL_1));
+	WARN_ON(p == NULL);
+	WARN_ON(!(lv == CPU_LEVEL_0 || lv == CPU_LEVEL_1));
 
 	p->cpu_level = lv;
-
-	#if 0
-	if (!cpu_dvfs_is_extbuck_valid()) {
-		p->ops = &dvfs_ops_pmic_wrap;
-
-		/* change PMIC table for 4 core */
-		pw.set[PMIC_WRAP_PHASE_DEEPIDLE]._[IDX_DI_VPROC_NORMAL].cmd_addr = PMIC_ADDR_VPROC_VOSEL_CTRL;
-		pw.set[PMIC_WRAP_PHASE_DEEPIDLE]._[IDX_DI_VPROC_NORMAL].cmd_wdata = _BITS_(1  : 1,  1);
-		pw.set[PMIC_WRAP_PHASE_DEEPIDLE]._[IDX_DI_VPROC_SLEEP].cmd_addr = PMIC_ADDR_VPROC_VOSEL_CTRL;
-		pw.set[PMIC_WRAP_PHASE_DEEPIDLE]._[IDX_DI_VPROC_SLEEP].cmd_wdata = _BITS_(1  : 1,  0);
-
-		/* set dpidle volt for Vproc */
-		pmic_config_interface(PMIC_ADDR_VSRAM_VOSEL_CTRL, 0x1, 0x1, 0x1);
-		pmic_config_interface(PMIC_ADDR_VPROC_VOSEL, VOLT_TO_PMIC_VAL(DORMANT_MODE_VOLT)
-			, 0x7F, 0x0); /* Set VPROC_VOSEL[6:0] to 0.7v */
-
-		/* VSRAM auto-tracking settings */
-		/* turn on tracking */
-		pmic_config_interface(0x42E, 0x7, 0x7, 0x0);        /* 0x42E[2:0] = 3'b111 */
-		/* turn on soft change for VSRAM */
-		pmic_config_interface(0x502, 0x84FF, 0xFFFF, 0x0);  /* 0x502[15:0] = 16'h84FF */
-		/* HW mode vosel of VSRAM as VDVFS1_VOSEL + offset */
-		pmic_config_interface(0x506, 0x40, 0x7F, 0x0);      /* 0x506[6:0] = 7'h40 */
-		pmic_config_interface(0x430, 0xF01, 0x7F7F, 0x0);   /* 0x430[14:0] = 15'hF01 */
-		/* VOSEL_ON_HB[14:8] = 1.15v, VPSEL_ON_LB[6:0] = 0.93125v */
-		pmic_config_interface(0x432, 0x5835, 0x7F7F, 0x0);  /* 0x432[14:0] = 15'h5F35 */
-		/* VOSEL_SLEEP_LB = 0.6v */
-		pmic_config_interface(0x434, 0x0, 0x7F, 0x0);   /* 0x434[6:0] = 7'h0 */
-		/* set vosel as HW mode vosel for VSRAM & DVFS1 */
-		pmic_config_interface(0x4B0, 0x1, 0x1, 0x1);    /* 0x4B0[1] = 1'b1 */
-		pmic_config_interface(0x4FC, 0x1, 0x1, 0x1);    /* 0x4FC[1] = 1'b1 */
-		/* HW mode vosel for DVFS1 */
-		pmic_config_interface(0x4BA, 0x30, 0x7F, 0x0);  /* 0x4BA[6:0] = 7'h30 */
-		pmic_config_interface(0x4BC, 0x10, 0x7F, 0x0);  /* 0x4BC[6:0] = 7'h10 */
-		/* enhancement DVFS11 performance */
-		pmic_config_interface(0x4B6, 0x84FF, 0xFFFF, 0x0);  /* 0x4B6[15:0] = 16'h84FF */
-		pmic_config_interface(0x4C6, 0x13, 0x3F, 0x0);      /* 0x4C6[5:0] = 6'h13 */
-	} else {
-		/* set dpidle volt for Vproc */
-		mt6311_set_vdvfs11_vosel_ctrl(0x1);
-		mt6311_set_vdvfs11_vosel(VOLT_TO_EXTBUCK_VAL(DORMANT_MODE_VOLT));
-		/* set dpidle volt for Vsram */
-		pmic_config_interface(PMIC_ADDR_VSRAM_VOSEL_CTRL, 0x1, 0x1, 0x1);
-		pmic_config_interface(PMIC_ADDR_VSRAM_VOSEL, VOLT_TO_PMIC_VAL(MIN_VSRAM_VOLT)
-			, 0x7F, 0x9); /* Set RG_VSRAM_VOSEL[15:9] to 0.93125v */
-	}
-	#endif
 
 	ret = _mt_cpufreq_setup_freqs_table(policy,
 		opp_tbl_info->opp_tbl,
@@ -3828,14 +2768,15 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 	policy->cpuinfo.max_freq = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
 	policy->cpuinfo.min_freq = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
 
-	policy->cur = _mt_cpufreq_get_cur_phy_freq(id); /* use cur phy freq is better */
-	cpufreq_frequency_table_target(policy, id_to_cpu_dvfs(id)->freq_tbl_for_cpufreq
-		, policy->cur, CPUFREQ_RELATION_L, &opp_idx);
+	policy->cur = _mt_cpufreq_get_cur_phy_freq(id);
+	opp_idx = cpufreq_frequency_table_target(policy, policy->cur
+						 , CPUFREQ_RELATION_L);
 	policy->cur = cpu_dvfs_get_freq_by_idx(p, opp_idx);
 	policy->max = cpu_dvfs_get_max_freq(id_to_cpu_dvfs(id));
 	policy->min = cpu_dvfs_get_min_freq(id_to_cpu_dvfs(id));
 
-	if (_sync_opp_tbl_idx(p) >= 0) /* sync p->idx_opp_tbl first before _restore_default_volt() */
+	/* sync p->idx_opp_tbl first before _restore_default_volt() */
+	if (_sync_opp_tbl_idx(p) >= 0)
 		p->idx_normal_max_opp = p->idx_opp_tbl;
 
 	/* restore default volt, sync opp idx, set default limit */
@@ -3847,9 +2788,12 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
 #endif
 #ifdef CONFIG_CPU_DVFS_POWER_THROTTLING
 #ifdef PMIC_6325
-	register_battery_percent_notify(&bat_per_protection_powerlimit, BATTERY_PERCENT_PRIO_CPU_L);
-	register_battery_oc_notify(&bat_oc_protection_powerlimit, BATTERY_OC_PRIO_CPU_L);
-	register_low_battery_notify(&Lbat_protection_powerlimit, LOW_BATTERY_PRIO_CPU_L);
+	register_battery_percent_notify(&bat_per_protection_powerlimit
+					, BATTERY_PERCENT_PRIO_CPU_L);
+	register_battery_oc_notify(&bat_oc_protection_powerlimit
+				   , BATTERY_OC_PRIO_CPU_L);
+	register_low_battery_notify(&Lbat_protection_powerlimit
+				    , LOW_BATTERY_PRIO_CPU_L);
 #endif
 #endif
 	}
@@ -3870,7 +2814,7 @@ static unsigned int _mt_cpufreq_get(unsigned int cpu)
 
 	p = id_to_cpu_dvfs(_get_cpu_dvfs_id(cpu));
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	FUNC_EXIT(FUNC_LV_MODULE);
 
@@ -3891,7 +2835,8 @@ bool mt_cpufreq_earlysuspend_status_get(void)
 #else
 	int	ret = 0;
 
-	if (regulator_ext_vproc_voltage && (regulator_ext_vproc_voltage < VPROC_THRESHOLD_TO_DEEPIDLE))
+	if (regulator_ext_vproc_voltage
+	    && (regulator_ext_vproc_voltage < VPROC_THRESHOLD_TO_DEEPIDLE))
 		ret = 1;
 
 	return ret;
@@ -3928,8 +2873,8 @@ static void _mt_cpufreq_lcm_status_switch(int onoff)
 					cpufreq_driver_target(
 						policy,
 						cpu_dvfs_get_freq_by_idx(
-							p,
-							p->idx_opp_tbl_for_late_resume
+						p,
+						p->idx_opp_tbl_for_late_resume
 						),
 						CPUFREQ_RELATION_L
 					);
@@ -3952,7 +2897,8 @@ static void _mt_cpufreq_lcm_status_switch(int onoff)
 				if (policy) {
 					cpufreq_driver_target(
 						policy,
-						cpu_dvfs_get_normal_max_freq(p), CPUFREQ_RELATION_L);
+						cpu_dvfs_get_normal_max_freq(p)
+						, CPUFREQ_RELATION_L);
 					cpufreq_cpu_put(policy);
 				}
 #endif
@@ -3986,7 +2932,8 @@ static struct early_suspend _mt_cpufreq_early_suspend_handler = {
 	.resume   = _mt_cpufreq_late_resume,
 };
 #else
-static int _mt_cpufreq_fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+static int _mt_cpufreq_fb_notifier_callback(struct notifier_block *self
+	, unsigned long event, void *data)
 {
 	struct fb_event *evdata = data;
 	int blank;
@@ -4031,6 +2978,46 @@ static struct notifier_block _mt_cpufreq_fb_notifier = {
 #endif /* CONFIG_HAS_EARLYSUSPEND */
 
 #ifdef CONFIG_CPU_FREQ
+#ifdef CONFIG_AMAZON_THERMAL
+static void _mt_cpufreq_ready(struct cpufreq_policy *policy)
+{
+        struct mt_cpu_dvfs *info = id_to_cpu_dvfs(_get_cpu_dvfs_id(policy->cpu));
+	struct device *cpu_dev = get_cpu_device(policy->cpu);
+	struct device_node *np = of_node_get(cpu_dev->of_node);
+
+        if (WARN_ON(!np))
+                return;
+
+        if (of_find_property(np, "#cooling-cells", NULL)) {
+
+                info->cdev = of_cpufreq_power_cooling_register(np,
+                                                policy->related_cpus,
+                                                0, NULL);
+
+                if (IS_ERR(info->cdev)) {
+                        dev_err(cpu_dev,
+                                "running cpufreq without cooling device: %ld\n",
+                                PTR_ERR(info->cdev));
+
+                        info->cdev = NULL;
+                }
+        }
+
+        of_node_put(np);
+
+}
+
+static int mtk_cpufreq_exit(struct cpufreq_policy *policy)
+{
+        struct mt_cpu_dvfs *info = id_to_cpu_dvfs(_get_cpu_dvfs_id(policy->cpu));
+	struct device *cpu_dev = get_cpu_device(policy->cpu);
+
+	cpufreq_cooling_unregister(info->cdev);
+	dev_pm_opp_free_cpufreq_table(cpu_dev, &policy->freq_table);
+
+	return 0;
+}
+#endif
 static struct freq_attr *_mt_cpufreq_attr[] = {
 	&cpufreq_freq_attr_scaling_available_freqs,
 	NULL,
@@ -4041,6 +3028,10 @@ static struct cpufreq_driver _mt_cpufreq_driver = {
 	.verify = _mt_cpufreq_verify,
 	.target = _mt_cpufreq_target,
 	.init   = _mt_cpufreq_init,
+#ifdef CONFIG_AMAZON_THERMAL
+	.exit = mtk_cpufreq_exit,
+	.ready  = _mt_cpufreq_ready,
+#endif
 	.get    = _mt_cpufreq_get,
 	.name   = "mt-cpufreq",
 	.attr   = _mt_cpufreq_attr,
@@ -4058,7 +3049,7 @@ static int _mt_cpufreq_suspend(struct device *dev)
 
 	FUNC_ENTER(FUNC_LV_MODULE);
 
-	/* mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_SUSPEND); // TODO: move to suspend driver */
+	/* mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_SUSPEND); */
 
 	for_each_cpu_dvfs(i, p) {
 		if (!cpu_dvfs_is_available(p))
@@ -4066,17 +3057,8 @@ static int _mt_cpufreq_suspend(struct device *dev)
 
 		p->dvfs_disable_by_suspend = true;
 
-#if 0 /* XXX: cpufreq_driver_target doesn't work @ suspend */
-		policy = cpufreq_cpu_get(p->cpu_id);
-
-		if (policy) {
-			cpufreq_driver_target(policy, cpu_dvfs_get_normal_max_freq(p), CPUFREQ_RELATION_L);
-			cpufreq_cpu_put(policy);
-		}
-#else
 		/* XXX: useless, decided @ _calc_new_opp_idx() */
 		_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, p->idx_normal_max_opp);
-#endif
 	}
 
 	FUNC_EXIT(FUNC_LV_MODULE);
@@ -4091,7 +3073,7 @@ static int _mt_cpufreq_resume(struct device *dev)
 
 	FUNC_ENTER(FUNC_LV_MODULE);
 
-	/* mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_NORMAL); // TODO: move to suspend driver */
+	/* mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_NORMAL); */
 
 	for_each_cpu_dvfs(i, p) {
 		if (!cpu_dvfs_is_available(p))
@@ -4144,7 +3126,8 @@ static int _mt_cpufreq_pdrv_probe(struct platform_device *pdev)
 	reg_ext_vproc = devm_regulator_get(&pdev->dev, "reg-ext-vproc");
 	if (IS_ERR(reg_ext_vproc)) {
 		ret = PTR_ERR(reg_ext_vproc);
-		dev_err(&pdev->dev, "Failed to request reg-ext-vproc: %d\n", ret);
+		dev_err(&pdev->dev, "Failed to request reg-ext-vproc: %d\n"
+			, ret);
 		return ret;
 	}
 	ret = regulator_enable(reg_ext_vproc);
@@ -4152,10 +3135,8 @@ static int _mt_cpufreq_pdrv_probe(struct platform_device *pdev)
 #endif
 
 
-#if 1
 	/* init static power table */
 	mt_spower_init();
-#endif
 
 #ifdef CONFIG_CPU_DVFS_AEE_RR_REC
 	_mt_cpufreq_aee_init();
@@ -4178,9 +3159,7 @@ static int _mt_cpufreq_pdrv_probe(struct platform_device *pdev)
 	cpufreq_register_driver(&_mt_cpufreq_driver);
 #endif
 
-	register_hotcpu_notifier(&turbo_mode_cpu_notifier); /* <-XXX */
-
-	_mt_cpufreq_pdrv_probed = 1;
+	register_hotcpu_notifier(&turbo_mode_cpu_notifier);
 
 	FUNC_EXIT(FUNC_LV_MODULE);
 
@@ -4191,7 +3170,7 @@ static int _mt_cpufreq_pdrv_remove(struct platform_device *pdev)
 {
 	FUNC_ENTER(FUNC_LV_MODULE);
 
-	unregister_hotcpu_notifier(&turbo_mode_cpu_notifier); /* <-XXX */
+	unregister_hotcpu_notifier(&turbo_mode_cpu_notifier);
 #ifdef CONFIG_CPU_FREQ
 	cpufreq_unregister_driver(&_mt_cpufreq_driver);
 #endif
@@ -4275,15 +3254,19 @@ int mt_cpufreq_set_freq(enum mt_cpu_dvfs_id id, int idx)
 static unsigned int _mt_get_cpu_freq(void)
 {
 	unsigned int output = 0, i = 0;
-	unsigned int temp, clk26cali_0, clk_dbg_cfg, clk_misc_cfg_0, clk26cali_1;
+	unsigned int temp, clk26cali_0, clk_dbg_cfg;
+	unsigned int clk_misc_cfg_0, clk26cali_1;
 
 	clk26cali_0 = DRV_Reg32(CLK26CALI_0);
 
 	clk_dbg_cfg = DRV_Reg32(CLK_DBG_CFG);
-	DRV_WriteReg32(CLK_DBG_CFG, 2<<16); /* sel abist_cksw and enable freq meter sel abist */
+	/* sel abist_cksw and enable freq meter sel abist */
+	DRV_WriteReg32(CLK_DBG_CFG, 2<<16);
 
 	clk_misc_cfg_0 = DRV_Reg32(CLK_MISC_CFG_0);
-	DRV_WriteReg32(CLK_MISC_CFG_0, (clk_misc_cfg_0 & 0x0000FFFF) | (0x07 << 16)); /* select divider */
+	/* select divider */
+	DRV_WriteReg32(CLK_MISC_CFG_0
+		       , (clk_misc_cfg_0 & 0x0000FFFF) | (0x07 << 16));
 
 	clk26cali_1 = DRV_Reg32(CLK26CALI_1);
 	DRV_WriteReg32(CLK26CALI_1, 0x00ff0000); /*  */
@@ -4336,7 +3319,7 @@ void dvfs_set_cpu_freq_FH(enum mt_cpu_dvfs_id id, int freq)
 
 	idx = _search_available_freq_idx(p, freq, CPUFREQ_RELATION_H);
 
-	if (-1 == idx) {
+	if (idx == -1) {
 		cpufreq_err("%s(%d, %d), freq is wrong\n", __func__, id, freq);
 		return;
 	}
@@ -4346,7 +3329,7 @@ void dvfs_set_cpu_freq_FH(enum mt_cpu_dvfs_id id, int freq)
 
 unsigned int cpu_frequency_output_slt(enum mt_cpu_dvfs_id id)
 {
-	return (MT_CPU_DVFS_LITTLE == id) ? _mt_get_cpu_freq() : 0;
+	return (id == MT_CPU_DVFS_LITTLE) ? _mt_get_cpu_freq() : 0;
 }
 
 void dvfs_set_cpu_volt(enum mt_cpu_dvfs_id id, int volt)  /* volt: mv * 1000 */
@@ -4381,20 +3364,10 @@ void dvfs_set_gpu_volt(int pmic_val)
 void dvfs_set_vcore_ao_volt(int pmic_val)
 {
 	cpufreq_dbg("%s(%d)\n", __func__, pmic_val);
-	mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_NORMAL, IDX_NM_VCORE, pmic_val);
+	mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_NORMAL
+				, IDX_NM_VCORE, pmic_val);
 	mt_cpufreq_apply_pmic_cmd(IDX_NM_VCORE);
 }
-
-#if 0
-void dvfs_set_vcore_pdn_volt(int pmic_val)
-{
-	cpufreq_dbg("%s(%d)\n", __func__, pmic_val);
-	mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_DEEPIDLE);
-	mt_cpufreq_set_pmic_cmd(PMIC_WRAP_PHASE_DEEPIDLE, IDX_DI_VCORE_PDN_NORMAL, pmic_val);
-	mt_cpufreq_apply_pmic_cmd(IDX_DI_VCORE_PDN_NORMAL);
-	mt_cpufreq_set_pmic_phase(PMIC_WRAP_PHASE_NORMAL);
-}
-#endif
 
 /* static unsigned int little_freq_backup; */
 static unsigned int vcpu_backup;
@@ -4406,13 +3379,12 @@ void dvfs_disable_by_ptpod(void)
 {
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(MT_CPU_DVFS_LITTLE);
 
-	cpufreq_dbg("%s()\n", __func__); /* <-XXX */
+	cpufreq_dbg("%s()\n", __func__);
 
-	/* little_freq_backup = _mt_cpufreq_get_cur_phy_freq(MT_CPU_DVFS_LITTLE); */
 	vcpu_backup = cpu_dvfs_get_cur_volt(p);
 	pmic_read_interface(PMIC_ADDR_VGPU_VOSEL_ON, &vgpu_backup, 0x7F, 0);
-	pmic_read_interface(PMIC_ADDR_VCORE_VOSEL_ON, &vcore_ao_backup, 0x7F, 0);
-	/* pmic_read_interface(PMIC_ADDR_VCORE_PDN_VOSEL_ON, &vcore_pdn_backup, 0x7F, 0); */
+	pmic_read_interface(PMIC_ADDR_VCORE_VOSEL_ON
+			    , &vcore_ao_backup, 0x7F, 0);
 
 	dvfs_set_cpu_volt(MT_CPU_DVFS_LITTLE, 1000000);    /* 1V */
 	dvfs_set_gpu_volt(VOLT_TO_PMIC_VAL(1000000));      /* 1V */
@@ -4424,7 +3396,7 @@ void dvfs_enable_by_ptpod(void)
 {
 	struct mt_cpu_dvfs *p = id_to_cpu_dvfs(MT_CPU_DVFS_LITTLE);
 
-	cpufreq_dbg("%s()\n", __func__); /* <-XXX */
+	cpufreq_dbg("%s()\n", __func__);
 
 	dvfs_set_cpu_volt(MT_CPU_DVFS_LITTLE, vcpu_backup);
 	dvfs_set_gpu_volt(vgpu_backup);
@@ -4469,8 +3441,8 @@ static int cpufreq_debug_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_debug_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_debug_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	unsigned int dbg_lv;
 
@@ -4481,8 +3453,10 @@ static ssize_t cpufreq_debug_proc_write(struct file *file, const char __user *bu
 
 	if (!kstrtouint(buf, 10, &dbg_lv))
 		func_lv_mask = dbg_lv;
-	else
-		cpufreq_err("echo dbg_lv (dec) > /proc/cpufreq/cpufreq_debug\n");
+	else {
+		cpufreq_err("echo dbg_lv (dec) >");
+		cpufreq_err(" /proc/cpufreq/cpufreq_debug\n");
+	}
 
 	free_page((unsigned long)buf);
 	return count;
@@ -4515,7 +3489,8 @@ static int cpufreq_downgrade_freq_info_proc_show(struct seq_file *m, void *v)
 }
 
 /* cpufreq_downgrade_freq_counter_limit */
-static int cpufreq_downgrade_freq_counter_limit_proc_show(struct seq_file *m, void *v)
+static int cpufreq_downgrade_freq_counter_limit_proc_show(struct seq_file *m
+	, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -4524,13 +3499,16 @@ static int cpufreq_downgrade_freq_counter_limit_proc_show(struct seq_file *m, vo
 	return 0;
 }
 
-static ssize_t cpufreq_downgrade_freq_counter_limit_proc_write(struct file *file
-	, const char __user *buffer, size_t count, loff_t *pos)
+static ssize_t cpufreq_downgrade_freq_counter_limit_proc_write(
+	struct file *file, const char __user *buffer
+	, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int downgrade_freq_counter_limit;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
@@ -4539,7 +3517,8 @@ static ssize_t cpufreq_downgrade_freq_counter_limit_proc_write(struct file *file
 		p->downgrade_freq_counter_limit = downgrade_freq_counter_limit;
 	else {
 		cpufreq_err("echo downgrade_freq_counter_limit (dec)");
-		cpufreq_err(" > /proc/cpufreq/cpufreq_downgrade_freq_counter_limit\n");
+		cpufreq_err(" > /proc/cpufreq/");
+		cpufreq_err("cpufreq_downgrade_freq_counter_limit\n");
 	}
 
 	free_page((unsigned long)buf);
@@ -4547,7 +3526,8 @@ static ssize_t cpufreq_downgrade_freq_counter_limit_proc_write(struct file *file
 }
 
 /* cpufreq_downgrade_freq_counter_return_limit */
-static int cpufreq_downgrade_freq_counter_return_limit_proc_show(struct seq_file *m, void *v)
+static int cpufreq_downgrade_freq_counter_return_limit_proc_show(
+	struct seq_file *m, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -4556,22 +3536,27 @@ static int cpufreq_downgrade_freq_counter_return_limit_proc_show(struct seq_file
 	return 0;
 }
 
-static ssize_t cpufreq_downgrade_freq_counter_return_limit_proc_write(struct file *file
-	, const char __user *buffer, size_t count, loff_t *pos)
+static ssize_t cpufreq_downgrade_freq_counter_return_limit_proc_write(
+	struct file *file, const char __user *buffer
+	, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int downgrade_freq_counter_return_limit;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
 
 	if (!kstrtoint(buf, 10, &downgrade_freq_counter_return_limit))
-		p->downgrade_freq_counter_return_limit = downgrade_freq_counter_return_limit;
+		p->downgrade_freq_counter_return_limit
+		= downgrade_freq_counter_return_limit;
 	else {
 		cpufreq_err("echo downgrade_freq_counter_return_limit (dec)");
-		cpufreq_err(" > /proc/cpufreq/cpufreq_downgrade_freq_counter_return_limit\n");
+		cpufreq_err(" > /proc/cpufreq/");
+		cpufreq_err("cpufreq_downgrade_freq_counter_return_limit\n");
 	}
 
 	free_page((unsigned long)buf);
@@ -4595,8 +3580,8 @@ static int cpufreq_fftt_test_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_fftt_test_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_fftt_test_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	char *buf = _copy_from_user_for_proc(buffer, count);
 
@@ -4610,8 +3595,9 @@ static ssize_t cpufreq_fftt_test_proc_write(struct file *file, const char __user
 		udelay(_delay_us_buf);
 		_delay_us = ((unsigned long)sched_clock() - start) / 1000;
 
-		cpufreq_ver("@%s(%lu), _delay_us = %lu, loops_per_jiffy = %lu\n", __func__, _delay_us_buf
-			, _delay_us, loops_per_jiffy);
+		cpufreq_ver("@%s(%lu)\n", __func__, _delay_us_buf);
+		cpufreq_ver(", _delay_us = %lu", _delay_us);
+		cpufreq_ver(", loops_per_jiffy = %lu\n", loops_per_jiffy);
 	}
 
 	free_page((unsigned long)buf);
@@ -4626,8 +3612,8 @@ static int cpufreq_stress_test_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_stress_test_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_stress_test_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	unsigned int do_stress;
 
@@ -4652,8 +3638,8 @@ static int cpufreq_fix_freq_in_es_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_fix_freq_in_es_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_fix_freq_in_es_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	unsigned int fix_freq_in_ES;
 
@@ -4664,8 +3650,10 @@ static ssize_t cpufreq_fix_freq_in_es_proc_write(struct file *file, const char _
 
 	if (!kstrtouint(buf, 10, &fix_freq_in_ES))
 		is_fix_freq_in_ES = fix_freq_in_ES;
-	else
-		cpufreq_err("echo 0/1 > /proc/cpufreq/cpufreq_fix_freq_in_es\n");
+	else {
+		cpufreq_err("echo 0/1 > ");
+		cpufreq_err("/proc/cpufreq/cpufreq_fix_freq_in_es\n");
+	}
 
 	free_page((unsigned long)buf);
 	return count;
@@ -4676,8 +3664,8 @@ static int cpufreq_emi_dfs_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_emi_dfs_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_emi_dfs_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	char *buf = _copy_from_user_for_proc(buffer, count);
 	unsigned int tmp;
@@ -4688,8 +3676,10 @@ static ssize_t cpufreq_emi_dfs_proc_write(struct file *file, const char __user *
 	if (!kstrtouint(buf, 10, &tmp)) {
 		if (tmp == 0 || tmp == 1)
 			gEMI_DFS_enable = tmp;
-		else
-			cpufreq_err("echo [0|1] > /proc/cpufreq/cpufreq_emi_dfs\n");
+		else {
+			cpufreq_err("echo [0|1] > ");
+			cpufreq_err("/proc/cpufreq/cpufreq_emi_dfs\n");
+		}
 	} else
 		cpufreq_err("echo [0|1] > /proc/cpufreq/cpufreq_emi_dfs\n");
 
@@ -4708,37 +3698,46 @@ static int cpufreq_limited_by_hevc_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_limited_by_hevc_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_limited_by_hevc_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int limited_freq_by_hevc;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
 
 	if (!kstrtoint(buf, 10, &limited_freq_by_hevc)) {
 		p->limited_freq_by_hevc = limited_freq_by_hevc;
-		if (cpu_dvfs_is_available(p) && (p->limited_freq_by_hevc > cpu_dvfs_get_cur_freq(p))) {
+		if (cpu_dvfs_is_available(p)
+		    && (p->limited_freq_by_hevc > cpu_dvfs_get_cur_freq(p))) {
 #ifdef CONFIG_CPU_FREQ
-			struct cpufreq_policy *policy = cpufreq_cpu_get(p->cpu_id);
+			struct cpufreq_policy *policy
+				= cpufreq_cpu_get(p->cpu_id);
 
 			if (policy) {
-				cpufreq_driver_target(policy, p->limited_freq_by_hevc, CPUFREQ_RELATION_L);
+				cpufreq_driver_target(policy
+						      , p->limited_freq_by_hevc
+						      , CPUFREQ_RELATION_L);
 				cpufreq_cpu_put(policy);
 			}
 #endif
 		}
-	} else
-		cpufreq_err("echo limited_freq_by_hevc (dec) > /proc/cpufreq/cpufreq_limited_by_hevc\n");
+	} else {
+		cpufreq_err("echo limited_freq_by_hevc (dec) >");
+		cpufreq_err(" /proc/cpufreq/cpufreq_limited_by_hevc\n");
+	}
 
 	free_page((unsigned long)buf);
 	return count;
 }
 
-static int cpufreq_limited_max_freq_by_user_proc_show(struct seq_file *m, void *v)
+static int cpufreq_limited_max_freq_by_user_proc_show(struct seq_file *m
+	, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -4750,10 +3749,12 @@ static int cpufreq_limited_max_freq_by_user_proc_show(struct seq_file *m, void *
 static ssize_t cpufreq_limited_max_freq_by_user_proc_write(struct file *file
 	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int limited_max_freq;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
@@ -4761,17 +3762,25 @@ static ssize_t cpufreq_limited_max_freq_by_user_proc_write(struct file *file
 	if (!kstrtoint(buf, 10, &limited_max_freq)) {
 		p->limited_max_freq_by_user = limited_max_freq;
 
-		if (cpu_dvfs_is_available(p) && (p->limited_max_freq_by_user < cpu_dvfs_get_cur_freq(p))) {
-			struct cpufreq_policy *policy = cpufreq_cpu_get(p->cpu_id);
+		if (cpu_dvfs_is_available(p)
+		    && (p->limited_max_freq_by_user)
+		    && (p->limited_max_freq_by_user
+			< cpu_dvfs_get_cur_freq(p))) {
+			struct cpufreq_policy *policy
+				= cpufreq_cpu_get(p->cpu_id);
 
 			if (policy) {
-				cpufreq_driver_target(policy, p->limited_max_freq_by_user, CPUFREQ_RELATION_H);
+				cpufreq_driver_target(policy
+					, p->limited_max_freq_by_user
+					, CPUFREQ_RELATION_H);
 				cpufreq_cpu_put(policy);
 			}
 		}
-	} else
-		cpufreq_err("echo limited_max_freq (dec) > /proc/cpufreq/%s/cpufreq_limited_max_freq_by_user\n"
-		, p->name);
+	} else {
+		cpufreq_err("echo limited_max_freq (dec) > ");
+		cpufreq_err("/proc/cpufreq/%s/", p->name);
+		cpufreq_err("cpufreq_limited_max_freq_by_user\n");
+	}
 
 	free_page((unsigned long)buf);
 	return count;
@@ -4797,8 +3806,8 @@ static int cpufreq_limited_power_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_limited_power_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_limited_power_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	int limited_power;
 
@@ -4808,9 +3817,11 @@ static ssize_t cpufreq_limited_power_proc_write(struct file *file, const char __
 		return -EINVAL;
 
 	if (!kstrtoint(buf, 10, &limited_power))
-		mt_cpufreq_thermal_protect(limited_power); /* TODO: specify limited_power by id??? */
-	else
-		cpufreq_err("echo limited_power (dec) > /proc/cpufreq/cpufreq_limited_power\n");
+		mt_cpufreq_thermal_protect(limited_power);
+	else {
+		cpufreq_err("echo limited_power (dec) > ");
+		cpufreq_err("/proc/cpufreq/cpufreq_limited_power\n");
+	}
 
 	free_page((unsigned long)buf);
 	return count;
@@ -4826,21 +3837,25 @@ static int cpufreq_over_max_cpu_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_over_max_cpu_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_over_max_cpu_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int over_max_cpu;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
 
 	if (!kstrtoint(buf, 10, &over_max_cpu))
 		p->over_max_cpu = over_max_cpu;
-	else
-		cpufreq_err("echo over_max_cpu (dec) > /proc/cpufreq/cpufreq_over_max_cpu\n");
+	else {
+		cpufreq_err("echo over_max_cpu (dec) > ");
+		cpufreq_err("/proc/cpufreq/cpufreq_over_max_cpu\n");
+	}
 
 	free_page((unsigned long)buf);
 	return count;
@@ -4856,12 +3871,12 @@ static int cpufreq_power_dump_proc_show(struct seq_file *m, void *v)
 		seq_printf(m, "[%s/%d]\n", p->name, i);
 
 		for (j = 0; j < p->nr_power_tbl; j++) {
-			seq_printf(m, "[%d] = { .cpufreq_khz = %d,\t.cpufreq_ncpu = %d,\t.cpufreq_power = %d, },\n",
-				j,
-				p->power_tbl[j].cpufreq_khz,
-				p->power_tbl[j].cpufreq_ncpu,
-				p->power_tbl[j].cpufreq_power
-				);
+			seq_printf(m, "[%d] = { .cpufreq_khz = %d,\t",
+				j, p->power_tbl[j].cpufreq_khz);
+			seq_printf(m, ".cpufreq_ncpu = %d,\t",
+				p->power_tbl[j].cpufreq_ncpu);
+			seq_printf(m, ".cpufreq_power = %d, },\n",
+				p->power_tbl[j].cpufreq_power);
 		}
 	}
 
@@ -4875,19 +3890,21 @@ static int cpufreq_ptpod_freq_volt_proc_show(struct seq_file *m, void *v)
 	int j;
 
 	for (j = 0; j < p->nr_opp_tbl; j++) {
-		seq_printf(m, "[%d] = { .cpufreq_khz = %d,\t.cpufreq_volt = %d,\t.cpufreq_volt_org = %d, },\n",
+		seq_printf(m,
+		"[%d] = { .cpufreq_khz = %d,\t.cpufreq_volt = %d,",
 		j,
 		p->opp_tbl[j].cpufreq_khz,
-		p->opp_tbl[j].cpufreq_volt,
-		p->opp_tbl[j].cpufreq_volt_org
-		);
+		p->opp_tbl[j].cpufreq_volt);
+		seq_printf(m, "\t.cpufreq_volt_org = %d, },\n",
+		p->opp_tbl[j].cpufreq_volt_org);
 	}
 
 	return 0;
 }
 
 /* cpufreq_ptpod_temperature_limit */
-static int cpufreq_ptpod_temperature_limit_proc_show(struct seq_file *m, void *v)
+static int cpufreq_ptpod_temperature_limit_proc_show(struct seq_file *m
+	, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -4903,21 +3920,26 @@ static int cpufreq_ptpod_temperature_limit_proc_show(struct seq_file *m, void *v
 static ssize_t cpufreq_ptpod_temperature_limit_proc_write(struct file *file
 	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int ptpod_temperature_limit_1;
 	int ptpod_temperature_limit_2;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
 
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+
 	if (!buf)
 		return -EINVAL;
 
-	if (sscanf(buf, "%d %d", &ptpod_temperature_limit_1, &ptpod_temperature_limit_2) == 2) {
+	if (sscanf(buf, "%d %d", &ptpod_temperature_limit_1
+		   , &ptpod_temperature_limit_2) == 2) {
 		p->ptpod_temperature_limit_1 = ptpod_temperature_limit_1;
 		p->ptpod_temperature_limit_2 = ptpod_temperature_limit_2;
 	} else {
-		cpufreq_err("echo ptpod_temperature_limit_1 (dec) ptpod_temperature_limit_2 (dec)");
-		cpufreq_err(" > /proc/cpufreq/cpufreq_ptpod_temperature_limit\n");
+		cpufreq_err("echo ptpod_temperature_limit_1 (dec) ");
+		cpufreq_err("ptpod_temperature_limit_2 (dec)");
+		cpufreq_err(" > /proc/cpufreq/\n");
+		cpufreq_err("cpufreq_ptpod_temperature_limit\n");
 	}
 
 	free_page((unsigned long)buf);
@@ -4925,7 +3947,8 @@ static ssize_t cpufreq_ptpod_temperature_limit_proc_write(struct file *file
 }
 
 /* cpufreq_ptpod_temperature_time */
-static int cpufreq_ptpod_temperature_time_proc_show(struct seq_file *m, void *v)
+static int cpufreq_ptpod_temperature_time_proc_show(struct seq_file *m
+	, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -4941,21 +3964,26 @@ static int cpufreq_ptpod_temperature_time_proc_show(struct seq_file *m, void *v)
 static ssize_t cpufreq_ptpod_temperature_time_proc_write(struct file *file
 	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int ptpod_temperature_time_1;
 	int ptpod_temperature_time_2;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
 
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+
 	if (!buf)
 		return -EINVAL;
 
-	if (sscanf(buf, "%d %d", &ptpod_temperature_time_1, &ptpod_temperature_time_2) == 2) {
+	if (sscanf(buf, "%d %d", &ptpod_temperature_time_1
+		   , &ptpod_temperature_time_2) == 2) {
 		p->ptpod_temperature_time_1 = ptpod_temperature_time_1;
 		p->ptpod_temperature_time_2 = ptpod_temperature_time_2;
 	} else {
-		cpufreq_err("echo ptpod_temperature_time_1 (dec) ptpod_temperature_time_2 (dec)");
-		cpufreq_err(" > /proc/cpufreq/cpufreq_ptpod_temperature_time\n");
+		cpufreq_err("echo ptpod_temperature_time_1 ");
+		cpufreq_err("(dec) ptpod_temperature_time_2 (dec)");
+		cpufreq_err(" > /proc/cpufreq/");
+		cpufreq_err("cpufreq_ptpod_temperature_time\n");
 	}
 
 	free_page((unsigned long)buf);
@@ -4968,8 +3996,8 @@ static int cpufreq_ptpod_test_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_ptpod_test_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos)
+static ssize_t cpufreq_ptpod_test_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	return count;
 }
@@ -5015,12 +4043,14 @@ static int cpufreq_state_proc_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t cpufreq_state_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos) /* TODO: keep this function??? */
+static ssize_t cpufreq_state_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	char *buf = _copy_from_user_for_proc(buffer, count);
 	int enable;
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
@@ -5038,7 +4068,7 @@ static ssize_t cpufreq_state_proc_write(struct file *file, const char __user *bu
 }
 
 /* cpufreq_oppidx */
-static int cpufreq_oppidx_proc_show(struct seq_file *m, void *v) /* <-XXX */
+static int cpufreq_oppidx_proc_show(struct seq_file *m, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 	int j;
@@ -5059,26 +4089,29 @@ static int cpufreq_oppidx_proc_show(struct seq_file *m, void *v) /* <-XXX */
 	return 0;
 }
 
-static ssize_t cpufreq_oppidx_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos) /* <-XXX */
+static ssize_t cpufreq_oppidx_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int oppidx;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
 
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+
 	if (!buf)
 		return -EINVAL;
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!kstrtoint(buf, 10, &oppidx)
 		&& 0 <= oppidx && oppidx < p->nr_opp_tbl) {
 		p->dvfs_disable_by_procfs = true;
 		_mt_cpufreq_set(MT_CPU_DVFS_LITTLE, oppidx);
 	} else {
-		p->dvfs_disable_by_procfs = false; /* TODO: FIXME */
-		cpufreq_err("echo oppidx > /proc/cpufreq/cpufreq_oppidx (0 <= %d < %d)\n", oppidx, p->nr_opp_tbl);
+		p->dvfs_disable_by_procfs = false;
+		cpufreq_err("echo oppidx > /proc/cpufreq/cpufreq_oppidx ");
+		cpufreq_err("(0 <= %d < %d)\n", oppidx, p->nr_opp_tbl);
 	}
 
 	free_page((unsigned long)buf);
@@ -5087,7 +4120,7 @@ static ssize_t cpufreq_oppidx_proc_write(struct file *file, const char __user *b
 }
 
 /* cpufreq_freq */
-static int cpufreq_freq_proc_show(struct seq_file *m, void *v) /* <-XXX */
+static int cpufreq_freq_proc_show(struct seq_file *m, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -5096,25 +4129,30 @@ static int cpufreq_freq_proc_show(struct seq_file *m, void *v) /* <-XXX */
 	return 0;
 }
 
-static ssize_t cpufreq_freq_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos) /* <-XXX */
+static ssize_t cpufreq_freq_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	unsigned long flags;
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	unsigned int cur_freq;
 	int freq, i, found;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
 
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+
 	if (!buf)
 		return -EINVAL;
 
-	BUG_ON(NULL == p);
+	WARN_ON(p == NULL);
 
 	if (!kstrtoint(buf, 10, &freq)) {
 		if (freq < CPUFREQ_LAST_FREQ_LEVEL) {
-			if (freq != 0)
-				cpufreq_err("frequency should higher than %dKHz!\n", CPUFREQ_LAST_FREQ_LEVEL);
+			if (freq != 0) {
+				cpufreq_err("frequency should higher than ");
+				cpufreq_err("%dKHz!\n"
+					    , CPUFREQ_LAST_FREQ_LEVEL);
+			}
 			p->dvfs_disable_by_procfs = false;
 			goto end;
 		} else {
@@ -5126,19 +4164,20 @@ static ssize_t cpufreq_freq_proc_write(struct file *file, const char __user *buf
 			}
 
 			if (found == 1) {
-				p->dvfs_disable_by_procfs = true; /* TODO: FIXME */
-				cpufreq_lock(flags);	/* <-XXX */
+				p->dvfs_disable_by_procfs = true;
+				cpufreq_lock(flags);
 				cur_freq = p->ops->get_cur_phy_freq(p);
 				if (freq != cur_freq)
 					p->ops->set_cur_freq(p, cur_freq, freq);
-				cpufreq_unlock(flags);	/* <-XXX */
+				cpufreq_unlock(flags);
 			} else {
 				p->dvfs_disable_by_procfs = false;
-				cpufreq_err("frequency %dKHz! is not found in CPU opp table\n", freq);
+				cpufreq_err("frequency %dKHz! ", freq);
+				cpufreq_err("is not found in CPU opp table\n");
 			}
 		}
 	} else {
-		p->dvfs_disable_by_procfs = false; /* TODO: FIXME */
+		p->dvfs_disable_by_procfs = false;
 		cpufreq_err("echo khz > /proc/cpufreq/cpufreq_freq\n");
 	}
 
@@ -5149,7 +4188,7 @@ end:
 }
 
 /* cpufreq_volt */
-static int cpufreq_volt_proc_show(struct seq_file *m, void *v) /* <-XXX */
+static int cpufreq_volt_proc_show(struct seq_file *m, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 
@@ -5157,33 +4196,36 @@ static int cpufreq_volt_proc_show(struct seq_file *m, void *v) /* <-XXX */
 	seq_printf(m, "%d mv\n", p->ops->get_cur_volt(p) / 1000);  /* mv */
 	#else
 	if (cpu_dvfs_is_extbuck_valid())
-		seq_printf(m, "Vproc: %d mv\n", p->ops->get_cur_volt(p) / 1000);  /* mv */
+		seq_printf(m, "Vproc: %d mv\n"
+			   , p->ops->get_cur_volt(p) / 1000);
 	else
-		seq_printf(m, "%d mv\n", p->ops->get_cur_volt(p) / 1000);  /* mv */
+		seq_printf(m, "%d mv\n", p->ops->get_cur_volt(p) / 1000);
 	#endif
 
 	return 0;
 }
 
-static ssize_t cpufreq_volt_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos) /* <-XXX */
+static ssize_t cpufreq_volt_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
 	unsigned long flags;
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	int mv;
 
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
 
 	if (!kstrtoint(buf, 10, &mv)) {
-		p->dvfs_disable_by_procfs = true; /* TODO: FIXME */
+		p->dvfs_disable_by_procfs = true;
 		cpufreq_lock(flags);
 		_set_cur_volt_locked(p, mv * 1000);
 		cpufreq_unlock(flags);
 	} else {
-		p->dvfs_disable_by_procfs = false; /* TODO: FIXME */
+		p->dvfs_disable_by_procfs = false;
 		cpufreq_err("echo mv > /proc/cpufreq/cpufreq_volt\n");
 	}
 
@@ -5193,7 +4235,7 @@ static ssize_t cpufreq_volt_proc_write(struct file *file, const char __user *buf
 }
 
 /* cpufreq_turbo_mode */
-static int cpufreq_turbo_mode_proc_show(struct seq_file *m, void *v) /* <-XXX */
+static int cpufreq_turbo_mode_proc_show(struct seq_file *m, void *v)
 {
 	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)m->private;
 	int i;
@@ -5201,41 +4243,44 @@ static int cpufreq_turbo_mode_proc_show(struct seq_file *m, void *v) /* <-XXX */
 	seq_printf(m, "turbo_mode = %d\n", p->turbo_mode);
 
 	for (i = 0; i < NR_TURBO_MODE; i++) {
-		seq_printf(m, "[%d] = { .temp = %d, .freq_delta = %d, .volt_delta = %d }\n",
+		seq_printf(m, "[%d] = { .temp = %d,",
 		i,
-		turbo_mode_cfg[i].temp,
+		turbo_mode_cfg[i].temp);
+		seq_printf(m, " .freq_delta = %d, .volt_delta = %d }\n",
 		turbo_mode_cfg[i].freq_delta,
-		turbo_mode_cfg[i].volt_delta
-		);
+		turbo_mode_cfg[i].volt_delta);
 	}
 
 	return 0;
 }
 
-static ssize_t cpufreq_turbo_mode_proc_write(struct file *file, const char __user *buffer
-	, size_t count, loff_t *pos) /* <-XXX */
+static ssize_t cpufreq_turbo_mode_proc_write(struct file *file
+	, const char __user *buffer, size_t count, loff_t *pos)
 {
-	struct mt_cpu_dvfs *p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
+	struct mt_cpu_dvfs *p;
 	unsigned int turbo_mode;
 	int temp;
 	int freq_delta;
 	int volt_delta;
-
 	char *buf = _copy_from_user_for_proc(buffer, count);
+
+	p = (struct mt_cpu_dvfs *)PDE_DATA(file_inode(file));
 
 	if (!buf)
 		return -EINVAL;
 
-	if ((sscanf(buf, "%d %d %d %d", &turbo_mode, &temp, &freq_delta, &volt_delta) == 4)
+	if ((sscanf(buf, "%d %d %d %d", &turbo_mode, &temp, &freq_delta
+		    , &volt_delta) == 4)
 		&& turbo_mode < NR_TURBO_MODE) {
 		turbo_mode_cfg[turbo_mode].temp = temp;
 		turbo_mode_cfg[turbo_mode].freq_delta = freq_delta;
 		turbo_mode_cfg[turbo_mode].volt_delta = volt_delta;
 	} else if (!kstrtouint(buf, 10, &turbo_mode))
-		p->turbo_mode = turbo_mode; /* TODO: FIXME */
+		p->turbo_mode = turbo_mode;
 	else {
 		cpufreq_err("echo 0/1 > /proc/cpufreq/cpufreq_turbo_mode\n");
-		cpufreq_err("echo idx temp freq_delta volt_delta > /proc/cpufreq/cpufreq_turbo_mode\n");
+		cpufreq_err("echo idx temp freq_delta volt_delta >");
+		cpufreq_err("    /proc/cpufreq/cpufreq_turbo_mode\n");
 	}
 
 	free_page((unsigned long)buf);
@@ -5243,7 +4288,7 @@ static ssize_t cpufreq_turbo_mode_proc_write(struct file *file, const char __use
 	return count;
 }
 
-#define PROC_FOPS_RW(name)							\
+#define PROC_FOPS_RW(name)						\
 static int name ## _proc_open(struct inode *inode, struct file *file)	\
 {									\
 	return single_open(file, name ## _proc_show, PDE_DATA(inode));	\
@@ -5257,7 +4302,7 @@ static const struct file_operations name ## _proc_fops = {		\
 	.write          = name ## _proc_write,				\
 }
 
-#define PROC_FOPS_RO(name)							\
+#define PROC_FOPS_RO(name)						\
 static int name ## _proc_open(struct inode *inode, struct file *file)	\
 {									\
 	return single_open(file, name ## _proc_show, PDE_DATA(inode));	\
@@ -5291,10 +4336,10 @@ PROC_FOPS_RW(cpufreq_over_max_cpu);
 PROC_FOPS_RO(cpufreq_ptpod_freq_volt);
 PROC_FOPS_RW(cpufreq_ptpod_temperature_limit);
 PROC_FOPS_RW(cpufreq_ptpod_temperature_time);
-PROC_FOPS_RW(cpufreq_oppidx); /* <-XXX */
-PROC_FOPS_RW(cpufreq_freq); /* <-XXX */
-PROC_FOPS_RW(cpufreq_volt); /* <-XXX */
-PROC_FOPS_RW(cpufreq_turbo_mode); /* <-XXX */
+PROC_FOPS_RW(cpufreq_oppidx);
+PROC_FOPS_RW(cpufreq_freq);
+PROC_FOPS_RW(cpufreq_volt);
+PROC_FOPS_RW(cpufreq_turbo_mode);
 
 static int _create_procfs(void)
 {
@@ -5330,10 +4375,10 @@ static int _create_procfs(void)
 	PROC_ENTRY(cpufreq_ptpod_temperature_limit),
 	PROC_ENTRY(cpufreq_ptpod_temperature_time),
 	PROC_ENTRY(cpufreq_state),
-	PROC_ENTRY(cpufreq_oppidx), /* <-XXX */
-	PROC_ENTRY(cpufreq_freq), /* <-XXX */
-	PROC_ENTRY(cpufreq_volt), /* <-XXX */
-	PROC_ENTRY(cpufreq_turbo_mode), /* <-XXX */
+	PROC_ENTRY(cpufreq_oppidx),
+	PROC_ENTRY(cpufreq_freq),
+	PROC_ENTRY(cpufreq_volt),
+	PROC_ENTRY(cpufreq_turbo_mode),
 	};
 
 	dir = proc_mkdir("cpufreq", NULL);
@@ -5344,32 +4389,20 @@ static int _create_procfs(void)
 	}
 
 	for (i = 0; i < ARRAY_SIZE(entries); i++) {
-		if (!proc_create(entries[i].name, S_IRUGO | S_IWUSR | S_IWGRP, dir, entries[i].fops))
-			cpufreq_err("%s(), create /proc/cpufreq/%s failed\n", __func__, entries[i].name);
+		if (!proc_create(entries[i].name
+				 , 0664
+				 , dir, entries[i].fops))
+			cpufreq_err("%s(), create /proc/cpufreq/%s failed\n"
+				    , __func__, entries[i].name);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(cpu_entries); i++) {
-		if (!proc_create_data(cpu_entries[i].name, S_IRUGO | S_IWUSR | S_IWGRP, dir, cpu_entries[i].fops, p))
-			cpufreq_err("%s(), create /proc/cpufreq/%s failed\n", __func__, cpu_entries[i].name);
+		if (!proc_create_data(cpu_entries[i].name
+				      , 0664
+				      , dir, cpu_entries[i].fops, p))
+			cpufreq_err("%s(), create /proc/cpufreq/%s failed\n"
+				    , __func__, cpu_entries[i].name);
 	}
-
-#if 0  /* K2 has little core only */
-	for_each_cpu_dvfs(j, p) {
-		cpu_dir = proc_mkdir(p->name, dir);
-
-		if (!cpu_dir) {
-			cpufreq_err("fail to create /proc/cpufreq/%s @ %s()\n", p->name, __func__);
-			return -ENOMEM;
-		}
-
-		for (i = 0; i < ARRAY_SIZE(cpu_entries); i++) {
-			if (!proc_create_data(cpu_entries[i].name, S_IRUGO | S_IWUSR
-				| S_IWGRP, cpu_dir, cpu_entries[i].fops, p))
-				cpufreq_err("%s(), create /proc/cpufreq/%s/%s failed\n"
-				, __func__, p->name, entries[i].name);
-		}
-	}
-#endif
 
 	return 0;
 }
@@ -5381,51 +4414,68 @@ static int _create_procfs(void)
 static int __init _mt_cpufreq_pdrv_init(void)
 {
 	int ret = 0;
-#ifdef CONFIG_OF
+
 	struct device_node *apmix_node = NULL;
 	struct device_node *infra_ao_node = NULL;
 	struct device_node *topckgen_node = NULL;
-#endif
+	struct device_node *pwrap_node = NULL;
 
 	FUNC_ENTER(FUNC_LV_MODULE);
 
-#ifdef CONFIG_OF
-
-	apmix_node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-apmixedsys");
+	apmix_node = of_find_compatible_node(NULL, NULL
+					     , "mediatek,mt8163-apmixedsys");
 	if (apmix_node) {
 		/* Setup IO addresses */
 		cpufreq_apmixed_base = of_iomap(apmix_node, 0);
 		if (!cpufreq_apmixed_base) {
-			cpufreq_err("cpufreq_apmixed_base = 0x%lx\n", (unsigned long)cpufreq_apmixed_base);
+			cpufreq_err("cpufreq_apmixed_base = 0x%lx\n"
+				    , (unsigned long)cpufreq_apmixed_base);
 			return 0;
 		}
-		cpufreq_err("cpufreq_apmixed_base = 0x%lx\n", (unsigned long)cpufreq_apmixed_base);
+		cpufreq_err("cpufreq_apmixed_base = 0x%lx\n"
+			    , (unsigned long)cpufreq_apmixed_base);
 	}
 
-	infra_ao_node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-infracfg");
+	infra_ao_node = of_find_compatible_node(NULL, NULL
+						, "mediatek,mt8163-infracfg");
 	if (infra_ao_node) {
 		/* Setup IO addresses */
 		infracfg_ao_base = of_iomap(infra_ao_node, 0);
 		if (!infracfg_ao_base) {
-			cpufreq_err("infracfg_ao_base = 0x%lx\n", (unsigned long)infracfg_ao_base);
+			cpufreq_err("infracfg_ao_base = 0x%lx\n"
+				    , (unsigned long)infracfg_ao_base);
 			return 0;
 		}
-		cpufreq_err("infracfg_ao_base = 0x%lx\n", (unsigned long)infracfg_ao_base);
+		cpufreq_err("infracfg_ao_base = 0x%lx\n"
+			    , (unsigned long)infracfg_ao_base);
 	}
 
-	topckgen_node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-topckgen");
+	topckgen_node = of_find_compatible_node(NULL, NULL
+						, "mediatek,mt8163-topckgen");
 	if (topckgen_node) {
 		/* Setup IO addresses */
 		clk_cksys_base = of_iomap(topckgen_node, 0);
 		if (!clk_cksys_base) {
-			cpufreq_err("infracfg_ao_base = 0x%lx\n", (unsigned long)clk_cksys_base);
+			cpufreq_err("infracfg_ao_base = 0x%lx\n"
+				    , (unsigned long)clk_cksys_base);
 			return 0;
 		}
-		cpufreq_err("infracfg_ao_base = 0x%lx\n", (unsigned long)clk_cksys_base);
+		cpufreq_err("infracfg_ao_base = 0x%lx\n"
+			    , (unsigned long)clk_cksys_base);
 	}
 
-
-#endif
+	pwrap_node = of_find_compatible_node(NULL, NULL
+					     , "mediatek,mt8163-pwrap");
+	if (pwrap_node) {
+		/* Setup IO addresses */
+		pwrap_base = of_iomap(pwrap_node, 0);
+		if (!pwrap_base) {
+			cpufreq_err("pwrap_base = 0x%lx\n"
+				    , (unsigned long)pwrap_base);
+			return 0;
+		}
+		cpufreq_err("pwrap_base = 0x%lx\n", (unsigned long)pwrap_base);
+	}
 
 #ifdef CONFIG_PROC_FS
 	/* init proc */
@@ -5436,7 +4486,8 @@ static int __init _mt_cpufreq_pdrv_init(void)
 	ret = platform_driver_register(&_mt_cpufreq_pdrv);
 
 	if (ret)
-		cpufreq_err("fail to register cpufreq driver @ %s()\n", __func__);
+		cpufreq_err("fail to register cpufreq driver @ %s()\n"
+			    , __func__);
 
 out:
 	FUNC_EXIT(FUNC_LV_MODULE);

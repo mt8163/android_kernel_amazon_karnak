@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -58,8 +60,9 @@ static int mtk_pcm_open(struct snd_pcm_substream *substream)
 	pr_debug("mtk_pcm_open\n");
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
-					 &constraints_sample_rates);
-	ret = snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
+		&constraints_sample_rates);
+	ret = snd_pcm_hw_constraint_integer(runtime,
+		SNDRV_PCM_HW_PARAM_PERIODS);
 
 	if (ret < 0)
 		pr_err("snd_pcm_hw_constraint_integer failed\n");
@@ -73,7 +76,8 @@ static int mtk_pcm_open(struct snd_pcm_substream *substream)
 		runtime->hw.info |= SNDRV_PCM_INFO_NONINTERLEAVED;
 	}
 	if (substream->pcm->device & 2)
-		runtime->hw.info &= ~(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID);
+		runtime->hw.info &= ~(SNDRV_PCM_INFO_MMAP |
+			SNDRV_PCM_INFO_MMAP_VALID);
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		pr_debug("SNDRV_PCM_STREAM_PLAYBACK mtkalsa_playback_constraints\n");
@@ -115,7 +119,7 @@ static int mtk_pcm_copy(struct snd_pcm_substream *substream,
 }
 
 static int mtk_pcm_silence(struct snd_pcm_substream *substream,
-			   int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
+	int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
 {
 	pr_debug("dummy_pcm_silence\n");
 	/* do nothing */
@@ -125,10 +129,11 @@ static int mtk_pcm_silence(struct snd_pcm_substream *substream,
 
 static void *dummy_page[2];
 
-static struct page *mtk_pcm_page(struct snd_pcm_substream *substream, unsigned long offset)
+static struct page *mtk_pcm_page(struct snd_pcm_substream *substream,
+	unsigned long offset)
 {
 	pr_debug("dummy_pcm_page\n");
-	return virt_to_page(dummy_page[substream->stream]);	/* the same page */
+	return virt_to_page(dummy_page[substream->stream]); /* the same page */
 }
 
 static int mtk_pcm_prepare(struct snd_pcm_substream *substream)

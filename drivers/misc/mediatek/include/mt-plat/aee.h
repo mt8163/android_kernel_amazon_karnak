@@ -1,23 +1,36 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #if !defined(__AEE_H__)
 #define __AEE_H__
 
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <mt-plat/mtk_ram_console.h>
 
 #define AEE_MODULE_NAME_LENGTH 64
 #define AEE_PROCESS_NAME_LENGTH 256
 #define AEE_BACKTRACE_LENGTH 3072
+#define MODULES_INFO_BUF_SIZE 2048
 
-typedef enum {
+enum AE_DEFECT_ATTR {
 	AE_DEFECT_FATAL,
 	AE_DEFECT_EXCEPTION,
 	AE_DEFECT_WARNING,
 	AE_DEFECT_REMINDING,
 	AE_DEFECT_ATTR_END
-} AE_DEFECT_ATTR;
+};
 
-typedef enum {
+enum AE_EXP_CLASS {
 	AE_KE = 0,		/* Fatal Exception */
 	AE_HWT,
 	AE_REBOOT,
@@ -29,6 +42,7 @@ typedef enum {
 	AE_ANR,			/* Error or Warning or Defect */
 	AE_RESMON,
 	AE_MODEM_WARNING,
+	AE_WTF,
 	AE_WRN_ERR_END,
 	AE_MANUAL,		/* Manual Raise */
 	AE_EXP_CLASS_END,
@@ -36,16 +50,20 @@ typedef enum {
 	AE_KERNEL_PROBLEM_REPORT = 1000,
 	AE_SYSTEM_JAVA_DEFECT,
 	AE_SYSTEM_NATIVE_DEFECT,
-} AE_EXP_CLASS;			/* General Program Exception Class */
+	AE_MANUAL_MRDUMP_KEY,
+};			/* General Program Exception Class */
 
-typedef enum {
+enum AEE_REBOOT_MODE {
 	AEE_REBOOT_MODE_NORMAL = 0,
 	AEE_REBOOT_MODE_KERNEL_OOPS,
 	AEE_REBOOT_MODE_KERNEL_PANIC,
 	AEE_REBOOT_MODE_NESTED_EXCEPTION,
 	AEE_REBOOT_MODE_WDT,
 	AEE_REBOOT_MODE_MANUAL_KDUMP,
-} AEE_REBOOT_MODE;
+	AEE_REBOOT_MODE_MRDUMP_KEY,
+	AEE_REBOOT_MODE_GZ_KE,
+	AEE_REBOOT_MODE_GZ_WDT,
+};
 
 #define AEE_SZ_SYMBOL_L 140
 #define AEE_SZ_SYMBOL_S 80
@@ -53,7 +71,8 @@ struct aee_bt_frame {
 	__u64 pc;
 	__u64 lr;
 	__u32 pad[5];
-	char pc_symbol[AEE_SZ_SYMBOL_S];	/* Now we use different symbol length for PC &LR */
+	/* Now we use different symbol length for PC &LR */
+	char pc_symbol[AEE_SZ_SYMBOL_S];
 	char lr_symbol[AEE_SZ_SYMBOL_L];
 };
 
@@ -79,21 +98,29 @@ struct aee_thread_reg {
 struct aee_user_thread_stack {
 	pid_t tid;
 	int StackLength;
-	unsigned char *Userthread_Stack; /*8k stack ,define to char only for match 64bit/32bit*/
+	/*8k stack ,define to char only for match 64bit/32bit*/
+	unsigned char *Userthread_Stack;
 };
 
 struct aee_user_thread_maps {
 	pid_t tid;
 	int Userthread_mapsLength;
-	unsigned char *Userthread_maps; /*8k stack ,define to char only for match 64bit/32bit*/
+	/*8k stack ,define to char only for match 64bit/32bit*/
+	unsigned char *Userthread_maps;
 };
 
+#ifdef CONFIG_MTK_PRINTK_UART_CONSOLE
+extern int printk_disable_uart;
+#endif
 
+#ifdef CONFIG_MTK_RAM_CONSOLE
+extern void aee_rr_rec_hang_detect_timeout_count(unsigned int timeout);
+#endif
 
 struct aee_oops {
 	struct list_head list;
-	AE_DEFECT_ATTR attr;
-	AE_EXP_CLASS clazz;
+	enum AE_DEFECT_ATTR attr;
+	enum AE_EXP_CLASS clazz;
 
 	char module[AEE_MODULE_NAME_LENGTH];
 	/* consist with struct aee_process_info */
@@ -132,14 +159,20 @@ struct aee_oops {
 };
 
 struct aee_kernel_api {
-	void (*kernel_reportAPI)(const AE_DEFECT_ATTR attr, const int db_opt, const char *module,
-		     const char *msg);
-	void (*md_exception)(const char *assert_type, const int *log, int log_size, const int *phy,
-		     int phy_size, const char *detail, const int db_opt);
-	void (*md32_exception)(const char *assert_type, const int *log, int log_size,
-		     const int *phy, int phy_size, const char *detail, const int db_opt);
-	void (*combo_exception)(const char *assert_type, const int *log, int log_size,
-		     const int *phy, int phy_size, const char *detail, const int db_opt);
+	void (*kernel_reportAPI)(const enum AE_DEFECT_ATTR attr,
+			const int db_opt, const char *module, const char *msg);
+	void (*md_exception)(const char *assert_type, const int *log,
+			int log_size, const int *phy, int phy_size,
+			const char *detail, const int db_opt);
+	void (*md32_exception)(const char *assert_type, const int *log,
+			int log_size, const int *phy, int phy_size,
+			const char *detail, const int db_opt);
+	void (*combo_exception)(const char *assert_type, const int *log,
+			int log_size, const int *phy, int phy_size,
+			const char *detail, const int db_opt);
+	void (*scp_exception)(const char *assert_type, const int *log,
+			int log_size, const int *phy, int phy_size,
+			const char *detail, const int db_opt);
 };
 
 void aee_sram_printk(const char *fmt, ...);
@@ -147,10 +180,12 @@ int aee_nested_printf(const char *fmt, ...);
 void aee_wdt_irq_info(void);
 void aee_wdt_fiq_info(void *arg, void *regs, void *svc_sp);
 void aee_trigger_kdb(void);
-struct aee_oops *aee_oops_create(AE_DEFECT_ATTR attr, AE_EXP_CLASS clazz, const char *module);
+struct aee_oops *aee_oops_create(enum AE_DEFECT_ATTR attr,
+		enum AE_EXP_CLASS clazz, const char *module);
 void aee_oops_set_backtrace(struct aee_oops *oops, const char *backtrace);
 void aee_oops_set_process_path(struct aee_oops *oops, const char *process_path);
 void aee_oops_free(struct aee_oops *oops);
+#define AEE_MTK_CPU_NUMS	NR_CPUS
 /* powerkey press,modules use bits */
 #define AE_WDT_Powerkey_DEVICE_PATH		"/dev/kick_powerkey"
 #define WDT_SETBY_DEFAULT		(0)
@@ -203,42 +238,54 @@ void aee_oops_free(struct aee_oops *oops);
 #define DB_OPT_AARCH64			(1<<31)
 
 #define aee_kernel_exception(module, msg...)	\
-	aee_kernel_exception_api(__FILE__, __LINE__, DB_OPT_DEFAULT, module, msg)
+	aee_kernel_exception_api(__FILE__, __LINE__, DB_OPT_DEFAULT,	\
+			module, msg)
 #define aee_kernel_warning(module, msg...)	\
-	aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, module, msg)
+	aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT,	\
+			module, msg)
 #define aee_kernel_reminding(module, msg...)	\
-	aee_kernel_reminding_api(__FILE__, __LINE__, DB_OPT_DEFAULT, module, msg)
+	aee_kernel_reminding_api(__FILE__, __LINE__, DB_OPT_DEFAULT,	\
+			module, msg)
 #define aee_kernel_dal_show(msg)	\
 	aee_kernel_dal_api(__FILE__, __LINE__, msg)
 
 #define aed_md_exception(log, log_size, phy, phy_size, detail)	\
-	aed_md_exception_api(log, log_size, phy, phy_size, detail, DB_OPT_DEFAULT)
+	aed_md_exception_api(log, log_size, phy, phy_size, detail,	\
+			DB_OPT_DEFAULT)
 #define aed_md32_exception(log, log_size, phy, phy_size, detail)	\
-	aed_md32_exception_api(log, log_size, phy, phy_size, detail, DB_OPT_DEFAULT)
+	aed_md32_exception_api(log, log_size, phy, phy_size, detail,	\
+			DB_OPT_DEFAULT)
+#define aed_scp_exception(log, log_size, phy, phy_size, detail)	\
+	aed_scp_exception_api(log, log_size, phy, phy_size, detail,	\
+			DB_OPT_DEFAULT)
 #define aed_combo_exception(log, log_size, phy, phy_size, detail)	\
-	aed_combo_exception_api(log, log_size, phy, phy_size, detail, DB_OPT_DEFAULT)
+	aed_combo_exception_api(log, log_size, phy, phy_size, detail,	\
+			DB_OPT_DEFAULT)
 
-void aee_kernel_exception_api(const char *file, const int line, const int db_opt,
-			      const char *module, const char *msg, ...);
-void aee_kernel_warning_api(const char *file, const int line, const int db_opt, const char *module,
-			    const char *msg, ...);
-void aee_kernel_reminding_api(const char *file, const int line, const int db_opt,
-			      const char *module, const char *msg, ...);
+void aee_kernel_exception_api(const char *file, const int line,
+		const int db_opt, const char *module, const char *msg, ...);
+void aee_kernel_warning_api(const char *file, const int line, const int db_opt,
+		const char *module, const char *msg, ...);
+void aee_kernel_reminding_api(const char *file, const int line,
+		const int db_opt, const char *module, const char *msg, ...);
 void aee_kernel_dal_api(const char *file, const int line, const char *msg);
 
-void aed_md_exception_api(const int *log, int log_size, const int *phy, int phy_size,
-			  const char *detail, const int db_opt);
-void aed_md32_exception_api(const int *log, int log_size, const int *phy, int phy_size,
-			    const char *detail, const int db_opt);
-void aed_combo_exception_api(const int *log, int log_size, const int *phy, int phy_size,
-			     const char *detail, const int db_opt);
+void aed_md_exception_api(const int *log, int log_size, const int *phy,
+			int phy_size, const char *detail, const int db_opt);
+void aed_md32_exception_api(const int *log, int log_size, const int *phy,
+			int phy_size, const char *detail, const int db_opt);
+void aed_scp_exception_api(const int *log, int log_size, const int *phy,
+			int phy_size, const char *detail, const int db_opt);
+void aed_combo_exception_api(const int *log, int log_size, const int *phy,
+			int phy_size, const char *detail, const int db_opt);
 
 void aee_kernel_wdt_kick_Powkey_api(const char *module, int msg);
 int aee_kernel_wdt_kick_api(int kinterval);
 void aee_powerkey_notify_press(unsigned long pressed);
 int aee_kernel_Powerkey_is_press(void);
 
-void ipanic_recursive_ke(struct pt_regs *regs, struct pt_regs *excp_regs, int cpu);
+void ipanic_recursive_ke(struct pt_regs *regs, struct pt_regs *excp_regs,
+			int cpu);
 
 /* QHQ RT Monitor */
 void aee_kernel_RT_Monitor_api(int lParam);
@@ -246,9 +293,14 @@ void aee_kernel_RT_Monitor_api(int lParam);
 void mt_fiq_printf(const char *fmt, ...);
 void aee_register_api(struct aee_kernel_api *aee_api);
 int aee_in_nested_panic(void);
+void aee_save_excp_regs(struct pt_regs *regs);
 void aee_stop_nested_panic(struct pt_regs *regs);
 void aee_wdt_dump_info(void);
 void aee_wdt_printf(const char *fmt, ...);
+
+void aee_fiq_ipi_cpu_stop(void *arg, void *regs, void *svc_sp);
+
+extern void rtc_mark_wdt_aee(void) __attribute__((weak));
 
 #if defined(CONFIG_MTK_AEE_DRAM_CONSOLE)
 void aee_dram_console_reserve_memory(void);
@@ -258,5 +310,12 @@ static inline void aee_dram_console_reserve_memory(void)
 }
 #endif
 
-extern void *aee_excp_regs;	/* To store latest exception, in case of stack corruption */
+#ifdef CONFIG_MACH_MT6763
+extern void msdc_hang_detect_dump(u32 id);
+extern void mtk_wdt_mode_config(bool dual_mode_en,
+		bool irq, bool ext_en, bool ext_pol, bool wdt_en);
+#endif
+
+/* To store latest exception, in case of stack corruption */
+extern void *aee_excp_regs;
 #endif				/* __AEE_H__ */

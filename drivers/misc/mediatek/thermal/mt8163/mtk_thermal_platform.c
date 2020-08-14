@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2018 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -11,7 +11,7 @@
  * GNU General Public License for more details.
  */
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/dmi.h>
@@ -30,7 +30,6 @@
 #include <linux/bug.h>
 #include <linux/workqueue.h>
 #include <mt-plat/mtk_thermal_platform.h>
-#include "mtk_thermal_typedefs.h"
 
 #include <mt-plat/mtk_mdm_monitor.h>
 #include <mach/mt_thermal.h>
@@ -46,7 +45,9 @@
 /* Number of CPU CORE */
 #define NUMBER_OF_CORE (8)
 
-/* This function pointer is for GPU LKM to register a function to get GPU loading. */
+/* This function pointer is for GPU LKM
+ * to register a function to get GPU loading.
+ */
 unsigned long (*mtk_thermal_get_gpu_loading_fp)(void) = NULL;
 EXPORT_SYMBOL(mtk_thermal_get_gpu_loading_fp);
 
@@ -103,17 +104,20 @@ static int get_sys_battery_info(char *dev)
 	long nRet;
 	int eCheck;
 	int nReadSize;
-	char buf[64];
+	char buf[64] = { 0 };
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
 	fd = sys_open(dev, O_RDONLY, 0);
 	if (fd < 0) {
-		THRML_LOG("[get_sys_battery_info] open fail dev:%s fd:%d\n", dev, fd);
+		THRML_LOG(
+			"[get_sys_battery_info] open fail dev:%s fd:%d\n",
+			dev, fd);
 		set_fs(oldfs);
 		return fd;
 	}
 
+	memset(buf, 0, sizeof(buf));
 	nReadSize = sys_read(fd, buf, sizeof(buf) - 1);
 	THRML_LOG("[get_sys_battery_info] nReadSize:%d\n", nReadSize);
 	eCheck = kstrtol(buf, 10, &nRet);
@@ -137,7 +141,7 @@ static int get_sys_wifi_throughput(char *dev, int nRetryNr)
 	int eCheck;
 	int nReadSize;
 	int nRetryCnt = 0;
-	char buf[64];
+	char buf[64] = { 0 };
 
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
@@ -146,7 +150,9 @@ static int get_sys_wifi_throughput(char *dev, int nRetryNr)
 	do {
 		fd = sys_open(dev, O_RDONLY, 0);
 		if (nRetryCnt > nRetryNr) {
-			THRML_LOG("[get_sys_wifi_throughput] open fail dev:%s fd:%d\n", dev, fd);
+			THRML_LOG(
+				"[get_sys_wifi_throughput] open fail dev:%s fd:%d\n",
+				dev, fd);
 			set_fs(oldfs);
 			return fd;
 		}
@@ -154,9 +160,11 @@ static int get_sys_wifi_throughput(char *dev, int nRetryNr)
 	} while (fd < 0);
 
 	if (nRetryCnt > 1)
-		THRML_LOG("[get_sys_wifi_throughput] open fail nRetryCnt:%d\n", nRetryCnt);
+		THRML_LOG(
+			"[get_sys_wifi_throughput] open fail nRetryCnt:%d\n",
+			nRetryCnt);
 
-
+	memset(buf, 0, sizeof(buf));
 	nReadSize = sys_read(fd, buf, sizeof(buf) - 1);
 	THRML_LOG("[get_sys_wifi_throughput] nReadSize:%d\n", nReadSize);
 	eCheck = kstrtol(buf, 10, &nRet);
@@ -198,7 +206,8 @@ struct gpu_index_st {
 };
 
 #define NO_CPU_CORES (8)
-static struct cpu_index_st cpu_index_list[NO_CPU_CORES];	/* /< 4-Core is maximum */
+/* /< 4-Core is maximum */
+static struct cpu_index_st cpu_index_list[NO_CPU_CORES];
 static int cpufreqs[NO_CPU_CORES];
 static int cpuloadings[NO_CPU_CORES];
 
@@ -295,8 +304,10 @@ static int get_sys_cpu_usage_info_ex(void)
 		    kcpustat_cpu(nCoreIndex).cpustat[CPUTIME_NICE];
 		cpu_index_list[nCoreIndex].s[CPU_USAGE_CURRENT_FIELD] =
 		    kcpustat_cpu(nCoreIndex).cpustat[CPUTIME_SYSTEM];
-		cpu_index_list[nCoreIndex].i[CPU_USAGE_CURRENT_FIELD] = get_idle_time(nCoreIndex);
-		cpu_index_list[nCoreIndex].w[CPU_USAGE_CURRENT_FIELD] = get_iowait_time(nCoreIndex);
+		cpu_index_list[nCoreIndex].i[CPU_USAGE_CURRENT_FIELD] =
+			get_idle_time(nCoreIndex);
+		cpu_index_list[nCoreIndex].w[CPU_USAGE_CURRENT_FIELD] =
+			get_iowait_time(nCoreIndex);
 		cpu_index_list[nCoreIndex].q[CPU_USAGE_CURRENT_FIELD] =
 		    kcpustat_cpu(nCoreIndex).cpustat[CPUTIME_IRQ];
 		cpu_index_list[nCoreIndex].sq[CPU_USAGE_CURRENT_FIELD] =
@@ -313,12 +324,12 @@ static int get_sys_cpu_usage_info_ex(void)
 		    cpu_index_list[nCoreIndex].s[CPU_USAGE_CURRENT_FIELD] -
 		    cpu_index_list[nCoreIndex].s[CPU_USAGE_SAVE_FIELD];
 		cpu_index_list[nCoreIndex].i[CPU_USAGE_FRAME_FIELD] =
-		    TRIMz_ex(cpu_index_list[nCoreIndex].tz,
-			     (cpu_index_list[nCoreIndex].i[CPU_USAGE_CURRENT_FIELD] -
-			      cpu_index_list[nCoreIndex].i[CPU_USAGE_SAVE_FIELD]));
+			TRIMz_ex(cpu_index_list[nCoreIndex].tz,
+			(cpu_index_list[nCoreIndex].i[CPU_USAGE_CURRENT_FIELD] -
+			cpu_index_list[nCoreIndex].i[CPU_USAGE_SAVE_FIELD]));
 		cpu_index_list[nCoreIndex].w[CPU_USAGE_FRAME_FIELD] =
-		    cpu_index_list[nCoreIndex].w[CPU_USAGE_CURRENT_FIELD] -
-		    cpu_index_list[nCoreIndex].w[CPU_USAGE_SAVE_FIELD];
+			cpu_index_list[nCoreIndex].w[CPU_USAGE_CURRENT_FIELD] -
+			cpu_index_list[nCoreIndex].w[CPU_USAGE_SAVE_FIELD];
 		cpu_index_list[nCoreIndex].q[CPU_USAGE_FRAME_FIELD] =
 		    cpu_index_list[nCoreIndex].q[CPU_USAGE_CURRENT_FIELD] -
 		    cpu_index_list[nCoreIndex].q[CPU_USAGE_SAVE_FIELD];
@@ -339,9 +350,10 @@ static int get_sys_cpu_usage_info_ex(void)
 		/* CPU Usage */
 		if (cpu_index_list[nCoreIndex].tot_frme > 0) {
 			cpuloadings[nCoreIndex] =
-			    (100 -
-			     (((int)cpu_index_list[nCoreIndex].i[CPU_USAGE_FRAME_FIELD] * 100) /
-			      (int)cpu_index_list[nCoreIndex].tot_frme));
+				(100 -
+				(((int)cpu_index_list[nCoreIndex].i[
+				CPU_USAGE_FRAME_FIELD] * 100) /
+				(int)cpu_index_list[nCoreIndex].tot_frme));
 		} else {
 			/* CPU unplug case */
 			cpuloadings[nCoreIndex] = 0;
@@ -362,19 +374,22 @@ static int get_sys_cpu_usage_info_ex(void)
 		cpu_index_list[nCoreIndex].sq[CPU_USAGE_SAVE_FIELD] =
 		    cpu_index_list[nCoreIndex].sq[CPU_USAGE_CURRENT_FIELD];
 
-		THRML_LOG("CPU%d Frame:%d USAGE:%d\n", nCoreIndex,
-			  (int)cpu_index_list[nCoreIndex].tot_frme, cpuloadings[nCoreIndex]);
+		THRML_LOG(
+			"CPU%d Frame:%d USAGE:%d\n", nCoreIndex,
+			(int)cpu_index_list[nCoreIndex].tot_frme,
+			cpuloadings[nCoreIndex]);
 
 		for (i = 0; i < 3; i++) {
-			THRML_LOG("Index %d [u:%d] [n:%d] [s:%d] [i:%d] [w:%d] [q:%d] [sq:%d]\n",
-				  i,
-				  (int)cpu_index_list[nCoreIndex].u[i],
-				  (int)cpu_index_list[nCoreIndex].n[i],
-				  (int)cpu_index_list[nCoreIndex].s[i],
-				  (int)cpu_index_list[nCoreIndex].i[i],
-				  (int)cpu_index_list[nCoreIndex].w[i],
-				  (int)cpu_index_list[nCoreIndex].q[i],
-				  (int)cpu_index_list[nCoreIndex].sq[i]);
+			THRML_LOG(
+				"Index %d [u:%d] [n:%d] [s:%d] [i:%d] [w:%d] [q:%d] [sq:%d]\n",
+				i,
+				(int)cpu_index_list[nCoreIndex].u[i],
+				(int)cpu_index_list[nCoreIndex].n[i],
+				(int)cpu_index_list[nCoreIndex].s[i],
+				(int)cpu_index_list[nCoreIndex].i[i],
+				(int)cpu_index_list[nCoreIndex].w[i],
+				(int)cpu_index_list[nCoreIndex].q[i],
+				(int)cpu_index_list[nCoreIndex].sq[i]);
 
 		}
 	}
@@ -399,13 +414,17 @@ static int get_sys_all_cpu_freq_info(void)
 
 	cpu_total_dmips /= 1000;
 	/* TODO: think a way to easy start and stop, and start for only once */
-	if (1 == check_dmips_limit) {
+	if (check_dmips_limit == 1) {
 		if (cpu_total_dmips > mtktscpu_limited_dmips) {
-			THRML_ERROR_LOG("cpu %d over limit %d\n", cpu_total_dmips,
-					mtktscpu_limited_dmips);
+			THRML_ERROR_LOG(
+				"cpu %d over limit %d\n",
+				cpu_total_dmips,
+				mtktscpu_limited_dmips);
 			if (dmips_limit_warned == false) {
-				aee_kernel_warning("thermal", "cpu %d over limit %d\n",
-						   cpu_total_dmips, mtktscpu_limited_dmips);
+				aee_kernel_warning(
+					"thermal", "cpu %d over limit %d\n",
+					cpu_total_dmips,
+					mtktscpu_limited_dmips);
 				dmips_limit_warned = true;
 			}
 		}
@@ -421,8 +440,8 @@ static int mtk_thermal_validation_rd(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t mtk_thermal_validation_wr(struct file *file, const char __user *buffer,
-					 size_t count, loff_t *data)
+static ssize_t mtk_thermal_validation_wr(struct file *file,
+	const char __user *buffer, size_t count, loff_t *data)
 {
 	char desc[32];
 	int check_switch;
@@ -434,10 +453,10 @@ static ssize_t mtk_thermal_validation_wr(struct file *file, const char __user *b
 	desc[len] = '\0';
 
 	if (kstrtoint(desc, 10, &check_switch) == 0) {
-		if (1 == check_switch) {
+		if (check_switch == 1) {
 			dmips_limit_warned = false;
 			check_dmips_limit = check_switch;
-		} else if (0 == check_switch) {
+		} else if (check_switch == 0) {
 			check_dmips_limit = check_switch;
 		}
 		return count;
@@ -468,11 +487,11 @@ static int __init mtk_thermal_platform_init(void)
 	struct proc_dir_entry *entry;
 
 	entry =
-	    proc_create("driver/tm_validation", S_IRUGO | S_IWUSR, NULL,
+	    proc_create("driver/tm_validation", 0644, NULL,
 			&mtk_thermal_validation_fops);
 	if (!entry) {
-		THRML_ERROR_LOG
-		    ("[mtk_thermal_platform_init] Can not create /proc/driver/tm_validation\n");
+		THRML_ERROR_LOG(
+			"[mtk_thermal_platform_init] Can not create /proc/driver/tm_validation\n");
 	}
 
 	return err;
@@ -545,7 +564,8 @@ int mtk_thermal_get_gpu_info(int *nocores, int **gpufreq, int **gpuloading)
 }
 EXPORT_SYMBOL(mtk_thermal_get_gpu_info);
 
-int mtk_thermal_get_batt_info(int *batt_voltage, int *batt_current, int *batt_temp)
+int mtk_thermal_get_batt_info(int *batt_voltage,
+	int *batt_current, int *batt_temp)
 {
 	/* ****************** */
 	/* Battery */
@@ -553,9 +573,8 @@ int mtk_thermal_get_batt_info(int *batt_voltage, int *batt_current, int *batt_te
 
 	/* Read Battery Information */
 	if (batt_current) {
-		*batt_current =
-		    get_sys_battery_info
-		    ("/sys/devices/platform/battery/FG_Battery_CurrentConsumption");
+		*batt_current = get_sys_battery_info(
+			"/sys/devices/platform/battery/FG_Battery_CurrentConsumption");
 		/* the return value is 0.1mA */
 		if (*batt_current % 10 < 5)
 			*batt_current /= 10;
@@ -564,16 +583,18 @@ int mtk_thermal_get_batt_info(int *batt_voltage, int *batt_current, int *batt_te
 
 
 #if defined(CONFIG_MTK_SMART_BATTERY)
-		if (KAL_TRUE == gFG_Is_Charging)
+		if (true == gFG_Is_Charging)
 			*batt_current *= -1;
 #endif
 	}
 
 	if (batt_voltage)
-		*batt_voltage = get_sys_battery_info("/sys/class/power_supply/battery/batt_vol");
+		*batt_voltage = get_sys_battery_info(
+			"/sys/class/power_supply/battery/batt_vol");
 
 	if (batt_temp)
-		*batt_temp = get_sys_battery_info("/sys/class/power_supply/battery/batt_temp");
+		*batt_temp = get_sys_battery_info(
+			"/sys/class/power_supply/battery/batt_temp");
 
 	return 0;
 }
@@ -585,7 +606,7 @@ static int extra_attr_values[NO_EXTRA_THERMAL_ATTR] = { 0 };
 static char *extra_attr_units[NO_EXTRA_THERMAL_ATTR] = { 0 };
 
 int mtk_thermal_get_extra_info(int *no_extra_attr,
-			       char ***attr_names, int **attr_values, char ***attr_units)
+	char ***attr_names, int **attr_values, char ***attr_units)
 {
 
 	int size, i = 0;
@@ -601,7 +622,9 @@ int mtk_thermal_get_extra_info(int *no_extra_attr,
 		struct md_info *p_info;
 
 		mtk_mdm_get_md_info(&p_info, &size);
-		THRML_LOG("[mtk_thermal_get_gpu_info] mtk_mdm_get_md_info size %d\n", size);
+		THRML_LOG(
+			"[mtk_thermal_get_gpu_info] mtk_mdm_get_md_info size %d\n",
+			size);
 		if (size <= NO_EXTRA_THERMAL_ATTR - 1) {
 			for (i = 0; i < size; i++) {
 				extra_attr_names[i] = p_info[i].attribute;
@@ -616,7 +639,9 @@ int mtk_thermal_get_extra_info(int *no_extra_attr,
 	/* ****************** */
 	/* Get Wi-Fi Tx throughput */
 	extra_attr_names[i] = "WiFi_TP";
-	extra_attr_values[i] = get_sys_wifi_throughput("/proc/driver/thermal/wifi_tx_thro", 3);
+	extra_attr_values[i] =
+		get_sys_wifi_throughput("/proc/driver/thermal/wifi_tx_thro",
+		3);
 	extra_attr_units[i] = "Kbps";
 
 	if (attr_names)
@@ -649,7 +674,8 @@ unsigned int mtk_thermal_set_user_scenarios(unsigned int mask)
 {
 	if ((mask & MTK_THERMAL_SCEN_CALL))	{
 		/* only one scen is handled now... */
-		set_taklking_flag(true);	/* make mtk_ts_cpu.c aware of call scenario */
+		/* make mtk_ts_cpu.c aware of call scenario */
+		set_taklking_flag(true);
 		_thermal_scen |= (unsigned int)MTK_THERMAL_SCEN_CALL;
 	}
 	return _thermal_scen;
@@ -660,7 +686,8 @@ unsigned int mtk_thermal_clear_user_scenarios(unsigned int mask)
 {
 	if ((mask & MTK_THERMAL_SCEN_CALL))	{
 		/* only one scen is handled now... */
-		set_taklking_flag(false);	/* make mtk_ts_cpu.c aware of call scenario */
+		/* make mtk_ts_cpu.c aware of call scenario */
+		set_taklking_flag(false);
 		_thermal_scen &= ~((unsigned int)MTK_THERMAL_SCEN_CALL);
 	}
 	return _thermal_scen;

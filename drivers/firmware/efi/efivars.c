@@ -39,7 +39,7 @@
  *   fix locking per Peter Chubb's findings
  *
  *  25 Mar 2002 - Matt Domsch <Matt_Domsch@dell.com>
- *   move uuid_unparse() to include/asm-ia64/efi.h:efi_guid_unparse()
+ *   move uuid_unparse() to include/asm-ia64/efi.h:efi_guid_to_str()
  *
  *  12 Feb 2002 - Matt Domsch <Matt_Domsch@dell.com>
  *   use list_for_each_safe when deleting vars.
@@ -128,7 +128,7 @@ efivar_guid_read(struct efivar_entry *entry, char *buf)
 	if (!entry || !buf)
 		return 0;
 
-	efi_guid_unparse(&var->VendorGuid, str);
+	efi_guid_to_str(&var->VendorGuid, str);
 	str += strlen(str);
 	str += sprintf(str, "\n");
 
@@ -231,7 +231,7 @@ sanity_check(struct efi_variable *var, efi_char16_t *name, efi_guid_t vendor,
 
 static inline bool is_compat(void)
 {
-	if (IS_ENABLED(CONFIG_COMPAT) && is_compat_task())
+	if (IS_ENABLED(CONFIG_COMPAT) && in_compat_syscall())
 		return true;
 
 	return false;
@@ -386,7 +386,7 @@ static const struct sysfs_ops efivar_attr_ops = {
 
 static void efivar_release(struct kobject *kobj)
 {
-	struct efivar_entry *var = container_of(kobj, struct efivar_entry, kobj);
+	struct efivar_entry *var = to_efivar_entry(kobj);
 	kfree(var);
 }
 
@@ -510,7 +510,8 @@ static ssize_t efivar_delete(struct file *filp, struct kobject *kobj,
 		vendor = del_var->VendorGuid;
 	}
 
-	efivar_entry_iter_begin();
+	if (efivar_entry_iter_begin())
+		return -EINTR;
 	entry = efivar_entry_find(name, vendor, &efivar_sysfs_list, true);
 	if (!entry)
 		err = -EINVAL;
@@ -562,9 +563,8 @@ efivar_create_sysfs_entry(struct efivar_entry *new_var)
 
 	/* This is ugly, but necessary to separate one vendor's
 	   private variables from another's.         */
-
 	short_name[utf8_name_size] = '-';
-	efi_guid_unparse(&new_var->var.VendorGuid,
+	efi_guid_to_str(&new_var->var.VendorGuid,
 			 short_name + utf8_name_size + 1);
 
 	new_var->kobj.kset = efivars_kset;
@@ -576,7 +576,10 @@ efivar_create_sysfs_entry(struct efivar_entry *new_var)
 		return ret;
 
 	kobject_uevent(&new_var->kobj, KOBJ_ADD);
-	efivar_entry_add(new_var, &efivar_sysfs_list);
+	if (efivar_entry_add(new_var, &efivar_sysfs_list)) {
+		efivar_unregister(new_var);
+		return -EINTR;
+	}
 
 	return 0;
 }
@@ -662,7 +665,7 @@ static void efivar_update_sysfs_entries(struct work_struct *work)
 			return;
 
 		err = efivar_init(efivar_update_sysfs_entry, entry,
-				  true, false, &efivar_sysfs_list);
+				  false, &efivar_sysfs_list);
 		if (!err)
 			break;
 
@@ -691,7 +694,10 @@ static int efivars_sysfs_callback(efi_char16_t *name, efi_guid_t vendor,
 
 static int efivar_sysfs_destroy(struct efivar_entry *entry, void *data)
 {
-	efivar_entry_remove(entry);
+	int err = efivar_entry_remove(entry);
+
+	if (err)
+		return err;
 	efivar_unregister(entry);
 	return 0;
 }
@@ -699,7 +705,14 @@ static int efivar_sysfs_destroy(struct efivar_entry *entry, void *data)
 static void efivars_sysfs_exit(void)
 {
 	/* Remove all entries and destroy */
-	__efivar_entry_iter(efivar_sysfs_destroy, &efivar_sysfs_list, NULL, NULL);
+	int err;
+
+	err = __efivar_entry_iter(efivar_sysfs_destroy, &efivar_sysfs_list,
+				  NULL, NULL);
+	if (err) {
+		pr_err("efivars: Failed to destroy sysfs entries\n");
+		return;
+	}
 
 	if (efivars_new_var)
 		sysfs_remove_bin_file(&efivars_kset->kobj, efivars_new_var);
@@ -731,8 +744,7 @@ int efivars_sysfs_init(void)
 		return -ENOMEM;
 	}
 
-	efivar_init(efivars_sysfs_callback, NULL, false,
-		    true, &efivar_sysfs_list);
+	efivar_init(efivars_sysfs_callback, NULL, true, &efivar_sysfs_list);
 
 	error = create_efivars_bin_attributes();
 	if (error) {

@@ -18,6 +18,7 @@
 
 #include <linux/kernel.h>
 
+
 #define IDME_OF_BOARD_ID	"/idme/board_id"
 #define IDME_OF_PRODUCT_ID2	"/idme/productid2"
 #define BOOT_MODE_IDME_PATH	"/idme/bootmode"
@@ -26,6 +27,9 @@
 
 #define IDME_OF_SENSORCAL	"/idme/sensorcal"
 
+#ifdef CONFIG_PWM_MUTEBUTTON
+#define IDME_OF_LEDPARAMS	"/idme/ledparams"
+#endif
 
 #define PRODUCT_FEATURES_DIR "product_features"
 #define PRODUCT_FEATURE_NAME_GPS "gps"
@@ -39,6 +43,9 @@
 #define PRODUCT_FEATURE_STRING_SPACE " "
 
 #define SENSOR_CAL_SIZE 96
+
+#define LEDCAL_MAX_SCALING 254
+
 char gbuffer[SENSOR_CAL_SIZE];
 
 static int idme_proc_show(struct seq_file *seq, void *v)
@@ -67,8 +74,8 @@ static const struct file_operations idme_fops = {
 
 bool board_has_wan(void)
 {
-	struct device_node *ap;
-	int len;
+	struct device_node *ap = NULL;
+	int len = 0;
 
 	ap = of_find_node_by_path(IDME_OF_BOARD_ID);
 	if (ap) {
@@ -247,8 +254,8 @@ EXPORT_SYMBOL(idme_get_battery_info);
 
 unsigned int idme_get_bootmode(void)
 {
-	struct device_node *idme_node;
-	int len;
+	struct device_node *idme_node = NULL;
+	int len = 0;
 
 	idme_node = of_find_node_by_path(BOOT_MODE_IDME_PATH);
 	if (idme_node) {
@@ -262,6 +269,47 @@ unsigned int idme_get_bootmode(void)
 }
 EXPORT_SYMBOL(idme_get_bootmode);
 
+#ifdef CONFIG_ALS_FORMULA_CHANGE
+char idme_get_productid2(void){
+    struct device_node *ap = NULL;
+    char *productid2 = NULL;
+
+    ap = of_find_node_by_path(IDME_OF_PRODUCT_ID2);
+    if (ap){
+        productid2 = (char *)of_get_property(ap, "value", NULL);
+        pr_info("productid2= %s\n", productid2);
+    } else
+        pr_err("of_find_node_by_path failed\n");
+
+    return *productid2;
+}
+EXPORT_SYMBOL(idme_get_productid2);
+#endif
+
+#ifdef CONFIG_MTK_JSA1214_SWITCH_RANGE_AUTO
+char idme_get_alscal_cap_color(void){
+    struct device_node *ap = NULL;
+    char *alscal = NULL;
+    char *substr = ",capColor";
+    char *alscal_capcolor;
+    const char default_black_color = '0';
+
+    ap = of_find_node_by_path(IDME_OF_ALSCAL);
+    if (ap) {
+        alscal = (char *)of_get_property(ap, "value", NULL);
+        pr_info("alscal= %s\n", alscal);
+    } else {
+        pr_err("of_find_node_by_path failed\n");
+    }
+    alscal_capcolor = strstr(alscal,substr);
+    if (alscal_capcolor == NULL)
+        return default_black_color;
+    else
+        return alscal_capcolor[10];
+}
+EXPORT_SYMBOL(idme_get_alscal_cap_color);
+#endif
+
 unsigned int idme_get_alscal_value(void)
 {
     struct device_node *ap = NULL;
@@ -269,7 +317,7 @@ unsigned int idme_get_alscal_value(void)
     s8 *retdata=NULL;
     unsigned int alscal_value = 0;
 
-    printk("idme_get_alscal_value enter\n");   
+    printk("idme_get_alscal_value enter\n");
     ap = of_find_node_by_path(IDME_OF_ALSCAL);
     if (ap)
     {
@@ -300,6 +348,124 @@ unsigned int idme_get_alscal_value(void)
     return alscal_value;
 }
 EXPORT_SYMBOL(idme_get_alscal_value);
+
+#ifdef CONFIG_PWM_MUTEBUTTON
+bool idme_get_ledparams_value(void)
+{
+    struct device_node *ap;
+    char *ledcal;
+
+    ap = of_find_node_by_path(IDME_OF_LEDPARAMS);
+    if (ap)
+    {
+        ledcal = (char *)of_get_property(ap, "value", NULL);
+        pr_info("ledcal: %s\n", ledcal);
+    }
+    else
+    {
+        pr_err("of_find_node_by_path failed\n");
+        return false;
+    }
+
+    pr_debug("ledcalibparams: %c\n", ledcal[15]);
+
+    return ledcal[15] == '1';
+
+}
+EXPORT_SYMBOL(idme_get_ledparams_value);
+
+unsigned int idme_get_ledcal_value(void)
+{
+    struct device_node *ap;
+    char *ledcal;
+    char ledpwmscaling[8];
+    s8 *retdata;
+    unsigned int ledcal_value = 0;
+
+    ap = of_find_node_by_path(IDME_OF_LEDPARAMS);
+    if (ap)
+    {
+        ledcal = (char *)of_get_property(ap, "value", NULL);
+        pr_info("ledcal: %s\n", ledcal);
+    }
+    else
+    {
+        pr_err("of_find_node_by_path failed\n");
+        return 0;
+    }
+
+    strlcpy(ledpwmscaling, ledcal+19, sizeof(ledpwmscaling));
+    pr_debug("ledpwmscaling = %s\n", ledpwmscaling);
+
+    retdata = hexToBytes(ledpwmscaling);
+
+    if(!retdata)
+    {
+        pr_err("retdata %02x, %02x, %02x, %02x\n",retdata[0], retdata[1], retdata[2], retdata[3]);
+    }
+
+    /* retdata[1]: RR,  retdata[2]: GG, retdata[3]: BB*/
+    pr_debug("retdata(0xRRGGBB) %02x, %02x, %02x, %02x\n",retdata[0], retdata[1], retdata[2], retdata[3]);
+    ledcal_value |= (unsigned int)(retdata[1] & 0x000000FF);
+
+    /**
+     * On abc123 the programmed calibrated scaling factor and brightness are assumed to be
+     * directly proportional but since the hardware is configured to decrease brightness if
+     * the pwm duty_cycle increases, we need to invert the scaling factory around its mean of 127
+     */
+#ifdef CONFIG_PWM_INVERTED
+    if (ledcal_value > LEDCAL_MAX_SCALING)
+        ledcal_value = LEDCAL_MAX_SCALING;
+
+    ledcal_value =  LEDCAL_MAX_SCALING - ledcal_value;
+#endif
+
+    pr_debug("ledcal_value %d\n", ledcal_value);
+
+    return ledcal_value;
+}
+EXPORT_SYMBOL(idme_get_ledcal_value);
+
+unsigned int idme_get_ledpwmmaxlimit_value(void)
+{
+    struct device_node *ap;
+    char *ledcal;
+    char ledpwmmaxlimit[8];
+    s8 *retdata;
+    unsigned int ledpwmmaxlimit_value = 0;
+
+    ap = of_find_node_by_path(IDME_OF_LEDPARAMS);
+    if (ap)
+    {
+        ledcal = (char *)of_get_property(ap, "value", NULL);
+        pr_info("ledcal: %s\n", ledcal);
+    }
+    else
+    {
+        pr_err("of_find_node_by_path failed\n");
+        return 0;
+    }
+
+    strlcpy(ledpwmmaxlimit, ledcal+30, sizeof(ledpwmmaxlimit));
+    pr_debug("ledpwmmaxlimit = %s\n", ledpwmmaxlimit);
+
+    retdata = hexToBytes(ledpwmmaxlimit);
+
+    if(!retdata)
+    {
+        pr_err("retdata %02x, %02x, %02x, %02x\n",retdata[0], retdata[1], retdata[2], retdata[3]);
+        return 0;
+    }
+
+    /* retdata[1]: RR,  retdata[2]: GG, retdata[3]: BB*/
+    pr_debug("retdata(0xRRGGBB) %02x, %02x, %02x, %02x\n",retdata[0], retdata[1], retdata[2], retdata[3]);
+    ledpwmmaxlimit_value |= (unsigned int)(retdata[1] & 0x000000FF);
+    pr_debug("ledpwmmaxlimit_value %d\n", ledpwmmaxlimit_value);
+
+    return ledpwmmaxlimit_value;
+}
+EXPORT_SYMBOL(idme_get_ledpwmmaxlimit_value);
+#endif
 
 u64 idme_get_dev_flags_value(void)
 {

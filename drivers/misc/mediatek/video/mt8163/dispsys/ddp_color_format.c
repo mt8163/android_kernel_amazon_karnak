@@ -1,10 +1,23 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #define LOG_TAG "color_format"
 
-#include "ddp_log.h"
 #include "DpDataType.h"
+#include "ddp_log.h"
 
 enum FORMAT_UNIQUE {
-	FORMAT_UNIQUE_BGR565 = 0x00,	/* basic format */
+	FORMAT_UNIQUE_BGR565 = 0x00, /* basic format */
 	FORMAT_UNIQUE_RGB888 = 0x01,
 	FORMAT_UNIQUE_RGBA8888 = 0x02,
 	FORMAT_UNIQUE_ARGB8888 = 0x03,
@@ -16,37 +29,38 @@ enum FORMAT_UNIQUE {
 	FORMAT_UNIQUE_UNKNOWN = 0x100,
 };
 
-int fmt_bpp(DpColorFormat fmt)
+int fmt_bpp(enum DP_COLOR_ENUM fmt)
 {
 	return DP_COLOR_BITS_PER_PIXEL(fmt) / 4;
 }
 
-int fmt_swap(DpColorFormat fmt)
+int fmt_swap(enum DP_COLOR_ENUM fmt)
 {
 	return DP_COLOR_GET_SWAP_ENABLE(fmt);
 }
 
-int fmt_color_space(DpColorFormat fmt)
+int fmt_color_space(enum DP_COLOR_ENUM fmt)
 {
 	return DP_COLOR_GET_COLOR_GROUP(fmt);
 }
 
-int fmt_is_yuv422(DpColorFormat fmt)
+int fmt_is_yuv422(enum DP_COLOR_ENUM fmt)
 {
-	return DP_COLOR_GET_H_SUBSAMPLE(fmt) && (!DP_COLOR_GET_V_SUBSAMPLE(fmt));
+	return DP_COLOR_GET_H_SUBSAMPLE(fmt) &&
+	       (!DP_COLOR_GET_V_SUBSAMPLE(fmt));
 }
 
-int fmt_is_yuv420(DpColorFormat fmt)
+int fmt_is_yuv420(enum DP_COLOR_ENUM fmt)
 {
 	return DP_COLOR_GET_H_SUBSAMPLE(fmt) && DP_COLOR_GET_V_SUBSAMPLE(fmt);
 }
 
-int fmt_hw_value(DpColorFormat fmt)
+int fmt_hw_value(enum DP_COLOR_ENUM fmt)
 {
 	return DP_COLOR_GET_HW_FORMAT(fmt);
 }
 
-char *fmt_string(DpColorFormat fmt)
+char *fmt_string(enum DP_COLOR_ENUM fmt)
 {
 	switch (fmt) {
 	case eBGR565:
@@ -90,7 +104,7 @@ char *fmt_string(DpColorFormat fmt)
 	return "unknown";
 }
 
-DpColorFormat fmt_type(int unique, int swap)
+enum DP_COLOR_ENUM fmt_type(int unique, int swap)
 {
 	switch (unique) {
 	case FORMAT_UNIQUE_BGR565:

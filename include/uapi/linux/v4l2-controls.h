@@ -63,6 +63,16 @@
 #define V4L2_CTRL_CLASS_RF_TUNER	0x00a20000	/* RF tuner controls */
 #define V4L2_CTRL_CLASS_DETECT		0x00a30000	/* Detection controls */
 
+/* Mediatek control IDs */
+#define V4L2_CID_MPEG_MTK_BASE				(V4L2_CTRL_CLASS_MPEG | 0x2000)
+#define V4L2_CID_MPEG_MTK_FRAME_INTERVAL		(V4L2_CID_MPEG_MTK_BASE+0)
+#define V4L2_CID_MPEG_MTK_ERRORMB_MAP			(V4L2_CID_MPEG_MTK_BASE+1)
+#define V4L2_CID_MPEG_MTK_DECODE_MODE			(V4L2_CID_MPEG_MTK_BASE+2)
+#define V4L2_CID_MPEG_MTK_FRAME_SIZE			(V4L2_CID_MPEG_MTK_BASE+3)
+#define V4L2_CID_MPEG_MTK_FIXED_MAX_FRAME_BUFFER	(V4L2_CID_MPEG_MTK_BASE+4)
+#define V4L2_CID_MPEG_MTK_CRC_PATH			(V4L2_CID_MPEG_MTK_BASE+5)
+#define V4L2_CID_MPEG_MTK_GOLDEN_PATH			(V4L2_CID_MPEG_MTK_BASE+6)
+
 /* User-class control IDs */
 
 #define V4L2_CID_BASE			(V4L2_CTRL_CLASS_USER | 0x900)
@@ -158,8 +168,10 @@ enum v4l2_colorfx {
  * We reserve 16 controls for this driver. */
 #define V4L2_CID_USER_S2255_BASE		(V4L2_CID_USER_BASE + 0x1030)
 
-/* The base for the si476x driver controls. See include/media/si476x.h for the list
- * of controls. Total of 16 controls is reserved for this driver */
+/*
+ * The base for the si476x driver controls. See include/media/drv-intf/si476x.h
+ * for the list of controls. Total of 16 controls is reserved for this driver
+ */
 #define V4L2_CID_USER_SI476X_BASE		(V4L2_CID_USER_BASE + 0x1040)
 
 /* The base for the TI VPE driver controls. Total of 16 controls is reserved for
@@ -169,6 +181,14 @@ enum v4l2_colorfx {
 /* The base for the saa7134 driver controls.
  * We reserve 16 controls for this driver. */
 #define V4L2_CID_USER_SAA7134_BASE		(V4L2_CID_USER_BASE + 0x1060)
+
+/* The base for the adv7180 driver controls.
+ * We reserve 16 controls for this driver. */
+#define V4L2_CID_USER_ADV7180_BASE		(V4L2_CID_USER_BASE + 0x1070)
+
+/* The base for the tc358743 driver controls.
+ * We reserve 16 controls for this driver. */
+#define V4L2_CID_USER_TC358743_BASE		(V4L2_CID_USER_BASE + 0x1080)
 
 /* MPEG-class control IDs */
 /* The MPEG controls are applicable to all codec controls
@@ -380,6 +400,7 @@ enum v4l2_mpeg_video_multi_slice_mode {
 #define V4L2_CID_MPEG_VIDEO_REPEAT_SEQ_HEADER		(V4L2_CID_MPEG_BASE+226)
 #define V4L2_CID_MPEG_VIDEO_MV_H_SEARCH_RANGE		(V4L2_CID_MPEG_BASE+227)
 #define V4L2_CID_MPEG_VIDEO_MV_V_SEARCH_RANGE		(V4L2_CID_MPEG_BASE+228)
+#define V4L2_CID_MPEG_VIDEO_FORCE_KEY_FRAME		(V4L2_CID_MPEG_BASE+229)
 
 #define V4L2_CID_MPEG_VIDEO_H263_I_FRAME_QP		(V4L2_CID_MPEG_BASE+300)
 #define V4L2_CID_MPEG_VIDEO_H263_P_FRAME_QP		(V4L2_CID_MPEG_BASE+301)
@@ -902,8 +923,18 @@ enum v4l2_dv_rgb_range {
 	V4L2_DV_RGB_RANGE_FULL	  = 2,
 };
 
+#define V4L2_CID_DV_TX_IT_CONTENT_TYPE		(V4L2_CID_DV_CLASS_BASE + 6)
+enum v4l2_dv_it_content_type {
+	V4L2_DV_IT_CONTENT_TYPE_GRAPHICS  = 0,
+	V4L2_DV_IT_CONTENT_TYPE_PHOTO	  = 1,
+	V4L2_DV_IT_CONTENT_TYPE_CINEMA	  = 2,
+	V4L2_DV_IT_CONTENT_TYPE_GAME	  = 3,
+	V4L2_DV_IT_CONTENT_TYPE_NO_ITC	  = 4,
+};
+
 #define	V4L2_CID_DV_RX_POWER_PRESENT		(V4L2_CID_DV_CLASS_BASE + 100)
 #define V4L2_CID_DV_RX_RGB_RANGE		(V4L2_CID_DV_CLASS_BASE + 101)
+#define V4L2_CID_DV_RX_IT_CONTENT_TYPE		(V4L2_CID_DV_CLASS_BASE + 102)
 
 #define V4L2_CID_FM_RX_CLASS_BASE		(V4L2_CTRL_CLASS_FM_RX | 0x900)
 #define V4L2_CID_FM_RX_CLASS			(V4L2_CTRL_CLASS_FM_RX | 1)
@@ -928,6 +959,7 @@ enum v4l2_deemphasis {
 
 #define V4L2_CID_RF_TUNER_BANDWIDTH_AUTO	(V4L2_CID_RF_TUNER_CLASS_BASE + 11)
 #define V4L2_CID_RF_TUNER_BANDWIDTH		(V4L2_CID_RF_TUNER_CLASS_BASE + 12)
+#define V4L2_CID_RF_TUNER_RF_GAIN		(V4L2_CID_RF_TUNER_CLASS_BASE + 32)
 #define V4L2_CID_RF_TUNER_LNA_GAIN_AUTO		(V4L2_CID_RF_TUNER_CLASS_BASE + 41)
 #define V4L2_CID_RF_TUNER_LNA_GAIN		(V4L2_CID_RF_TUNER_CLASS_BASE + 42)
 #define V4L2_CID_RF_TUNER_MIXER_GAIN_AUTO	(V4L2_CID_RF_TUNER_CLASS_BASE + 51)

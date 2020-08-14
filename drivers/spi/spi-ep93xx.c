@@ -567,7 +567,7 @@ static void ep93xx_spi_dma_transfer(struct ep93xx_spi *espi)
 	txd = ep93xx_spi_dma_prepare(espi, DMA_MEM_TO_DEV);
 	if (IS_ERR(txd)) {
 		ep93xx_spi_dma_finish(espi, DMA_DEV_TO_MEM);
-		dev_err(&espi->pdev->dev, "DMA TX failed: %ld\n", PTR_ERR(rxd));
+		dev_err(&espi->pdev->dev, "DMA TX failed: %ld\n", PTR_ERR(txd));
 		msg->status = PTR_ERR(txd);
 		return;
 	}
@@ -964,7 +964,6 @@ static int ep93xx_spi_remove(struct platform_device *pdev)
 static struct platform_driver ep93xx_spi_driver = {
 	.driver		= {
 		.name	= "ep93xx-spi",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= ep93xx_spi_probe,
 	.remove		= ep93xx_spi_remove,

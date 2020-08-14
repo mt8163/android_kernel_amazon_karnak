@@ -23,7 +23,6 @@
 #include <linux/export.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
-#include <linux/io.h>
 #define SND_PCM_FORMAT_UNKNOWN (-1)
 
 /* NOTE: "signed" prefix must be given below since the default char is
@@ -418,7 +417,7 @@ int snd_pcm_format_set_silence(snd_pcm_format_t format, void *data, unsigned int
 	/* signed or 1 byte data */
 	if (pcm_formats[(INT)format].signd == 1 || width <= 8) {
 		unsigned int bytes = samples * width / 8;
-		memset_io(data, *pat, bytes);
+		memset(data, *pat, bytes);
 		return 0;
 	}
 	/* non-zero samples, fill using a loop */
@@ -566,3 +565,33 @@ unsigned int snd_pcm_rate_mask_intersect(unsigned int rates_a,
 	return rates_a & rates_b;
 }
 EXPORT_SYMBOL_GPL(snd_pcm_rate_mask_intersect);
+
+/**
+ * snd_pcm_rate_range_to_bits - converts rate range to SNDRV_PCM_RATE_xxx bit
+ * @rate_min: the minimum sample rate
+ * @rate_max: the maximum sample rate
+ *
+ * This function has an implicit assumption: the rates in the given range have
+ * only the pre-defined rates like 44100 or 16000.
+ *
+ * Return: The SNDRV_PCM_RATE_xxx flag that corresponds to the given rate range,
+ * or SNDRV_PCM_RATE_KNOT for an unknown range.
+ */
+unsigned int snd_pcm_rate_range_to_bits(unsigned int rate_min,
+	unsigned int rate_max)
+{
+	unsigned int rates = 0;
+	int i;
+
+	for (i = 0; i < snd_pcm_known_rates.count; i++) {
+		if (snd_pcm_known_rates.list[i] >= rate_min
+			&& snd_pcm_known_rates.list[i] <= rate_max)
+			rates |= 1 << i;
+	}
+
+	if (!rates)
+		rates = SNDRV_PCM_RATE_KNOT;
+
+	return rates;
+}
+EXPORT_SYMBOL_GPL(snd_pcm_rate_range_to_bits);

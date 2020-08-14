@@ -1,5 +1,6 @@
+#
+# Makefile for all kinds of Fingerprint
+#
 
-obj-y := fpc1020_main.o fpc1020_common.o fpc1020_input.o fpc1020_capture.o
-
-
-
+obj-$(CONFIG_GOODIX_FINGERPRINT) += goodix/
+obj-$(CONFIG_FPC_FINGERPRINT) += fpc/

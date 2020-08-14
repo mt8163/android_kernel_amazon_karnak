@@ -1,7 +1,17 @@
-typedef enum {
-	IPC_L4C_MSG_ID_INVALID = IPC_L4C_MSG_ID_BEGIN,
-	IPC_L4C_MSG_ID_END,
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 
+enum CCCI_IPC_MSG_ID_CODE {
 	IPC_EL1_MSG_ID_INVALID = IPC_EL1_MSG_ID_BEGIN,
 	/* below are EL1 IPC messages sent from AP */
 	IPC_MSG_ID_EL1_LTE_TX_ALLOW_IND,
@@ -38,13 +48,4 @@ typedef enum {
 	IPC_MSG_ID_EL1_DUMMY31_IND,
 	IPC_MSG_ID_EL1_DUMMY32_IND,
 	IPC_EL1_MSG_ID_END,
-
-	IPC_CCCIIPC_MSG_ID_INVALID = IPC_CCCIIPC_MSG_ID_BEGIN,
-	IPC_MSG_ID_CCCIIPC_CLIB_TIME_REQ,
-	IPC_CCCIIPC_MSG_ID_END,
-
-	IPC_IPCORE_MSG_ID_INVALID = IPC_IPCORE_MSG_ID_BEGIN,
-	IPC_MSG_ID_IPCORE_GF_REG,
-	IPC_MSG_ID_IPCORE_GF_UNREG,
-	IPC_IPCORE_MSG_ID_END,
-} CCCI_IPC_MSG_ID_CODE;
+};

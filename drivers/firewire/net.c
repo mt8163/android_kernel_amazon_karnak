@@ -237,18 +237,6 @@ static int fwnet_header_create(struct sk_buff *skb, struct net_device *net,
 	return -net->hard_header_len;
 }
 
-static int fwnet_header_rebuild(struct sk_buff *skb)
-{
-	struct fwnet_header *h = (struct fwnet_header *)skb->data;
-
-	if (get_unaligned_be16(&h->h_proto) == ETH_P_IP)
-		return arp_find((unsigned char *)&h->h_dest, skb);
-
-	dev_notice(&skb->dev->dev, "unable to resolve type %04x addresses\n",
-		   be16_to_cpu(h->h_proto));
-	return 0;
-}
-
 static int fwnet_header_cache(const struct neighbour *neigh,
 			      struct hh_cache *hh, __be16 type)
 {
@@ -282,7 +270,6 @@ static int fwnet_header_parse(const struct sk_buff *skb, unsigned char *haddr)
 
 static const struct header_ops fwnet_header_ops = {
 	.create         = fwnet_header_create,
-	.rebuild        = fwnet_header_rebuild,
 	.cache		= fwnet_header_cache,
 	.cache_update	= fwnet_header_cache_update,
 	.parse          = fwnet_header_parse,
@@ -1055,7 +1042,7 @@ static int fwnet_send_packet(struct fwnet_packet_task *ptask)
 
 	spin_unlock_irqrestore(&dev->lock, flags);
 
-	dev->netdev->trans_start = jiffies;
+	netif_trans_update(dev->netdev);
  out:
 	if (free)
 		fwnet_free_ptask(ptask);

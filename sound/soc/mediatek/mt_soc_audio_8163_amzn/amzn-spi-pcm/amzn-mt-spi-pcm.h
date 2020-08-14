@@ -3,6 +3,8 @@
 
 #include "dough.h"
 
+#define AMZN_MT_SPI_PCM "amzn-mt-spi-pcm"
+
 #define FIRMWARE_MAX_BYTES     (10*4096)
 #define FPGA_FIRMWARE_REV       30
 #define FPGA_FIRMWARE_NAME      CONFIG_EXTRA_FIRMWARE
@@ -10,18 +12,21 @@
 #define SPI_SPEED_HZ            50000000 /* Maximum speed 50 MHz */
 #define SPI_READ_WAIT_MIN_USEC  6000
 #define SPI_READ_WAIT_MAX_USEC  7000
-#define FPGA_DELAY_MS           100
-#define PINCTRL_DELAY_MS        100
+#define FPGA_DELAY_MS           2
+#define PINCTRL_DELAY_MS        2
 #define MARGIN_USEC             500
 
 #define SAMPLING_RATE           16000
 
 #define SPI_HEADER              1
+#define SPI_HEADER_DISABLE      0
 
-#ifndef CONFIG_SND_I2S_MCLK
+#if defined CONFIG_SND_SOC_8_MICS
 #define SPI_N_CHANNELS          9
-#else
+#elif defined CONFIG_SND_SOC_4_MICS
 #define SPI_N_CHANNELS          6
+#else
+#define SPI_N_CHANNELS          4
 #endif
 
 #define SPI_BYTES_PER_CHANNEL   3
@@ -39,5 +44,11 @@
 
 #define MAX_SCHEDULED_WORK_Q    3
 #define MAX_FLUSHED_CYCLES      10
+
+#define SPI_READ_WAIT_MIN_48K_USEC  1500
+#define SPI_READ_WAIT_MAX_48K_USEC  2000
+
+#define SPI_READ_WAIT_MIN_96K_USEC  2000
+#define SPI_READ_WAIT_MAX_96K_USEC  2500
 
 #endif

@@ -1,28 +1,27 @@
 /*
- * Copyright (c) 2015 MediaTek Inc.
+ * Copyright (C) year MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
 #include <linux/init.h>
 #include <linux/smp.h>
 #include <linux/suspend.h>
 #include <asm/cpu_ops.h>
-#include <asm/psci.h>
+#include <linux/psci.h>
 #include "mtcmos.h"
 
 #include "mt_cpu_psci_ops.h"
 
 #ifdef CONFIG_SMP
 
-static int __init mt_psci_cpu_init(struct device_node *dn, unsigned int cpu)
+static int __init mt_psci_cpu_init(unsigned int cpu)
 {
 	return 0;
 }
@@ -61,21 +60,17 @@ static int mt_psci_cpu_kill(unsigned int cpu)
 	int ret;
 
 	ret = cpu_psci_ops.cpu_kill(cpu);
-	if (!ret)
+	if (ret)
 		pr_warn("CPU%d may not have shut down cleanly\n", cpu);
 
-	return !spm_mtcmos_ctrl_cpu(cpu, STA_POWER_DOWN, 1);
+	return spm_mtcmos_ctrl_cpu(cpu, STA_POWER_DOWN, 1);
 }
 
 #ifdef CONFIG_CPU_IDLE
-static int mt_psci_cpu_init_idle(struct device_node *cpu_node,
-				 unsigned int cpu)
+static int mt_psci_cpu_init_idle(unsigned int cpu)
 {
-	return cpu_psci_ops.cpu_init_idle(cpu_node, cpu);
+	return cpu_psci_ops.cpu_init_idle(cpu);
 }
-#endif
-
-#ifdef CONFIG_ARM64_CPU_SUSPEND
 
 static int mt_psci_cpu_suspend(unsigned long flags)
 {
@@ -106,8 +101,6 @@ const struct cpu_operations mt_cpu_psci_ops = {
 #endif
 #ifdef CONFIG_CPU_IDLE
 	.cpu_init_idle	= mt_psci_cpu_init_idle,
-#endif
-#ifdef CONFIG_ARM64_CPU_SUSPEND
 	.cpu_suspend = mt_psci_cpu_suspend,
 #endif
 };

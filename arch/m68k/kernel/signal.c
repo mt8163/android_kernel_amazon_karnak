@@ -42,7 +42,7 @@
 #include <linux/personality.h>
 #include <linux/tty.h>
 #include <linux/binfmts.h>
-#include <linux/module.h>
+#include <linux/extable.h>
 #include <linux/tracehook.h>
 
 #include <asm/setup.h>
@@ -213,7 +213,6 @@ static inline int frame_extra_sizes(int f)
 
 static inline void adjustformat(struct pt_regs *regs)
 {
-	((struct switch_stack *)regs - 1)->a5 = current->mm->start_data;
 	/*
 	 * set format byte to make stack appear modulo 4, which it will
 	 * be when doing the rte
@@ -655,7 +654,7 @@ restore_sigcontext(struct pt_regs *regs, struct sigcontext __user *usc, void __u
 	int err = 0;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	/* get previous context */
 	if (copy_from_user(&context, usc, sizeof(context)))
@@ -693,7 +692,7 @@ rt_restore_ucontext(struct pt_regs *regs, struct switch_stack *sw,
 	int err;
 
 	/* Always make any pending restarted system calls return -EINTR */
-	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+	current->restart_block.fn = do_no_restart_syscall;
 
 	err = __get_user(temp, &uc->uc_mcontext.version);
 	if (temp != MCONTEXT_VERSION)
@@ -737,10 +736,8 @@ badframe:
 	return 1;
 }
 
-asmlinkage int do_sigreturn(unsigned long __unused)
+asmlinkage int do_sigreturn(struct pt_regs *regs, struct switch_stack *sw)
 {
-	struct switch_stack *sw = (struct switch_stack *) &__unused;
-	struct pt_regs *regs = (struct pt_regs *) (sw + 1);
 	unsigned long usp = rdusp();
 	struct sigframe __user *frame = (struct sigframe __user *)(usp - 4);
 	sigset_t set;
@@ -764,10 +761,8 @@ badframe:
 	return 0;
 }
 
-asmlinkage int do_rt_sigreturn(unsigned long __unused)
+asmlinkage int do_rt_sigreturn(struct pt_regs *regs, struct switch_stack *sw)
 {
-	struct switch_stack *sw = (struct switch_stack *) &__unused;
-	struct pt_regs *regs = (struct pt_regs *) (sw + 1);
 	unsigned long usp = rdusp();
 	struct rt_sigframe __user *frame = (struct rt_sigframe __user *)(usp - 4);
 	sigset_t set;
@@ -863,12 +858,7 @@ static int setup_frame(struct ksignal *ksig, sigset_t *set,
 	if (fsize)
 		err |= copy_to_user (frame + 1, regs + 1, fsize);
 
-	err |= __put_user((current_thread_info()->exec_domain
-			   && current_thread_info()->exec_domain->signal_invmap
-			   && sig < 32
-			   ? current_thread_info()->exec_domain->signal_invmap[sig]
-			   : sig),
-			  &frame->sig);
+	err |= __put_user(sig, &frame->sig);
 
 	err |= __put_user(regs->vector, &frame->code);
 	err |= __put_user(&frame->sc, &frame->psc);
@@ -948,12 +938,7 @@ static int setup_rt_frame(struct ksignal *ksig, sigset_t *set,
 	if (fsize)
 		err |= copy_to_user (&frame->uc.uc_extra, regs + 1, fsize);
 
-	err |= __put_user((current_thread_info()->exec_domain
-			   && current_thread_info()->exec_domain->signal_invmap
-			   && sig < 32
-			   ? current_thread_info()->exec_domain->signal_invmap[sig]
-			   : sig),
-			  &frame->sig);
+	err |= __put_user(sig, &frame->sig);
 	err |= __put_user(&frame->info, &frame->pinfo);
 	err |= __put_user(&frame->uc, &frame->puc);
 	err |= copy_siginfo_to_user(&frame->info, &ksig->info);

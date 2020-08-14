@@ -21,7 +21,8 @@ struct signal_data_t {
 
 /* voltage signal */
 struct signal_data_t VSM_SIGNAL_IDLE_array[] = {
-	{0x3360, 0x00000000},	/* Enable digital part  Mode[0:6]=[000:018:124:1A5:164:13C:1FF] */
+	/* Enable digital part  Mode[0:6]=[000:018:124:1A5:164:13C:1FF] */
+	{0x3360, 0x00000000},
 	{0x2308, 0xC0CCCC00},	/* IO DRV0 */
 	{0x230C, 0x00000000},	/* IO DRV1 */
 	{0x2324, 0x00000155},	/* GPIO5~9 OFF */
@@ -42,7 +43,9 @@ struct signal_data_t VSM_SIGNAL_IDLE_array[] = {
 /* voltage signal */
 struct signal_data_t VSM_SIGNAL_INIT_array[] = {
 /* SW Flow: */
-/* Initial=>EKG=>IDLE(SW)=>RESET(HW)=>Initial(EKG+PPG1+PPG2)=>EKG(0x3360=17C)=>PPG1(LED1 ON)=>PPG2 (LED2 ON) */
+/* Initial=>EKG=>IDLE(SW)=>RESET(HW)=>Initial(EKG+PPG1+PPG2)=>
+ *EKG(0x3360=17C)=>PPG1(LED1 ON)=>PPG2 (LED2 ON)
+ */
 
 /* initial setting */
 
@@ -56,18 +59,24 @@ struct signal_data_t VSM_SIGNAL_INIT_array[] = {
 	/* delay 50msec */
 	{0x3300, 0xA8C71555},	/* Enable Bandgap Rotation */
 
-	{0x334C, 0x00000092},	/* Enable EKG+PPG1+PPG2 SRAM threshold Interrupt */
+	/* Enable EKG+PPG1+PPG2 SRAM threshold Interrupt */
+	{0x334C, 0x00000092},
 
 /* EKG */
-	/* {0x3364,0x00000009},   */ /* EKG Mode selection (1"011") Fs = 128Hz */
-	/* {0x3364,0x0000000A},   */ /* EKG Mode selection (1"010") Fs = 256Hz */
+	/* EKG Mode selection (1"011") Fs = 128Hz */
+	/* {0x3364,0x00000009},   */
+	/* EKG Mode selection (1"010") Fs = 256Hz */
+	/* {0x3364,0x0000000A},   */
 	{0x3364, 0x0000000B},	/* EKG Mode selection (1"011") Fs = 512Hz */
 
 	/* {0x3308,0x0001D442},   */ /* IA gain = 6 , 2E mode */
-	{0x3308, 0x0001D042},	/* IA gain = 6 , 4E=RLD mode */
+	/* IA gain = 6 , 4E=RLD mode, enable leadoff function */
+	{0x3308, 0x0000D042},
 
-	/*  {0x3310,0x00275554},  */ /* EKG Mode selection (002F5554) Fs = 128Hz */
-	/*  {0x3310,0x002B5554},  */ /* EKG Mode selection (002B5554) Fs = 256Hz */
+	/* EKG Mode selection (002F5554) Fs = 128Hz */
+	/*  {0x3310,0x00275554},  */
+	/* EKG Mode selection (002B5554) Fs = 256Hz */
+	/*  {0x3310,0x002B5554},  */
 	{0x3310, 0x002F5554},	/* EKG Mode selection (002F5554) Fs = 512Hz */
 
 	{0x3314, 0x0000A802},	/* EKGADC CON1 */
@@ -96,9 +105,13 @@ struct signal_data_t VSM_SIGNAL_INIT_array[] = {
 /*  {0x2370, 0x20C320C3},   */ /* PPG out EN Disable Dynamic PWD */
 
 	/* PPG1 SRAM = AMB1, LED1, AMB1, LED1= reg2, reg3, reg2, reg3 */
-	/* PPG2 SRAM = LED1-AMB1, LED2-AMB2, LED1-AMB1, LED2-AMB2, = reg5, reg6, reg5, reg6 */
+	/* PPG2 SRAM =
+	 *LED1-AMB1, LED2-AMB2, LED1-AMB1, LED2-AMB2, =
+	 *reg5, reg6, reg5, reg6
+	 */
 /*    {0x3368, 0x04C9A772},   */ /* NUMAVG=1 */
-	{0x3368, 0x04C9A972},	/* sram1 = reg2, reg4,...; sram2 = reg5, reg6,...; */
+	/* sram1 = reg2, reg4,...; sram2 = reg5, reg6,...; */
+	{0x3368, 0x04C9A972},
 /*    {0x3368, 0x04B6270A},   */ /* NUMAVG=1 */
 /*    {0x3368, 0x04C9A772},   */ /* Let reg5 = reg3-reg2, reg6 = reg1-reg4 */
 /*  {0x3368, 0x08B6270A},   */ /* NUMAVG=2 */
@@ -111,18 +124,23 @@ struct signal_data_t VSM_SIGNAL_INIT_array[] = {
 	{0x3320, 0x000D5554},	/* PPG ADC Chopper OFF */
 	{0x3324, 0x0000A010},	/* PPGADC_CON1 */
 
-	{0x3328, 0x00002CFE},	/* LED Full range Current [7:5]=[010] =>7.5mA*7 =103mA */
-	{0x332C, 0x0000252A},	/* LED Current =22.5mA/256x(DAC code)= 0.087890625mA x 32 = 2.8125mA */
+	/* LED Full range Current [7:5]=[010] =>7.5mA*7 =103mA */
+	{0x3328, 0x00002CFE},
+	/* LED Current =22.5mA/256x(DAC code)= 0.087890625mA x 32 = 2.8125mA */
+	{0x332C, 0x0000252A},
 
 
 	{0x33CC, 0x00000100},	/* Write irq_th EKG */
-	{0x33C0, 0x60000000},	/* Write EKG SRAM address & 0xC0[29] & 0xC0[30] */
+	/* Write EKG SRAM address & 0xC0[29] & 0xC0[30] */
+	{0x33C0, 0x60000000},
 
 	{0x33DC, 0x000000FA},	/* Write irq_th PPG1 */
-	{0x33D0, 0x60000000},	/* Write PPG1 SRAM address & 0xC0[29] & 0xC0[30] */
+	/* Write PPG1 SRAM address & 0xC0[29] & 0xC0[30] */
+	{0x33D0, 0x60000000},
 
 	{0x33EC, 0x000000FA},	/* Write irq_th PPG2 */
-	{0x33E0, 0x60000000},	/* Write PPG2 SRAM address & 0xC0[29] & 0xC0[30] */
+	/* Write PPG2 SRAM address & 0xC0[29] & 0xC0[30] */
+	{0x33E0, 0x60000000},
 
 /* 0x3360 Enable Signal */
 	{0x3360, 0x0000017C}	/* ALL ON Mode (EKG+PPG1+PPG2) */

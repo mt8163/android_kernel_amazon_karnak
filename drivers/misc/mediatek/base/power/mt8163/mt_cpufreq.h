@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 /**
  * @file mt_cpufreq.h
  * @brief CPU DVFS driver interface
@@ -97,7 +110,7 @@ enum {
 
 
 
-typedef void (*cpuVoltsampler_func)(enum mt_cpu_dvfs_id , unsigned int mv);
+typedef void (*cpuVoltsampler_func)(enum mt_cpu_dvfs_id, unsigned int mv);
 /*=============================================================*/
 /* Global variable definition */
 /*=============================================================*/
@@ -109,12 +122,14 @@ typedef void (*cpuVoltsampler_func)(enum mt_cpu_dvfs_id , unsigned int mv);
 
 /* PMIC WRAP */
 extern void mt_cpufreq_set_pmic_phase(enum pmic_wrap_phase_id phase);
-extern void mt_cpufreq_set_pmic_cmd(enum pmic_wrap_phase_id phase, int idx, unsigned int cmd_wdata);
+extern void mt_cpufreq_set_pmic_cmd(enum pmic_wrap_phase_id phase
+	, int idx, unsigned int cmd_wdata);
 extern void mt_cpufreq_apply_pmic_cmd(int idx);
 
 /* PTP-OD */
 extern unsigned int mt_cpufreq_get_freq_by_idx(enum mt_cpu_dvfs_id id, int idx);
-extern int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id, unsigned int *volt_tbl, int nr_volt_tbl);
+extern int mt_cpufreq_update_volt(enum mt_cpu_dvfs_id id
+	, unsigned int *volt_tbl, int nr_volt_tbl);
 extern void mt_cpufreq_restore_default_volt(enum mt_cpu_dvfs_id id);
 extern unsigned int mt_cpufreq_get_cur_volt(enum mt_cpu_dvfs_id id);
 extern void mt_cpufreq_enable_by_ptpod(enum mt_cpu_dvfs_id id);
@@ -133,13 +148,14 @@ extern unsigned int mt_get_cur_volt_vcore_ao(void);
 
 /* Generic */
 extern int mt_cpufreq_state_set(int enabled);
-extern int mt_cpufreq_clock_switch(enum mt_cpu_dvfs_id id, enum top_ckmuxsel sel);
+extern int mt_cpufreq_clock_switch(enum mt_cpu_dvfs_id id
+	, enum top_ckmuxsel sel);
 extern enum top_ckmuxsel mt_cpufreq_get_clock_switch(enum mt_cpu_dvfs_id id);
 extern void mt_cpufreq_setvolt_registerCB(cpuVoltsampler_func pCB);
 extern bool mt_cpufreq_earlysuspend_status_get(void);
-void interactive_boost_cpu(int boost);
 
-extern void mt_cpufreq_set_ramp_down_count_const(enum mt_cpu_dvfs_id id, int count);
+extern void mt_cpufreq_set_ramp_down_count_const(enum mt_cpu_dvfs_id id
+	, int count);
 
 extern int is_ext_buck_sw_ready(void);
 extern int is_ext_buck_exist(void);
@@ -150,7 +166,7 @@ extern int sym827_buck_set_voltage(unsigned long voltage);
 /* move from mt_cpufreq.c to mt_cpufreq.h MB */
 extern unsigned int get_pmic_mt6325_cid(void);
 extern u32 get_devinfo_with_index(u32 index);
-/* extern int mtktscpu_get_Tj_temp(void); */ /* TODO: ask Jerry to provide the head file */
+/* extern int mtktscpu_get_Tj_temp(void); */
 extern void (*cpufreq_freq_check)(enum mt_cpu_dvfs_id id);
 /* Freq Meter API */
 #ifdef __KERNEL__
@@ -167,17 +183,6 @@ extern u8 aee_rr_curr_cpu_dvfs_status(void);
 extern void do_DRAM_DFS(int high_freq);
 extern unsigned int mt_get_emi_freq(void);
 extern unsigned int is_md32_enable(void);
-
-/* PMIC WRAP ADDR */ /* TODO: include other head file */
-#ifdef CONFIG_OF
-extern void __iomem *pwrap_base;
-#define PWRAP_BASE_ADDR     ((unsigned long)pwrap_base)
-#else
-#include "mach/mt_reg_base.h"
-#define PWRAP_BASE_ADDR     PWRAP_BASE
-#endif
-
-/* move from mt_cpufreq.c to mt_cpufreq.h ME */
 
 #ifndef __KERNEL__
 extern int mt_cpufreq_pdrv_probe(void);

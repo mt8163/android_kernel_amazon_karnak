@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __HAL_BTIF_PUB_H_
 #define __HAL_BTIF_PUB_H_
 
@@ -5,11 +18,11 @@
 
 /*Enum Defination*/
 /*BTIF Mode Enum */
-typedef enum _ENUM_BTIF_MODE_ {
+enum _ENUM_BTIF_MODE_ {
 	BTIF_MODE_PIO = 0,
 	BTIF_MODE_DMA = BTIF_MODE_PIO + 1,
 	BTIF_MODE_MAX,
-} ENUM_BTIF_MODE;
+};
 
 /*****************************************************************************
 * FUNCTION
@@ -20,7 +33,7 @@ typedef enum _ENUM_BTIF_MODE_ {
 * RETURNS
 *  BTIF's information
 *****************************************************************************/
-P_MTK_BTIF_INFO_STR hal_btif_info_get(void);
+struct _MTK_BTIF_INFO_STR_ *hal_btif_info_get(void);
 
 #if 0				/*included in hal_btif_info_get */
 /*****************************************************************************
@@ -32,7 +45,7 @@ P_MTK_BTIF_INFO_STR hal_btif_info_get(void);
 * RETURNS
 *  pointer to BTIF's irq structure
 *****************************************************************************/
-P_MTK_BTIF_IRQ_STR hal_btif_get_irq(void);
+struct _MTK_BTIF_IRQ_STR_ *hal_btif_get_irq(void);
 #endif
 
 #if !defined(CONFIG_MTK_CLKMGR)
@@ -69,7 +82,8 @@ int hal_btif_clk_unprepare(void);
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_clk_ctrl(P_MTK_BTIF_INFO_STR p_btif, ENUM_CLOCK_CTRL flag);
+int hal_btif_clk_ctrl(struct _MTK_BTIF_INFO_STR_ *p_btif,
+		      enum _ENUM_CLOCK_CTRL_ flag);
 
 /*****************************************************************************
 * FUNCTION
@@ -82,7 +96,7 @@ int hal_btif_clk_ctrl(P_MTK_BTIF_INFO_STR p_btif, ENUM_CLOCK_CTRL flag);
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_hw_init(P_MTK_BTIF_INFO_STR p_btif);
+int hal_btif_hw_init(struct _MTK_BTIF_INFO_STR_ *p_btif);
 
 /*****************************************************************************
 * FUNCTION
@@ -90,12 +104,12 @@ int hal_btif_hw_init(P_MTK_BTIF_INFO_STR p_btif);
 * DESCRIPTION
 *  BTIF rx callback register API
 * PARAMETERS
-* p_btif_info   [IN]        pointer to BTIF's information
+*p_btif_info   [IN]        pointer to BTIF's information
 * rx_cb          [IN]        rx callback function
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_rx_cb_reg(P_MTK_BTIF_INFO_STR p_btif_info,
+int hal_btif_rx_cb_reg(struct _MTK_BTIF_INFO_STR_ *p_btif_info,
 		       btif_rx_buf_write rx_cb);
 
 /*****************************************************************************
@@ -108,7 +122,7 @@ int hal_btif_rx_cb_reg(P_MTK_BTIF_INFO_STR p_btif_info,
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_loopback_ctrl(P_MTK_BTIF_INFO_STR p_btif, bool en);
+int hal_btif_loopback_ctrl(struct _MTK_BTIF_INFO_STR_ *p_btif, bool en);
 
 /*****************************************************************************
 * FUNCTION
@@ -122,7 +136,7 @@ int hal_btif_loopback_ctrl(P_MTK_BTIF_INFO_STR p_btif, bool en);
 * RETURNS
 *  0 means success; negative means fail; positive means rx data length
 *****************************************************************************/
-int hal_btif_irq_handler(P_MTK_BTIF_INFO_STR p_btif,
+int hal_btif_irq_handler(struct _MTK_BTIF_INFO_STR_ *p_btif,
 			 unsigned char *p_buf, const unsigned int max_len);
 
 /*****************************************************************************
@@ -136,7 +150,8 @@ int hal_btif_irq_handler(P_MTK_BTIF_INFO_STR p_btif,
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_tx_mode_ctrl(P_MTK_BTIF_INFO_STR p_btif, ENUM_BTIF_MODE mode);
+int hal_btif_tx_mode_ctrl(struct _MTK_BTIF_INFO_STR_ *p_btif,
+			  enum _ENUM_BTIF_MODE_ mode);
 
 /*****************************************************************************
 * FUNCTION
@@ -149,7 +164,8 @@ int hal_btif_tx_mode_ctrl(P_MTK_BTIF_INFO_STR p_btif, ENUM_BTIF_MODE mode);
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_rx_mode_ctrl(P_MTK_BTIF_INFO_STR p_btif, ENUM_BTIF_MODE mode);
+int hal_btif_rx_mode_ctrl(struct _MTK_BTIF_INFO_STR_ *p_btif,
+			  enum _ENUM_BTIF_MODE_ mode);
 
 /*****************************************************************************
 * FUNCTION
@@ -165,7 +181,7 @@ int hal_btif_rx_mode_ctrl(P_MTK_BTIF_INFO_STR p_btif, ENUM_BTIF_MODE mode);
 *  0 means no data put to FIFO;
 *  negative means error happens
 *****************************************************************************/
-int hal_btif_send_data(P_MTK_BTIF_INFO_STR p_btif,
+int hal_btif_send_data(struct _MTK_BTIF_INFO_STR_ *p_btif,
 		       const unsigned char *p_buf, const unsigned int buf_len);
 
 /*****************************************************************************
@@ -178,7 +194,7 @@ int hal_btif_send_data(P_MTK_BTIF_INFO_STR p_btif,
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_raise_wak_sig(P_MTK_BTIF_INFO_STR p_btif);
+int hal_btif_raise_wak_sig(struct _MTK_BTIF_INFO_STR_ *p_btif);
 
 /*****************************************************************************
 * FUNCTION
@@ -191,7 +207,8 @@ int hal_btif_raise_wak_sig(P_MTK_BTIF_INFO_STR p_btif);
 * RETURNS
 *  0 means success, negative means fail
 *****************************************************************************/
-int hal_btif_dump_reg(P_MTK_BTIF_INFO_STR p_btif, ENUM_BTIF_REG_ID flag);
+int hal_btif_dump_reg(struct _MTK_BTIF_INFO_STR_ *p_btif,
+		      enum _ENUM_BTIF_REG_ID_ flag);
 
 /*****************************************************************************
 * FUNCTION
@@ -203,7 +220,7 @@ int hal_btif_dump_reg(P_MTK_BTIF_INFO_STR p_btif, ENUM_BTIF_REG_ID flag);
 * RETURNS
 *  true means tx complete, false means tx in process
 *****************************************************************************/
-bool hal_btif_is_tx_complete(P_MTK_BTIF_INFO_STR p_btif);
+bool hal_btif_is_tx_complete(struct _MTK_BTIF_INFO_STR_ *p_btif);
 
 /*****************************************************************************
 * FUNCTION
@@ -215,8 +232,11 @@ bool hal_btif_is_tx_complete(P_MTK_BTIF_INFO_STR p_btif);
 * RETURNS
 * true if tx operation is allowed; false if tx is not allowed
 *****************************************************************************/
-bool hal_btif_is_tx_allow(P_MTK_BTIF_INFO_STR p_btif);
+bool hal_btif_is_tx_allow(struct _MTK_BTIF_INFO_STR_ *p_btif);
 
-int hal_btif_pm_ops(P_MTK_BTIF_INFO_STR p_btif, MTK_BTIF_PM_OPID opid);
+int hal_btif_pm_ops(struct _MTK_BTIF_INFO_STR_ *p_btif,
+		    enum _MTK_BTIF_PM_OPID_ opid);
+
+void mtk_btif_read_cpu_sw_rst_debug_plat(void);
 
 #endif /*__HAL_BTIF_PUB_H_*/

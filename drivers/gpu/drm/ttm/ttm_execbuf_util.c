@@ -93,7 +93,8 @@ EXPORT_SYMBOL(ttm_eu_backoff_reservation);
  */
 
 int ttm_eu_reserve_buffers(struct ww_acquire_ctx *ticket,
-			   struct list_head *list, bool intr)
+			   struct list_head *list, bool intr,
+			   struct list_head *dups)
 {
 	struct ttm_bo_global *glob;
 	struct ttm_validate_buffer *entry;
@@ -111,12 +112,18 @@ int ttm_eu_reserve_buffers(struct ww_acquire_ctx *ticket,
 	list_for_each_entry(entry, list, head) {
 		struct ttm_buffer_object *bo = entry->bo;
 
-		ret = __ttm_bo_reserve(bo, intr, (ticket == NULL), true,
-				       ticket);
+		ret = __ttm_bo_reserve(bo, intr, (ticket == NULL), ticket);
 		if (!ret && unlikely(atomic_read(&bo->cpu_writers) > 0)) {
 			__ttm_bo_unreserve(bo);
 
 			ret = -EBUSY;
+
+		} else if (ret == -EALREADY && dups) {
+			struct ttm_validate_buffer *safe = entry;
+			entry = list_prev_entry(entry, head);
+			list_del(&safe->head);
+			list_add(&safe->head, dups);
+			continue;
 		}
 
 		if (!ret) {

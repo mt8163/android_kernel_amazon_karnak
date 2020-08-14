@@ -19,19 +19,34 @@
 #include <linux/err.h>
 #include <linux/fs.h>
 #include <linux/list.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/swap.h>
 #include "ion_priv.h"
 
+static unsigned long long last_alloc_ts;
 static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 {
-	struct page *page = alloc_pages(pool->gfp_mask, pool->order);
+	unsigned long long start, end;
+	struct page *page;
+
+	start = sched_clock();
+	page = alloc_pages(pool->gfp_mask, pool->order);
+	end = sched_clock();
+
+	if ((end - start > 10000000ULL) &&
+	    (end - last_alloc_ts > 1000000000ULL)) { /* unit is ns, 1s */
+		IONMSG("warn: alloc pages order: %d time: %lld ns\n",
+		       pool->order, end - start);
+		show_free_areas(0);
+		last_alloc_ts = end;
+	}
 
 	if (!page)
 		return NULL;
-	ion_pages_sync_for_device(NULL, page, PAGE_SIZE << pool->order,
-						DMA_BIDIRECTIONAL);
+	ion_pages_sync_for_device(g_ion_device->dev.this_device,
+				  page, PAGE_SIZE << pool->order,
+				  DMA_BIDIRECTIONAL);
 	return page;
 }
 
@@ -96,6 +111,10 @@ void ion_page_pool_free(struct ion_page_pool *pool, struct page *page)
 {
 	int ret;
 
+	if (pool->order != compound_order(page))
+		IONMSG("free page = 0x%p, compound_order(page) = 0x%x",
+		       page, compound_order(page));
+
 	BUG_ON(pool->order != compound_order(page));
 
 	ret = ion_page_pool_add(pool, page);
@@ -114,9 +133,9 @@ static int ion_page_pool_total(struct ion_page_pool *pool, bool high)
 }
 
 int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
-				int nr_to_scan)
+			 int nr_to_scan)
 {
-	int freed;
+	int freed = 0;
 	bool high;
 
 	if (current_is_kswapd())
@@ -127,7 +146,7 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 	if (nr_to_scan == 0)
 		return ion_page_pool_total(pool, high);
 
-	for (freed = 0; freed < nr_to_scan; freed++) {
+	while (freed < nr_to_scan) {
 		struct page *page;
 
 		mutex_lock(&pool->mutex);
@@ -141,15 +160,17 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 		}
 		mutex_unlock(&pool->mutex);
 		ion_page_pool_free_pages(pool, page);
+		freed += (1 << pool->order);
 	}
 
 	return freed;
 }
 
-struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)
+struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order,
+					   bool cached)
 {
-	struct ion_page_pool *pool = kmalloc(sizeof(struct ion_page_pool),
-					     GFP_KERNEL);
+	struct ion_page_pool *pool = kmalloc(sizeof(*pool), GFP_KERNEL);
+
 	if (!pool) {
 		IONMSG("%s kmalloc failed pool is null.\n", __func__);
 		return NULL;
@@ -162,6 +183,8 @@ struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)
 	pool->order = order;
 	mutex_init(&pool->mutex);
 	plist_node_init(&pool->list, order);
+	if (cached)
+		pool->cached = true;
 
 	return pool;
 }
@@ -175,10 +198,4 @@ static int __init ion_page_pool_init(void)
 {
 	return 0;
 }
-
-static void __exit ion_page_pool_exit(void)
-{
-}
-
-module_init(ion_page_pool_init);
-module_exit(ion_page_pool_exit);
+device_initcall(ion_page_pool_init);

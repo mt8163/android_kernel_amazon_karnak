@@ -32,16 +32,105 @@
 #include <asm/machdep.h>
 #include <asm/firmware.h>
 #include <asm/xics.h>
-#include <asm/rtas.h>
 #include <asm/opal.h>
 #include <asm/kexec.h>
 #include <asm/smp.h>
+#include <asm/tm.h>
+#include <asm/setup.h>
+#include <asm/security_features.h>
 
 #include "powernv.h"
+
+
+static bool fw_feature_is(const char *state, const char *name,
+			  struct device_node *fw_features)
+{
+	struct device_node *np;
+	bool rc = false;
+
+	np = of_get_child_by_name(fw_features, name);
+	if (np) {
+		rc = of_property_read_bool(np, state);
+		of_node_put(np);
+	}
+
+	return rc;
+}
+
+static void init_fw_feat_flags(struct device_node *np)
+{
+	if (fw_feature_is("enabled", "inst-spec-barrier-ori31,31,0", np))
+		security_ftr_set(SEC_FTR_SPEC_BAR_ORI31);
+
+	if (fw_feature_is("enabled", "fw-bcctrl-serialized", np))
+		security_ftr_set(SEC_FTR_BCCTRL_SERIALISED);
+
+	if (fw_feature_is("enabled", "inst-l1d-flush-ori30,30,0", np))
+		security_ftr_set(SEC_FTR_L1D_FLUSH_ORI30);
+
+	if (fw_feature_is("enabled", "inst-l1d-flush-trig2", np))
+		security_ftr_set(SEC_FTR_L1D_FLUSH_TRIG2);
+
+	if (fw_feature_is("enabled", "fw-l1d-thread-split", np))
+		security_ftr_set(SEC_FTR_L1D_THREAD_PRIV);
+
+	if (fw_feature_is("enabled", "fw-count-cache-disabled", np))
+		security_ftr_set(SEC_FTR_COUNT_CACHE_DISABLED);
+
+	/*
+	 * The features below are enabled by default, so we instead look to see
+	 * if firmware has *disabled* them, and clear them if so.
+	 */
+	if (fw_feature_is("disabled", "speculation-policy-favor-security", np))
+		security_ftr_clear(SEC_FTR_FAVOUR_SECURITY);
+
+	if (fw_feature_is("disabled", "needs-l1d-flush-msr-pr-0-to-1", np))
+		security_ftr_clear(SEC_FTR_L1D_FLUSH_PR);
+
+	if (fw_feature_is("disabled", "needs-l1d-flush-msr-hv-1-to-0", np))
+		security_ftr_clear(SEC_FTR_L1D_FLUSH_HV);
+
+	if (fw_feature_is("disabled", "needs-spec-barrier-for-bound-checks", np))
+		security_ftr_clear(SEC_FTR_BNDS_CHK_SPEC_BAR);
+}
+
+static void pnv_setup_rfi_flush(void)
+{
+	struct device_node *np, *fw_features;
+	enum l1d_flush_type type;
+	bool enable;
+
+	/* Default to fallback in case fw-features are not available */
+	type = L1D_FLUSH_FALLBACK;
+
+	np = of_find_node_by_name(NULL, "ibm,opal");
+	fw_features = of_get_child_by_name(np, "fw-features");
+	of_node_put(np);
+
+	if (fw_features) {
+		init_fw_feat_flags(fw_features);
+		of_node_put(fw_features);
+
+		if (security_ftr_enabled(SEC_FTR_L1D_FLUSH_TRIG2))
+			type = L1D_FLUSH_MTTRIG;
+
+		if (security_ftr_enabled(SEC_FTR_L1D_FLUSH_ORI30))
+			type = L1D_FLUSH_ORI;
+	}
+
+	enable = security_ftr_enabled(SEC_FTR_FAVOUR_SECURITY) && \
+		 (security_ftr_enabled(SEC_FTR_L1D_FLUSH_PR)   || \
+		  security_ftr_enabled(SEC_FTR_L1D_FLUSH_HV));
+
+	setup_rfi_flush(type, enable);
+}
 
 static void __init pnv_setup_arch(void)
 {
 	set_arch_panic_timeout(10, ARCH_PANIC_TIMEOUT);
+
+	pnv_setup_rfi_flush();
+	setup_stf_barrier();
 
 	/* Initialize SMP */
 	pnv_smp_init();
@@ -59,7 +148,7 @@ static void __init pnv_setup_arch(void)
 	/* XXX PMCS */
 }
 
-static void __init pnv_init_early(void)
+static void __init pnv_init(void)
 {
 	/*
 	 * Initialize the LPC bus now so that legacy serial
@@ -91,12 +180,8 @@ static void pnv_show_cpuinfo(struct seq_file *m)
 	if (root)
 		model = of_get_property(root, "model", NULL);
 	seq_printf(m, "machine\t\t: PowerNV %s\n", model);
-	if (firmware_has_feature(FW_FEATURE_OPALv3))
-		seq_printf(m, "firmware\t: OPAL v3\n");
-	else if (firmware_has_feature(FW_FEATURE_OPALv2))
-		seq_printf(m, "firmware\t: OPAL v2\n");
-	else if (firmware_has_feature(FW_FEATURE_OPAL))
-		seq_printf(m, "firmware\t: OPAL v1\n");
+	if (firmware_has_feature(FW_FEATURE_OPAL))
+		seq_printf(m, "firmware\t: OPAL\n");
 	else
 		seq_printf(m, "firmware\t: BML\n");
 	of_node_put(root);
@@ -108,7 +193,7 @@ static void pnv_prepare_going_down(void)
 	 * Disable all notifiers from OPAL, we can't
 	 * service interrupts anymore anyway
 	 */
-	opal_notifier_disable();
+	opal_event_shutdown();
 
 	/* Soft disable interrupts */
 	local_irq_disable();
@@ -166,21 +251,6 @@ static void pnv_progress(char *s, unsigned short hex)
 {
 }
 
-static int pnv_dma_set_mask(struct device *dev, u64 dma_mask)
-{
-	if (dev_is_pci(dev))
-		return pnv_pci_dma_set_mask(to_pci_dev(dev), dma_mask);
-	return __dma_set_mask(dev, dma_mask);
-}
-
-static u64 pnv_dma_get_required_mask(struct device *dev)
-{
-	if (dev_is_pci(dev))
-		return pnv_pci_dma_get_required_mask(to_pci_dev(dev));
-
-	return __dma_get_required_mask(dev);
-}
-
 static void pnv_shutdown(void)
 {
 	/* Let the PCI code clear up IODA tables */
@@ -203,7 +273,7 @@ static void pnv_kexec_wait_secondaries_down(void)
 
 	for_each_online_cpu(i) {
 		uint8_t status;
-		int64_t rc;
+		int64_t rc, timeout = 1000;
 
 		if (i == my_cpu)
 			continue;
@@ -220,6 +290,18 @@ static void pnv_kexec_wait_secondaries_down(void)
 				       i, paca[i].hw_cpu_id);
 				notified = i;
 			}
+
+			/*
+			 * On crash secondaries might be unreachable or hung,
+			 * so timeout if we've waited too long
+			 * */
+			mdelay(1);
+			if (timeout-- == 0) {
+				printk(KERN_ERR "kexec: timed out waiting for "
+				       "cpu %d (physical %d) to enter OPAL\n",
+				       i, paca[i].hw_cpu_id);
+				break;
+			}
 		}
 	}
 }
@@ -228,9 +310,9 @@ static void pnv_kexec_cpu_down(int crash_shutdown, int secondary)
 {
 	xics_kexec_teardown_cpu(secondary);
 
-	/* On OPAL v3, we return all CPUs to firmware */
+	/* On OPAL, we return all CPUs to firmware */
 
-	if (!firmware_has_feature(FW_FEATURE_OPALv3))
+	if (!firmware_has_feature(FW_FEATURE_OPAL))
 		return;
 
 	if (secondary) {
@@ -241,16 +323,16 @@ static void pnv_kexec_cpu_down(int crash_shutdown, int secondary)
 
 		/* Return the CPU to OPAL */
 		opal_return_cpu();
-	} else if (crash_shutdown) {
-		/*
-		 * On crash, we don't wait for secondaries to go
-		 * down as they might be unreachable or hung, so
-		 * instead we just wait a bit and move on.
-		 */
-		mdelay(1);
 	} else {
 		/* Primary waits for the secondaries to have reached OPAL */
 		pnv_kexec_wait_secondaries_down();
+
+		/*
+		 * We might be running as little-endian - now that interrupts
+		 * are disabled, reset the HILE bit to big-endian so we don't
+		 * take interrupts in the wrong endian later
+		 */
+		opal_reinit_cpus(OPAL_REINIT_CPUS_HILE_BE);
 	}
 }
 #endif /* CONFIG_KEXEC */
@@ -265,10 +347,8 @@ static unsigned long pnv_memory_block_size(void)
 static void __init pnv_setup_machdep_opal(void)
 {
 	ppc_md.get_boot_time = opal_get_boot_time;
-	ppc_md.get_rtc_time = opal_get_rtc_time;
-	ppc_md.set_rtc_time = opal_set_rtc_time;
 	ppc_md.restart = pnv_restart;
-	ppc_md.power_off = pnv_power_off;
+	pm_power_off = pnv_power_off;
 	ppc_md.halt = pnv_halt;
 	ppc_md.machine_check_exception = opal_machine_check;
 	ppc_md.mce_check_early_recovery = opal_mce_check_early_recovery;
@@ -276,37 +356,17 @@ static void __init pnv_setup_machdep_opal(void)
 	ppc_md.handle_hmi_exception = opal_handle_hmi_exception;
 }
 
-#ifdef CONFIG_PPC_POWERNV_RTAS
-static void __init pnv_setup_machdep_rtas(void)
-{
-	if (rtas_token("get-time-of-day") != RTAS_UNKNOWN_SERVICE) {
-		ppc_md.get_boot_time = rtas_get_boot_time;
-		ppc_md.get_rtc_time = rtas_get_rtc_time;
-		ppc_md.set_rtc_time = rtas_set_rtc_time;
-	}
-	ppc_md.restart = rtas_restart;
-	ppc_md.power_off = rtas_power_off;
-	ppc_md.halt = rtas_halt;
-}
-#endif /* CONFIG_PPC_POWERNV_RTAS */
-
 static int __init pnv_probe(void)
 {
-	unsigned long root = of_get_flat_dt_root();
-
-	if (!of_flat_dt_is_compatible(root, "ibm,powernv"))
+	if (!of_machine_is_compatible("ibm,powernv"))
 		return 0;
-
-	hpte_init_native();
 
 	if (firmware_has_feature(FW_FEATURE_OPAL))
 		pnv_setup_machdep_opal();
-#ifdef CONFIG_PPC_POWERNV_RTAS
-	else if (rtas.base)
-		pnv_setup_machdep_rtas();
-#endif /* CONFIG_PPC_POWERNV_RTAS */
 
 	pr_debug("PowerNV detected !\n");
+
+	pnv_init();
 
 	return 1;
 }
@@ -333,17 +393,14 @@ static unsigned long pnv_get_proc_freq(unsigned int cpu)
 define_machine(powernv) {
 	.name			= "PowerNV",
 	.probe			= pnv_probe,
-	.init_early		= pnv_init_early,
 	.setup_arch		= pnv_setup_arch,
 	.init_IRQ		= pnv_init_IRQ,
 	.show_cpuinfo		= pnv_show_cpuinfo,
 	.get_proc_freq          = pnv_get_proc_freq,
 	.progress		= pnv_progress,
 	.machine_shutdown	= pnv_shutdown,
-	.power_save             = power7_idle,
+	.power_save             = NULL,
 	.calibrate_decr		= generic_calibrate_decr,
-	.dma_set_mask		= pnv_dma_set_mask,
-	.dma_get_required_mask	= pnv_dma_get_required_mask,
 #ifdef CONFIG_KEXEC
 	.kexec_cpu_down		= pnv_kexec_cpu_down,
 #endif

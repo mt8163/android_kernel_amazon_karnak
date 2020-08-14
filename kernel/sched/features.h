@@ -3,7 +3,7 @@
  * them to run sooner, but does not allow tons of sleepers to
  * rip the spread apart.
  */
-SCHED_FEAT(GENTLE_FAIR_SLEEPERS, false)
+SCHED_FEAT(GENTLE_FAIR_SLEEPERS, true)
 
 /*
  * Place new tasks ahead so that they do not starve already running
@@ -36,13 +36,8 @@ SCHED_FEAT(CACHE_HOT_BUDDY, true)
  */
 SCHED_FEAT(WAKEUP_PREEMPTION, true)
 
-/*
- * Use arch dependent cpu capacity functions
- */
-SCHED_FEAT(ARCH_CAPACITY, true)
-
-SCHED_FEAT(HRTICK, true)
-SCHED_FEAT(DOUBLE_TICK, true)
+SCHED_FEAT(HRTICK, false)
+SCHED_FEAT(DOUBLE_TICK, false)
 SCHED_FEAT(LB_BIAS, true)
 
 /*
@@ -56,32 +51,37 @@ SCHED_FEAT(NONTASK_CAPACITY, true)
  */
 SCHED_FEAT(TTWU_QUEUE, true)
 
+/*
+ * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
+ */
+SCHED_FEAT(SIS_AVG_CPU, false)
+
+#ifdef HAVE_RT_PUSH_IPI
+/*
+ * In order to avoid a thundering herd attack of CPUs that are
+ * lowering their priorities at the same time, and there being
+ * a single CPU that has an RT task that can migrate and is waiting
+ * to run, where the other CPUs will try to take that CPUs
+ * rq lock and possibly create a large contention, sending an
+ * IPI to that CPU and let that CPU push the RT task to where
+ * it should go may be a better scenario.
+ */
+SCHED_FEAT(RT_PUSH_IPI, true)
+#endif
+
 SCHED_FEAT(FORCE_SD_OVERLAP, false)
 SCHED_FEAT(RT_RUNTIME_SHARE, false)
 SCHED_FEAT(LB_MIN, false)
+SCHED_FEAT(ATTACH_AGE_LOAD, true)
 
 /*
- * Apply the automatic NUMA scheduling policy. Enabled automatically
- * at runtime if running on a NUMA machine. Can be controlled via
- * numa_balancing=
+ * Energy aware scheduling. Use platform energy model to guide scheduling
+ * decisions optimizing for energy efficiency.
  */
-#ifdef CONFIG_NUMA_BALANCING
-SCHED_FEAT(NUMA,	false)
-
-/*
- * NUMA_FAVOUR_HIGHER will favor moving tasks towards nodes where a
- * higher number of hinting faults are recorded during active load
- * balancing.
- */
-SCHED_FEAT(NUMA_FAVOUR_HIGHER, true)
-
-/*
- * NUMA_RESIST_LOWER will resist moving tasks towards nodes where a
- * lower number of hinting faults have been recorded. As this has
- * the potential to prevent a task ever migrating to a new node
- * due to CPU overload it is disabled by default.
- */
-SCHED_FEAT(NUMA_RESIST_LOWER, false)
+#ifdef CONFIG_DEFAULT_USE_ENERGY_AWARE
+SCHED_FEAT(ENERGY_AWARE, true)
+#else
+SCHED_FEAT(ENERGY_AWARE, false)
 #endif
 
 /*
@@ -93,3 +93,19 @@ SCHED_FEAT(SCHED_HMP, true)
 #else
 SCHED_FEAT(SCHED_HMP, false)
 #endif
+
+SCHED_FEAT(SCHED_MTK_EAS, true)
+/*
+ * Minimum capacity capping. Keep track of minimum capacity factor when
+ * minimum frequency available to a policy is modified.
+ * If enabled, this can be used to inform the scheduler about capacity
+ * restrictions.
+ */
+SCHED_FEAT(MIN_CAPACITY_CAPPING, false)
+
+/*
+ * Enforce the priority of candidates selected by find_best_target()
+ * ON: If the target CPU saves any energy, use that.
+ * OFF: Use whichever of target or backup saves most.
+ */
+SCHED_FEAT(FBT_STRICT_ORDER, true)

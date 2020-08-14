@@ -24,6 +24,7 @@
 #include "radeon.h"
 #include "avivod.h"
 #include "atom.h"
+#include "r600_dpm.h"
 #include <linux/power_supply.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
@@ -78,7 +79,7 @@ void radeon_pm_acpi_event_handler(struct radeon_device *rdev)
 				radeon_dpm_enable_bapm(rdev, rdev->pm.dpm.ac_power);
 		}
 		mutex_unlock(&rdev->pm.mutex);
-        } else if (rdev->pm.pm_method == PM_METHOD_PROFILE) {
+	} else if (rdev->pm.pm_method == PM_METHOD_PROFILE) {
 		if (rdev->pm.profile == PM_PROFILE_AUTO) {
 			mutex_lock(&rdev->pm.mutex);
 			radeon_pm_update_profile(rdev);
@@ -245,6 +246,7 @@ static void radeon_set_power_state(struct radeon_device *rdev)
 
 static void radeon_pm_set_clocks(struct radeon_device *rdev)
 {
+	struct drm_crtc *crtc;
 	int i, r;
 
 	/* no need to take locks, etc. if nothing's going to change */
@@ -252,7 +254,6 @@ static void radeon_pm_set_clocks(struct radeon_device *rdev)
 	    (rdev->pm.requested_power_state_index == rdev->pm.current_power_state_index))
 		return;
 
-	mutex_lock(&rdev->ddev->struct_mutex);
 	down_write(&rdev->pm.mclk_lock);
 	mutex_lock(&rdev->ring_lock);
 
@@ -267,7 +268,6 @@ static void radeon_pm_set_clocks(struct radeon_device *rdev)
 			/* needs a GPU reset dont reset here */
 			mutex_unlock(&rdev->ring_lock);
 			up_write(&rdev->pm.mclk_lock);
-			mutex_unlock(&rdev->ddev->struct_mutex);
 			return;
 		}
 	}
@@ -275,22 +275,30 @@ static void radeon_pm_set_clocks(struct radeon_device *rdev)
 	radeon_unmap_vram_bos(rdev);
 
 	if (rdev->irq.installed) {
-		for (i = 0; i < rdev->num_crtc; i++) {
+		i = 0;
+		drm_for_each_crtc(crtc, rdev->ddev) {
 			if (rdev->pm.active_crtcs & (1 << i)) {
-				rdev->pm.req_vblank |= (1 << i);
-				drm_vblank_get(rdev->ddev, i);
+				/* This can fail if a modeset is in progress */
+				if (drm_crtc_vblank_get(crtc) == 0)
+					rdev->pm.req_vblank |= (1 << i);
+				else
+					DRM_DEBUG_DRIVER("crtc %d no vblank, can glitch\n",
+							 i);
 			}
+			i++;
 		}
 	}
 
 	radeon_set_power_state(rdev);
 
 	if (rdev->irq.installed) {
-		for (i = 0; i < rdev->num_crtc; i++) {
+		i = 0;
+		drm_for_each_crtc(crtc, rdev->ddev) {
 			if (rdev->pm.req_vblank & (1 << i)) {
 				rdev->pm.req_vblank &= ~(1 << i);
-				drm_vblank_put(rdev->ddev, i);
+				drm_crtc_vblank_put(crtc);
 			}
+			i++;
 		}
 	}
 
@@ -303,7 +311,6 @@ static void radeon_pm_set_clocks(struct radeon_device *rdev)
 
 	mutex_unlock(&rdev->ring_lock);
 	up_write(&rdev->pm.mclk_lock);
-	mutex_unlock(&rdev->ddev->struct_mutex);
 }
 
 static void radeon_pm_print_states(struct radeon_device *rdev)
@@ -554,6 +561,100 @@ fail:
 	return count;
 }
 
+static ssize_t radeon_hwmon_get_pwm1_enable(struct device *dev,
+					    struct device_attribute *attr,
+					    char *buf)
+{
+	struct radeon_device *rdev = dev_get_drvdata(dev);
+	u32 pwm_mode = 0;
+
+	if (rdev->asic->dpm.fan_ctrl_get_mode)
+		pwm_mode = rdev->asic->dpm.fan_ctrl_get_mode(rdev);
+
+	/* never 0 (full-speed), fuse or smc-controlled always */
+	return sprintf(buf, "%i\n", pwm_mode == FDO_PWM_MODE_STATIC ? 1 : 2);
+}
+
+static ssize_t radeon_hwmon_set_pwm1_enable(struct device *dev,
+					    struct device_attribute *attr,
+					    const char *buf,
+					    size_t count)
+{
+	struct radeon_device *rdev = dev_get_drvdata(dev);
+	int err;
+	int value;
+
+	if(!rdev->asic->dpm.fan_ctrl_set_mode)
+		return -EINVAL;
+
+	err = kstrtoint(buf, 10, &value);
+	if (err)
+		return err;
+
+	switch (value) {
+	case 1: /* manual, percent-based */
+		rdev->asic->dpm.fan_ctrl_set_mode(rdev, FDO_PWM_MODE_STATIC);
+		break;
+	default: /* disable */
+		rdev->asic->dpm.fan_ctrl_set_mode(rdev, 0);
+		break;
+	}
+
+	return count;
+}
+
+static ssize_t radeon_hwmon_get_pwm1_min(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	return sprintf(buf, "%i\n", 0);
+}
+
+static ssize_t radeon_hwmon_get_pwm1_max(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	return sprintf(buf, "%i\n", 255);
+}
+
+static ssize_t radeon_hwmon_set_pwm1(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t count)
+{
+	struct radeon_device *rdev = dev_get_drvdata(dev);
+	int err;
+	u32 value;
+
+	err = kstrtou32(buf, 10, &value);
+	if (err)
+		return err;
+
+	value = (value * 100) / 255;
+
+	err = rdev->asic->dpm.set_fan_speed_percent(rdev, value);
+	if (err)
+		return err;
+
+	return count;
+}
+
+static ssize_t radeon_hwmon_get_pwm1(struct device *dev,
+				     struct device_attribute *attr,
+				     char *buf)
+{
+	struct radeon_device *rdev = dev_get_drvdata(dev);
+	int err;
+	u32 speed;
+
+	err = rdev->asic->dpm.get_fan_speed_percent(rdev, &speed);
+	if (err)
+		return err;
+
+	speed = (speed * 255) / 100;
+
+	return sprintf(buf, "%i\n", speed);
+}
+
 static DEVICE_ATTR(power_profile, S_IRUGO | S_IWUSR, radeon_get_pm_profile, radeon_set_pm_profile);
 static DEVICE_ATTR(power_method, S_IRUGO | S_IWUSR, radeon_get_pm_method, radeon_set_pm_method);
 static DEVICE_ATTR(power_dpm_state, S_IRUGO | S_IWUSR, radeon_get_dpm_state, radeon_set_dpm_state);
@@ -601,27 +702,69 @@ static ssize_t radeon_hwmon_show_temp_thresh(struct device *dev,
 static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, radeon_hwmon_show_temp, NULL, 0);
 static SENSOR_DEVICE_ATTR(temp1_crit, S_IRUGO, radeon_hwmon_show_temp_thresh, NULL, 0);
 static SENSOR_DEVICE_ATTR(temp1_crit_hyst, S_IRUGO, radeon_hwmon_show_temp_thresh, NULL, 1);
+static SENSOR_DEVICE_ATTR(pwm1, S_IRUGO | S_IWUSR, radeon_hwmon_get_pwm1, radeon_hwmon_set_pwm1, 0);
+static SENSOR_DEVICE_ATTR(pwm1_enable, S_IRUGO | S_IWUSR, radeon_hwmon_get_pwm1_enable, radeon_hwmon_set_pwm1_enable, 0);
+static SENSOR_DEVICE_ATTR(pwm1_min, S_IRUGO, radeon_hwmon_get_pwm1_min, NULL, 0);
+static SENSOR_DEVICE_ATTR(pwm1_max, S_IRUGO, radeon_hwmon_get_pwm1_max, NULL, 0);
+
 
 static struct attribute *hwmon_attributes[] = {
 	&sensor_dev_attr_temp1_input.dev_attr.attr,
 	&sensor_dev_attr_temp1_crit.dev_attr.attr,
 	&sensor_dev_attr_temp1_crit_hyst.dev_attr.attr,
+	&sensor_dev_attr_pwm1.dev_attr.attr,
+	&sensor_dev_attr_pwm1_enable.dev_attr.attr,
+	&sensor_dev_attr_pwm1_min.dev_attr.attr,
+	&sensor_dev_attr_pwm1_max.dev_attr.attr,
 	NULL
 };
 
 static umode_t hwmon_attributes_visible(struct kobject *kobj,
 					struct attribute *attr, int index)
 {
-	struct device *dev = container_of(kobj, struct device, kobj);
+	struct device *dev = kobj_to_dev(kobj);
 	struct radeon_device *rdev = dev_get_drvdata(dev);
+	umode_t effective_mode = attr->mode;
 
-	/* Skip limit attributes if DPM is not enabled */
+	/* Skip attributes if DPM is not enabled */
 	if (rdev->pm.pm_method != PM_METHOD_DPM &&
 	    (attr == &sensor_dev_attr_temp1_crit.dev_attr.attr ||
-	     attr == &sensor_dev_attr_temp1_crit_hyst.dev_attr.attr))
+	     attr == &sensor_dev_attr_temp1_crit_hyst.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_enable.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_max.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_min.dev_attr.attr))
 		return 0;
 
-	return attr->mode;
+	/* Skip fan attributes if fan is not present */
+	if (rdev->pm.no_fan &&
+	    (attr == &sensor_dev_attr_pwm1.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_enable.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_max.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_min.dev_attr.attr))
+		return 0;
+
+	/* mask fan attributes if we have no bindings for this asic to expose */
+	if ((!rdev->asic->dpm.get_fan_speed_percent &&
+	     attr == &sensor_dev_attr_pwm1.dev_attr.attr) || /* can't query fan */
+	    (!rdev->asic->dpm.fan_ctrl_get_mode &&
+	     attr == &sensor_dev_attr_pwm1_enable.dev_attr.attr)) /* can't query state */
+		effective_mode &= ~S_IRUGO;
+
+	if ((!rdev->asic->dpm.set_fan_speed_percent &&
+	     attr == &sensor_dev_attr_pwm1.dev_attr.attr) || /* can't manage fan */
+	    (!rdev->asic->dpm.fan_ctrl_set_mode &&
+	     attr == &sensor_dev_attr_pwm1_enable.dev_attr.attr)) /* can't manage state */
+		effective_mode &= ~S_IWUSR;
+
+	/* hide max/min values if we can't both query and manage the fan */
+	if ((!rdev->asic->dpm.set_fan_speed_percent &&
+	     !rdev->asic->dpm.get_fan_speed_percent) &&
+	    (attr == &sensor_dev_attr_pwm1_max.dev_attr.attr ||
+	     attr == &sensor_dev_attr_pwm1_min.dev_attr.attr))
+		return 0;
+
+	return effective_mode;
 }
 
 static const struct attribute_group hwmon_attrgroup = {
@@ -714,6 +857,12 @@ static bool radeon_dpm_single_display(struct radeon_device *rdev)
 		if (radeon_dpm_vblank_too_short(rdev))
 			single_display = false;
 	}
+
+	/* 120hz tends to be problematic even if they are under the
+	 * vblank limit.
+	 */
+	if (single_display && (r600_dpm_get_vrefresh(rdev) >= 120))
+		single_display = false;
 
 	return single_display;
 }
@@ -923,7 +1072,6 @@ force:
 		radeon_dpm_print_power_state(rdev, rdev->pm.dpm.requested_ps);
 	}
 
-	mutex_lock(&rdev->ddev->struct_mutex);
 	down_write(&rdev->pm.mclk_lock);
 	mutex_lock(&rdev->ring_lock);
 
@@ -974,7 +1122,6 @@ force:
 done:
 	mutex_unlock(&rdev->ring_lock);
 	up_write(&rdev->pm.mclk_lock);
-	mutex_unlock(&rdev->ddev->struct_mutex);
 }
 
 void radeon_dpm_enable_uvd(struct radeon_device *rdev, bool enable)
@@ -1404,8 +1551,7 @@ int radeon_pm_late_init(struct radeon_device *rdev)
 				ret = device_create_file(rdev->dev, &dev_attr_power_method);
 				if (ret)
 					DRM_ERROR("failed to create device file for power method\n");
-				if (!ret)
-					rdev->pm.sysfs_initialized = true;
+				rdev->pm.sysfs_initialized = true;
 			}
 
 			mutex_lock(&rdev->pm.mutex);
@@ -1619,7 +1765,11 @@ static bool radeon_pm_in_vbl(struct radeon_device *rdev)
 	 */
 	for (crtc = 0; (crtc < rdev->num_crtc) && in_vbl; crtc++) {
 		if (rdev->pm.active_crtcs & (1 << crtc)) {
-			vbl_status = radeon_get_crtc_scanoutpos(rdev->ddev, crtc, 0, &vpos, &hpos, NULL, NULL);
+			vbl_status = radeon_get_crtc_scanoutpos(rdev->ddev,
+								crtc,
+								USE_REAL_VBLANKSTART,
+								&vpos, &hpos, NULL, NULL,
+								&rdev->mode_info.crtcs[crtc]->base.hwmode);
 			if ((vbl_status & DRM_SCANOUTPOS_VALID) &&
 			    !(vbl_status & DRM_SCANOUTPOS_IN_VBLANK))
 				in_vbl = false;

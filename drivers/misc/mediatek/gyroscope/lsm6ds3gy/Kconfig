@@ -1,0 +1,4 @@
+
+config MTK_LSM6DS3GY
+	bool "LSM6DS3 gyroscope for MediaTek package"
+	default n

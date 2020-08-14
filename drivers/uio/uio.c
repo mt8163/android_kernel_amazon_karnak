@@ -56,12 +56,12 @@ static ssize_t map_name_show(struct uio_mem *mem, char *buf)
 
 static ssize_t map_addr_show(struct uio_mem *mem, char *buf)
 {
-	return sprintf(buf, "0x%llx\n", (unsigned long long)mem->addr);
+	return sprintf(buf, "%pa\n", &mem->addr);
 }
 
 static ssize_t map_size_show(struct uio_mem *mem, char *buf)
 {
-	return sprintf(buf, "0x%lx\n", mem->size);
+	return sprintf(buf, "%pa\n", &mem->size);
 }
 
 static ssize_t map_offset_show(struct uio_mem *mem, char *buf)
@@ -249,8 +249,6 @@ static struct class uio_class = {
 	.dev_groups = uio_groups,
 };
 
-bool uio_class_registered;
-
 /*
  * device functions
  */
@@ -273,12 +271,16 @@ static int uio_dev_add_attributes(struct uio_device *idev)
 			map_found = 1;
 			idev->map_dir = kobject_create_and_add("maps",
 							&idev->dev->kobj);
-			if (!idev->map_dir)
+			if (!idev->map_dir) {
+				ret = -ENOMEM;
 				goto err_map;
+			}
 		}
 		map = kzalloc(sizeof(*map), GFP_KERNEL);
-		if (!map)
-			goto err_map_kobj;
+		if (!map) {
+			ret = -ENOMEM;
+			goto err_map;
+		}
 		kobject_init(&map->kobj, &map_attr_type);
 		map->mem = mem;
 		mem->map = map;
@@ -287,7 +289,7 @@ static int uio_dev_add_attributes(struct uio_device *idev)
 			goto err_map_kobj;
 		ret = kobject_uevent(&map->kobj, KOBJ_ADD);
 		if (ret)
-			goto err_map;
+			goto err_map_kobj;
 	}
 
 	for (pi = 0; pi < MAX_UIO_PORT_REGIONS; pi++) {
@@ -298,12 +300,16 @@ static int uio_dev_add_attributes(struct uio_device *idev)
 			portio_found = 1;
 			idev->portio_dir = kobject_create_and_add("portio",
 							&idev->dev->kobj);
-			if (!idev->portio_dir)
+			if (!idev->portio_dir) {
+				ret = -ENOMEM;
 				goto err_portio;
+			}
 		}
 		portio = kzalloc(sizeof(*portio), GFP_KERNEL);
-		if (!portio)
-			goto err_portio_kobj;
+		if (!portio) {
+			ret = -ENOMEM;
+			goto err_portio;
+		}
 		kobject_init(&portio->kobj, &portio_attr_type);
 		portio->port = port;
 		port->portio = portio;
@@ -313,7 +319,7 @@ static int uio_dev_add_attributes(struct uio_device *idev)
 			goto err_portio_kobj;
 		ret = kobject_uevent(&portio->kobj, KOBJ_ADD);
 		if (ret)
-			goto err_portio;
+			goto err_portio_kobj;
 	}
 
 	return 0;
@@ -526,6 +532,7 @@ static ssize_t uio_read(struct file *filep, char __user *buf,
 
 		event_count = atomic_read(&idev->event);
 		if (event_count != listener->event_count) {
+			__set_current_state(TASK_RUNNING);
 			if (copy_to_user(buf, &event_count, count))
 				retval = -EFAULT;
 			else {
@@ -773,9 +780,6 @@ static int init_uio_class(void)
 		printk(KERN_ERR "class_register failed for uio\n");
 		goto err_class_register;
 	}
-
-	uio_class_registered = true;
-
 	return 0;
 
 err_class_register:
@@ -786,7 +790,6 @@ exit:
 
 static void release_uio_class(void)
 {
-	uio_class_registered = false;
 	class_unregister(&uio_class);
 	uio_major_cleanup();
 }
@@ -805,9 +808,6 @@ int __uio_register_device(struct module *owner,
 {
 	struct uio_device *idev;
 	int ret = 0;
-
-	if (!uio_class_registered)
-		return -EPROBE_DEFER;
 
 	if (!parent || !info || !info->name || !info->version)
 		return -EINVAL;
@@ -844,12 +844,18 @@ int __uio_register_device(struct module *owner,
 	info->uio_dev = idev;
 
 	if (info->irq && (info->irq != UIO_IRQ_CUSTOM)) {
-		ret = devm_request_irq(idev->dev, info->irq, uio_interrupt,
+		/*
+		 * Note that we deliberately don't use devm_request_irq
+		 * here. The parent module can unregister the UIO device
+		 * and call pci_disable_msi, which requires that this
+		 * irq has been freed. However, the device may have open
+		 * FDs at the time of unregister and therefore may not be
+		 * freed until they are released.
+		 */
+		ret = request_irq(info->irq, uio_interrupt,
 				  info->irq_flags, info->name, idev);
-		if (ret) {
-			info->uio_dev = NULL;
+		if (ret)
 			goto err_request_irq;
-		}
 	}
 
 	return 0;
@@ -882,6 +888,9 @@ void uio_unregister_device(struct uio_info *info)
 
 	uio_dev_del_attributes(idev);
 
+	if (info->irq && info->irq != UIO_IRQ_CUSTOM)
+		free_irq(info->irq, idev);
+
 	device_destroy(&uio_class, MKDEV(uio_major, idev->minor));
 
 	return;
@@ -896,6 +905,7 @@ static int __init uio_init(void)
 static void __exit uio_exit(void)
 {
 	release_uio_class();
+	idr_destroy(&uio_idr);
 }
 
 module_init(uio_init)

@@ -1,0 +1,1 @@
+obj-$(CONFIG_TOUCHSCREEN_FTS) += focaltech_upgrade_ft5526.o

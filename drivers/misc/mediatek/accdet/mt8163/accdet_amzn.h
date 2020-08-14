@@ -26,16 +26,16 @@
 #include <linux/string.h>
 
 /*----------------------------------------------------------------------
-IOCTL
-----------------------------------------------------------------------*/
+ * IOCTL
+ *---------------------------------------------------------------------- */
 #define ACCDET_DEVNAME "accdet"
 #define ACCDET_IOC_MAGIC 'A'
 #define ACCDET_INIT _IO(ACCDET_IOC_MAGIC, 0)
 #define SET_CALL_STATE _IO(ACCDET_IOC_MAGIC, 1)
 #define GET_BUTTON_STATUS _IO(ACCDET_IOC_MAGIC, 2)
 
-extern const struct file_operations *accdet_get_fops(void);/*from accdet_drv.c*/
-extern struct platform_driver accdet_driver_func(void);	/*from accdet_drv.c*/
+extern const struct file_operations *accdet_get_fops(void); /* from accdet_drv.c */
+extern struct platform_driver accdet_driver_func(void); /* from accdet_drv.c */
 extern struct of_device_id accdet_of_match[];
 void mt_accdet_pm_restore_noirq(void);
 long mt_accdet_unlocked_ioctl(unsigned int cmd, unsigned long arg);

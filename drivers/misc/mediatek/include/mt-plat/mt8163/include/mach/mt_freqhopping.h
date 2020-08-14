@@ -1,5 +1,22 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MT_FREQHOPPING_H__
 #define __MT_FREQHOPPING_H__
+
+#if 0				/* L318_Need_Related_File */
+#include <linux/xlog.h>
+#endif				/* L318_Need_Related_File */
 
 #define PLATFORM_DEP_DEBUG_PROC_READ
 #undef  DISABLE_FREQ_HOPPING	/* Disable all FHCTL function for Bringup */
@@ -7,6 +24,7 @@
 #define FHTAG "[FH]"
 #define VERBOSE_DEBUG 0
 #define DEBUG_MSG_ENABLE 0
+#define FHCTL_LOG_ENABLE 0
 
 #if VERBOSE_DEBUG
 #define FH_MSG(fmt, args...) \
@@ -15,13 +33,11 @@
 
 #define FH_MSG_DEBUG   FH_MSG
 #else
-#if 1
 #define FH_MSG(fmt, args...) \
-	pr_debug(fmt, ##args)
-#else
-#define FH_MSG(fmt, args...) \
-	pr_debug(FHTAG""fmt"\n", ##args)
-#endif
+	do {    \
+		if (FHCTL_LOG_ENABLE)           \
+			pr_debug(fmt, ##args); \
+	} while (0)
 
 #define FH_MSG_DEBUG(fmt, args...)\
 	do {    \

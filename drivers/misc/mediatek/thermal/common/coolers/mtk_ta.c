@@ -1,16 +1,15 @@
 /*
-* Copyright (C) 2016 MediaTek Inc.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
-
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -19,8 +18,16 @@
 #include <linux/types.h>
 #include <linux/proc_fs.h>
 #include "mt-plat/mtk_thermal_monitor.h"
-#include "mach/mt_thermal.h"
+#include "mach/mtk_thermal.h"
 #include "mt-plat/mtk_thermal_platform.h"
+#include "mtk_ts_imgsensor.h"
+#include "mtk_ts_pa.h"
+#include "mtk_ts_wmt.h"
+#include "mtk_cooler_atm.h"
+#include "mtk_cooler_fps.h"
+#include "mtk_cooler_bcct.h"
+#include "mtk_cooler_bcct_v1.h"
+#include <mtk_cooler_setting.h>
 #include <linux/slab.h>
 #include <linux/seq_file.h>
 #include <tscpu_settings.h>
@@ -33,44 +40,59 @@
 #include <linux/skbuff.h>
 #include <linux/reboot.h>
 #include <linux/vmalloc.h>
+#include <linux/uidgid.h>
+#define MAX_LEN	128
 
+static kuid_t uid = KUIDT_INIT(0);
+static kgid_t gid = KGIDT_INIT(1000);
+static unsigned int fg_app_pid;
 static int mtkts_ta_debug_log;
 
 #define tsta_dprintk(fmt, args...)   \
 	do {                                    \
 		if (mtkts_ta_debug_log) {                \
-			pr_debug("[Thermal_TA]" fmt, ##args); \
+			pr_debug("[Thermal/TC/TA]" fmt, ##args); \
 		}                                   \
 	} while (0)
 
-#define tsta_warn(fmt, args...)  pr_warn("[Thermal_TA]" fmt, ##args)
+#define tsta_warn(fmt, args...)  pr_notice("[Thermal/TC/TA]" fmt, ##args)
+
+/* ************************************ */
+/* Weak functions */
+/* ************************************ */
+	int __attribute__ ((weak))
+get_image_sensor_state(void)
+{
+	return -1;
+}
 
 /*=============================================================
  *Local variable definition
- *=============================================================*/
+ *=============================================================
+ */
 
 static struct sock *daemo_nl_sk;
-static void ta_nl_send_to_user(int pid, int seq, struct tad_nl_msg_t *reply_msg);
+static void ta_nl_send_to_user(
+	int pid, int seq, struct tad_nl_msg_t *reply_msg);
+
 static int g_tad_pid;
 static bool init_flag;
 static int g_tad_ttj;
-
+struct SPA_T thermal_spa_t;
+static struct tad_nl_msg_t tad_ret_msg;
 
 /*=============================================================
  *Local function prototype
- *=============================================================*/
+ *=============================================================
+ */
 
 /*=============================================================
  *Weak functions
- *=============================================================*/
+ *=============================================================
+ */
 #define NETLINK_TAD 27
 /*=============================================================*/
 
-/*========================*/
-/* Global variables						*/
-/*========================*/
-struct SPA_T thermal_spa_t;
-static struct tad_nl_msg_t tad_ret_msg;
 
 
 
@@ -82,54 +104,108 @@ void atm_ctrl_cmd_from_user(void *nl_data, struct tad_nl_msg_t *ret_msg)
 
 	msg = nl_data;
 
-	/*tsta_dprintk("[atm_ctrl_cmd_from_user] tad_cmd = %d, tad_data_len = %d\n" ,
-	msg->tad_cmd , msg->tad_data_len);*/
+	/*tsta_dprintk(
+	 *	"[atm_ctrl_cmd_from_user] tad_cmd = %d, tad_data_len = %d\n",
+	 *	msg->tad_cmd , msg->tad_data_len);
+	 */
 
 	ret_msg->tad_cmd = msg->tad_cmd;
 
 	switch (msg->tad_cmd) {
 	case TA_DAEMON_CMD_NOTIFY_DAEMON_CATMINIT:
 		{
+			memcpy(ret_msg->tad_data, &thermal_atm_t,
+							sizeof(thermal_atm_t));
 
-			memcpy(ret_msg->tad_data, &thermal_atm_t, sizeof(thermal_atm_t));
 			ret_msg->tad_data_len += sizeof(thermal_atm_t);
 
-			tsta_dprintk("[atm_ctrl_cmd_from_user] ret_msg->tad_data_len %d\n" , ret_msg->tad_data_len);
+			tsta_dprintk(
+			"[atm_ctrl_cmd_from_user] ret_msg->tad_data_len %d\n",
+			ret_msg->tad_data_len);
 		}
 		break;
 	case TA_DAEMON_CMD_GET_INIT_FLAG:
 		{
 			ret_msg->tad_data_len += sizeof(init_flag);
-			memcpy(ret_msg->tad_data, &init_flag, sizeof(init_flag));
-			tsta_dprintk("[atm_ctrl_cmd_from_user] init_flag = %d\n" , init_flag);
+			memcpy(ret_msg->tad_data, &init_flag,
+							sizeof(init_flag));
+
+			tsta_dprintk(
+				"[atm_ctrl_cmd_from_user] init_flag = %d\n",
+				init_flag);
 		}
 		break;
 	case TA_DAEMON_CMD_GET_TPCB:
 		{
-			int curr_tpcb = mtk_thermal_get_temp(MTK_THERMAL_SENSOR_AP);
+			int curr_tpcb = mtk_thermal_get_temp(
+							MTK_THERMAL_SENSOR_AP);
 
 			ret_msg->tad_data_len += sizeof(curr_tpcb);
-			memcpy(ret_msg->tad_data, &curr_tpcb, sizeof(curr_tpcb));
-			tsta_dprintk("[atm_ctrl_cmd_from_user] curr_tpcb = %d\n" , curr_tpcb);
+			memcpy(ret_msg->tad_data, &curr_tpcb,
+						sizeof(curr_tpcb));
+
+			tsta_dprintk(
+				"[atm_ctrl_cmd_from_user] curr_tpcb = %d\n",
+								curr_tpcb);
 		}
 		break;
 
 	case TA_DAEMON_CMD_SET_DAEMON_PID:
 		{
-			memcpy(&g_tad_pid, &msg->tad_data[0], sizeof(g_tad_pid));
-			tsta_dprintk("[atm_ctrl_cmd_from_user] g_tad_pid = %d\n", g_tad_pid);
+			memcpy(&g_tad_pid, &msg->tad_data[0],
+						sizeof(g_tad_pid));
+
+			tsta_dprintk(
+				"[atm_ctrl_cmd_from_user] g_tad_pid = %d\n",
+								g_tad_pid);
 		}
 		break;
 	case TA_DAEMON_CMD_SET_TTJ:
 		{
-			memcpy(&g_tad_ttj, &msg->tad_data[0], sizeof(g_tad_ttj));
-			tsta_dprintk("[atm_ctrl_cmd_from_user] g_tad_ttj = %d\n", g_tad_ttj);
+			memcpy(&g_tad_ttj, &msg->tad_data[0],
+						sizeof(g_tad_ttj));
+
+			tsta_dprintk(
+				"[atm_ctrl_cmd_from_user] g_tad_ttj = %d\n",
+								g_tad_ttj);
 		}
 		break;
 	case TA_DAEMON_CMD_GET_TI:
 		{
 			/* --- SPA parameters --- */
+#if FEATURE_SPA
+			thermal_spa_t.t_spa_system_info.cpu_Tj =
+				mtk_thermal_get_temp(MTK_THERMAL_SENSOR_CPU);
 
+			thermal_spa_t.t_spa_system_info.Tpcb =
+				mtk_thermal_get_temp(MTK_THERMAL_SENSOR_AP);
+
+			thermal_spa_t.t_spa_system_info.OPP_power =
+						clatm_get_curr_opp_power();
+
+			thermal_spa_t.t_spa_system_info.fg_app_pid = fg_app_pid;
+
+			thermal_spa_t.t_spa_system_info.avg_fps =
+							clfps_get_disp_fps();
+
+			thermal_spa_t.t_spa_system_info.WIFI_UL_Tput =
+						tswmt_get_WiFi_tx_tput();
+
+			thermal_spa_t.t_spa_system_info.MD_UL_Tput =
+							tspa_get_MD_tx_tput();
+
+			thermal_spa_t.t_spa_system_info.chg_current_limit =
+						clbcct_get_chr_curr_limit();
+
+			thermal_spa_t.t_spa_system_info.input_current_limit =
+						clbcct_get_input_curr_limit();
+
+			thermal_spa_t.t_spa_system_info.camera_on =
+						get_image_sensor_state();
+
+			thermal_spa_t.t_spa_system_info.game_mode =
+							clfps_get_game_mode();
+#else
 			thermal_spa_t.t_spa_system_info.cpu_Tj = 0;
 			thermal_spa_t.t_spa_system_info.Tpcb = 0;
 			thermal_spa_t.t_spa_system_info.OPP_power = 0;
@@ -141,17 +217,22 @@ void atm_ctrl_cmd_from_user(void *nl_data, struct tad_nl_msg_t *ret_msg)
 			thermal_spa_t.t_spa_system_info.input_current_limit = 0;
 			thermal_spa_t.t_spa_system_info.camera_on = 0;
 			thermal_spa_t.t_spa_system_info.game_mode = 0;
+#endif
 
+			memcpy(ret_msg->tad_data, &thermal_spa_t,
+							sizeof(thermal_spa_t));
 
-			memcpy(ret_msg->tad_data, &thermal_spa_t, sizeof(thermal_spa_t));
 			ret_msg->tad_data_len += sizeof(thermal_spa_t);
 
-			tsta_dprintk("[atm_ctrl_cmd_from_user] ret_msg->tad_data_len %d\n", ret_msg->tad_data_len);
+			tsta_dprintk(
+			"[atm_ctrl_cmd_from_user] ret_msg->tad_data_len %d\n",
+				ret_msg->tad_data_len);
 		}
 		break;
 
 	default:
-			tsta_warn("bad TA_DAEMON_CTRL_CMD_FROM_USER 0x%x\n", msg->tad_cmd);
+		tsta_warn("bad TA_DAEMON_CTRL_CMD_FROM_USER 0x%x\n",
+							msg->tad_cmd);
 		break;
 	}
 
@@ -184,13 +265,14 @@ static void ta_nl_send_to_user(int pid, int seq, struct tad_nl_msg_t *reply_msg)
 	NETLINK_CB(skb).portid = 0; /* from kernel */
 	NETLINK_CB(skb).dst_group = 0; /* unicast */
 
-	tsta_dprintk("[ta_nl_send_to_user] netlink_unicast size=%d tad_cmd=%d pid=%d\n",
+	tsta_dprintk(
+	"[ta_nl_send_to_user] netlink_unicast size=%d tad_cmd=%d pid=%d\n",
 		size, reply_msg->tad_cmd, pid);
 
 
 	ret = netlink_unicast(daemo_nl_sk, skb, pid, MSG_DONTWAIT);
 	if (ret < 0)
-		tsta_warn("[ta_nl_send_to_user] send failed %d\n", ret);
+		pr_notice("[ta_nl_send_to_user] send failed %d\n", ret);
 
 
 	tsta_dprintk("[ta_nl_send_to_user] netlink_unicast- ret=%d\n", ret);
@@ -213,18 +295,20 @@ static void ta_nl_data_handler(struct sk_buff *skb)
 	uid = NETLINK_CREDS(skb)->uid;
 	seq = nlh->nlmsg_seq;
 
-	/*tsta_dprintk("[ta_nl_data_handler] recv skb from user space uid:%d pid:%d seq:%d\n", uid, pid, seq);*/
+	/*tsta_dprintk(
+	 *"[ta_nl_data_handler] recv skb from user space uid:%d pid:%d seq:%d\n"
+	 * ,uid, pid, seq);
+	 */
 	data = NLMSG_DATA(nlh);
 
 	tad_msg = (struct tad_nl_msg_t *)data;
 	if (tad_msg->tad_ret_data_len >= TAD_NL_MSG_MAX_LEN) {
-		tsta_warn("[ta_nl_data_handler] tad_msg->=ad_ret_data_len=%d\n", tad_msg->tad_ret_data_len);
+		tsta_warn("[ta_nl_data_handler] tad_msg->=ad_ret_data_len=%d\n",
+		tad_msg->tad_ret_data_len);
 		return;
 	}
 
 	size = tad_msg->tad_ret_data_len + TAD_NL_MSG_T_HDR_LEN;
-
-
 
 	memset(&tad_ret_msg, 0, size);
 
@@ -233,19 +317,22 @@ static void ta_nl_data_handler(struct sk_buff *skb)
 	tsta_dprintk("[ta_nl_data_handler] send to user space process done\n");
 
 
+
 }
 
 int wakeup_ta_algo(int flow_state)
 {
-	tsta_dprintk("[wakeup_ta_algo]g_tad_pid=%d, state=%d\n" , g_tad_pid, flow_state);
+	tsta_dprintk("[wakeup_ta_algo]g_tad_pid=%d, state=%d\n", g_tad_pid,
+								flow_state);
 
 	if (g_tad_pid != 0) {
-		struct tad_nl_msg_t *tad_msg;
+		struct tad_nl_msg_t *tad_msg = NULL;
 		int size = TAD_NL_MSG_T_HDR_LEN + sizeof(flow_state);
 
 		/*tad_msg = (struct tad_nl_msg_t *)vmalloc(size);*/
 		tad_msg = vmalloc(size);
-		if (!tad_msg)
+
+		if (tad_msg == NULL)
 			return -ENOMEM;
 
 		tsta_dprintk("[wakeup_ta_algo] malloc size=%d\n", size);
@@ -270,8 +357,8 @@ static int tsta_read_log(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t tsta_write_log(struct file *file, const char __user *buffer, size_t count,
-			       loff_t *data)
+static ssize_t tsta_write_log(
+struct file *file, const char __user *buffer, size_t count, loff_t *data)
 {
 	char desc[32];
 	int log_switch;
@@ -311,6 +398,50 @@ static const struct file_operations mtktsta_log_fops = {
 	.release = single_release,
 };
 
+static ssize_t clmutt_fg_pid_write(
+struct file *filp, const char __user *buf, size_t count, loff_t *data)
+{
+	int ret = 0;
+	char tmp[MAX_LEN] = {0};
+	int len = 0;
+
+	len = (count < (MAX_LEN - 1)) ? count : (MAX_LEN - 1);
+	/* write data to the buffer */
+	if (copy_from_user(tmp, buf, len))
+		return -EFAULT;
+
+	ret = kstrtouint(tmp, 10, &fg_app_pid);
+	if (ret)
+		WARN_ON(1);
+
+	tsta_dprintk("[%s] %s = %d\n", __func__, tmp, fg_app_pid);
+
+	return len;
+}
+
+static int clmutt_fg_pid_read(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", fg_app_pid);
+
+	tsta_dprintk("[%s] %d\n", __func__, fg_app_pid);
+
+	return 0;
+}
+
+static int clmutt_fg_pid_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, clmutt_fg_pid_read, PDE_DATA(inode));
+}
+
+static const struct file_operations clmutt_fg_pid_fops = {
+	.owner = THIS_MODULE,
+	.open = clmutt_fg_pid_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = clmutt_fg_pid_write,
+	.release = single_release,
+};
+
 static void tsta_create_fs(void)
 {
 
@@ -321,11 +452,18 @@ static void tsta_create_fs(void)
 
 	mtktsta_dir = mtk_thermal_get_proc_drv_therm_dir_entry();
 	if (!mtktsta_dir) {
-		tscpu_printk("[%s]: mkdir /proc/driver/thermal failed\n", __func__);
+		tscpu_printk("[%s]: mkdir /proc/driver/thermal failed\n",
+								__func__);
 	} else {
 
 		entry =
-		    proc_create("ta_log", S_IRUGO | S_IWUSR, mtktsta_dir, &mtktsta_log_fops);
+			proc_create("ta_log", 0644, mtktsta_dir,
+						&mtktsta_log_fops);
+
+		entry = proc_create("ta_fg_pid", 0664, mtktsta_dir,
+						&clmutt_fg_pid_fops);
+		if (entry)
+			proc_set_user(entry, uid, gid);
 	}
 }
 

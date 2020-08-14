@@ -237,6 +237,18 @@ static u16 ml_calculate_direction(u16 direction, u16 force,
 		(force + new_force)) << 1;
 }
 
+#define FRAC_N 8
+static inline s16 fixp_new16(s16 a)
+{
+	return ((s32)a) >> (16 - FRAC_N);
+}
+
+static inline s16 fixp_mult(s16 a, s16 b)
+{
+	a = ((s32)a * 0x100) / 0x7fff;
+	return ((s32)(a * b)) >> FRAC_N;
+}
+
 /*
  * Combine two effects and apply gain.
  */
@@ -247,7 +259,7 @@ static void ml_combine_effects(struct ff_effect *effect,
 	struct ff_effect *new = state->effect;
 	unsigned int strong, weak, i;
 	int x, y;
-	fixp_t level;
+	s16 level;
 
 	switch (new->type) {
 	case FF_CONSTANT:
@@ -255,8 +267,8 @@ static void ml_combine_effects(struct ff_effect *effect,
 		level = fixp_new16(apply_envelope(state,
 					new->u.constant.level,
 					&new->u.constant.envelope));
-		x = fixp_mult(fixp_sin(i), level) * gain / 0xffff;
-		y = fixp_mult(-fixp_cos(i), level) * gain / 0xffff;
+		x = fixp_mult(fixp_sin16(i), level) * gain / 0xffff;
+		y = fixp_mult(-fixp_cos16(i), level) * gain / 0xffff;
 		/*
 		 * here we abuse ff_ramp to hold x and y of constant force
 		 * If in future any driver wants something else than x and y
@@ -488,6 +500,15 @@ static int ml_ff_upload(struct input_dev *dev,
 static void ml_ff_destroy(struct ff_device *ff)
 {
 	struct ml_device *ml = ff->private;
+
+	/*
+	 * Even though we stop all playing effects when tearing down
+	 * an input device (via input_device_flush() that calls into
+	 * input_ff_flush() that stops and erases all effects), we
+	 * do not actually stop the timer, and therefore we should
+	 * do it here.
+	 */
+	del_timer_sync(&ml->timer);
 
 	kfree(ml->private);
 }

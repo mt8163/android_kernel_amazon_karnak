@@ -51,14 +51,9 @@
 #include <asm/ptrace.h>
 #include <asm/irq_regs.h>
 
-/*drivers/watchdog/mediatek/wdt/common/mtk_wdt.c*/
-extern void mtk_wdt_mode_config(bool dual_mode_en, bool irq, bool ext_en, bool ext_pol, bool wdt_en);
-
 /* Whether we react on sysrq keys or just ignore them */
 static int __read_mostly sysrq_enabled = CONFIG_MAGIC_SYSRQ_DEFAULT_ENABLE;
 static bool __read_mostly sysrq_always_enabled;
-
-void kree_disable_fiq(int irq);
 
 static bool sysrq_on(void)
 {
@@ -92,7 +87,7 @@ static void sysrq_handle_loglevel(int key)
 
 	i = key - '0';
 	console_loglevel = CONSOLE_LOGLEVEL_DEFAULT;
-	printk("Loglevel set to %d\n", i);
+	pr_info("Loglevel set to %d\n", i);
 	console_loglevel = i;
 }
 static struct sysrq_key_op sysrq_loglevel_op = {
@@ -138,6 +133,12 @@ static void sysrq_handle_crash(int key)
 {
 	char *killer = NULL;
 
+	/* we need to release the RCU read lock here,
+	 * otherwise we get an annoying
+	 * 'BUG: sleeping function called from invalid context'
+	 * complaint from the kernel before the panic.
+	 */
+	rcu_read_unlock();
 	panic_on_oops = 1;	/* force panic */
 	wmb();
 	*killer = 1;
@@ -148,46 +149,6 @@ static struct sysrq_key_op sysrq_crash_op = {
 	.action_msg	= "Trigger a crash",
 	.enable_mask	= SYSRQ_ENABLE_DUMP,
 };
-
-#if defined(CONFIG_MAGIC_SYSRQ_WD_TEST)
-static DEFINE_SPINLOCK(wdt_lock);
-
-static void sysrq_handle_wdt_sw_rst(int key)
-{
-
-	spin_lock(&wdt_lock);
-	while (1)
-		;
-	/* wait for softlockup and wdt IRQ/FIQ to kick in. */
-}
-
-static struct sysrq_key_op sysrq_wdt_sw_op = {
-	.handler	= sysrq_handle_wdt_sw_rst,
-	.help_msg	= "wdt sw rst(x)",
-	.action_msg	= "Trigger a sw wdt reset",
-	.enable_mask	= SYSRQ_ENABLE_DUMP,
-};
-
-static void sysrq_handle_wdt_hw_rst(int key)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&wdt_lock, flags);
-
-	mtk_wdt_mode_config(0, 0, 1, 0, 1);
-	while (1) {
-		;
-	};
-	/* wait for wdt hw to reboot DUT. */
-}
-
-static struct sysrq_key_op sysrq_wdt_hw_op = {
-	.handler	= sysrq_handle_wdt_hw_rst,
-	.help_msg	= "wdt hw rst(y)",
-	.action_msg	= "Trigger a hw wdt reset",
-	.enable_mask	= SYSRQ_ENABLE_DUMP,
-};
-#endif /* CONFIG_MAGIC_SYSRQ_WD_TEST */
 
 static void sysrq_handle_reboot(int key)
 {
@@ -212,6 +173,48 @@ static struct sysrq_key_op sysrq_sync_op = {
 	.action_msg	= "Emergency Sync",
 	.enable_mask	= SYSRQ_ENABLE_SYNC,
 };
+
+
+static void sysrq_handle_wtd(int key)
+{
+	DEFINE_SPINLOCK(wdt_test_lock);
+
+	spin_lock(&wdt_test_lock);
+	while(1);
+
+}
+
+static struct sysrq_key_op sysrq_wtd_op = {
+	.handler	= sysrq_handle_wtd,
+	.help_msg	= "WTD(s)",
+	.action_msg	= "Watchdog timeout",
+	.enable_mask	= SYSRQ_ENABLE_BOOT,
+};
+
+#ifdef CONFIG_MEDIATEK_WATCHDOG
+void mtk_wdt_force_hw_wdt(void);
+#endif
+
+static void sysrq_handle_hw_wtd(int key)
+{
+	DEFINE_SPINLOCK(wdt_test_lock);
+
+	spin_lock(&wdt_test_lock);
+#ifdef CONFIG_MEDIATEK_WATCHDOG
+	mtk_wdt_force_hw_wdt();
+#endif
+	while(1);
+
+}
+
+static struct sysrq_key_op sysrq_hw_wtd_op = {
+	.handler	= sysrq_handle_hw_wtd,
+	.help_msg	= "WTD(s)",
+	.action_msg	= "HW_Watchdog timeout",
+	.enable_mask	= SYSRQ_ENABLE_BOOT,
+};
+
+
 
 static void sysrq_handle_show_timers(int key)
 {
@@ -262,7 +265,7 @@ static void showacpu(void *dummy)
 		return;
 
 	spin_lock_irqsave(&show_lock, flags);
-	printk(KERN_INFO "CPU%d:\n", smp_processor_id());
+	pr_info("CPU%d:\n", smp_processor_id());
 	show_stack(NULL, NULL);
 	spin_unlock_irqrestore(&show_lock, flags);
 }
@@ -287,7 +290,7 @@ static void sysrq_handle_showallcpus(int key)
 		if (in_irq())
 			regs = get_irq_regs();
 		if (regs) {
-			printk(KERN_INFO "CPU%d:\n", smp_processor_id());
+			pr_info("CPU%d:\n", smp_processor_id());
 			show_regs(regs);
 		}
 		schedule_work(&sysrq_showallcpus);
@@ -322,6 +325,7 @@ static struct sysrq_key_op sysrq_showregs_op = {
 static void sysrq_handle_showstate(int key)
 {
 	show_state();
+	show_workqueue_state();
 }
 static struct sysrq_key_op sysrq_showstate_op = {
 	.handler	= sysrq_handle_showstate,
@@ -402,8 +406,19 @@ static struct sysrq_key_op sysrq_term_op = {
 
 static void moom_callback(struct work_struct *ignored)
 {
-	out_of_memory(node_zonelist(first_memory_node, GFP_KERNEL), GFP_KERNEL,
-		      0, NULL, true);
+	const gfp_t gfp_mask = GFP_KERNEL;
+	struct oom_control oc = {
+		.zonelist = node_zonelist(first_memory_node, gfp_mask),
+		.nodemask = NULL,
+		.memcg = NULL,
+		.gfp_mask = gfp_mask,
+		.order = -1,
+	};
+
+	mutex_lock(&oom_lock);
+	if (!out_of_memory(&oc))
+		pr_info("OOM request ignored because killer is disabled\n");
+	mutex_unlock(&oom_lock);
 }
 
 static DECLARE_WORK(moom_work, moom_callback);
@@ -508,16 +523,12 @@ static struct sysrq_key_op *sysrq_key_table[36] = {
 	/* v: May be registered for frame buffer console restore */
 	NULL,				/* v */
 	&sysrq_showstate_blocked_op,	/* w */
-#if defined(CONFIG_MAGIC_SYSRQ_WD_TEST)
-	&sysrq_wdt_sw_op,			/* x */
-	&sysrq_wdt_hw_op,			/* y */
-#else
+	/* x: May be registered on mips for TLB dump */
 	/* x: May be registered on ppc/powerpc for xmon */
 	/* x: May be registered on sparc64 for global PMU dump */
-	NULL,				/* x */
+	&sysrq_wtd_op,				/* x */
 	/* y: May be registered on sparc64 for global register dump */
-	NULL,				/* y */
-#endif
+	&sysrq_hw_wtd_op,			/* y */
 	&sysrq_ftrace_dump_op,		/* z */
 };
 
@@ -574,7 +585,7 @@ void __handle_sysrq(int key, bool check_mask)
 	 */
 	orig_log_level = console_loglevel;
 	console_loglevel = CONSOLE_LOGLEVEL_DEFAULT;
-	printk(KERN_INFO "SysRq : ");
+	pr_info("SysRq : ");
 
         op_p = __sysrq_get_key_op(key);
         if (op_p) {
@@ -583,14 +594,14 @@ void __handle_sysrq(int key, bool check_mask)
 		 * should not) and is the invoked operation enabled?
 		 */
 		if (!check_mask || sysrq_on_mask(op_p->enable_mask)) {
-			printk("%s\n", op_p->action_msg);
+			pr_cont("%s\n", op_p->action_msg);
 			console_loglevel = orig_log_level;
 			op_p->handler(key);
 		} else {
-			printk("This sysrq operation is disabled.\n");
+			pr_cont("This sysrq operation is disabled.\n");
 		}
 	} else {
-		printk("HELP : ");
+		pr_cont("HELP : ");
 		/* Only print the help msg once per handler */
 		for (i = 0; i < ARRAY_SIZE(sysrq_key_table); i++) {
 			if (sysrq_key_table[i]) {
@@ -601,10 +612,10 @@ void __handle_sysrq(int key, bool check_mask)
 					;
 				if (j != i)
 					continue;
-				printk("%s ", sysrq_key_table[i]->help_msg);
+				pr_cont("%s ", sysrq_key_table[i]->help_msg);
 			}
 		}
-		printk("\n");
+		pr_cont("\n");
 		console_loglevel = orig_log_level;
 	}
 	rcu_read_unlock();
@@ -982,8 +993,8 @@ static const struct input_device_id sysrq_ids[] = {
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 				INPUT_DEVICE_ID_MATCH_KEYBIT,
-		.evbit = { BIT_MASK(EV_KEY) },
-		.keybit = { BIT_MASK(KEY_LEFTALT) },
+		.evbit = { [BIT_WORD(EV_KEY)] = BIT_MASK(EV_KEY) },
+		.keybit = { [BIT_WORD(KEY_LEFTALT)] = BIT_MASK(KEY_LEFTALT) },
 	},
 	{ },
 };
@@ -1038,7 +1049,7 @@ static int sysrq_reset_seq_param_set(const char *buffer,
 	return 0;
 }
 
-static struct kernel_param_ops param_ops_sysrq_reset_seq = {
+static const struct kernel_param_ops param_ops_sysrq_reset_seq = {
 	.get	= param_get_ushort,
 	.set	= sysrq_reset_seq_param_set,
 };
@@ -1046,6 +1057,10 @@ static struct kernel_param_ops param_ops_sysrq_reset_seq = {
 #define param_check_sysrq_reset_seq(name, p)	\
 	__param_check(name, p, unsigned short)
 
+/*
+ * not really modular, but the easiest way to keep compat with existing
+ * bootargs behaviour is to continue using module_param here.
+ */
 module_param_array_named(reset_seq, sysrq_reset_seq, sysrq_reset_seq,
 			 &sysrq_reset_seq_len, 0644);
 
@@ -1162,4 +1177,4 @@ static int __init sysrq_init(void)
 
 	return 0;
 }
-module_init(sysrq_init);
+device_initcall(sysrq_init);

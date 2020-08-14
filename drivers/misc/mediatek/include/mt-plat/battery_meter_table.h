@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #ifndef _BATTERY_METER_TABLE_H
 #define _BATTERY_METER_TABLE_H
 
@@ -10,50 +23,50 @@
 /* ============================================================*/
 /* typedef*/
 /* ============================================================*/
-typedef struct _BATTERY_PROFILE_STRUCT {
+#define BATTERY_PROFILE_STRUCT struct battery_profile_struct
+
+struct battery_profile_struct {
 	signed int percentage;
 	signed int voltage;
-} BATTERY_PROFILE_STRUCT, *BATTERY_PROFILE_STRUCT_P;
+};
 
-typedef struct _R_PROFILE_STRUCT {
-	signed int resistance;
+#define R_PROFILE_STRUCT struct r_profile_struct
+
+struct r_profile_struct {
+	signed int resistance; /* Ohm*/
 	signed int voltage;
-} R_PROFILE_STRUCT, *R_PROFILE_STRUCT_P;
-
-typedef struct {
-	signed int BatteryTemp;
-	signed int TemperatureR;
-} BATT_TEMPERATURE;
+};
 
 #if defined(CONFIG_MTK_BATTERY_LIFETIME_DATA_SUPPORT)
-typedef struct {
+#define Q_MAX_AGING struct q_max_aging
+struct q_max_aging {
 	signed int Q_0_CYCLE;
 	signed int Q_500_CYCLE;
-} Q_MAX_AGING;
+};
 #endif
 /* ============================================================*/
 /* <DOD, Battery_Voltage> Table*/
 /* ============================================================*/
 BATT_TEMPERATURE Batt_Temperature_Table[] = {
-		{-20 , 75022},
-		{-15 , 57926},
-		{-10 , 45168},
-		{ -5 , 35548},
-		{  0 , 28224},
-		{  5 , 22595},
-		{ 10 , 18231},
-		{ 15 , 14820},
-		{ 20 , 12133},
-		{ 25 , 10000},
-		{ 30 , 8295},
-		{ 35 , 6922},
-		{ 40 , 5810},
-		{ 45 , 4903},
-		{ 50 , 4160},
-		{ 55 , 3547},
-		{ 60 , 3039},
-		{ 65 , 3038},
-		{ 70 , 3037}
+		{-20, 75022},
+		{-15, 57926},
+		{-10, 45168},
+		{ -5, 35548},
+		{  0, 28224},
+		{  5, 22595},
+		{ 10, 18231},
+		{ 15, 14820},
+		{ 20, 12133},
+		{ 25, 10000},
+		{ 30, 8295},
+		{ 35, 6922},
+		{ 40, 5810},
+		{ 45, 4903},
+		{ 50, 4160},
+		{ 55, 3547},
+		{ 60, 3039},
+		{ 65, 3038},
+		{ 70, 3037}
 };
 
 /* T0 -10C*/
@@ -142,9 +155,9 @@ Q_MAX_AGING q_max_t3_h_current_aging;
 /* function prototype*/
 /* ============================================================*/
 int fgauge_get_saddles(void);
-BATTERY_PROFILE_STRUCT_P fgauge_get_profile(unsigned int temperature);
+BATTERY_PROFILE_STRUCT *fgauge_get_profile(unsigned int temperature);
 
 int fgauge_get_saddles_r_table(void);
-R_PROFILE_STRUCT_P fgauge_get_profile_r_table(unsigned int temperature);
+R_PROFILE_STRUCT *fgauge_get_profile_r_table(unsigned int temperature);
 
 #endif	/*#ifndef _BATTERY_METER_TABLE_H*/

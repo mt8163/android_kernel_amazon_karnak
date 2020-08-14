@@ -24,11 +24,11 @@
 #include <linux/device.h>
 #include <linux/firmware.h>
 #include <linux/mutex.h>
+#include <linux/io.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
 #include <sound/tlv.h>
-#include <asm/io.h>
 #include "vx222.h"
 
 
@@ -92,6 +92,7 @@ static inline unsigned long vx2_reg_addr(struct vx_core *_chip, int reg)
 
 /**
  * snd_vx_inb - read a byte from the register
+ * @chip: VX core instance
  * @offset: register enum
  */
 static unsigned char vx2_inb(struct vx_core *chip, int offset)
@@ -101,6 +102,7 @@ static unsigned char vx2_inb(struct vx_core *chip, int offset)
 
 /**
  * snd_vx_outb - write a byte on the register
+ * @chip: VX core instance
  * @offset: the register offset
  * @val: the value to write
  */
@@ -114,6 +116,7 @@ static void vx2_outb(struct vx_core *chip, int offset, unsigned char val)
 
 /**
  * snd_vx_inl - read a 32bit word from the register
+ * @chip: VX core instance
  * @offset: register enum
  */
 static unsigned int vx2_inl(struct vx_core *chip, int offset)
@@ -123,6 +126,7 @@ static unsigned int vx2_inl(struct vx_core *chip, int offset)
 
 /**
  * snd_vx_outl - write a 32bit word on the register
+ * @chip: VX core instance
  * @offset: the register enum
  * @val: the value to write
  */
@@ -223,6 +227,7 @@ static int vx2_test_xilinx(struct vx_core *_chip)
 
 /**
  * vx_setup_pseudo_dma - set up the pseudo dma read/write mode.
+ * @chip: VX core instance
  * @do_write: 0 = read, 1 = set up for DMA write
  */
 static void vx2_setup_pseudo_dma(struct vx_core *chip, int do_write)
@@ -270,7 +275,7 @@ static void vx2_dma_write(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 		length >>= 2; /* in 32bit words */
 		/* Transfer using pseudo-dma. */
 		for (; length > 0; length--) {
-			outl(*addr, port);
+			outl(cpu_to_le32(*addr), port);
 			addr++;
 		}
 		addr = (u32 *)runtime->dma_area;
@@ -280,7 +285,7 @@ static void vx2_dma_write(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 	count >>= 2; /* in 32bit words */
 	/* Transfer using pseudo-dma. */
 	for (; count > 0; count--) {
-		outl(*addr, port);
+		outl(cpu_to_le32(*addr), port);
 		addr++;
 	}
 
@@ -308,7 +313,7 @@ static void vx2_dma_read(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 		length >>= 2; /* in 32bit words */
 		/* Transfer using pseudo-dma. */
 		for (; length > 0; length--)
-			*addr++ = inl(port);
+			*addr++ = le32_to_cpu(inl(port));
 		addr = (u32 *)runtime->dma_area;
 		pipe->hw_ptr = 0;
 	}
@@ -316,7 +321,7 @@ static void vx2_dma_read(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 	count >>= 2; /* in 32bit words */
 	/* Transfer using pseudo-dma. */
 	for (; count > 0; count--)
-		*addr++ = inl(port);
+		*addr++ = le32_to_cpu(inl(port));
 
 	vx2_release_pseudo_dma(chip);
 }

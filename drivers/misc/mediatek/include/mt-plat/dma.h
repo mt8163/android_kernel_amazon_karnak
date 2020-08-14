@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __ASM_ARCH_DMA_H
 #define __ASM_ARCH_DMA_H
 
@@ -40,17 +53,17 @@ typedef void (*DMA_ISR_CALLBACK) (void *);
 
 typedef u32 INFO;
 
-typedef enum {
+enum {
 	DMA_FALSE = 0,
 	DMA_TRUE
-} DMA_BOOL;
+};
 
-typedef enum {
+enum {
 	DMA_OK = 0,
 	DMA_FAIL
-} DMA_STATUS;
+};
 
-typedef enum {
+enum {
 	REMAINING_LENGTH = 0,	/* not valid for virtual FIFO */
 	VF_READPTR,		/* only valid for virtual FIFO */
 	VF_WRITEPTR,		/* only valid for virtual FIFO */
@@ -59,20 +72,20 @@ typedef enum {
 	VF_EMPTY,		/* only valid for virtual FIFO */
 	VF_FULL,		/* only valid for virtual FIFO */
 	VF_PORT
-} INFO_TYPE;
+};
 
-typedef enum {
+enum {
 	GDMA_1 = 0,
 	GDMA_2,
 	GDMA_ANY
-} DMA_CHAN;
+};
 
-typedef enum {
+enum {
 	ALL = 0,
 	SRC,
 	DST,
 	SRC_AND_DST
-} DMA_CONF_FLAG;
+};
 
 /* define GDMA configurations */
 struct mt_gdma_conf {
@@ -84,6 +97,7 @@ struct mt_gdma_conf {
 	unsigned int limiter;
 	dma_addr_t src;
 	dma_addr_t dst;
+	dma_addr_t jump;
 	int wpen;
 	int wpsd;
 	unsigned int wplen;
@@ -93,7 +107,6 @@ struct mt_gdma_conf {
 	unsigned int domain;
 	void (*isr_cb)(void *);
 	void *data;
-	unsigned int LPAE_en;
 };
 
 /* burst */
@@ -120,9 +133,9 @@ extern void mt_reset_dma(const unsigned int iChannel);
 extern void mt65xx_dma_running_status(void);
 extern void mt_reset_gdma_conf(const unsigned int iChannel);
 
-extern int mt_config_gdma(int channel, struct mt_gdma_conf *config, DMA_CONF_FLAG flag);
+extern int mt_config_gdma(int channel, struct mt_gdma_conf *config, int flag);
 extern int mt_free_gdma(int channel);
-extern int mt_req_gdma(DMA_CHAN chan);
+extern int mt_req_gdma(int chan);
 extern int mt_start_gdma(int channel);
 extern int mt_polling_gdma(int channel, unsigned long timeout);
 extern int mt_stop_gdma(int channel);
@@ -132,9 +145,9 @@ extern int mt_hard_reset_gdma(int channel);
 extern int mt_reset_gdma(int channel);
 extern void mt_dma_running_status(void);
 /* This channel is used for APDMA Dummy READ.
-   in MT6592 this channel will be used by Frequency hopping all the time
-   .Owner: Chieh-Jay Liu
-   */
+ * in MT6592 this channel will be used by Frequency hopping all the time
+ * .Owner: Chieh-Jay Liu
+ */
 #define DFS_APDMA_CHANNEL 0
 
 #endif				/* !__MT_DMA_H__ */

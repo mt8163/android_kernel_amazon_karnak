@@ -1,14 +1,16 @@
-
 /*
- * TI LP855x Backlight Driver
+ * Copyright (C) 2017 MediaTek Inc.
  *
- *			Copyright (C) 2011 Texas Instruments
- *
- * This program is free software; you can redistribute it and/or modify
+ * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
+
 /* #define DEBUG */
 
 #include <linux/module.h>
@@ -21,8 +23,8 @@
 #include <linux/delay.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
-#include <linux/platform_data/mtk_thermal.h>
-#include "../misc/mediatek/include/mt-plat/mt_boot_common.h"
+/* #include <linux/platform_data/mtk_thermal.h> */
+#include "../misc/mediatek/include/mt-plat/mtk_boot_common.h"
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
@@ -91,20 +93,6 @@ struct lp855x {
 	int size_program;
 	struct lp855x_rom_data *rom_data;
 	int gpio_en;
-	struct mtk_cooler_platform_data cool_dev;
-};
-
-static struct mtk_cooler_platform_data cooler = {
-	.type = "lcd-backlight",
-	.state = 0,
-	.max_state = THERMAL_MAX_TRIPS,
-	.level = 0,
-	.levels = {
-		175, 175, 175,
-		175, 175, 175,
-		175, 175, 175,
-		175, 175, 175
-	},
 };
 
 static unsigned char led_vmax;
@@ -119,8 +107,6 @@ static int __init setup_led_vmax(char *str)
 }
 __setup("lp855x_vmax=", setup_led_vmax);
 
-void mtkfb_set_customized_backlight_callback(void (*func)(void *private, unsigned int),
-					     void* private);
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	static void lp855x_early_suspend(struct early_suspend *es);
@@ -408,6 +394,7 @@ static void _lp855x_led_set_brightness(
 
 	} else if (mode == REGISTER_BASED) {
 		u8 val = brightness;
+
 		if (lp->brightness_limit)
 			val = brightness * lp->brightness_limit /
 				lp->max_brightness;
@@ -447,31 +434,9 @@ void lp855x_led_set_brightness(
 			struct lp855x_led_data, bl);
 
 	struct lp855x *lp = led_data->lp;
-	unsigned long state;
 
 	mutex_lock(&(lp->bl_update_lock));
-
-	state = lp->cool_dev.state;
-
-	/* Record the latest value from userspace */
-	lp->cool_dev.level = brightness;
-
-	if (state) {
-		if (brightness > lp->cool_dev.levels[state - 1]) {
-			/*
-			 * LED core set led_cdev->brightness already before reaching here.
-			 *
-			 * We set it as the actual/throttled value.
-			 * Otherwise, the one read from sys node will NOT be real.
-			 */
-			led_cdev->brightness = lp->cool_dev.levels[state - 1];
-			goto out;
-		}
-	}
-
 	_lp855x_led_set_brightness(lp, brightness);
-
-out:
 	mutex_unlock(&(lp->bl_update_lock));
 }
 EXPORT_SYMBOL(lp855x_led_set_brightness);
@@ -560,6 +525,7 @@ static ssize_t lp855x_get_chip_id(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct lp855x *lp = dev_get_drvdata(dev);
+
 	return scnprintf(buf, BUF_SIZE, "%s\n", lp->chipname);
 }
 
@@ -578,99 +544,8 @@ static ssize_t lp855x_get_bl_ctl_mode(struct device *dev,
 	return scnprintf(buf, BUF_SIZE, "%s\n", strmode);
 }
 
-static int lp855x_get_max_state(struct thermal_cooling_device *cdev,
-			   unsigned long *state)
-{
-	struct lp855x *lp = cdev->devdata;
-	*state = lp->cool_dev.max_state;
-	return 0;
-}
-
-static int lp855x_get_cur_state(struct thermal_cooling_device *cdev,
-			   unsigned long *state)
-{
-	struct lp855x *lp = cdev->devdata;
-	*state = lp->cool_dev.state;
-	return 0;
-}
-
-static int lp855x_set_cur_state(struct thermal_cooling_device *cdev,
-			   unsigned long state)
-{
-	struct lp855x *lp = cdev->devdata;
-	int level;
-	unsigned long max_state;
-
-	if (!lp)
-		return 0;
-
-	mutex_lock(&(lp->bl_update_lock));
-
-	if (!lp->cool_dev.state)
-		lp->cool_dev.level = lp->last_brightness;
-
-	if (lp->cool_dev.state == state)
-		goto out;
-
-	max_state = lp->cool_dev.max_state;
-	lp->cool_dev.state = (state > max_state) ? max_state : state;
-
-	if (!lp->cool_dev.state)
-		level = lp->cool_dev.level;
-	else {
-		level = lp->cool_dev.levels[lp->cool_dev.state - 1];
-		if (level > lp->cool_dev.level)
-			goto out;
-	}
-	_lp855x_led_set_brightness(lp, level);
-
-out:
-	mutex_unlock(&(lp->bl_update_lock));
-
-	return 0;
-}
-
-static ssize_t levels_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct thermal_cooling_device *cdev = container_of(dev, struct thermal_cooling_device, device);
-	struct lp855x *lp = cdev->devdata;
-	struct mtk_cooler_platform_data *cool_dev = &(lp->cool_dev);
-	int i;
-	int offset = 0;
-
-	if (!lp)
-		return -EINVAL;
-	for (i = 0; i < THERMAL_MAX_TRIPS; i++)
-		offset += sprintf(buf + offset, "%d %d\n", i+1, cool_dev->levels[i]);
-	return offset;
-}
-
-static ssize_t levels_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
-{
-	int level, state;
-	struct thermal_cooling_device *cdev = container_of(dev, struct thermal_cooling_device, device);
-	struct lp855x *lp = cdev->devdata;
-	struct mtk_cooler_platform_data *cool_dev = &(lp->cool_dev);
-
-	if (!lp)
-		return -EINVAL;
-	if (sscanf(buf, "%d %d\n", &state, &level) != 2)
-		return -EINVAL;
-	if (state >= THERMAL_MAX_TRIPS)
-		return -EINVAL;
-	cool_dev->levels[state] = level;
-	return count;
-}
-
-static struct thermal_cooling_device_ops cooling_ops = {
-	.get_max_state = lp855x_get_max_state,
-	.get_cur_state = lp855x_get_cur_state,
-	.set_cur_state = lp855x_set_cur_state,
-};
-
-static DEVICE_ATTR(chip_id, S_IRUGO, lp855x_get_chip_id, NULL);
-static DEVICE_ATTR(bl_ctl_mode, S_IRUGO, lp855x_get_bl_ctl_mode, NULL);
-static DEVICE_ATTR(levels, S_IRUGO | S_IWUSR, levels_show, levels_store);
+static DEVICE_ATTR(chip_id, 0444, lp855x_get_chip_id, NULL);
+static DEVICE_ATTR(bl_ctl_mode, 0444, lp855x_get_bl_ctl_mode, NULL);
 
 static struct attribute *lp855x_attributes[] = {
 	&dev_attr_chip_id.attr,
@@ -686,7 +561,8 @@ static struct lp855x_rom_data lp8557_eeprom[6];
 #if 0
 {	{0x14, 0xCF}, /* 4V OV, 4 LED string enabled */
 	{0x13, 0x01}, /* Boost frequency @1MHz */
-	{0x11, 0x06}, /* full scale 23 mA, but user is not allowed to set full scale */
+	/* full scale 23 mA, but user isn't allowed to set full scale */
+	{0x11, 0x06},
 	{0x12, 0x2B}, /* 19.5 kHz */
 	{0x15, 0x42}, /* light smoothing, 100 ms */
 	{0x16, 0xA0}, /* Max boost voltage 25V, enable adaptive voltage */
@@ -723,13 +599,15 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	 */
 	lp->mode = REGISTER_BASED;
 	lp->initial_brightness = 100;
-	lp->device_control = (LP8557_COMB2_CONFIG | LP8557_PWM_FILTER | LP8557_DISABLE_LEDS);
+	lp->device_control =
+	 (LP8557_COMB2_CONFIG | LP8557_PWM_FILTER | LP8557_DISABLE_LEDS);
 	lp->max_brightness = 255;
 	lp->brightness_limit = 0;
 	lp->load_new_rom_data = 1;
 	lp->size_program = ARRAY_SIZE(lp8557_eeprom);
 	lp->rom_data = lp8557_eeprom;
-	if(of_property_read_u8_array(cl->dev.of_node, "eeprom_data", (u8*)lp8557_eeprom, 12))
+	if (of_property_read_u8_array(cl->dev.of_node,
+		"eeprom_data", (u8 *)lp8557_eeprom, 12))
 		lp->load_new_rom_data = 0;
 
 	if (lp->load_new_rom_data && led_vmax) {
@@ -756,8 +634,8 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 		}
 	}
 
-	lp->gpio_en = of_get_named_gpio_flags(cl->dev.of_node, "gpio_en", 0, NULL);
-	lp->cool_dev = cooler;
+	lp->gpio_en = of_get_named_gpio_flags(
+		cl->dev.of_node, "gpio_en", 0, NULL);
 
 	mode = lp->mode;
 
@@ -802,7 +680,8 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 #ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 	if (get_boot_mode() != KERNEL_POWER_OFF_CHARGING_BOOT &&
 	    get_boot_mode() != LOW_POWER_OFF_CHARGING_BOOT)
-		lp855x_led_set_brightness(&(lp->led_data->bl), lp->initial_brightness);
+		lp855x_led_set_brightness(&(lp->led_data->bl),
+			lp->initial_brightness);
 	else {
 		lp855x_led_set_brightness(&(lp->led_data->bl), 1);
 		lp855x_led_set_brightness(&(lp->led_data->bl), 0);
@@ -817,18 +696,11 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	register_early_suspend(&lp->early_suspend);
 #endif
 
-	lp->cool_dev.cdev = thermal_cooling_device_register(lp->cool_dev.type,
-							     (void *)lp,
-							     &cooling_ops);
-	if (!lp->cool_dev.cdev)
-		return -EINVAL;
-	device_create_file(&lp->cool_dev.cdev->device, &dev_attr_levels);
-
 	//lp855x_led_disp_register(&(lp->led_data->bl));
 
 #ifdef CONFIG_MTK_FB
-	mtkfb_set_customized_backlight_callback(lp855x_led_set_brightness_for_fb,
-						&(lp->led_data->bl));
+	mtkfb_set_customized_backlight_callback(
+		lp855x_led_set_brightness_for_fb, &(lp->led_data->bl));
 #endif
 	return 0;
 
@@ -858,8 +730,9 @@ static int lp855x_remove(struct i2c_client *cl)
 }
 
 #ifdef CONFIG_PM
-static int lp855x_suspend(struct i2c_client *client, pm_message_t mesg)
+static int lp855x_suspend(struct device *dev)
 {
+#if 0
 	struct lp855x *lp = i2c_get_clientdata(client);
 
 	mutex_lock(&(lp->bl_update_lock));
@@ -870,11 +743,12 @@ static int lp855x_suspend(struct i2c_client *client, pm_message_t mesg)
 
 	if (lp->gpio_en >= 0)
 		gpio_set_value(lp->gpio_en, 0);
+#endif
 
 	return 0;
 }
 
-static int lp855x_resume(struct i2c_client *client)
+static int lp855x_resume(struct device *dev)
 {
 #if 0
 	struct lp855x *lp = i2c_get_clientdata(client);
@@ -889,6 +763,7 @@ static int lp855x_resume(struct i2c_client *client)
 
 	if (pdata->load_new_rom_data && pdata->size_program) {
 		int i;
+
 		for (i = 0; i < pdata->size_program; i++) {
 			addr = pdata->rom_data[i].addr;
 			val = pdata->rom_data[i].val;
@@ -914,7 +789,7 @@ static void lp855x_shutdown(struct i2c_client *cl)
 
 	mutex_lock(&(lp->bl_update_lock));
 	_lp855x_led_set_brightness(lp, 0);
-	printk("%s shutdown\n", __func__);
+	pr_info("%s shutdown\n", __func__);
 	mutex_unlock(&(lp->bl_update_lock));
 
 }
@@ -924,6 +799,7 @@ static void lp855x_early_suspend(struct early_suspend *es)
 {
 
 	struct lp855x *lp;
+
 	lp = container_of(es, struct lp855x, early_suspend);
 
 	if (lp855x_suspend(lp->client, PMSG_SUSPEND) != 0)
@@ -935,6 +811,7 @@ static void lp855x_late_resume(struct early_suspend *es)
 {
 
 	struct lp855x *lp;
+
 	lp = container_of(es, struct lp855x, early_suspend);
 
 	if (lp855x_resume(lp->client) != 0)

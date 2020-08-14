@@ -1,57 +1,62 @@
 #
-# Copyright (C) 2016 MediaTek Inc.
+# Copyright (C) 2015 MediaTek Inc.
 #
-# This program is free software; you can redistribute it and/or modify
+# This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License version 2 as
 # published by the Free Software Foundation.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 
-
 config MTK_GPU_SUPPORT
-	bool CONFIG_MTK_GPU_SUPPORT
+	bool "Support MTK GPU"
 	default n
 	help
-	  CONFIG_MTK_GPU_SUPPORT define if the gpu driver should be built in or not
+	  config supports MTK GPU driver.
+	  CONFIG_MTK_GPU_SUPPORT defines
+	  if the gpu driver should be built in or not
 
 config MTK_GPU_VERSION
-	string CONFIG_MTK_GPU_VERSION
+	string "Support MTK GPU Driver Version"
 	default ""
 	help
 	  CONFIG_MTK_GPU_VERSION define which gpu ddk version will be used
+	  It has three parts
+	  1.vendor name 2.GPU architecture name 3. driver version
 
 config MTK_GPU_COMMON_DVFS_SUPPORT
-  bool CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT
-  default n
-  help
-    CONFIG_MTK_GPU_COMMON_DVFS_SUPPORT define to use COMMON DVFS
-
-config MTK_GPU_R5P0
-	bool CONFIG_MTK_GPU_R5P0
+	bool "Support GPU VSync-Based DVFS Policy"
 	default n
 	help
-	  CONFIG_MTK_GPU_R5P0 define to use r5p0 drivers
+	  config supports to enable GPU DVFS policy.
+	  It is nice method to save power.
+	  It is recommended to enable it when MTK_GPU_SUPPORT is enabled.
 
-config MTK_GPU_SAPPHIRE_LITE
-        bool CONFIG_MTK_GPU_SAPPHIRE_LITE
-        help
-          Select Y here to enable mtk sapphire lite gpu support
+config MTK_GPU_R5P0
+	bool "Force to use r5p0 driver"
+	default n
+	help
+	  config defines to use r5p0 drivers
+	  Choose this option to force r5p0 driver verison
 
 config SW_SYNC64
-        bool CONFIG_SW_SYNC64
-        depends on SW_SYNC
-        help
-          A sync object driver that uses a 64bit counter to coordinate
-          syncrhronization.  Useful when there is no hardware primitive backing
-          the synchronization.
+	bool "Enable SW 64bit sync counter"
+	depends on SW_SYNC
+	help
+	  A sync object driver that uses a 64bit counter to coordinate
+	  syncrhronization.  Useful when there is no hardware primitive backing
+	  the synchronization.
 
 config MTK_GPU_SPM_DVFS_SUPPORT
-  bool CONFIG_MTK_GPU_SPM_DVFS_SUPPORT
-  default n
-  help
-    CONFIG_MTK_GPU_SPM_DVFS_SUPPORT define to use a SPM for GPU DVFS
+	bool "Enable GPU SPM DVFS"
+	default n
+	help
+	  Choose this option to enable a dedicated HW to do GPU DVFS.
+	  The feature is still under experiment. Enable only if you know
+	  what your are doing.
+	  MTK_GPU_COMMON_DVFS_SUPPORT and MTK_GPU_SPM_DVFS_SUPPORT shouldn't
+	  exist concurrently.
 

@@ -38,6 +38,8 @@
 #include <asm/tls.h>
 #include <asm/system_misc.h>
 #include <asm/opcodes.h>
+#include <mt-plat/aee.h>
+#include <sched.h>
 
 
 static const char *handler[]= {
@@ -73,6 +75,26 @@ void dump_backtrace_entry(unsigned long where, unsigned long from, unsigned long
 
 	if (in_exception_text(where))
 		dump_mem("", "Exception stack", frame + 4, frame + 4 + sizeof(struct pt_regs));
+}
+
+void dump_backtrace_stm(u32 *stack, u32 instruction)
+{
+	char str[80], *p;
+	unsigned int x;
+	int reg;
+
+	for (reg = 10, x = 0, p = str; reg >= 0; reg--) {
+		if (instruction & BIT(reg)) {
+			p += sprintf(p, " r%d:%08x", reg, *stack--);
+			if (++x == 6) {
+				x = 0;
+				p = str;
+				printk("%s\n", str);
+			}
+		}
+	}
+	if (p != str)
+		printk("%s\n", str);
 }
 
 #ifndef CONFIG_ARM_UNWIND
@@ -165,7 +187,7 @@ static void __dump_instr(const char *lvl, struct pt_regs *regs)
 	printk("%sCode: %s\n", lvl, str);
 }
 
-static void dump_instr(const char *lvl, struct pt_regs *regs)
+void dump_instr(const char *lvl, struct pt_regs *regs)
 {
 	mm_segment_t fs;
 
@@ -199,6 +221,10 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 		fp = frame_pointer(regs);
 		mode = processor_mode(regs);
 	} else if (tsk != current) {
+		if (tsk == task_rq(tsk)->curr) {
+			pr_cont("Do not dump other cpus' running task\n");
+			return;
+		}
 		fp = thread_saved_fp(tsk);
 		mode = 0x10;
 	} else {
@@ -207,14 +233,14 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 	}
 
 	if (!fp) {
-		printk("no frame pointer");
+		pr_cont("no frame pointer");
 		ok = 0;
 	} else if (verify_stack(fp)) {
-		printk("invalid frame pointer 0x%08x", fp);
+		pr_cont("invalid frame pointer 0x%08x", fp);
 		ok = 0;
 	} else if (fp < (unsigned long)end_of_stack(tsk))
-		printk("frame pointer underflow");
-	printk("\n");
+		pr_cont("frame pointer underflow");
+	pr_cont("\n");
 
 	if (ok)
 		c_backtrace(fp, mode);
@@ -249,8 +275,8 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 	static int die_counter;
 	int ret;
 
-	printk(KERN_EMERG "Internal error: %s: %x [#%d]" S_PREEMPT S_SMP
-	       S_ISA "\n", str, err, ++die_counter);
+	pr_emerg("Internal error: %s: %x [#%d]" S_PREEMPT S_SMP S_ISA "\n",
+	         str, err, ++die_counter);
 
 	/* trap and error numbers are mostly meaningless on ARM */
 	ret = notify_die(DIE_OOPS, str, regs, err, tsk->thread.trap_no, SIGSEGV);
@@ -259,8 +285,8 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 
 	print_modules();
 	__show_regs(regs);
-	printk(KERN_EMERG "Process %.*s (pid: %d, stack limit = 0x%p)\n",
-		TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), end_of_stack(tsk));
+	pr_emerg("Process %.*s (pid: %d, stack limit = 0x%p)\n",
+		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), end_of_stack(tsk));
 
 	if (!user_mode(regs) || in_interrupt()) {
 		dump_mem(KERN_EMERG, "Stack: ", regs->ARM_sp,
@@ -415,9 +441,20 @@ int call_undef_hook(struct pt_regs *regs, unsigned int instr)
 
 asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 {
+	struct thread_info *thread = current_thread_info();
 	unsigned int instr;
 	siginfo_t info;
 	void __user *pc;
+
+	if (!user_mode(regs)) {
+		thread->cpu_excp++;
+		if (thread->cpu_excp == 1) {
+			thread->regs_on_excp = (void *)regs;
+			aee_excp_regs = (void *)regs;
+		}
+		if (thread->cpu_excp >= 2)
+			aee_stop_nested_panic(regs);
+	}
 
 	pc = (void __user *)instruction_pointer(regs);
 
@@ -450,13 +487,16 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 		instr = __mem_to_opcode_arm(instr);
 	}
 
-	if (call_undef_hook(regs, instr) == 0)
+	if (call_undef_hook(regs, instr) == 0) {
+		if (!user_mode(regs))
+			thread->cpu_excp--;
 		return;
+	}
 
 die_sig:
 #ifdef CONFIG_DEBUG_USER
 	if (user_debug & UDBG_UNDEFINED) {
-		printk(KERN_INFO "%s (%d): undefined instruction: pc=%p\n",
+		pr_info("%s (%d): undefined instruction: pc=%p\n",
 			current->comm, task_pid_nr(current), pc);
 		__show_regs(regs);
 		dump_instr(KERN_INFO, regs);
@@ -507,7 +547,7 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason)
 {
 	console_verbose();
 
-	printk(KERN_CRIT "Bad mode in %s handler detected\n", handler[reason]);
+	pr_crit("Bad mode in %s handler detected\n", handler[reason]);
 
 	die("Oops - bad mode", regs, 0);
 	local_irq_disable();
@@ -516,18 +556,16 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason)
 
 static int bad_syscall(int n, struct pt_regs *regs)
 {
-	struct thread_info *thread = current_thread_info();
 	siginfo_t info;
 
-	if ((current->personality & PER_MASK) != PER_LINUX &&
-	    thread->exec_domain->handler) {
-		thread->exec_domain->handler(n, regs);
+	if ((current->personality & PER_MASK) != PER_LINUX) {
+		send_sig(SIGSEGV, current, 1);
 		return regs->ARM_r0;
 	}
 
 #ifdef CONFIG_DEBUG_USER
 	if (user_debug & UDBG_SYSCALL) {
-		printk(KERN_ERR "[%d] %s: obsolete system call %08x.\n",
+		pr_err("[%d] %s: obsolete system call %08x.\n",
 			task_pid_nr(current), current->comm, n);
 		dump_instr(KERN_ERR, regs);
 	}
@@ -638,58 +676,6 @@ asmlinkage int arm_syscall(int no, struct pt_regs *regs)
 		set_tls(regs->ARM_r0);
 		return 0;
 
-#ifdef CONFIG_NEEDS_SYSCALL_FOR_CMPXCHG
-	/*
-	 * Atomically store r1 in *r2 if *r2 is equal to r0 for user space.
-	 * Return zero in r0 if *MEM was changed or non-zero if no exchange
-	 * happened.  Also set the user C flag accordingly.
-	 * If access permissions have to be fixed up then non-zero is
-	 * returned and the operation has to be re-attempted.
-	 *
-	 * *NOTE*: This is a ghost syscall private to the kernel.  Only the
-	 * __kuser_cmpxchg code in entry-armv.S should be aware of its
-	 * existence.  Don't ever use this from user code.
-	 */
-	case NR(cmpxchg):
-	for (;;) {
-		extern void do_DataAbort(unsigned long addr, unsigned int fsr,
-					 struct pt_regs *regs);
-		unsigned long val;
-		unsigned long addr = regs->ARM_r2;
-		struct mm_struct *mm = current->mm;
-		pgd_t *pgd; pmd_t *pmd; pte_t *pte;
-		spinlock_t *ptl;
-
-		regs->ARM_cpsr &= ~PSR_C_BIT;
-		down_read(&mm->mmap_sem);
-		pgd = pgd_offset(mm, addr);
-		if (!pgd_present(*pgd))
-			goto bad_access;
-		pmd = pmd_offset(pgd, addr);
-		if (!pmd_present(*pmd))
-			goto bad_access;
-		pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
-		if (!pte_present(*pte) || !pte_write(*pte) || !pte_dirty(*pte)) {
-			pte_unmap_unlock(pte, ptl);
-			goto bad_access;
-		}
-		val = *(unsigned long *)addr;
-		val -= regs->ARM_r0;
-		if (val == 0) {
-			*(unsigned long *)addr = regs->ARM_r1;
-			regs->ARM_cpsr |= PSR_C_BIT;
-		}
-		pte_unmap_unlock(pte, ptl);
-		up_read(&mm->mmap_sem);
-		return val;
-
-		bad_access:
-		up_read(&mm->mmap_sem);
-		/* simulate a write access fault */
-		do_DataAbort(addr, 15 + (1 << 11), regs);
-	}
-#endif
-
 	default:
 		/* Calls 9f00xx..9f07ff are defined to return -ENOSYS
 		   if not implemented, rather than raising SIGILL.  This
@@ -705,7 +691,7 @@ asmlinkage int arm_syscall(int no, struct pt_regs *regs)
 	 * something catastrophic has happened
 	 */
 	if (user_debug & UDBG_SYSCALL) {
-		printk("[%d] %s: arm syscall %d\n",
+		pr_err("[%d] %s: arm syscall %d\n",
 		       task_pid_nr(current), current->comm, no);
 		dump_instr("", regs);
 		if (user_mode(regs)) {
@@ -762,14 +748,6 @@ late_initcall(arm_mrc_hook_init);
 
 #endif
 
-void __bad_xchg(volatile void *ptr, int size)
-{
-	printk("xchg: bad data size: pc 0x%p, ptr 0x%p, size %d\n",
-		__builtin_return_address(0), ptr, size);
-	BUG();
-}
-EXPORT_SYMBOL(__bad_xchg);
-
 /*
  * A data abort trap was taken, but we did not handle the instruction.
  * Try to abort the user program, or panic if it was the kernel.
@@ -782,8 +760,8 @@ baddataabort(int code, unsigned long instr, struct pt_regs *regs)
 
 #ifdef CONFIG_DEBUG_USER
 	if (user_debug & UDBG_BADABORT) {
-		printk(KERN_ERR "[%d] %s: bad data abort: code %d instr 0x%08lx\n",
-			task_pid_nr(current), current->comm, code, instr);
+		pr_err("[%d] %s: bad data abort: code %d instr 0x%08lx\n",
+		       task_pid_nr(current), current->comm, code, instr);
 		dump_instr(KERN_ERR, regs);
 		show_pte(current->mm, addr);
 	}
@@ -799,29 +777,29 @@ baddataabort(int code, unsigned long instr, struct pt_regs *regs)
 
 void __readwrite_bug(const char *fn)
 {
-	printk("%s called, but not implemented\n", fn);
+	pr_err("%s called, but not implemented\n", fn);
 	BUG();
 }
 EXPORT_SYMBOL(__readwrite_bug);
 
 void __pte_error(const char *file, int line, pte_t pte)
 {
-	printk("%s:%d: bad pte %08llx.\n", file, line, (long long)pte_val(pte));
+	pr_err("%s:%d: bad pte %08llx.\n", file, line, (long long)pte_val(pte));
 }
 
 void __pmd_error(const char *file, int line, pmd_t pmd)
 {
-	printk("%s:%d: bad pmd %08llx.\n", file, line, (long long)pmd_val(pmd));
+	pr_err("%s:%d: bad pmd %08llx.\n", file, line, (long long)pmd_val(pmd));
 }
 
 void __pgd_error(const char *file, int line, pgd_t pgd)
 {
-	printk("%s:%d: bad pgd %08llx.\n", file, line, (long long)pgd_val(pgd));
+	pr_err("%s:%d: bad pgd %08llx.\n", file, line, (long long)pgd_val(pgd));
 }
 
 asmlinkage void __div0(void)
 {
-	printk("Division by zero in kernel.\n");
+	pr_err("Division by zero in kernel.\n");
 	dump_stack();
 }
 EXPORT_SYMBOL(__div0);
@@ -891,7 +869,6 @@ void __init early_trap_init(void *vectors_base)
 	kuser_init(vectors_base);
 
 	flush_icache_range(vectors, vectors + PAGE_SIZE * 2);
-	modify_domain(DOMAIN_USER, DOMAIN_CLIENT);
 #else /* ifndef CONFIG_CPU_V7M */
 	/*
 	 * on V7-M there is no need to copy the vector table to a dedicated

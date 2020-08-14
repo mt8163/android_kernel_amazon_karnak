@@ -12,4 +12,4 @@
 #
 
 obj-$(CONFIG_MTK_BOOT_REASON) += BOOT_REASON.o
-BOOT_REASON-$(CONFIG_MTK_BOOT_REASON) := mt_boot_reason.o
+BOOT_REASON-$(CONFIG_MTK_BOOT_REASON) := mtk_boot_reason.o

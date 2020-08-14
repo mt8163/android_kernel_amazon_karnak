@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -52,10 +54,11 @@ static struct snd_pcm_hw_constraint_list constraints_sample_rates = {
 };
 
 
-static int multimedia_startup(struct snd_pcm_substream *substream, struct snd_soc_dai *dai)
+static int multimedia_startup(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *dai)
 {
 	snd_pcm_hw_constraint_list(substream->runtime, 0,
-				   SNDRV_PCM_HW_PARAM_RATE, &constraints_sample_rates);
+		SNDRV_PCM_HW_PARAM_RATE, &constraints_sample_rates);
 	return 0;
 }
 
@@ -511,7 +514,7 @@ static struct snd_soc_dai_driver mtk_dai_stub_dai[] = {
 		      .rate_min = 8000,
 		      .rate_max = 48000,
 		      },
-	 .compress_dai = 1,
+	 //.compress_dai = 1,
 	 .name = MT_SOC_OFFLOAD_GDMA_NAME,
 	 .ops = &mtk_dai_stub_ops,
 	 },
@@ -538,7 +541,7 @@ static int mtk_dai_stub_dev_probe(struct platform_device *pdev)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_DAI_NAME);
 
 	rc = snd_soc_register_component(&pdev->dev, &mt_dai_component,
-					mtk_dai_stub_dai, ARRAY_SIZE(mtk_dai_stub_dai));
+		mtk_dai_stub_dai, ARRAY_SIZE(mtk_dai_stub_dai));
 
 	pr_debug("%s: rc = %d\n", __func__, rc);
 	return rc;

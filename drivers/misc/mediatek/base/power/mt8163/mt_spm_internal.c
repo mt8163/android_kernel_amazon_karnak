@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
@@ -6,9 +19,6 @@
 
 #include "mt_spm_internal.h"
 
-#if defined CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
-#include <mt-plat/mt_boot.h>
-#endif
 /**************************************
  * Config and Parameter
  **************************************/
@@ -66,13 +76,15 @@ void __spm_reset_and_init_pcm(const struct pcm_desc *pcmdesc)
 	/* reset PCM */
 	spm_write(SPM_PCM_CON0, CON0_CFG_KEY | CON0_PCM_SW_RESET);
 	spm_write(SPM_PCM_CON0, CON0_CFG_KEY);
-	BUG_ON(spm_read(SPM_PCM_FSM_STA) != PCM_FSM_STA_DEF);	/* PCM reset failed */
+	/* PCM reset failed */
+	WARN_ON(spm_read(SPM_PCM_FSM_STA) != PCM_FSM_STA_DEF);
 
 	/* init PCM_CON0 (disable event vector) */
 	spm_write(SPM_PCM_CON0, CON0_CFG_KEY | CON0_IM_SLEEP_DVS);
 
 	/* init PCM_CON1 (disable PCM timer but keep PCM WDT setting) */
-	con1 = spm_read(SPM_PCM_CON1) & (CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
+	con1 = spm_read(SPM_PCM_CON1) &
+	      (CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
 	spm_write(SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_EVENT_LOCK_EN |
 		  CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
 		  (pcmdesc->replace ? 0 : CON1_IM_NONRP_EN) |
@@ -86,11 +98,13 @@ void __spm_kick_im_to_fetch(const struct pcm_desc *pcmdesc)
 	/* tell IM where is PCM code (use slave mode if code existed) */
 	ptr = base_va_to_pa(pcmdesc->base);
 	len = pcmdesc->size - 1;
-	if (spm_read(SPM_PCM_IM_PTR) != ptr || spm_read(SPM_PCM_IM_LEN) != len || pcmdesc->sess > 2) {
+	if (spm_read(SPM_PCM_IM_PTR) != ptr ||
+			spm_read(SPM_PCM_IM_LEN) != len || pcmdesc->sess > 2) {
 		spm_write(SPM_PCM_IM_PTR, ptr);
 		spm_write(SPM_PCM_IM_LEN, len);
 	} else {
-		spm_write(SPM_PCM_CON1, spm_read(SPM_PCM_CON1) | CON1_CFG_KEY | CON1_IM_SLAVE);
+		spm_write(SPM_PCM_CON1,
+			spm_read(SPM_PCM_CON1) | CON1_CFG_KEY | CON1_IM_SLAVE);
 	}
 
 	/* kick IM to fetch (only toggle IM_KICK) */
@@ -130,20 +144,23 @@ void __spm_init_event_vector(const struct pcm_desc *pcmdesc)
 void __spm_set_power_control(const struct pwr_ctrl *pwrctrl)
 {
 	/* set other SYS request mask */
-	spm_write(SPM_AP_STANBY_CON, (spm_read(SPM_AP_STANBY_CON) & ASC_SRCCLKENI_MASK) |
-		  (!pwrctrl->conn_mask << 23) |
-		  (!pwrctrl->md32_req_mask << 21) |
-		  (!pwrctrl->mfg_req_mask << 17) |
-		  (!pwrctrl->disp_req_mask << 16) |
-		  (!!pwrctrl->mcusys_idle_mask << 7) |
-		  (!!pwrctrl->ca15top_idle_mask << 6) |
-		  (!!pwrctrl->ca7top_idle_mask << 5) | (!!pwrctrl->wfi_op << 4));
+	spm_write(SPM_AP_STANBY_CON,
+	      (spm_read(SPM_AP_STANBY_CON) & ASC_SRCCLKENI_MASK) |
+	      (!pwrctrl->conn_mask << 23) |
+	      (!pwrctrl->md32_req_mask << 21) |
+	      (!pwrctrl->mfg_req_mask << 17) |
+	      (!pwrctrl->disp_req_mask << 16) |
+	      (!!pwrctrl->mcusys_idle_mask << 7) |
+	      (!!pwrctrl->ca15top_idle_mask << 6) |
+	      (!!pwrctrl->ca7top_idle_mask << 5) |
+	      (!!pwrctrl->wfi_op << 4));
 	spm_write(SPM_PCM_SRC_REQ, (!!pwrctrl->pcm_f26m_req << 1) |
 		  (!!pwrctrl->pcm_apsrc_req << 0));
 	spm_write(SPM_PCM_PASR_DPD_2, (!pwrctrl->isp1_ddr_en_mask << 4) |
 		  (!pwrctrl->isp0_ddr_en_mask << 3) |
 		  (!pwrctrl->dpi_ddr_en_mask << 2) |
-		  (!pwrctrl->dsi1_ddr_en_mask << 1) | (!pwrctrl->dsi0_ddr_en_mask << 0));
+		  (!pwrctrl->dsi1_ddr_en_mask << 1) |
+		  (!pwrctrl->dsi0_ddr_en_mask << 0));
 
 #if 0
 	spm_write(SPM_CLK_CON, (spm_read(SPM_CLK_CON) & ~CC_SRCLKENA_MASK_0) |
@@ -171,15 +188,10 @@ void __spm_set_wakeup_event(const struct pwr_ctrl *pwrctrl)
 	else
 		val = pwrctrl->timer_val_cust;
 
-#if defined(CONFIG_abe123) && defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
-	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT)
-		spm_write(SPM_PCM_CON1, spm_read(SPM_PCM_CON1) | CON1_CFG_KEY);
-	else
-#endif
-	{
-		spm_write(SPM_PCM_TIMER_VAL, val);
-		spm_write(SPM_PCM_CON1, spm_read(SPM_PCM_CON1) | CON1_CFG_KEY | CON1_PCM_TIMER_EN);
-	}
+	spm_write(SPM_PCM_TIMER_VAL, val);
+	spm_write(SPM_PCM_CON1,
+	    spm_read(SPM_PCM_CON1) | CON1_CFG_KEY | CON1_PCM_TIMER_EN);
+
 	/* unmask AP wakeup source */
 	if (pwrctrl->wake_src_cust == 0)
 		mask = pwrctrl->wake_src;
@@ -218,8 +230,9 @@ void __spm_kick_pcm_to_run(const struct pwr_ctrl *pwrctrl)
 		  (pwrctrl->infra_dcm_lock ? CC_LOCK_INFRA_DCM : 0));
 
 	/* enable r0 and r7 to control power */
-	spm_write(SPM_PCM_PWR_IO_EN, (pwrctrl->r0_ctrl_en ? PCM_PWRIO_EN_R0 : 0) |
-		  (pwrctrl->r7_ctrl_en ? PCM_PWRIO_EN_R7 : 0));
+	spm_write(SPM_PCM_PWR_IO_EN,
+	      (pwrctrl->r0_ctrl_en ? PCM_PWRIO_EN_R0 : 0) |
+	      (pwrctrl->r7_ctrl_en ? PCM_PWRIO_EN_R7 : 0));
 
 	/* kick PCM to run (only toggle PCM_KICK) */
 	con0 = spm_read(SPM_PCM_CON0) & ~(CON0_IM_KICK | CON0_PCM_KICK);
@@ -263,13 +276,15 @@ void __spm_clean_after_wakeup(void)
 	spm_write(SPM_SLEEP_CPU_WAKEUP_EVENT, 0);
 
 	/* clean PCM timer event */
-	spm_write(SPM_PCM_CON1, CON1_CFG_KEY | (spm_read(SPM_PCM_CON1) & ~CON1_PCM_TIMER_EN));
+	spm_write(SPM_PCM_CON1,
+	    CON1_CFG_KEY | (spm_read(SPM_PCM_CON1) & ~CON1_PCM_TIMER_EN));
 
 	/* clean wakeup event raw status (for edge trigger event) */
 	spm_write(SPM_SLEEP_WAKEUP_EVENT_MASK, ~0);
 
 	/* clean ISR status (except TWAM) */
-	spm_write(SPM_SLEEP_ISR_MASK, spm_read(SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
+	spm_write(SPM_SLEEP_ISR_MASK,
+	    spm_read(SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
 	spm_write(SPM_SLEEP_ISR_STATUS, ISRC_ALL_EXC_TWAM);
 	spm_write(SPM_PCM_SW_INT_CLEAR, PCM_SW_INT_ALL);
 }
@@ -282,48 +297,65 @@ do {						\
 		spm_crit2(fmt, ##args);		\
 } while (0)
 
-wake_reason_t __spm_output_wake_reason(const struct wake_status *wakesta,
-				       const struct pcm_desc *pcmdesc, bool suspend)
+int
+	__spm_output_wake_reason(const struct wake_status *wakesta,
+	    const struct pcm_desc *pcmdesc, bool suspend)
 {
 	int i;
 	char buf[LOG_BUF_SIZE] = { 0 };
-	wake_reason_t wr = WR_UNKNOWN;
+	char *local_ptr;
+	int wr = WR_UNKNOWN;
 
 	if (wakesta->assert_pc != 0) {
-		spm_print(suspend, "PCM ASSERT AT %u (%s), r13 = 0x%x, debug_flag = 0x%x\n",
-			  wakesta->assert_pc, pcmdesc->version, wakesta->r13, wakesta->debug_flag);
+		spm_print(suspend,
+	       "PCM ASSERT AT %u (%s), r13 = 0x%x, debug_flag = 0x%x\n",
+	       wakesta->assert_pc, pcmdesc->version,
+	       wakesta->r13, wakesta->debug_flag);
 		return WR_PCM_ASSERT;
 	}
 
 	if (wakesta->r12 & WAKE_SRC_SPM_MERGE) {
 		if (wakesta->wake_misc & WAKE_MISC_PCM_TIMER) {
-			strcat(buf, " PCM_TIMER");
+			local_ptr = " PCM_TIMER";
+			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
+				strncat(buf, local_ptr, strlen(local_ptr));
 			wr = WR_PCM_TIMER;
 		}
 		if (wakesta->wake_misc & WAKE_MISC_TWAM) {
-			strcat(buf, " TWAM");
+			local_ptr = " TWAM";
+			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
+				strncat(buf, local_ptr, strlen(local_ptr));
 			wr = WR_WAKE_SRC;
 		}
 		if (wakesta->wake_misc & WAKE_MISC_CPU_WAKE) {
-			strcat(buf, " CPU");
+			local_ptr = " CPU";
+			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
+				strncat(buf, local_ptr, strlen(local_ptr));
 			wr = WR_WAKE_SRC;
 		}
 	}
 	for (i = 1; i < 32; i++) {
 		if (wakesta->r12 & (1U << i)) {
-			strcat(buf, wakesrc_str[i]);
+			if ((strlen(buf) + strlen(wakesrc_str[i]))
+				< LOG_BUF_SIZE)
+				strncat(buf, wakesrc_str[i],
+					strlen(wakesrc_str[i]));
 			wr = WR_WAKE_SRC;
 		}
 	}
-	BUG_ON(strlen(buf) >= LOG_BUF_SIZE);
+	WARN_ON(strlen(buf) >= LOG_BUF_SIZE);
 
-	spm_print(suspend, "wake up by %s, timer_out = %u, r13 = 0x%x, debug_flag = 0x%x\n",
-		  buf, wakesta->timer_out, wakesta->r13, wakesta->debug_flag);
+	spm_print(suspend, "wake up by %s, timer_out = %u, ",
+		  buf, wakesta->timer_out);
+	spm_print(suspend, "r13 = 0x%x, debug_flag = 0x%x\n",
+		  wakesta->r13, wakesta->debug_flag);
 
 	spm_print(suspend,
-		  "r12 = 0x%x, raw_sta = 0x%x, idle_sta = 0x%x, event_reg = 0x%x, isr = 0x%x\n",
-		  wakesta->r12, wakesta->raw_sta, wakesta->idle_sta, wakesta->event_reg,
-		  wakesta->isr);
+	      "r12 = 0x%x, raw_sta = 0x%x, idle_sta = 0x%x, ",
+		  wakesta->r12, wakesta->raw_sta, wakesta->idle_sta);
+	spm_print(suspend,
+	      "event_reg = 0x%x, isr = 0x%x\n",
+		  wakesta->event_reg, wakesta->isr);
 
 	return wr;
 }

@@ -20,6 +20,8 @@
 #include <linux/reboot.h>
 #include <linux/uaccess.h>
 #include <linux/ptrace.h>
+#include <linux/hardirq.h>
+#include <linux/nmi.h>
 #include <asm/stack.h>
 #include <asm/traps.h>
 #include <asm/setup.h>
@@ -46,9 +48,9 @@ static int __init setup_unaligned_fixup(char *str)
 		return 0;
 
 	pr_info("Fixups for unaligned data accesses are %s\n",
-	       unaligned_fixup >= 0 ?
-	       (unaligned_fixup ? "enabled" : "disabled") :
-	       "completely disabled");
+		unaligned_fixup >= 0 ?
+		(unaligned_fixup ? "enabled" : "disabled") :
+		"completely disabled");
 	return 1;
 }
 __setup("unaligned_fixup=", setup_unaligned_fixup);
@@ -294,7 +296,6 @@ void __kprobes do_trap(struct pt_regs *regs, int fault_num,
 			 fault_num, name, regs->pc, buf);
 		show_regs(regs);
 		do_exit(SIGKILL);  /* FIXME: implement i386 die() */
-		return;
 	}
 
 	switch (fault_num) {
@@ -305,10 +306,9 @@ void __kprobes do_trap(struct pt_regs *regs, int fault_num,
 	case INT_ILL:
 		if (copy_from_user(&instr, (void __user *)regs->pc,
 				   sizeof(instr))) {
-			pr_err("Unreadable instruction for INT_ILL:"
-			       " %#lx\n", regs->pc);
+			pr_err("Unreadable instruction for INT_ILL: %#lx\n",
+			       regs->pc);
 			do_exit(SIGKILL);
-			return;
 		}
 		if (!special_ill(instr, &signo, &code)) {
 			signo = SIGILL;
@@ -380,7 +380,6 @@ void __kprobes do_trap(struct pt_regs *regs, int fault_num,
 #endif
 	default:
 		panic("Unexpected do_trap interrupt number %d", fault_num);
-		return;
 	}
 
 	info.si_signo = signo;
@@ -392,6 +391,24 @@ void __kprobes do_trap(struct pt_regs *regs, int fault_num,
 		trace_unhandled_signal("trap", regs, address, signo);
 	force_sig_info(signo, &info, current);
 }
+
+void do_nmi(struct pt_regs *regs, int fault_num, unsigned long reason)
+{
+	nmi_enter();
+	switch (reason) {
+#ifdef arch_trigger_cpumask_backtrace
+	case TILE_NMI_DUMP_STACK:
+		nmi_cpu_backtrace(regs);
+		break;
+#endif
+	default:
+		panic("Unexpected do_nmi type %ld", reason);
+	}
+	nmi_exit();
+}
+
+/* Deprecated function currently only used here. */
+extern void _dump_stack(int dummy, ulong pc, ulong lr, ulong sp, ulong r52);
 
 void kernel_double_fault(int dummy, ulong pc, ulong lr, ulong sp, ulong r52)
 {

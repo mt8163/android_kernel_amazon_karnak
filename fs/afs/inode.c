@@ -56,6 +56,7 @@ static int afs_inode_map_status(struct afs_vnode *vnode, struct key *key)
 	case AFS_FTYPE_SYMLINK:
 		inode->i_mode	= S_IFLNK | vnode->status.mode;
 		inode->i_op	= &page_symlink_inode_operations;
+		inode_nohighmem(inode);
 		break;
 	default:
 		printk("kAFS: AFS vnode with undefined type\n");
@@ -244,12 +245,13 @@ struct inode *afs_iget(struct super_block *sb, struct key *key,
 			vnode->cb_version = 0;
 			vnode->cb_expiry = 0;
 			vnode->cb_type = 0;
-			vnode->cb_expires = get_seconds();
+			vnode->cb_expires = ktime_get_real_seconds();
 		} else {
 			vnode->cb_version = cb->version;
 			vnode->cb_expiry = cb->expiry;
 			vnode->cb_type = cb->type;
-			vnode->cb_expires = vnode->cb_expiry + get_seconds();
+			vnode->cb_expires = vnode->cb_expiry +
+				ktime_get_real_seconds();
 		}
 	}
 
@@ -322,7 +324,7 @@ int afs_validate(struct afs_vnode *vnode, struct key *key)
 	    !test_bit(AFS_VNODE_CB_BROKEN, &vnode->flags) &&
 	    !test_bit(AFS_VNODE_MODIFIED, &vnode->flags) &&
 	    !test_bit(AFS_VNODE_ZAP_DATA, &vnode->flags)) {
-		if (vnode->cb_expires < get_seconds() + 10) {
+		if (vnode->cb_expires < ktime_get_real_seconds() + 10) {
 			_debug("callback expired");
 			set_bit(AFS_VNODE_CB_BROKEN, &vnode->flags);
 		} else {
@@ -379,7 +381,7 @@ int afs_getattr(struct vfsmount *mnt, struct dentry *dentry,
 {
 	struct inode *inode;
 
-	inode = dentry->d_inode;
+	inode = d_inode(dentry);
 
 	_enter("{ ino=%lu v=%u }", inode->i_ino, inode->i_generation);
 
@@ -458,12 +460,12 @@ void afs_evict_inode(struct inode *inode)
  */
 int afs_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct afs_vnode *vnode = AFS_FS_I(dentry->d_inode);
+	struct afs_vnode *vnode = AFS_FS_I(d_inode(dentry));
 	struct key *key;
 	int ret;
 
-	_enter("{%x:%u},{n=%s},%x",
-	       vnode->fid.vid, vnode->fid.vnode, dentry->d_name.name,
+	_enter("{%x:%u},{n=%pd},%x",
+	       vnode->fid.vid, vnode->fid.vnode, dentry,
 	       attr->ia_valid);
 
 	if (!(attr->ia_valid & (ATTR_SIZE | ATTR_MODE | ATTR_UID | ATTR_GID |

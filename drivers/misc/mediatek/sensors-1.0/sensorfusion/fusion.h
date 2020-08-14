@@ -15,8 +15,7 @@
 #ifndef __FUSION_H__
 #define __FUSION_H__
 
-
-#include <linux/wakelock.h>
+//#include <linux/pm_wakeup.h>
 #include <linux/interrupt.h>
 #include "sensor_attr.h"
 #include <linux/platform_device.h>
@@ -38,12 +37,6 @@
 #include <hwmsensor.h>
 #include "sensor_event.h"
 
-#define FUSION_TAG					"<FUSION> "
-#define FUSION_FUN(f)				pr_debug(FUSION_TAG"%s\n", __func__)
-#define FUSION_PR_ERR(fmt, args...)	pr_err(FUSION_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
-#define FUSION_LOG(fmt, args...)	pr_debug(FUSION_TAG fmt, ##args)
-#define FUSION_VER(fmt, args...)	pr_debug(FUSION_TAG"%s: "fmt, __func__, ##args)	/* ((void)0) */
-
 #define OP_FUSION_DELAY	0X01
 #define	OP_FUSION_ENABLE	0X02
 #define	OP_FUSION_GET_DATA	0X04
@@ -58,27 +51,30 @@ enum fusion_handle {
 	rv,
 	la,
 	grav,
+	unacc,
 	ungyro,
 	unmag,
 	pdr,
+	ungyro_temperature,
 	max_fusion_support,
 };
 
 struct fusion_control_path {
 	int (*open_report_data)(int open);	/* open data rerport to HAL */
-	int (*enable_nodata)(int en);	/* only enable not report event to HAL */
+	int (*enable_nodata)(int en);  /* only enable not report event to HAL */
 	int (*set_delay)(u64 delay);
-	int (*batch)(int flag, int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs);
+	int (*batch)(int flag,
+		int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs);
 	int (*flush)(void);/* open data rerport to HAL */
 	int (*access_data_fifo)(void);/* version2.used for flush operate */
 	bool is_report_input_direct;
 	bool is_support_batch;/* version2.used for batch mode support flag */
-	int (*fusion_calibration)(int type, int cali[3]);	/* version3 sensor common layer factory mode API1 */
+	int (*fusion_calibration)(int type, int cali[3]);/* v3  factory API1 */
 };
 
 struct fusion_data_path {
 	int (*get_data)(int *x, int *y, int *z, int *scalar, int *status);
-	int (*get_raw_data)(int *x, int *y, int *z, int *scalar);/* version3 sensor common layer factory mode API2 */
+	int (*get_raw_data)(int *x, int *y, int *z, int *scalar);/* v3 API2 */
 	int vender_div;
 };
 
@@ -97,8 +93,8 @@ struct fusion_data {
 struct fusion_drv_obj {
 	void *self;
 	int polling;
-	int (*fusion_operate)(void *self, uint32_t command, void *buff_in, int size_in,
-			    void *buff_out, int size_out, int *actualout);
+	int (*fusion_operate)(void *self, uint32_t command, void *buff_in,
+		int size_in, void *buff_out, int size_out, int *actualout);
 };
 
 struct fusion_control_context {
@@ -130,25 +126,34 @@ struct fusion_context {
 /* driver API for third party vendor */
 
 /* for auto detect */
-extern int fusion_driver_add(struct fusion_init_info *obj, int handle);
-extern int fusion_register_control_path(struct fusion_control_path *ctl, int handle);
-extern int fusion_register_data_path(struct fusion_data_path *data, int handle);
-extern int rv_data_report(int x, int y, int z, int scalar, int status, int64_t nt);
-extern int rv_flush_report(void);
-extern int grv_data_report(int x, int y, int z, int scalar, int status, int64_t nt);
-extern int grv_flush_report(void);
-extern int gmrv_data_report(int x, int y, int z, int scalar, int status, int64_t nt);
-extern int gmrv_flush_report(void);
-extern int grav_data_report(int x, int y, int z, int status, int64_t nt);
-extern int grav_flush_report(void);
-extern int la_data_report(int x, int y, int z, int status, int64_t nt);
-extern int la_flush_report(void);
-extern int orientation_data_report(int x, int y, int z, int status, int64_t nt);
-extern int orientation_flush_report(void);
-extern int orientation_data_report(int x, int y, int z, int status, int64_t nt);
-extern int orientation_flush_report(void);
-extern int uncali_gyro_data_report(int *data, int status, int64_t nt);
-extern int uncali_gyro_flush_report(void);
-extern int uncali_mag_data_report(int *data, int status, int64_t nt);
-extern int uncali_mag_flush_report(void);
+int fusion_driver_add(struct fusion_init_info *obj, int handle);
+int fusion_register_control_path(struct fusion_control_path *ctl,
+	int handle);
+int fusion_register_data_path(struct fusion_data_path *data,
+	int handle);
+int rv_data_report(int x, int y, int z,
+	int scalar, int status, int64_t nt);
+int rv_flush_report(void);
+int grv_data_report(int x, int y, int z,
+	int scalar, int status, int64_t nt);
+int grv_flush_report(void);
+int gmrv_data_report(int x, int y, int z,
+	int scalar, int status, int64_t nt);
+int gmrv_flush_report(void);
+int grav_data_report(int x, int y, int z, int status, int64_t nt);
+int grav_flush_report(void);
+int la_data_report(int x, int y, int z, int status, int64_t nt);
+int la_flush_report(void);
+int orientation_data_report(int x, int y, int z, int status, int64_t nt);
+int orientation_flush_report(void);
+int orientation_data_report(int x, int y, int z, int status, int64_t nt);
+int orientation_flush_report(void);
+int uncali_acc_data_report(int *data, int status, int64_t nt);
+int uncali_acc_flush_report(void);
+int uncali_gyro_data_report(int *data, int status, int64_t nt);
+int uncali_gyro_temperature_data_report(int *data,
+	int status, int64_t nt);
+int uncali_gyro_flush_report(void);
+int uncali_mag_data_report(int *data, int status, int64_t nt);
+int uncali_mag_flush_report(void);
 #endif

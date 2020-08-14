@@ -7,12 +7,14 @@
 #ifndef _STI_HDMI_H_
 #define _STI_HDMI_H_
 
+#include <linux/hdmi.h>
 #include <linux/platform_device.h>
 
 #include <drm/drmP.h>
 
 #define HDMI_STA           0x0010
 #define HDMI_STA_DLL_LCK   BIT(5)
+#define HDMI_STA_HOT_PLUG  BIT(4)
 
 struct sti_hdmi;
 
@@ -20,6 +22,34 @@ struct hdmi_phy_ops {
 	bool (*start)(struct sti_hdmi *hdmi);
 	void (*stop)(struct sti_hdmi *hdmi);
 };
+
+struct hdmi_audio_params {
+	bool enabled;
+	unsigned int sample_width;
+	unsigned int sample_rate;
+	struct hdmi_audio_infoframe cea;
+};
+
+/* values for the framing mode property */
+enum sti_hdmi_modes {
+	HDMI_MODE_HDMI,
+	HDMI_MODE_DVI,
+};
+
+static const struct drm_prop_enum_list hdmi_mode_names[] = {
+	{ HDMI_MODE_HDMI, "hdmi" },
+	{ HDMI_MODE_DVI, "dvi" },
+};
+
+#define DEFAULT_HDMI_MODE HDMI_MODE_HDMI
+
+static const struct drm_prop_enum_list colorspace_mode_names[] = {
+	{ HDMI_COLORSPACE_RGB, "rgb" },
+	{ HDMI_COLORSPACE_YUV422, "yuv422" },
+	{ HDMI_COLORSPACE_YUV444, "yuv444" },
+};
+
+#define DEFAULT_COLORSPACE_MODE HDMI_COLORSPACE_RGB
 
 /**
  * STI hdmi structure
@@ -37,11 +67,16 @@ struct hdmi_phy_ops {
  * @irq_status: interrupt status register
  * @phy_ops: phy start/stop operations
  * @enabled: true if hdmi is enabled else false
- * @hpd_gpio: hdmi hot plug detect gpio number
  * @hpd: hot plug detect status
  * @wait_event: wait event
  * @event_received: wait event status
  * @reset: reset control of the hdmi phy
+ * @ddc_adapt: i2c ddc adapter
+ * @colorspace: current colorspace selected
+ * @hdmi_mode: select framing for HDMI or DVI
+ * @audio_pdev: ASoC hdmi-codec platform device
+ * @audio: hdmi audio parameters.
+ * @drm_connector: hdmi connector
  */
 struct sti_hdmi {
 	struct device dev;
@@ -57,11 +92,16 @@ struct sti_hdmi {
 	u32 irq_status;
 	struct hdmi_phy_ops *phy_ops;
 	bool enabled;
-	int hpd_gpio;
 	bool hpd;
 	wait_queue_head_t wait_event;
 	bool event_received;
 	struct reset_control *reset;
+	struct i2c_adapter *ddc_adapt;
+	enum hdmi_colorspace colorspace;
+	enum sti_hdmi_modes hdmi_mode;
+	struct platform_device *audio_pdev;
+	struct hdmi_audio_params audio;
+	struct drm_connector *drm_connector;
 };
 
 u32 hdmi_read(struct sti_hdmi *hdmi, int offset);

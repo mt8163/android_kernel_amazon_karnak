@@ -77,7 +77,7 @@ pte_t *huge_pte_alloc(struct mm_struct *mm,
 		else {
 			if (sz != PAGE_SIZE << huge_shift[HUGE_SHIFT_PAGE])
 				panic("Unexpected page size %#lx\n", sz);
-			return pte_alloc_map(mm, NULL, pmd, addr);
+			return pte_alloc_map(mm, pmd, addr);
 		}
 	}
 #else
@@ -158,11 +158,6 @@ int pmd_huge(pmd_t pmd)
 int pud_huge(pud_t pud)
 {
 	return !!(pud_val(pud) & _PAGE_HUGE_PAGE);
-}
-
-int huge_pmd_unshare(struct mm_struct *mm, unsigned long *addr, pte_t *ptep)
-{
-	return 0;
 }
 
 #ifdef HAVE_ARCH_HUGETLB_UNMAPPED_AREA
@@ -256,22 +251,21 @@ static __init int __setup_hugepagesz(unsigned long ps)
 	int level, base_shift;
 
 	if ((1UL << log_ps) != ps || (log_ps & 1) != 0) {
-		pr_warn("Not enabling %ld byte huge pages;"
-			" must be a power of four.\n", ps);
+		pr_warn("Not enabling %ld byte huge pages; must be a power of four\n",
+			ps);
 		return -EINVAL;
 	}
 
 	if (ps > 64*1024*1024*1024UL) {
-		pr_warn("Not enabling %ld MB huge pages;"
-			" largest legal value is 64 GB .\n", ps >> 20);
+		pr_warn("Not enabling %ld MB huge pages; largest legal value is 64 GB\n",
+			ps >> 20);
 		return -EINVAL;
 	} else if (ps >= PUD_SIZE) {
 		static long hv_jpage_size;
 		if (hv_jpage_size == 0)
 			hv_jpage_size = hv_sysconf(HV_SYSCONF_PAGE_SIZE_JUMBO);
 		if (hv_jpage_size != PUD_SIZE) {
-			pr_warn("Not enabling >= %ld MB huge pages:"
-				" hypervisor reports size %ld\n",
+			pr_warn("Not enabling >= %ld MB huge pages: hypervisor reports size %ld\n",
 				PUD_SIZE >> 20, hv_jpage_size);
 			return -EINVAL;
 		}
@@ -292,14 +286,13 @@ static __init int __setup_hugepagesz(unsigned long ps)
 		int shift_val = log_ps - base_shift;
 		if (huge_shift[level] != 0) {
 			int old_shift = base_shift + huge_shift[level];
-			pr_warn("Not enabling %ld MB huge pages;"
-				" already have size %ld MB.\n",
+			pr_warn("Not enabling %ld MB huge pages; already have size %ld MB\n",
 				ps >> 20, (1UL << old_shift) >> 20);
 			return -EINVAL;
 		}
 		if (hv_set_pte_super_shift(level, shift_val) != 0) {
-			pr_warn("Not enabling %ld MB huge pages;"
-				" no hypervisor support.\n", ps >> 20);
+			pr_warn("Not enabling %ld MB huge pages; no hypervisor support\n",
+				ps >> 20);
 			return -EINVAL;
 		}
 		printk(KERN_DEBUG "Enabled %ld MB huge pages\n", ps >> 20);
@@ -315,11 +308,16 @@ static bool saw_hugepagesz;
 
 static __init int setup_hugepagesz(char *opt)
 {
+	int rc;
+
 	if (!saw_hugepagesz) {
 		saw_hugepagesz = true;
 		memset(huge_shift, 0, sizeof(huge_shift));
 	}
-	return __setup_hugepagesz(memparse(opt, NULL));
+	rc = __setup_hugepagesz(memparse(opt, NULL));
+	if (rc)
+		hugetlb_bad_size();
+	return rc;
 }
 __setup("hugepagesz=", setup_hugepagesz);
 

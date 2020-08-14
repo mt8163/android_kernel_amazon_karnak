@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/device.h>
@@ -12,20 +25,26 @@
 #include "backtrace.h"
 
 
-void dump_backtrace_entry_ramconsole_print(unsigned long where, unsigned long from, unsigned long frame)
+void dump_backtrace_entry_ramconsole_print (unsigned long where,
+	unsigned long from, unsigned long frame)
 {
 	char str_buf[256];
 
 #ifdef CONFIG_KALLSYMS
 	snprintf(str_buf, sizeof(str_buf),
-		"[<%08lx>] (%pS) from [<%08lx>] (%pS)\n", where, (void *)where, from, (void *)from);
+		"[<%08lx>] (%pS) from [<%08lx>] (%pS)\n",
+			where, (void *)where, from, (void *)from);
 #else
-	snprintf(str_buf, sizeof(str_buf), "Function entered at [<%08lx>] from [<%08lx>]\n", where, from);
+	snprintf(str_buf, sizeof(str_buf),
+			"Function entered at [<%08lx>] from [<%08lx>]\n",
+				where, from);
 #endif
 	aee_sram_fiq_log(str_buf);
 }
 
-void dump_regs(const char *fmt, const char v1, const unsigned int reg, const unsigned int reg_val)
+void dump_regs(const char *fmt,
+	const char v1, const unsigned int reg,
+		const unsigned int reg_val)
 {
 	char str_buf[256];
 
@@ -35,7 +54,8 @@ void dump_regs(const char *fmt, const char v1, const unsigned int reg, const uns
 
 static int verify_stack(unsigned long sp)
 {
-	if (sp < PAGE_OFFSET || (sp > (unsigned long)high_memory && high_memory != NULL))
+	if (sp < PAGE_OFFSET || (sp > (unsigned long)high_memory
+		&& high_memory != NULL))
 		return -EFAULT;
 
 	return 0;
@@ -47,7 +67,8 @@ void aee_dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 	unsigned int fp, mode;
 	int ok = 1;
 
-	snprintf(str_buf, sizeof(str_buf), "PC is 0x%lx, LR is 0x%lx\n", regs->ARM_pc, regs->ARM_lr);
+	snprintf(str_buf, sizeof(str_buf), "PC is 0x%lx, LR is 0x%lx\n",
+			regs->ARM_pc, regs->ARM_lr);
 	aee_sram_fiq_log(str_buf);
 
 	if (!tsk)

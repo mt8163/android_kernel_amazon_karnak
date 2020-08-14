@@ -12,7 +12,6 @@
 
 #include <linux/atomic.h>
 #include <linux/compat.h>
-#include <linux/cred.h>
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/hid.h>
@@ -25,10 +24,11 @@
 #include <linux/spinlock.h>
 #include <linux/uhid.h>
 #include <linux/wait.h>
-#include <linux/uaccess.h>
 
 #define UHID_NAME	"uhid"
 #define UHID_BUFSIZE	32
+
+static DEFINE_MUTEX(uhid_open_mutex);
 
 struct uhid_device {
 	struct mutex devlock;
@@ -144,15 +144,26 @@ static void uhid_hid_stop(struct hid_device *hid)
 static int uhid_hid_open(struct hid_device *hid)
 {
 	struct uhid_device *uhid = hid->driver_data;
+	int retval = 0;
 
-	return uhid_queue_event(uhid, UHID_OPEN);
+	mutex_lock(&uhid_open_mutex);
+	if (!hid->open++) {
+		retval = uhid_queue_event(uhid, UHID_OPEN);
+		if (retval)
+			hid->open--;
+	}
+	mutex_unlock(&uhid_open_mutex);
+	return retval;
 }
 
 static void uhid_hid_close(struct hid_device *hid)
 {
 	struct uhid_device *uhid = hid->driver_data;
 
-	uhid_queue_event(uhid, UHID_CLOSE);
+	mutex_lock(&uhid_open_mutex);
+	if (!--hid->open)
+		uhid_queue_event(uhid, UHID_CLOSE);
+	mutex_unlock(&uhid_open_mutex);
 }
 
 static int uhid_hid_parse(struct hid_device *hid)
@@ -402,7 +413,7 @@ struct uhid_create_req_compat {
 static int uhid_event_from_user(const char __user *buffer, size_t len,
 				struct uhid_event *event)
 {
-	if (is_compat_task()) {
+	if (in_compat_syscall()) {
 		u32 type;
 
 		if (get_user(type, buffer))
@@ -723,17 +734,6 @@ static ssize_t uhid_char_write(struct file *file, const char __user *buffer,
 
 	switch (uhid->input_buf.type) {
 	case UHID_CREATE:
-		/*
-		 * 'struct uhid_create_req' contains a __user pointer which is
-		 * copied from, so it's unsafe to allow this with elevated
-		 * privileges (e.g. from a setuid binary) or via kernel_write().
-		 */
-		if (file->f_cred != current_cred() || uaccess_kernel()) {
-			pr_err_once("UHID_CREATE from different security context by process %d (%s), this is not allowed.\n",
-				    task_tgid_vnr(current), current->comm);
-			ret = -EACCES;
-			goto unlock;
-		}
 		ret = uhid_dev_create(uhid, &uhid->input_buf);
 		break;
 	case UHID_CREATE2:
@@ -792,19 +792,8 @@ static struct miscdevice uhid_misc = {
 	.minor		= UHID_MINOR,
 	.name		= UHID_NAME,
 };
+module_misc_device(uhid_misc);
 
-static int __init uhid_init(void)
-{
-	return misc_register(&uhid_misc);
-}
-
-static void __exit uhid_exit(void)
-{
-	misc_deregister(&uhid_misc);
-}
-
-module_init(uhid_init);
-module_exit(uhid_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("David Herrmann <dh.herrmann@gmail.com>");
 MODULE_DESCRIPTION("User-space I/O driver support for HID subsystem");

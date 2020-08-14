@@ -18,7 +18,6 @@
 #include <asm/errno.h>
 #include "internal.h"
 
-#ifdef CONFIG_KEYS_DEBUG_PROC_KEYS
 static int proc_keys_open(struct inode *inode, struct file *file);
 static void *proc_keys_start(struct seq_file *p, loff_t *_pos);
 static void *proc_keys_next(struct seq_file *p, void *v, loff_t *_pos);
@@ -38,7 +37,6 @@ static const struct file_operations proc_keys_fops = {
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };
-#endif
 
 static int proc_key_users_open(struct inode *inode, struct file *file);
 static void *proc_key_users_start(struct seq_file *p, loff_t *_pos);
@@ -67,11 +65,9 @@ static int __init key_proc_init(void)
 {
 	struct proc_dir_entry *p;
 
-#ifdef CONFIG_KEYS_DEBUG_PROC_KEYS
 	p = proc_create("keys", 0, NULL, &proc_keys_fops);
 	if (!p)
 		panic("Cannot create /proc/keys\n");
-#endif
 
 	p = proc_create("key-users", 0, NULL, &proc_key_users_fops);
 	if (!p)
@@ -86,8 +82,6 @@ __initcall(key_proc_init);
  * Implement "/proc/keys" to provide a list of the keys on the system that
  * grant View permission to the caller.
  */
-#ifdef CONFIG_KEYS_DEBUG_PROC_KEYS
-
 static struct rb_node *key_serial_next(struct seq_file *p, struct rb_node *n)
 {
 	struct user_namespace *user_ns = seq_user_ns(p);
@@ -188,10 +182,12 @@ static int proc_keys_show(struct seq_file *m, void *v)
 	unsigned long timo;
 	key_ref_t key_ref, skey_ref;
 	char xbuf[16];
+	short state;
 	int rc;
 
 	struct keyring_search_context ctx = {
-		.index_key		= key->index_key,
+		.index_key.type		= key->type,
+		.index_key.description	= key->description,
 		.cred			= current_cred(),
 		.match_data.cmp		= lookup_user_key_possessed,
 		.match_data.raw_data	= key,
@@ -245,17 +241,19 @@ static int proc_keys_show(struct seq_file *m, void *v)
 			sprintf(xbuf, "%luw", timo / (60*60*24*7));
 	}
 
+	state = key_read_state(key);
+
 #define showflag(KEY, LETTER, FLAG) \
 	(test_bit(FLAG,	&(KEY)->flags) ? LETTER : '-')
 
 	seq_printf(m, "%08x %c%c%c%c%c%c%c %5d %4s %08x %5d %5d %-9.9s ",
 		   key->serial,
-		   showflag(key, 'I', KEY_FLAG_INSTANTIATED),
+		   state != KEY_IS_UNINSTANTIATED ? 'I' : '-',
 		   showflag(key, 'R', KEY_FLAG_REVOKED),
 		   showflag(key, 'D', KEY_FLAG_DEAD),
 		   showflag(key, 'Q', KEY_FLAG_IN_QUOTA),
 		   showflag(key, 'U', KEY_FLAG_USER_CONSTRUCT),
-		   showflag(key, 'N', KEY_FLAG_NEGATIVE),
+		   state < 0 ? 'N' : '-',
 		   showflag(key, 'i', KEY_FLAG_INVALIDATED),
 		   atomic_read(&key->usage),
 		   xbuf,
@@ -273,8 +271,6 @@ static int proc_keys_show(struct seq_file *m, void *v)
 	rcu_read_unlock();
 	return 0;
 }
-
-#endif /* CONFIG_KEYS_DEBUG_PROC_KEYS */
 
 static struct rb_node *__key_user_next(struct user_namespace *user_ns, struct rb_node *n)
 {

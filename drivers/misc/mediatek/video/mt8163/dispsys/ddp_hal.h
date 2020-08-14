@@ -1,16 +1,29 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _H_DDP_HAL_
 #define _H_DDP_HAL_
 
 /* DISP Mutex */
-#define DISP_MUTEX_TOTAL      (10)
-#define DISP_MUTEX_DDP_FIRST  (0)
-#define DISP_MUTEX_DDP_LAST   (4)
-#define DISP_MUTEX_DDP_COUNT  (5)
-#define DISP_MUTEX_MDP_FIRST  (5)
-#define DISP_MUTEX_MDP_COUNT  (5)
+#define DISP_MUTEX_TOTAL (10)
+#define DISP_MUTEX_DDP_FIRST (0)
+#define DISP_MUTEX_DDP_LAST (4)
+#define DISP_MUTEX_DDP_COUNT (5)
+#define DISP_MUTEX_MDP_FIRST (5)
+#define DISP_MUTEX_MDP_COUNT (5)
 
 /* DISP MODULE */
-typedef enum {
+enum DISP_MODULE_ENUM {
 	DISP_MODULE_OVL0 = 0,
 	DISP_MODULE_OVL1,
 	DISP_MODULE_RDMA0,
@@ -21,7 +34,7 @@ typedef enum {
 	DISP_MODULE_AAL,
 	DISP_MODULE_GAMMA,
 	DISP_MODULE_DITHER,
-	DISP_MODULE_UFOE,	/* 10 */
+	DISP_MODULE_UFOE, /* 10 */
 	DISP_MODULE_PWM0,
 	DISP_MODULE_WDMA1,
 	DISP_MODULE_DSI0,
@@ -44,11 +57,11 @@ typedef enum {
 
 	DISP_MODULE_SMI_LARB0,
 	DISP_MODULE_SMI_COMMON,
-	DISP_MODULE_UNKNOWN,	/* 20 */
+	DISP_MODULE_UNKNOWN, /* 20 */
 	DISP_MODULE_NUM
-} DISP_MODULE_ENUM;
+};
 
-typedef enum {
+enum DISP_REG_ENUM {
 	DISP_REG_OVL0,
 	DISP_REG_OVL1,
 	DISP_REG_RDMA0,
@@ -79,15 +92,15 @@ typedef enum {
 	DISP_TVDPLL_CON0,
 	DISP_TVDPLL_CON1,
 	DISP_REG_NUM
-} DISP_REG_ENUM;
+};
 
-typedef enum {
+enum MUTEX_SOF {
 	SOF_SINGLE = 0,
 	SOF_DSI0,
 	SOF_DPI0,
 	SOF_DPI1,
 	SOF_DSI1,
-} MUTEX_SOF;
+};
 
 enum OVL_LAYER_SOURCE {
 	OVL_LAYER_SOURCE_MEM = 0,
@@ -102,12 +115,9 @@ enum OVL_LAYER_SECURE_MODE {
 	OVL_LAYER_PROTECTED_BUFFER = 2
 };
 
-typedef enum {
-	CMDQ_DISABLE = 0,
-	CMDQ_ENABLE
-} CMDQ_SWITCH;
+enum CMDQ_SWITCH { CMDQ_DISABLE = 0, CMDQ_ENABLE };
 
-typedef enum {
+enum CMDQ_STATE {
 	CMDQ_BEFORE_STREAM_SOF,
 	CMDQ_WAIT_STREAM_EOF_EVENT,
 	CMDQ_CHECK_IDLE_AFTER_STREAM_EOF,
@@ -119,40 +129,40 @@ typedef enum {
 	CMDQ_STOP_VDO_MODE,
 	CMDQ_START_VDO_MODE,
 	CMDQ_DSI_RESET
-} CMDQ_STATE;
+};
 
-typedef enum {
+enum MM_CLK_ENUM {
 	MM_CLK_FAKE_ENG,
 	MM_CLK_DISP_OVL0,
 	MM_CLK_DISP_OVL1,
 	MM_CLK_DISP_RDMA0,
 	MM_CLK_DISP_RDMA1,
-	MM_CLK_DISP_WDMA0,  /*5*/
+	MM_CLK_DISP_WDMA0, /*5*/
 	MM_CLK_DISP_WDMA1,
 	MM_CLK_DISP_COLOR,
 	MM_CLK_DISP_CCORR,
 	MM_CLK_DISP_AAL,
-	MM_CLK_DISP_GAMMA,  /*10*/
+	MM_CLK_DISP_GAMMA, /*10*/
 	MM_CLK_DISP_DITHER,
 	MM_CLK_DISP_UFOE,
 	MM_CLK_DISP_PWM,
 	MM_CLK_DISP_PWM_26M,
-	MM_CLK_DSI_ENGINE,  /*15*/
+	MM_CLK_DSI_ENGINE, /*15*/
 	MM_CLK_DSI_DIGITAL,
 	MM_CLK_DPI0_ENGINE,
 	MM_CLK_DPI0_PIXEL,
 	MM_CLK_LVDS_PIXEL,
-	MM_CLK_LVDS_CTS,   /*20*/
+	MM_CLK_LVDS_CTS, /*20*/
 	MM_CLK_DPI1_ENGINE,
 	MM_CLK_DPI1_PIXEL,
 	MM_CLK_DISP_DSC_ENGINE,
 	MM_CLK_DISP_DSC_MEM,
-	MM_CLK_MUX_DPI0_SEL,  /*for dpi0/lvds top clock*/
+	MM_CLK_MUX_DPI0_SEL, /*for dpi0/lvds top clock*/
 	APMIXED_LVDSPLL,
 	TOP_LVDSPLL_D2,
 	TOP_LVDSPLL_D4,
 	TOP_LVDSPLL_D8,
-	MM_CLK_MUX_DPI1_SEL,  /*for dpi1/hdmi top clock*/
+	MM_CLK_MUX_DPI1_SEL, /*for dpi1/hdmi top clock*/
 	APMIXED_TVDPLL,
 	TOP_TVDPLL_D2,
 	TOP_TVDPLL_D4,
@@ -160,7 +170,6 @@ typedef enum {
 	TOP_TVDPLL_D16,
 	TOP_PWM_SEL,
 	MM_CLK_NUM
-} MM_CLK_ENUM;
-
+};
 
 #endif

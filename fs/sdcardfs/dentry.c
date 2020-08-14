@@ -20,7 +20,6 @@
 
 #include "sdcardfs.h"
 #include "linux/ctype.h"
-#include <linux/xattr.h>
 
 /*
  * returns: -ERRNO if error (returned to user)
@@ -105,7 +104,7 @@ static int sdcardfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 		goto out;
 
 	/* If our top's inode is gone, we may be out of date */
-	inode = igrab(dentry->d_inode);
+	inode = igrab(d_inode(dentry));
 	if (inode) {
 		data = top_data_get(SDCARDFS_I(inode));
 		if (!data || data->abandoned) {
@@ -122,12 +121,6 @@ out:
 	sdcardfs_put_lower_path(parent_dentry, &parent_lower_path);
 	sdcardfs_put_real_lower(dentry, &lower_path);
 	return err;
-}
-
-/* 1 = delete, 0 = cache */
-static int sdcardfs_d_delete(const struct dentry *d)
-{
-	return SDCARDFS_SB(d->d_sb)->options.nocache ? 1 : 0;
 }
 
 static void sdcardfs_d_release(struct dentry *dentry)
@@ -157,7 +150,7 @@ static int sdcardfs_hash_ci(const struct dentry *dentry,
 	name = qstr->name;
 	len = qstr->len;
 
-	hash = init_name_hash();
+	hash = init_name_hash(dentry);
 	while (len--)
 		hash = partial_name_hash(tolower(*name++), hash);
 	qstr->hash = end_name_hash(hash);
@@ -168,8 +161,7 @@ static int sdcardfs_hash_ci(const struct dentry *dentry,
 /*
  * Case insensitive compare of two vfat names.
  */
-static int sdcardfs_cmp_ci(const struct dentry *parent,
-		const struct dentry *dentry,
+static int sdcardfs_cmp_ci(const struct dentry *dentry,
 		unsigned int len, const char *str, const struct qstr *name)
 {
 	/* FIXME Should we support national language? */
@@ -187,85 +179,8 @@ static void sdcardfs_canonical_path(const struct path *path,
 	sdcardfs_get_real_lower(path->dentry, actual_path);
 }
 
-#ifdef CONFIG_SDCARD_FS_DIR_WRITER
-void sdcardfs_update_xattr_dirwriter(struct dentry *lower_dentry,
-	uid_t writer_uid)
-{
-	static char xattr_val[256];
-	struct dentry *dentry, *parent;
-	const char *dir_name[2];
-	int xlen, depth;
-	const char *xattr_feat_name = "user.dwriter";
-	const char *xattr_name = "user.dwriter.name";
-	struct dentry *xdentry = NULL, *child = NULL;
-	appid_t app_id = uid_is_app(writer_uid) ?
-		writer_uid % AID_USER_OFFSET : 0;
-
-	dentry = lower_dentry;
-	if (IS_ERR_OR_NULL(dentry) || !app_id)
-		return;
-
-	while (1) {
-		parent = dget_parent(dentry);
-		xlen = vfs_getxattr(parent, xattr_feat_name, (void *)xattr_val,
-			sizeof(xattr_val));
-		if (xlen > 0 && xattr_val[0] != '0') {
-			dput(parent);
-			xattr_val[xlen] = 0;
-			dir_name[0] = dentry->d_name.name;
-			if (child)
-				dir_name[1] = child->d_name.name;
-			depth = wildcard_path_match(xattr_val, dir_name,
-				child ? 2 : 1);
-			if (depth == 1)
-				xdentry = dentry;
-			else if (depth == 2)
-				xdentry = child;
-			break;
-		} else if (IS_ROOT(parent)) {
-			dput(parent);
-			break;
-		}
-		child = dentry;
-		dentry = parent;
-		dput(parent);
-	}
-
-	if (IS_ERR_OR_NULL(xdentry) ||
-		!S_ISDIR(d_inode(xdentry)->i_mode))
-		return;
-
-	dget(xdentry);
-	memset(xattr_val, 0, sizeof(xattr_val));
-	vfs_getxattr(xdentry, xattr_name,
-		(void *)xattr_val, sizeof(xattr_val));
-	xattr_val[sizeof(xattr_val) - 1] = 0;
-	if (!strncmp(xattr_val, "overrun;", sizeof(xattr_val)))
-		goto out_unlock;
-	xlen = add_app_name_to_list(app_id, xattr_val,
-		sizeof(xattr_val));
-	if (xlen == 0)
-		goto out_unlock;
-	else if (xlen < 0)
-		snprintf(xattr_val, sizeof(xattr_val), "%s", "overrun;");
-
-		if (vfs_setxattr(xdentry, xattr_name, xattr_val,
-		strlen(xattr_val), 0)) {
-		pr_err("sdcardfs: failed to set %lu %s=%s\n",
-			d_inode(xdentry)->i_ino, xattr_name, xattr_val);
-		goto out_unlock;
-	}
-
-	pr_info("sdcardfs: set %lu %s=%s\n",
-		d_inode(xdentry)->i_ino, xattr_name, xattr_val);
-out_unlock:
-	dput(xdentry);
-}
-#endif
-
 const struct dentry_operations sdcardfs_ci_dops = {
 	.d_revalidate	= sdcardfs_d_revalidate,
-	.d_delete	= sdcardfs_d_delete,
 	.d_release	= sdcardfs_d_release,
 	.d_hash	= sdcardfs_hash_ci,
 	.d_compare	= sdcardfs_cmp_ci,

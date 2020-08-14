@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _MT_SPM_INTERNAL_
 #define _MT_SPM_INTERNAL_
 
@@ -77,9 +90,9 @@
 #define PCM_SW_INT5		(1U << 5)
 #define PCM_SW_INT6		(1U << 6)
 #define PCM_SW_INT7		(1U << 7)
-#define PCM_SW_INT_ALL		(PCM_SW_INT7 | PCM_SW_INT6 | PCM_SW_INT5 |	\
-				 PCM_SW_INT4 | PCM_SW_INT3 | PCM_SW_INT2 |	\
-				 PCM_SW_INT1 | PCM_SW_INT0)
+#define PCM_SW_INT_ALL	(PCM_SW_INT7 | PCM_SW_INT6 | PCM_SW_INT5 | \
+			PCM_SW_INT4 | PCM_SW_INT3 | PCM_SW_INT2 | \
+			PCM_SW_INT1 | PCM_SW_INT0)
 
 #define CC_SYSCLK0_EN_0		(1U << 0)
 #define CC_SYSCLK0_EN_1		(1U << 1)
@@ -212,6 +225,9 @@ struct pwr_ctrl {
 	u32 param1;
 	u32 param2;
 	u32 param3;
+
+	/* for logging */
+	u8 enable_log;
 };
 
 struct wake_status {
@@ -254,21 +270,21 @@ extern void __spm_kick_pcm_to_run(const struct pwr_ctrl *pwrctrl);
 
 extern void __spm_get_wakeup_status(struct wake_status *wakesta);
 extern void __spm_clean_after_wakeup(void);
-extern wake_reason_t __spm_output_wake_reason(const struct wake_status *wakesta,
-					      const struct pcm_desc *pcmdesc, bool suspend);
+extern int
+	__spm_output_wake_reason(const struct wake_status *wakesta,
+	    const struct pcm_desc *pcmdesc, bool suspend);
 
 extern int spm_fs_init(void);
 /* extern int is_ext_buck_exist(void); */
 
-/* TODO: wait irq driver ready
 extern int mt_irq_mask_all(struct mtk_irq_mask *mask);
 extern int mt_irq_mask_restore(struct mtk_irq_mask *mask);
-extern void mt_irq_unmask_for_sleep(unsigned int irq);
-*/
+/* to replace mt_irq_unmask_for_sleep */
+extern void unmask_irq(struct irq_desc *desc);
 
-extern int request_uart_to_sleep(void);
-extern int request_uart_to_wakeup(void);
-extern void mtk_uart_restore(void);
+extern int mtk8250_request_to_sleep(void);
+extern int mtk8250_request_to_wakeup(void);
+extern void mtk8250_restore_dev(void);
 extern void dump_uart_reg(void);
 
 /**************************************
@@ -287,7 +303,7 @@ extern void dump_uart_reg(void);
 #define spm_warn(fmt, args...)		pr_warn("[SPM] " fmt, ##args)
 #define spm_notice(fmt, args...)	pr_notice("[SPM] " fmt, ##args)
 #define spm_info(fmt, args...)		pr_info("[SPM] " fmt, ##args)
-#define spm_debug(fmt, args...)		pr_debug("[SPM] " fmt, ##args)	/* pr_debug show nothing */
+#define spm_debug(fmt, args...)		pr_debug("[SPM] " fmt, ##args)
 
 /* just use in suspend flow for important log due to console suspend */
 #define spm_crit2(fmt, args...)		\
@@ -299,6 +315,7 @@ do {					\
 #define wfi_with_sync()					\
 do {							\
 	isb();						\
+	/* for wfi */				\
 	mb();						\
 	__asm__ __volatile__("wfi" : : : "memory");	\
 } while (0)

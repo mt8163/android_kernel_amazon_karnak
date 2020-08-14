@@ -18,6 +18,7 @@
 #include <linux/genalloc.h>
 #include <linux/sched.h>
 #include <linux/mutex.h>
+//#include <linux/xlog.h>
 #include <linux/proc_fs.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>

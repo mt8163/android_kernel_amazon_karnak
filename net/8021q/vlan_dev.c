@@ -26,47 +26,17 @@
 #include <linux/slab.h>
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
+#include <linux/net_tstamp.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
+#include <linux/phy.h>
 #include <net/arp.h>
+#include <net/switchdev.h>
 
 #include "vlan.h"
 #include "vlanproc.h"
 #include <linux/if_vlan.h>
 #include <linux/netpoll.h>
-
-/*
- *	Rebuild the Ethernet MAC header. This is called after an ARP
- *	(or in future other address resolution) has completed on this
- *	sk_buff. We now let ARP fill in the other fields.
- *
- *	This routine CANNOT use cached dst->neigh!
- *	Really, it is used only when dst->neigh is wrong.
- *
- * TODO:  This needs a checkup, I'm ignorant here. --BLG
- */
-static int vlan_dev_rebuild_header(struct sk_buff *skb)
-{
-	struct net_device *dev = skb->dev;
-	struct vlan_ethhdr *veth = (struct vlan_ethhdr *)(skb->data);
-
-	switch (veth->h_vlan_encapsulated_proto) {
-#ifdef CONFIG_INET
-	case htons(ETH_P_IP):
-
-		/* TODO:  Confirm this will work with VLAN headers... */
-		return arp_find(veth->h_dest, skb);
-#endif
-	default:
-		pr_debug("%s: unable to resolve type %X addresses\n",
-			 dev->name, ntohs(veth->h_vlan_encapsulated_proto));
-
-		ether_addr_copy(veth->h_source, dev->dev_addr);
-		break;
-	}
-
-	return 0;
-}
 
 /*
  *	Create the VLAN header for an arbitrary protocol layer
@@ -150,7 +120,7 @@ static netdev_tx_t vlan_dev_hard_start_xmit(struct sk_buff *skb,
 		u16 vlan_tci;
 		vlan_tci = vlan->vlan_id;
 		vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb->priority);
-		skb = __vlan_hwaccel_put_tag(skb, vlan->vlan_proto, vlan_tci);
+		__vlan_hwaccel_put_tag(skb, vlan->vlan_proto, vlan_tci);
 	}
 
 	skb->dev = vlan->real_dev;
@@ -177,10 +147,12 @@ static netdev_tx_t vlan_dev_hard_start_xmit(struct sk_buff *skb,
 
 static int vlan_dev_change_mtu(struct net_device *dev, int new_mtu)
 {
-	/* TODO: gotta make sure the underlying layer can handle it,
-	 * maybe an IFF_VLAN_CAPABLE flag for devices?
-	 */
-	if (vlan_dev_priv(dev)->real_dev->mtu < new_mtu)
+	struct net_device *real_dev = vlan_dev_priv(dev)->real_dev;
+	unsigned int max_mtu = real_dev->mtu;
+
+	if (netif_reduces_vlan_mtu(real_dev))
+		max_mtu -= VLAN_HLEN;
+	if (max_mtu < new_mtu)
 		return -ERANGE;
 
 	dev->mtu = new_mtu;
@@ -394,12 +366,10 @@ static int vlan_dev_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 	ifrr.ifr_ifru = ifr->ifr_ifru;
 
 	switch (cmd) {
-	case SIOCSHWTSTAMP:
-		if (!net_eq(dev_net(dev), &init_net))
-			break;
 	case SIOCGMIIPHY:
 	case SIOCGMIIREG:
 	case SIOCSMIIREG:
+	case SIOCSHWTSTAMP:
 	case SIOCGHWTSTAMP:
 		if (netif_device_present(real_dev) && ops->ndo_do_ioctl)
 			err = ops->ndo_do_ioctl(real_dev, &ifrr, cmd);
@@ -547,7 +517,6 @@ static int vlan_dev_get_lock_subclass(struct net_device *dev)
 
 static const struct header_ops vlan_header_ops = {
 	.create	 = vlan_dev_hard_header,
-	.rebuild = vlan_dev_rebuild_header,
 	.parse	 = eth_header_parse,
 };
 
@@ -567,7 +536,6 @@ static int vlan_passthru_hard_header(struct sk_buff *skb, struct net_device *dev
 
 static const struct header_ops vlan_passthru_header_ops = {
 	.create	 = vlan_passthru_hard_header,
-	.rebuild = dev_rebuild_header,
 	.parse	 = eth_header_parse,
 };
 
@@ -586,21 +554,22 @@ static int vlan_dev_init(struct net_device *dev)
 	/* IFF_BROADCAST|IFF_MULTICAST; ??? */
 	dev->flags  = real_dev->flags & ~(IFF_UP | IFF_PROMISC | IFF_ALLMULTI |
 					  IFF_MASTER | IFF_SLAVE);
-	dev->iflink = real_dev->ifindex;
 	dev->state  = (real_dev->state & ((1<<__LINK_STATE_NOCARRIER) |
 					  (1<<__LINK_STATE_DORMANT))) |
 		      (1<<__LINK_STATE_PRESENT);
 
-	dev->hw_features = NETIF_F_ALL_CSUM | NETIF_F_SG |
-			   NETIF_F_FRAGLIST | NETIF_F_ALL_TSO |
-			   NETIF_F_HIGHDMA | NETIF_F_SCTP_CSUM |
+	dev->hw_features = NETIF_F_HW_CSUM | NETIF_F_SG |
+			   NETIF_F_FRAGLIST | NETIF_F_GSO_SOFTWARE |
+			   NETIF_F_HIGHDMA | NETIF_F_SCTP_CRC |
 			   NETIF_F_ALL_FCOE;
 
-	dev->features |= real_dev->vlan_features | NETIF_F_LLTX;
+	dev->features |= dev->hw_features | NETIF_F_LLTX;
 	dev->gso_max_size = real_dev->gso_max_size;
+	dev->gso_max_segs = real_dev->gso_max_segs;
 	if (dev->features & NETIF_F_VLAN_FEATURES)
 		netdev_warn(real_dev, "VLAN features are set incorrectly.  Q-in-Q configurations may not work correctly.\n");
 
+	dev->vlan_features = real_dev->vlan_features & ~NETIF_F_ALL_FCOE;
 
 	/* ipv6 shared card related stuff */
 	dev->dev_id = real_dev->dev_id;
@@ -663,18 +632,18 @@ static netdev_features_t vlan_dev_fix_features(struct net_device *dev,
 	features |= NETIF_F_RXCSUM;
 	features = netdev_intersect_features(features, real_dev->features);
 
-	features |= old_features & NETIF_F_SOFT_FEATURES;
+	features |= old_features & (NETIF_F_SOFT_FEATURES | NETIF_F_GSO_SOFTWARE);
 	features |= NETIF_F_LLTX;
 
 	return features;
 }
 
-static int vlan_ethtool_get_settings(struct net_device *dev,
-				     struct ethtool_cmd *cmd)
+static int vlan_ethtool_get_link_ksettings(struct net_device *dev,
+					   struct ethtool_link_ksettings *cmd)
 {
 	const struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
 
-	return __ethtool_get_settings(vlan->real_dev, cmd);
+	return __ethtool_get_link_ksettings(vlan->real_dev, cmd);
 }
 
 static void vlan_ethtool_get_drvinfo(struct net_device *dev,
@@ -683,6 +652,26 @@ static void vlan_ethtool_get_drvinfo(struct net_device *dev,
 	strlcpy(info->driver, vlan_fullname, sizeof(info->driver));
 	strlcpy(info->version, vlan_version, sizeof(info->version));
 	strlcpy(info->fw_version, "N/A", sizeof(info->fw_version));
+}
+
+static int vlan_ethtool_get_ts_info(struct net_device *dev,
+				    struct ethtool_ts_info *info)
+{
+	const struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
+	const struct ethtool_ops *ops = vlan->real_dev->ethtool_ops;
+	struct phy_device *phydev = vlan->real_dev->phydev;
+
+	if (phydev && phydev->drv && phydev->drv->ts_info) {
+		 return phydev->drv->ts_info(phydev, info);
+	} else if (ops->get_ts_info) {
+		return ops->get_ts_info(vlan->real_dev, info);
+	} else {
+		info->so_timestamping = SOF_TIMESTAMPING_RX_SOFTWARE |
+			SOF_TIMESTAMPING_SOFTWARE;
+		info->phc_index = -1;
+	}
+
+	return 0;
 }
 
 static struct rtnl_link_stats64 *vlan_dev_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
@@ -764,10 +753,18 @@ static void vlan_dev_netpoll_cleanup(struct net_device *dev)
 }
 #endif /* CONFIG_NET_POLL_CONTROLLER */
 
+static int vlan_dev_get_iflink(const struct net_device *dev)
+{
+	struct net_device *real_dev = vlan_dev_priv(dev)->real_dev;
+
+	return real_dev->ifindex;
+}
+
 static const struct ethtool_ops vlan_ethtool_ops = {
-	.get_settings	        = vlan_ethtool_get_settings,
+	.get_link_ksettings	= vlan_ethtool_get_link_ksettings,
 	.get_drvinfo	        = vlan_ethtool_get_drvinfo,
 	.get_link		= ethtool_op_get_link,
+	.get_ts_info		= vlan_ethtool_get_ts_info,
 };
 
 static const struct net_device_ops vlan_netdev_ops = {
@@ -798,7 +795,16 @@ static const struct net_device_ops vlan_netdev_ops = {
 	.ndo_netpoll_cleanup	= vlan_dev_netpoll_cleanup,
 #endif
 	.ndo_fix_features	= vlan_dev_fix_features,
+	.ndo_neigh_construct	= netdev_default_l2upper_neigh_construct,
+	.ndo_neigh_destroy	= netdev_default_l2upper_neigh_destroy,
+	.ndo_fdb_add		= switchdev_port_fdb_add,
+	.ndo_fdb_del		= switchdev_port_fdb_del,
+	.ndo_fdb_dump		= switchdev_port_fdb_dump,
+	.ndo_bridge_setlink	= switchdev_port_bridge_setlink,
+	.ndo_bridge_getlink	= switchdev_port_bridge_getlink,
+	.ndo_bridge_dellink	= switchdev_port_bridge_dellink,
 	.ndo_get_lock_subclass  = vlan_dev_get_lock_subclass,
+	.ndo_get_iflink		= vlan_dev_get_iflink,
 };
 
 static void vlan_dev_free(struct net_device *dev)
@@ -814,14 +820,14 @@ void vlan_setup(struct net_device *dev)
 {
 	ether_setup(dev);
 
-	dev->priv_flags		|= IFF_802_1Q_VLAN;
+	dev->priv_flags		|= IFF_802_1Q_VLAN | IFF_NO_QUEUE;
+	dev->priv_flags		|= IFF_UNICAST_FLT;
 	dev->priv_flags		&= ~IFF_TX_SKB_SHARING;
 	netif_keep_dst(dev);
-	dev->tx_queue_len	= 0;
 
 	dev->netdev_ops		= &vlan_netdev_ops;
 	dev->destructor		= vlan_dev_free;
 	dev->ethtool_ops	= &vlan_ethtool_ops;
 
-	memset(dev->broadcast, 0, ETH_ALEN);
+	eth_zero_addr(dev->broadcast);
 }

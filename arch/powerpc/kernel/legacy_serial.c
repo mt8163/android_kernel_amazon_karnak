@@ -193,10 +193,10 @@ static int __init add_legacy_soc_port(struct device_node *np,
 	 */
 	if (tsi && !strcmp(tsi->type, "tsi-bridge"))
 		return add_legacy_port(np, -1, UPIO_TSI, addr, addr,
-				       NO_IRQ, legacy_port_flags, 0);
+				       0, legacy_port_flags, 0);
 	else
 		return add_legacy_port(np, -1, UPIO_MEM, addr, addr,
-				       NO_IRQ, legacy_port_flags, 0);
+				       0, legacy_port_flags, 0);
 }
 
 static int __init add_legacy_isa_port(struct device_node *np,
@@ -242,7 +242,7 @@ static int __init add_legacy_isa_port(struct device_node *np,
 
 	/* Add port, irq will be dealt with later */
 	return add_legacy_port(np, index, UPIO_PORT, be32_to_cpu(reg[1]),
-			       taddr, NO_IRQ, legacy_port_flags, 0);
+			       taddr, 0, legacy_port_flags, 0);
 
 }
 
@@ -314,7 +314,7 @@ static int __init add_legacy_pci_port(struct device_node *np,
 	/* Add port, irq will be dealt with later. We passed a translated
 	 * IO port value. It will be fixed up later along with the irq
 	 */
-	return add_legacy_port(np, index, iotype, base, addr, NO_IRQ,
+	return add_legacy_port(np, index, iotype, base, addr, 0,
 			       legacy_port_flags, np != pci_dev);
 }
 #endif
@@ -370,8 +370,6 @@ void __init find_legacy_serial_ports(void)
 
 	/* Now find out if one of these is out firmware console */
 	path = of_get_property(of_chosen, "linux,stdout-path", NULL);
-	if (path == NULL)
-		path = of_get_property(of_chosen, "stdout-path", NULL);
 	if (path != NULL) {
 		stdout = of_find_node_by_path(path);
 		if (stdout)
@@ -464,14 +462,14 @@ static void __init fixup_port_irq(int index,
 	DBG("fixup_port_irq(%d)\n", index);
 
 	virq = irq_of_parse_and_map(np, 0);
-	if (virq == NO_IRQ && legacy_serial_infos[index].irq_check_parent) {
+	if (!virq && legacy_serial_infos[index].irq_check_parent) {
 		np = of_get_parent(np);
 		if (np == NULL)
 			return;
 		virq = irq_of_parse_and_map(np, 0);
 		of_node_put(np);
 	}
-	if (virq == NO_IRQ)
+	if (!virq)
 		return;
 
 	port->irq = virq;
@@ -545,7 +543,7 @@ static int __init serial_dev_init(void)
 		struct plat_serial8250_port *port = &legacy_serial_ports[i];
 		struct device_node *np = legacy_serial_infos[i].np;
 
-		if (port->irq == NO_IRQ)
+		if (!port->irq)
 			fixup_port_irq(i, np, port);
 		if (port->iotype == UPIO_PORT)
 			fixup_port_pio(i, np, port);
@@ -595,10 +593,8 @@ static int __init check_legacy_serial_console(void)
 	/* We are getting a weird phandle from OF ... */
 	/* ... So use the full path instead */
 	name = of_get_property(of_chosen, "linux,stdout-path", NULL);
-	if (name == NULL)
-		name = of_get_property(of_chosen, "stdout-path", NULL);
 	if (name == NULL) {
-		DBG(" no stdout-path !\n");
+		DBG(" no linux,stdout-path !\n");
 		return -ENODEV;
 	}
 	prom_stdout = of_find_node_by_path(name);

@@ -180,7 +180,7 @@ MODULE_PARM_DESC(enable, "Enable the EMU10K1X soundcard.");
 
 /* From 0x50 - 0x5f, last samples captured */
 
-/**
+/*
  * The hardware has 3 channels for playback and 1 for capture.
  *  - channel 0 is the front channel
  *  - channel 1 is the rear channel
@@ -548,7 +548,7 @@ snd_emu10k1x_pcm_pointer(struct snd_pcm_substream *substream)
 }
 
 /* operators */
-static struct snd_pcm_ops snd_emu10k1x_playback_ops = {
+static const struct snd_pcm_ops snd_emu10k1x_playback_ops = {
 	.open =        snd_emu10k1x_playback_open,
 	.close =       snd_emu10k1x_playback_close,
 	.ioctl =       snd_pcm_lib_ioctl,
@@ -694,7 +694,7 @@ snd_emu10k1x_pcm_pointer_capture(struct snd_pcm_substream *substream)
 	return ptr;
 }
 
-static struct snd_pcm_ops snd_emu10k1x_capture_ops = {
+static const struct snd_pcm_ops snd_emu10k1x_capture_ops = {
 	.open =        snd_emu10k1x_pcm_open_capture,
 	.close =       snd_emu10k1x_pcm_close_capture,
 	.ioctl =       snd_pcm_lib_ioctl,
@@ -847,15 +847,13 @@ static const struct snd_pcm_chmap_elem clfe_map[] = {
 	{ }
 };
 
-static int snd_emu10k1x_pcm(struct emu10k1x *emu, int device, struct snd_pcm **rpcm)
+static int snd_emu10k1x_pcm(struct emu10k1x *emu, int device)
 {
 	struct snd_pcm *pcm;
 	const struct snd_pcm_chmap_elem *map = NULL;
 	int err;
 	int capture = 0;
   
-	if (rpcm)
-		*rpcm = NULL;
 	if (device == 0)
 		capture = 1;
 	
@@ -896,15 +894,8 @@ static int snd_emu10k1x_pcm(struct emu10k1x *emu, int device, struct snd_pcm **r
 					      snd_dma_pci_data(emu->pci), 
 					      32*1024, 32*1024);
   
-	err = snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK, map, 2,
+	return snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK, map, 2,
 				     1 << 2, NULL);
-	if (err < 0)
-		return err;
-
-	if (rpcm)
-		*rpcm = pcm;
-  
-	return 0;
 }
 
 static int snd_emu10k1x_create(struct snd_card *card,
@@ -1583,15 +1574,15 @@ static int snd_emu10k1x_probe(struct pci_dev *pci,
 		return err;
 	}
 
-	if ((err = snd_emu10k1x_pcm(chip, 0, NULL)) < 0) {
+	if ((err = snd_emu10k1x_pcm(chip, 0)) < 0) {
 		snd_card_free(card);
 		return err;
 	}
-	if ((err = snd_emu10k1x_pcm(chip, 1, NULL)) < 0) {
+	if ((err = snd_emu10k1x_pcm(chip, 1)) < 0) {
 		snd_card_free(card);
 		return err;
 	}
-	if ((err = snd_emu10k1x_pcm(chip, 2, NULL)) < 0) {
+	if ((err = snd_emu10k1x_pcm(chip, 2)) < 0) {
 		snd_card_free(card);
 		return err;
 	}

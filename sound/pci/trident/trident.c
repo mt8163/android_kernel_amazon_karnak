@@ -123,25 +123,25 @@ static int snd_trident_probe(struct pci_dev *pci,
 	} else {
 		strcpy(card->shortname, "Trident ");
 	}
-	strcat(card->shortname, str);
+	strcat(card->shortname, card->driver);
 	sprintf(card->longname, "%s PCI Audio at 0x%lx, irq %d",
 		card->shortname, trident->port, trident->irq);
 
-	if ((err = snd_trident_pcm(trident, pcm_dev++, NULL)) < 0) {
+	if ((err = snd_trident_pcm(trident, pcm_dev++)) < 0) {
 		snd_card_free(card);
 		return err;
 	}
 	switch (trident->device) {
 	case TRIDENT_DEVICE_ID_DX:
 	case TRIDENT_DEVICE_ID_NX:
-		if ((err = snd_trident_foldback_pcm(trident, pcm_dev++, NULL)) < 0) {
+		if ((err = snd_trident_foldback_pcm(trident, pcm_dev++)) < 0) {
 			snd_card_free(card);
 			return err;
 		}
 		break;
 	}
 	if (trident->device == TRIDENT_DEVICE_ID_NX || trident->device == TRIDENT_DEVICE_ID_SI7018) {
-		if ((err = snd_trident_spdif_pcm(trident, pcm_dev++, NULL)) < 0) {
+		if ((err = snd_trident_spdif_pcm(trident, pcm_dev++)) < 0) {
 			snd_card_free(card);
 			return err;
 		}

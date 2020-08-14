@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
@@ -6,7 +19,7 @@
 #include <asm/traps.h>
 #include <asm/signal.h>
 #include <mt-plat/sync_write.h>
-#include <mt-plat/mt_io.h>
+#include <mt-plat/mtk_io.h>
 #include <mtk_ram_console.h>
 #include "../systracker.h"
 
@@ -16,15 +29,14 @@ void __iomem *mm_area1;
 #endif
 
 #ifdef CONFIG_ARM64
-static int read_timeout_handler(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
+static int read_timeout_handler(unsigned long addr, unsigned int fsr,
+				struct pt_regs *regs)
 {
 	int i = 0;
 
 #ifdef SYSTRACKER_TEST_SUIT
 	systracker_test_cleanup();
 #endif
-
-	pr_alert("Unhandled fault: synchronous external abort (0x%08x) at 0x%016lx\n", fsr, addr);
 
 	pr_debug("%s:%d: read timeout\n", __func__, __LINE__);
 	aee_dump_backtrace(regs, NULL);
@@ -63,24 +75,27 @@ static void write_timeout_handler(struct pt_regs *regs, void *priv)
 	}
 }
 
-static int systracker_platform_hook_fault(void)
+static int __init systracker_platform_hook_fault(void)
 {
 	int ret = 0;
 
 	/* We use ARM64's synchroneous external abort for read timeout */
-	hook_fault_code(0x10, read_timeout_handler, SIGTRAP, 0, "Systracker debug exception");
+	hook_fault_code(0x10, read_timeout_handler, SIGTRAP, 0,
+			"Systracker debug exception");
 
 	/* for 64bit, we should register async abort handler */
 	ret = register_async_abort_handler(write_timeout_handler, NULL);
 	if (ret) {
-		pr_warn("%s:%d: register_async_abort_handler failed\n", __func__, __LINE__);
+		pr_warn("%s:%d: register_async_abort_handler failed\n",
+			 __func__, __LINE__);
 		return -1;
 	}
 
 	return 0;
 }
 #else
-int systracker_handler(unsigned long addr, unsigned int fsr, struct pt_regs *regs)
+int systracker_handler(unsigned long addr, unsigned int fsr,
+		       struct pt_regs *regs)
 {
 	int i;
 
@@ -110,15 +125,19 @@ int systracker_handler(unsigned long addr, unsigned int fsr, struct pt_regs *reg
 }
 
 /* ARM32 version */
-static int systracker_platform_hook_fault(void)
+static int __init systracker_platform_hook_fault(void)
 {
 
 #ifdef CONFIG_ARM_LPAE
-	hook_fault_code(0x10, systracker_handler, SIGTRAP, 0, "Systracker debug exception");
-	hook_fault_code(0x11, systracker_handler, SIGTRAP, 0, "Systracker debug exception");
+	hook_fault_code(0x10, systracker_handler, SIGTRAP, 0,
+			"Systracker debug exception");
+	hook_fault_code(0x11, systracker_handler, SIGTRAP, 0,
+			"Systracker debug exception");
 #else
-	hook_fault_code(0x8, systracker_handler, SIGTRAP, 0, "Systracker debug exception");
-	hook_fault_code(0x16, systracker_handler, SIGTRAP, 0, "Systracker debug exception");
+	hook_fault_code(0x8, systracker_handler, SIGTRAP, 0,
+			"Systracker debug exception");
+	hook_fault_code(0x16, systracker_handler, SIGTRAP, 0,
+			"Systracker debug exception");
 #endif
 	return 0;
 }
@@ -159,9 +178,9 @@ static void systracker_platform_wp_test(void)
 static void systracker_platform_read_timeout_test(void)
 {
 	/* FIXME: testing
-	track_config.enable_slave_err = 0;
-	systracker_enable();
-	*/
+	 * track_config.enable_slave_err = 0;
+	 * systracker_enable();
+	 */
 
 	writel(readl(p1) | (0x1 << 6), p1);
 	readl(mm_area1);
@@ -177,7 +196,8 @@ static void systracker_platform_write_timeout_test(void)
 
 static void systracker_platform_withrecord_test(void)
 {
-	writel(readl(IOMEM(BUS_DBG_CON)) | BUS_DBG_CON_HALT_ON_EN, IOMEM(BUS_DBG_CON));
+	writel(readl(IOMEM(BUS_DBG_CON)) | BUS_DBG_CON_HALT_ON_EN,
+	       IOMEM(BUS_DBG_CON));
 	writel(readl(p1) | (0x1 << 6), p1);
 	readl(mm_area1);
 #if 0
@@ -190,7 +210,8 @@ static void systracker_platform_notimeout_test(void)
 {
 	writel(readl(p1) | (0x1 << 6), p1);
 	/* disable timeout */
-	writel(readl(IOMEM(BUS_DBG_CON)) & ~(BUS_DBG_CON_TIMEOUT_EN), IOMEM(BUS_DBG_CON));
+	writel(readl(IOMEM(BUS_DBG_CON)) & ~(BUS_DBG_CON_TIMEOUT_EN),
+	       IOMEM(BUS_DBG_CON));
 	/* read it, should cause bus hang */
 	readl(mm_area1);
 	/* never come back */
@@ -212,12 +233,17 @@ static int __init mt_systracker_init(void)
 	systracker_drv->systracker_hook_fault = systracker_platform_hook_fault;
 #ifdef SYSTRACKER_TEST_SUIT
 	systracker_drv->systracker_test_init = systracker_platform_test_init;
-	systracker_drv->systracker_test_cleanup = systracker_platform_test_cleanup;
+	systracker_drv->systracker_test_cleanup =
+					systracker_platform_test_cleanup;
 	systracker_drv->systracker_wp_test = systracker_platform_wp_test;
-	systracker_drv->systracker_read_timeout_test = systracker_platform_read_timeout_test;
-	systracker_drv->systracker_write_timeout_test = systracker_platform_write_timeout_test;
-	systracker_drv->systracker_withrecord_test = systracker_platform_withrecord_test;
-	systracker_drv->systracker_notimeout_test = systracker_platform_notimeout_test;
+	systracker_drv->systracker_read_timeout_test =
+					systracker_platform_read_timeout_test;
+	systracker_drv->systracker_write_timeout_test =
+					systracker_platform_write_timeout_test;
+	systracker_drv->systracker_withrecord_test =
+					systracker_platform_withrecord_test;
+	systracker_drv->systracker_notimeout_test =
+					systracker_platform_notimeout_test;
 #endif
 	return 0;
 }

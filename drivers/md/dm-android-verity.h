@@ -26,6 +26,23 @@
 #define VERITY_METADATA_SIZE (8 * DATA_BLOCK_SIZE)
 #define VERITY_TABLE_ARGS 10
 #define VERITY_COMMANDLINE_PARAM_LENGTH 20
+#define BUILD_VARIANT 20
+
+/*
+ * <subject>:<sha1-id> is the format for the identifier.
+ * subject can either be the Common Name(CN) + Organization Name(O) or
+ * just the CN if the it is prefixed with O
+ * From https://tools.ietf.org/html/rfc5280#appendix-A
+ * ub-organization-name-length INTEGER ::= 64
+ * ub-common-name-length INTEGER ::= 64
+ *
+ * http://lxr.free-electrons.com/source/crypto/asymmetric_keys/x509_cert_parser.c?v=3.9#L278
+ * ctx->o_size + 2 + ctx->cn_size + 1
+ * + 41 characters for ":" and sha1 id
+ * 64 + 2 + 64 + 1 + 1 + 40 (172)
+ * setting VERITY_DEFAULT_KEY_ID_LENGTH to 200 characters.
+ */
+#define VERITY_DEFAULT_KEY_ID_LENGTH 200
 
 #define FEC_MAGIC 0xFECFECFE
 #define FEC_BLOCK_SIZE (4 * 1024)
@@ -55,9 +72,6 @@
  * if fec is not present
  * <data_blocks> <verity_tree> <verity_metdata_32K>
  */
-/* TODO: rearrange structure to reduce memory holes
- * depends on userspace change.
- */
 struct fec_header {
 	__le32 magic;
 	__le32 version;
@@ -66,7 +80,7 @@ struct fec_header {
 	__le32 fec_size;
 	__le64 inp_size;
 	u8 hash[SHA256_DIGEST_SIZE];
-};
+} __attribute__((packed));
 
 struct android_metadata_header {
 	__le32 magic_number;
@@ -99,11 +113,11 @@ extern void dm_linear_dtr(struct dm_target *ti);
 extern int dm_linear_map(struct dm_target *ti, struct bio *bio);
 extern void dm_linear_status(struct dm_target *ti, status_type_t type,
 			unsigned status_flags, char *result, unsigned maxlen);
-extern int dm_linear_ioctl(struct dm_target *ti, unsigned int cmd,
-		unsigned long arg);
-extern int dm_linear_merge(struct dm_target *ti, struct bvec_merge_data *bvm,
-		struct bio_vec *biovec, int max_size);
+extern int dm_linear_prepare_ioctl(struct dm_target *ti,
+                struct block_device **bdev, fmode_t *mode);
 extern int dm_linear_iterate_devices(struct dm_target *ti,
 			iterate_devices_callout_fn fn, void *data);
 extern int dm_linear_ctr(struct dm_target *ti, unsigned int argc, char **argv);
+extern long dm_linear_direct_access(struct dm_target *ti, sector_t sector,
+                                 void **kaddr, pfn_t *pfn, long size);
 #endif /* DM_ANDROID_VERITY_H */

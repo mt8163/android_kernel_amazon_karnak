@@ -927,6 +927,7 @@ int __kprobes analyse_instr(struct instruction_op *op, struct pt_regs *regs,
 			}
 		}
 #endif
+	break; /* illegal instruction */
 
 	case 31:
 		switch ((instr >> 1) & 0x3ff) {
@@ -1831,9 +1832,11 @@ int __kprobes emulate_step(struct pt_regs *regs, unsigned int instr)
 		case 4:
 			__get_user_asmx(val, op.ea, err, "lwarx");
 			break;
+#ifdef __powerpc64__
 		case 8:
 			__get_user_asmx(val, op.ea, err, "ldarx");
 			break;
+#endif
 		default:
 			return 0;
 		}
@@ -1852,9 +1855,11 @@ int __kprobes emulate_step(struct pt_regs *regs, unsigned int instr)
 		case 4:
 			__put_user_asmx(op.val, op.ea, err, "stwcx.", cr);
 			break;
+#ifdef __powerpc64__
 		case 8:
 			__put_user_asmx(op.val, op.ea, err, "stdcx.", cr);
 			break;
+#endif
 		default:
 			return 0;
 		}
@@ -1874,13 +1879,14 @@ int __kprobes emulate_step(struct pt_regs *regs, unsigned int instr)
 		}
 		goto ldst_done;
 
+#ifdef CONFIG_PPC_FPU
 	case LOAD_FP:
 		if (size == 4)
 			err = do_fp_load(op.reg, do_lfs, op.ea, size, regs);
 		else
 			err = do_fp_load(op.reg, do_lfd, op.ea, size, regs);
 		goto ldst_done;
-
+#endif
 #ifdef CONFIG_ALTIVEC
 	case LOAD_VMX:
 		err = do_vec_load(op.reg, do_lvx, op.ea & ~0xfUL, regs);
@@ -1920,13 +1926,14 @@ int __kprobes emulate_step(struct pt_regs *regs, unsigned int instr)
 		err = write_mem(op.val, op.ea, size, regs);
 		goto ldst_done;
 
+#ifdef CONFIG_PPC_FPU
 	case STORE_FP:
 		if (size == 4)
 			err = do_fp_store(op.reg, do_stfs, op.ea, size, regs);
 		else
 			err = do_fp_store(op.reg, do_stfd, op.ea, size, regs);
 		goto ldst_done;
-
+#endif
 #ifdef CONFIG_ALTIVEC
 	case STORE_VMX:
 		err = do_vec_store(op.reg, do_stvx, op.ea & ~0xfUL, regs);

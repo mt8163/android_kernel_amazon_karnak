@@ -1,15 +1,16 @@
 /*
- *  linux/arch/arm/lib/backtrace.S
- *
- *  Copyright (C) 1995, 1996 Russell King
+ * Copyright (C) 2017 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * 27/03/03 Ian Molton Clean up CONFIG_CPU
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 #include <linux/linkage.h>
 #include <asm/assembler.h>
 	.text
@@ -28,18 +29,18 @@ ENTRY(c_backtrace_ramconsole_print)
 		mov	pc, lr
 ENDPROC(c_backtrace_ramconsole_print)
 #else
-		stmfd	sp!, {r4 - r8, lr}	@ Save an extra register so we have a location...
-		movs	frame, r0		@ if frame pointer is zero
-		beq	no_frame		@ we have no stack frames
+		stmfd	sp!, {r4 - r8, lr}
+		movs	frame, r0
+		beq	no_frame
 
-		tst	r1, #0x10		@ 26 or 32-bit mode?
+		tst	r1, #0x10
  ARM(		moveq	mask, #0xfc000003	)
  THUMB(		moveq	mask, #0xfc000000	)
  THUMB(		orreq	mask, #0x03		)
-		movne	mask, #0		@ mask for 32-bit
+		movne	mask, #0
 
-1:		stmfd	sp!, {pc}		@ calculate offset of PC stored
-		ldr	r0, [sp], #4		@ by stmfd for this CPU
+1:		stmfd	sp!, {pc}
+		ldr	r0, [sp], #4
 		adr	r1, 1b
 		sub	offset, r0, r1
 
@@ -58,44 +59,44 @@ ENDPROC(c_backtrace_ramconsole_print)
  *                  stmfd sp!, {r0 - r3} (optional)
  * corrected pc =>  stmfd sp!, {..., fp, ip, lr, pc}
  */
-for_each_frame:	tst	frame, mask		@ Check for address exceptions
+for_each_frame:	tst	frame, mask
 		bne	no_frame
 
-1001:		ldr	sv_pc, [frame, #0]	@ get saved pc
-1002:		ldr	sv_fp, [frame, #-12]	@ get saved fp
+1001:		ldr	sv_pc, [frame, #0]
+1002:		ldr	sv_fp, [frame, #-12]
 
-		sub	sv_pc, sv_pc, offset	@ Correct PC for prefetching
-		bic	sv_pc, sv_pc, mask	@ mask PC/LR for the mode
+		sub	sv_pc, sv_pc, offset
+		bic	sv_pc, sv_pc, mask
 
-1003:		ldr	r2, [sv_pc, #-4]	@ if stmfd sp!, {args} exists,
-		ldr	r3, .Ldsi+4		@ adjust saved 'pc' back one
-		teq	r3, r2, lsr #10		@ instruction
-		subne	r0, sv_pc, #4		@ allow for mov
-		subeq	r0, sv_pc, #8		@ allow for mov + stmia
+1003:		ldr	r2, [sv_pc, #-4]
+		ldr	r3, .Ldsi+4
+		teq	r3, r2, lsr #10
+		subne	r0, sv_pc, #4
+		subeq	r0, sv_pc, #8
 
-		ldr	r1, [frame, #-4]	@ get saved lr
+		ldr	r1, [frame, #-4]
 		mov	r2, frame
-		bic	r1, r1, mask		@ mask PC/LR for the mode
+		bic	r1, r1, mask
 		bl	dump_backtrace_entry_ramconsole_print
 
-		ldr	r1, [sv_pc, #-4]	@ if stmfd sp!, {args} exists,
+		ldr	r1, [sv_pc, #-4]
 		ldr	r3, .Ldsi+4
 		teq	r3, r1, lsr #10
-		ldreq	r0, [frame, #-8]	@ get sp
-		subeq	r0, r0, #4		@ point at the last arg
-		bleq	.Ldumpstm		@ dump saved registers
+		ldreq	r0, [frame, #-8]
+		subeq	r0, r0, #4
+		bleq	.Ldumpstm
 
-1004:		ldr	r1, [sv_pc, #0]		@ if stmfd sp!, {..., fp, ip, lr, pc}
-		ldr	r3, .Ldsi		@ instruction exists,
+1004:		ldr	r1, [sv_pc, #0]
+		ldr	r3, .Ldsi
 		teq	r3, r1, lsr #10
 		subeq	r0, frame, #16
-		bleq	.Ldumpstm		@ dump saved registers
+		bleq	.Ldumpstm
 
-		teq	sv_fp, #0		@ zero saved fp means
-		beq	no_frame		@ no further frames
+		teq	sv_fp, #0
+		beq	no_frame
 
-		cmp	sv_fp, frame		@ next frame must be
-		mov	frame, sv_fp		@ above the current frame
+		cmp	sv_fp, frame
+		mov	frame, sv_fp
 		bhi	for_each_frame
 
 1006:		adr	r0, .Lbad
@@ -150,7 +151,7 @@ ENDPROC(c_backtrace_ramconsole_print)
 .Lcr:		.asciz	"\n"
 .Lbad:		.asciz	"Backtrace aborted due to bad frame pointer <%p>\n"
 		.align
-.Ldsi:		.word	0xe92dd800 >> 10	@ stmfd sp!, {... fp, ip, lr, pc}
-		.word	0xe92d0000 >> 10	@ stmfd sp!, {}
+.Ldsi:		.word	0xe92dd800 >> 10
+		.word	0xe92d0000 >> 10
 
 #endif

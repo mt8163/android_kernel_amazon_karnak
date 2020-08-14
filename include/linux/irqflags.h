@@ -44,12 +44,6 @@
 # define INIT_TRACE_IRQFLAGS
 #endif
 
-#if defined(CONFIG_PREEMPT_MONITOR) && defined(CONFIG_MTPROF)
-extern void MT_trace_softirqs_on(unsigned long ip);
-extern void MT_trace_softirqs_off(unsigned long ip);
-extern void MT_trace_hardirqs_on(void);
-extern void MT_trace_hardirqs_off(void);
-#endif
 #if defined(CONFIG_IRQSOFF_TRACER) || \
 	defined(CONFIG_PREEMPT_TRACER)
  extern void stop_critical_timings(void);
@@ -91,57 +85,7 @@ extern void MT_trace_hardirqs_off(void);
  * The local_irq_*() APIs are equal to the raw_local_irq*()
  * if !TRACE_IRQFLAGS.
  */
-#ifdef CONFIG_TRACE_IRQFLAGS_SUPPORT
-#if defined(CONFIG_PREEMPT_MONITOR) && defined(CONFIG_MTPROF)
-#define local_irq_enable() \
-	do { \
-		if (irqs_disabled()) {\
-			MT_trace_hardirqs_on();\
-			trace_hardirqs_on();\
-			raw_local_irq_enable();\
-		} else {                \
-			trace_hardirqs_on();\
-			raw_local_irq_enable();\
-		} \
-	} while (0)
-#define local_irq_disable() \
-	do { \
-		if (irqs_disabled()) {\
-			raw_local_irq_disable();\
-			trace_hardirqs_off(); \
-		} else {                \
-			raw_local_irq_disable();\
-			trace_hardirqs_off(); \
-			MT_trace_hardirqs_off(); \
-		} \
-	} while (0)
-
-#define local_irq_save(flags)               \
-	do {                        \
-		typecheck(unsigned long, flags);    \
-		if (irqs_disabled()) {  \
-			raw_local_irq_save(flags);      \
-			trace_hardirqs_off();       \
-		} else {                \
-			raw_local_irq_save(flags);      \
-			trace_hardirqs_off();       \
-			MT_trace_hardirqs_off();            \
-		} \
-	} while (0)
-
-#define local_irq_restore(flags)            \
-	do {                        \
-		typecheck(unsigned long, flags);    \
-		if (raw_irqs_disabled_flags(flags)) {   \
-			raw_local_irq_restore(flags);   \
-			trace_hardirqs_off();       \
-		} else {                \
-			MT_trace_hardirqs_on();     \
-			trace_hardirqs_on();        \
-			raw_local_irq_restore(flags);   \
-		}                   \
-	} while (0)
-#else /* !CONFIG_PREEMPT_MONITOR*/
+#ifdef CONFIG_TRACE_IRQFLAGS
 #define local_irq_enable() \
 	do { trace_hardirqs_on(); raw_local_irq_enable(); } while (0)
 #define local_irq_disable() \
@@ -163,23 +107,6 @@ extern void MT_trace_hardirqs_off(void);
 			raw_local_irq_restore(flags);	\
 		}					\
 	} while (0)
-#endif /* !CONFIG_PREEMPT_MONITOR*/
-#define local_save_flags(flags)				\
-	do {						\
-		raw_local_save_flags(flags);		\
-	} while (0)
-
-#define irqs_disabled_flags(flags)			\
-	({						\
-		raw_irqs_disabled_flags(flags);		\
-	})
-
-#define irqs_disabled()					\
-	({						\
-		unsigned long _flags;			\
-		raw_local_save_flags(_flags);		\
-		raw_irqs_disabled_flags(_flags);	\
-	})
 
 #define safe_halt()				\
 	do {					\
@@ -188,7 +115,7 @@ extern void MT_trace_hardirqs_off(void);
 	} while (0)
 
 
-#else /* !CONFIG_TRACE_IRQFLAGS_SUPPORT */
+#else /* !CONFIG_TRACE_IRQFLAGS */
 
 #define local_irq_enable()	do { raw_local_irq_enable(); } while (0)
 #define local_irq_disable()	do { raw_local_irq_disable(); } while (0)
@@ -197,11 +124,28 @@ extern void MT_trace_hardirqs_off(void);
 		raw_local_irq_save(flags);			\
 	} while (0)
 #define local_irq_restore(flags) do { raw_local_irq_restore(flags); } while (0)
-#define local_save_flags(flags)	do { raw_local_save_flags(flags); } while (0)
-#define irqs_disabled()		(raw_irqs_disabled())
-#define irqs_disabled_flags(flags) (raw_irqs_disabled_flags(flags))
 #define safe_halt()		do { raw_safe_halt(); } while (0)
 
+#endif /* CONFIG_TRACE_IRQFLAGS */
+
+#define local_save_flags(flags)	raw_local_save_flags(flags)
+
+/*
+ * Some architectures don't define arch_irqs_disabled(), so even if either
+ * definition would be fine we need to use different ones for the time being
+ * to avoid build issues.
+ */
+#ifdef CONFIG_TRACE_IRQFLAGS_SUPPORT
+#define irqs_disabled()					\
+	({						\
+		unsigned long _flags;			\
+		raw_local_save_flags(_flags);		\
+		raw_irqs_disabled_flags(_flags);	\
+	})
+#else /* !CONFIG_TRACE_IRQFLAGS_SUPPORT */
+#define irqs_disabled()	raw_irqs_disabled()
 #endif /* CONFIG_TRACE_IRQFLAGS_SUPPORT */
+
+#define irqs_disabled_flags(flags) raw_irqs_disabled_flags(flags)
 
 #endif

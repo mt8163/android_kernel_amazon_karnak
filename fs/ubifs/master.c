@@ -41,21 +41,9 @@ static int scan_for_master(struct ubifs_info *c)
 
 	lnum = UBIFS_MST_LNUM;
 
-#ifdef CONFIG_UBIFS_SHARE_BUFFER
-	if (mutex_trylock(&ubifs_sbuf_mutex) == 0) {
-		atomic_long_inc(&ubifs_sbuf_lock_count);
-		ubifs_err("trylock fail count %ld\n", atomic_long_read(&ubifs_sbuf_lock_count));
-		mutex_lock(&ubifs_sbuf_mutex);
-		ubifs_err("locked count %ld\n", atomic_long_read(&ubifs_sbuf_lock_count));
-	}
-#endif
 	sleb = ubifs_scan(c, lnum, 0, c->sbuf, 1);
-	if (IS_ERR(sleb)) {
-#ifdef CONFIG_UBIFS_SHARE_BUFFER
-		mutex_unlock(&ubifs_sbuf_mutex);
-#endif
+	if (IS_ERR(sleb))
 		return PTR_ERR(sleb);
-	}
 	nodes_cnt = sleb->nodes_cnt;
 	if (nodes_cnt > 0) {
 		snod = list_entry(sleb->nodes.prev, struct ubifs_scan_node,
@@ -70,12 +58,8 @@ static int scan_for_master(struct ubifs_info *c)
 	lnum += 1;
 
 	sleb = ubifs_scan(c, lnum, 0, c->sbuf, 1);
-	if (IS_ERR(sleb)) {
-#ifdef CONFIG_UBIFS_SHARE_BUFFER
-		mutex_unlock(&ubifs_sbuf_mutex);
-#endif
+	if (IS_ERR(sleb))
 		return PTR_ERR(sleb);
-	}
 	if (sleb->nodes_cnt != nodes_cnt)
 		goto out;
 	if (!sleb->nodes_cnt)
@@ -91,25 +75,16 @@ static int scan_for_master(struct ubifs_info *c)
 		goto out;
 	c->mst_offs = offs;
 	ubifs_scan_destroy(sleb);
-#ifdef CONFIG_UBIFS_SHARE_BUFFER
-	mutex_unlock(&ubifs_sbuf_mutex);
-#endif
 	return 0;
 
 out:
 	ubifs_scan_destroy(sleb);
-#ifdef CONFIG_UBIFS_SHARE_BUFFER
-	mutex_unlock(&ubifs_sbuf_mutex);
-#endif
 	return -EUCLEAN;
 
 out_dump:
-	ubifs_err("unexpected node type %d master LEB %d:%d",
+	ubifs_err(c, "unexpected node type %d master LEB %d:%d",
 		  snod->type, lnum, snod->offs);
 	ubifs_scan_destroy(sleb);
-#ifdef CONFIG_UBIFS_SHARE_BUFFER
-	mutex_unlock(&ubifs_sbuf_mutex);
-#endif
 	return -EINVAL;
 }
 
@@ -265,7 +240,7 @@ static int validate_master(const struct ubifs_info *c)
 	return 0;
 
 out:
-	ubifs_err("bad master node at offset %d error %d", c->mst_offs, err);
+	ubifs_err(c, "bad master node at offset %d error %d", c->mst_offs, err);
 	ubifs_dump_node(c, c->mst_node);
 	return -EINVAL;
 }
@@ -295,12 +270,6 @@ int ubifs_read_master(struct ubifs_info *c)
 			 * Note, we do not free 'c->mst_node' here because the
 			 * unmount routine will take care of this.
 			 */
-			return err;
-	} else if ((!c->ro_mount) && (c->mst_node->flags & cpu_to_le32(UBIFS_MST_DIRTY)) != 0) {
-		/* MTK force recover master node, when unclean reboot */
-		ubifs_msg("recovery needed, recovery master node");
-		err = ubifs_recover_master_node(c);
-		if (err)
 			return err;
 	}
 
@@ -347,7 +316,7 @@ int ubifs_read_master(struct ubifs_info *c)
 
 		if (c->leb_cnt < old_leb_cnt ||
 		    c->leb_cnt < UBIFS_MIN_LEB_CNT) {
-			ubifs_err("bad leb_cnt on master node");
+			ubifs_err(c, "bad leb_cnt on master node");
 			ubifs_dump_node(c, c->mst_node);
 			return -EINVAL;
 		}

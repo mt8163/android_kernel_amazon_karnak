@@ -347,26 +347,6 @@ static struct dentry *dlm_debugfs_root;
 #define DLM_DEBUGFS_PURGE_LIST			"purge_list"
 
 /* begin - utils funcs */
-static void dlm_debug_free(struct kref *kref)
-{
-	struct dlm_debug_ctxt *dc;
-
-	dc = container_of(kref, struct dlm_debug_ctxt, debug_refcnt);
-
-	kfree(dc);
-}
-
-static void dlm_debug_put(struct dlm_debug_ctxt *dc)
-{
-	if (dc)
-		kref_put(&dc->debug_refcnt, dlm_debug_free);
-}
-
-static void dlm_debug_get(struct dlm_debug_ctxt *dc)
-{
-	kref_get(&dc->debug_refcnt);
-}
-
 static int debug_release(struct inode *inode, struct file *file)
 {
 	free_page((unsigned long)file->private_data);
@@ -406,7 +386,7 @@ static int debug_purgelist_print(struct dlm_ctxt *dlm, char *buf, int len)
 	}
 	spin_unlock(&dlm->spinlock);
 
-	out += snprintf(buf + out, len - out, "Total on list: %ld\n", total);
+	out += snprintf(buf + out, len - out, "Total on list: %lu\n", total);
 
 	return out;
 }
@@ -464,7 +444,7 @@ static int debug_mle_print(struct dlm_ctxt *dlm, char *buf, int len)
 	spin_unlock(&dlm->master_lock);
 
 	out += snprintf(buf + out, len - out,
-			"Total: %ld, Longest: %ld\n", total, longest);
+			"Total: %lu, Longest: %lu\n", total, longest);
 	return out;
 }
 
@@ -932,11 +912,9 @@ int dlm_debug_init(struct dlm_ctxt *dlm)
 		goto bail;
 	}
 
-	dlm_debug_get(dc);
 	return 0;
 
 bail:
-	dlm_debug_shutdown(dlm);
 	return -ENOMEM;
 }
 
@@ -949,7 +927,8 @@ void dlm_debug_shutdown(struct dlm_ctxt *dlm)
 		debugfs_remove(dc->debug_mle_dentry);
 		debugfs_remove(dc->debug_lockres_dentry);
 		debugfs_remove(dc->debug_state_dentry);
-		dlm_debug_put(dc);
+		kfree(dc);
+		dc = NULL;
 	}
 }
 
@@ -969,7 +948,6 @@ int dlm_create_debugfs_subroot(struct dlm_ctxt *dlm)
 		mlog_errno(-ENOMEM);
 		goto bail;
 	}
-	kref_init(&dlm->dlm_debug_ctxt->debug_refcnt);
 
 	return 0;
 bail:

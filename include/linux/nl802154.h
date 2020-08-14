@@ -12,10 +12,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- *
  */
 
 #ifndef NL802154_H
@@ -95,6 +91,8 @@ enum {
 	IEEE802154_ATTR_LLSEC_SECLEVELS,
 	IEEE802154_ATTR_LLSEC_DEV_OVERRIDE,
 	IEEE802154_ATTR_LLSEC_DEV_KEY_MODE,
+
+	IEEE802154_ATTR_PAD,
 
 	__IEEE802154_ATTR_MAX,
 };

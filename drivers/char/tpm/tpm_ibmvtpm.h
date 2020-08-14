@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2012 IBM Corporation
  *
- * Author: Ashley Lai <adlai@us.ibm.com>
+ * Author: Ashley Lai <ashleydlai@gmail.com>
  *
  * Maintained by: <tpmdd-devel@lists.sourceforge.net>
  *
@@ -45,6 +45,7 @@ struct ibmvtpm_dev {
 	wait_queue_head_t wq;
 	u16 res_len;
 	u32 vtpm_version;
+	bool tpm_processing_cmd;
 };
 
 #define CRQ_RES_BUF_SIZE	PAGE_SIZE

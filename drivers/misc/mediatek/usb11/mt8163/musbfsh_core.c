@@ -1,87 +1,14 @@
 /*
- * MUSB OTG driver core code
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2006 by Texas Instruments
- * Copyright (C) 2006-2007 Nokia Corporation
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- */
-
-/*
- * Inventra (Multipoint) Dual-Role Controller Driver for Linux.
- *
- * This consists of a Host Controller Driver (HCD) and a peripheral
- * controller driver implementing the "Gadget" API; OTG support is
- * in the works.  These are normal Linux-USB controller drivers which
- * use IRQs and have no dedicated thread.
- *
- * This version of the driver has only been used with products from
- * Texas Instruments.  Those products integrate the Inventra logic
- * with other DMA, IRQ, and bus modules, as well as other logic that
- * needs to be reflected in this driver.
- *
- *
- * NOTE:  the original Mentor code here was pretty much a collection
- * of mechanisms that don't seem to have been fully integrated/working
- * for *any* Linux kernel version.  This version aims at Linux 2.6.now,
- * Key open issues include:
- *
- *  - Lack of host-side transaction scheduling, for all transfer types.
- *    The hardware doesn't do it; instead, software must.
- *
- *    This is not an issue for OTG devices that don't support external
- *    hubs, but for more "normal" USB hosts it's a user issue that the
- *    "multipoint" support doesn't scale in the expected ways.  That
- *    includes DaVinci EVM in a common non-OTG mode.
- *
- *      * Control and bulk use dedicated endpoints, and there's as
- *        yet no mechanism to either (a) reclaim the hardware when
- *        peripherals are NAKing, which gets complicated with bulk
- *        endpoints, or (b) use more than a single bulk endpoint in
- *        each direction.
- *
- *        RESULT:  one device may be perceived as blocking another one.
- *
- *      * Interrupt and isochronous will dynamically allocate endpoint
- *        hardware, but (a) there's no record keeping for bandwidth;
- *        (b) in the common case that few endpoints are available, there
- *        is no mechanism to reuse endpoints to talk to multiple devices.
- *
- *        RESULT:  At one extreme, bandwidth can be overcommitted in
- *        some hardware configurations, no faults will be reported.
- *        At the other extreme, the bandwidth capabilities which do
- *        exist tend to be severely undercommitted.  You can't yet hook
- *        up both a keyboard and a mouse to an external USB hub.
- */
-
-/*
- * This gets many kinds of configuration information:
- *	- Kconfig for everything user-configurable
- *	- platform_device for addressing, irq, and platform_data
- *	- platform_data is mostly for board-specific informarion
- *	  (plus recentrly, SOC or family details)
- *
- * Most of the conditional compilation will (someday) vanish.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -96,7 +23,7 @@
 #include <linux/io.h>
 #include <linux/idr.h>
 #include <linux/proc_fs.h>
-#include <linux/wakelock.h>
+#include <linux/device.h>
 #include <linux/ctype.h>
 #include <linux/dma-mapping.h>
 #ifdef CONFIG_OF
@@ -131,7 +58,7 @@ struct clk *usb11_clk;
 
 #define MUSBFSH_DRIVER_NAME "musbfsh-hdrc"
 
-u32 usb1_irq_number = 0;	/*add for kernel 3.10*/
+u32 usb1_irq_number;		/*add for kernel 3.10 */
 static const struct of_device_id apusb_of_ids[] = {
 	{.compatible = "mediatek,mt8163-usb11",},
 	{},
@@ -154,21 +81,27 @@ MODULE_ALIAS("platform:" MUSBFSH_DRIVER_NAME);
 DEFINE_SPINLOCK(musbfs_io_lock);
 /*-------------------------------------------------------------------------*/
 #ifdef IC_USB
-static ssize_t show_start(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t show_start(struct device *dev, struct device_attribute *attr,
+			  char *buf)
 {
 	return sprintf(buf, "start session under IC-USB mode\n");
 }
 
-static ssize_t store_start(struct device *dev, struct device_attribute *attr, const char *buf,
-			   size_t size)
+static ssize_t
+store_start(struct device *dev, struct device_attribute *attr, const char *buf,
+	    size_t size)
 {
 	char *pvalue = NULL;
 	unsigned int value = 0;
 	size_t count = 0;
-	u8 devctl = musbfsh_readb((unsigned char __iomem *)USB11_BASE, MUSBFSH_DEVCTL);
+	u8 devctl = 0;
 
-	/*value = simple_strtoul(buf, &pvalue, 10);*/
-	value = kstrtol(buf, 10, &pvalue); /* KS format requirement, sscanf -> kstrtol */
+	devctl =
+	    musbfsh_readb((unsigned char __iomem *)USB11_BASE, MUSBFSH_DEVCTL);
+
+	/*value = simple_strtoul(buf, &pvalue, 10); */
+	/* KS format requirement, sscanf -> kstrtol */
+	value = kstrtol(buf, 10, &pvalue);
 	count = pvalue - buf;
 
 	if (*pvalue && isspace(*pvalue))
@@ -177,8 +110,10 @@ static ssize_t store_start(struct device *dev, struct device_attribute *attr, co
 	if (count == size) {
 		if (value) {
 			WARNING("[IC-USB]start session\n");
-			devctl |= MUSBFSH_DEVCTL_SESSION;	/* wx? why not wait until device connected*/
-			musbfsh_writeb((unsigned char __iomem *)USB11_BASE, MUSBFSH_DEVCTL, devctl);
+			/* wx? why not wait until device connected */
+			devctl |= MUSBFSH_DEVCTL_SESSION;
+			musbfsh_writeb((unsigned char __iomem *)USB11_BASE,
+				       MUSBFSH_DEVCTL, devctl);
 			WARNING("[IC-USB]power on VSIM\n");
 			hwPowerOn(MT65XX_POWER_LDO_VSIM, VOL_3000, "USB11-SIM");
 		}
@@ -186,7 +121,7 @@ static ssize_t store_start(struct device *dev, struct device_attribute *attr, co
 	return size;
 }
 
-static DEVICE_ATTR(start, 0666, show_start, store_start);
+static DEVICE_ATTR(start, 0644, show_start, store_start);
 #endif
 
 /*-------------------------------------------------------------------------*/
@@ -229,15 +164,16 @@ EXPORT_SYMBOL_GPL(musbfsh_put_id);
 /*-------------------------------------------------------------------------*/
 /*#ifdef CONFIG_MUSBFSH_PIO_ONLY*/
 /*
-* Load an endpoint's FIFO
-*/
+ * Load an endpoint's FIFO
+ */
 void musbfsh_write_fifo(struct musbfsh_hw_ep *hw_ep, u16 len, const u8 *src)
 {
 	void __iomem *fifo = hw_ep->fifo;
 
-	prefetch((u8 *)src);
+	prefetch((u8 *) src);
 
-	INFO("%cX ep%d fifo %p count %d buf %p\n", 'T', hw_ep->epnum, fifo, len, src);
+	INFO("%cX ep%d fifo %p count %d buf %p\n", 'T', hw_ep->epnum, fifo, len,
+	     src);
 	INFO("[Flow][USB11]%s:%d\n", __func__, __LINE__);
 	/* we can't assume unaligned reads work */
 	if (likely((0x01 & (unsigned long)src) == 0)) {
@@ -246,17 +182,17 @@ void musbfsh_write_fifo(struct musbfsh_hw_ep *hw_ep, u16 len, const u8 *src)
 		/* best case is 32bit-aligned source address */
 		if ((0x02 & (unsigned long)src) == 0) {
 			if (len >= 4) {
-				/*writesl(fifo, src + index, len >> 2);*/
+				/*writesl(fifo, src + index, len >> 2); */
 				iowrite32_rep(fifo, src + index, len >> 2);
 				index += len & ~0x03;
 			}
 			if (len & 0x02) {
-				musbfsh_writew(fifo, 0, *(u16 *)&src[index]);
+				musbfsh_writew(fifo, 0, *(u16 *) &src[index]);
 				index += 2;
 			}
 		} else {
 			if (len >= 2) {
-				/*writesw(fifo, src + index, len >> 1);*/
+				/*writesw(fifo, src + index, len >> 1); */
 				iowrite16_rep(fifo, src + index, len >> 1);
 				index += len & ~0x01;
 			}
@@ -265,20 +201,21 @@ void musbfsh_write_fifo(struct musbfsh_hw_ep *hw_ep, u16 len, const u8 *src)
 			musbfsh_writeb(fifo, 0, src[index]);
 	} else {
 		/* byte aligned */
-		/*writesb(fifo, src, len);*/
+		/* writesb(fifo, src, len); */
 		iowrite8_rep(fifo, src, len);
 	}
 }
 
 /*
  * Unload an endpoint's FIFO
-*/
+ */
 void musbfsh_read_fifo(struct musbfsh_hw_ep *hw_ep, u16 len, u8 *dst)
 {
 	void __iomem *fifo = hw_ep->fifo;
 
 	INFO("[Flow][USB11]%s:%d\n", __func__, __LINE__);
-	INFO("%cX ep%d fifo %p count %d buf %p\n", 'R', hw_ep->epnum, fifo, len, dst);
+	INFO("%cX ep%d fifo %p count %d buf %p\n", 'R', hw_ep->epnum, fifo, len,
+	     dst);
 
 	/* we can't assume unaligned writes work */
 	if (likely((0x01 & (unsigned long)dst) == 0)) {
@@ -287,17 +224,17 @@ void musbfsh_read_fifo(struct musbfsh_hw_ep *hw_ep, u16 len, u8 *dst)
 		/* best case is 32bit-aligned destination address */
 		if ((0x02 & (unsigned long)dst) == 0) {
 			if (len >= 4) {
-				/*readsl(fifo, dst, len >> 2);*/
+				/*readsl(fifo, dst, len >> 2); */
 				ioread32_rep(fifo, dst, len >> 2);
 				index = len & ~0x03;
 			}
 			if (len & 0x02) {
-				*(u16 *)&dst[index] = musbfsh_readw(fifo, 0);
+				*(u16 *) &dst[index] = musbfsh_readw(fifo, 0);
 				index += 2;
 			}
 		} else {
 			if (len >= 2) {
-				/*readsw(fifo, dst, len >> 1);*/
+				/*readsw(fifo, dst, len >> 1); */
 				ioread16_rep(fifo, dst, len >> 1);
 				index = len & ~0x01;
 			}
@@ -306,7 +243,7 @@ void musbfsh_read_fifo(struct musbfsh_hw_ep *hw_ep, u16 len, u8 *dst)
 			dst[index] = musbfsh_readb(fifo, 0);
 	} else {
 		/* byte aligned */
-		/*readsb(fifo, dst, len);*/
+		/*readsb(fifo, dst, len); */
 		ioread8_rep(fifo, dst, len);
 	}
 }
@@ -337,8 +274,9 @@ void musbfsh_load_testpacket(struct musbfsh *musbfsh)
 {
 	void __iomem *regs = musbfsh->endpoints[0].regs;
 
-	musbfsh_ep_select(musbfsh->mregs, 0);	/*should be implemented*/
-	musbfsh_write_fifo(musbfsh->control_ep, sizeof(musbfsh_test_packet), musbfsh_test_packet);
+	musbfsh_ep_select(musbfsh->mregs, 0);	/*should be implemented */
+	musbfsh_write_fifo(musbfsh->control_ep, sizeof(musbfsh_test_packet),
+			   musbfsh_test_packet);
 	musbfsh_writew(regs, MUSBFSH_CSR0, MUSBFSH_CSR0_TXPKTRDY);
 }
 
@@ -355,7 +293,8 @@ void musbfsh_load_testpacket(struct musbfsh *musbfsh)
  * @param power
  */
 
-static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 devctl, u8 power)
+static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb,
+				      u8 devctl, u8 power)
 {
 	irqreturn_t handled = IRQ_NONE;
 
@@ -381,7 +320,8 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 			}
 
 			power &= ~MUSBFSH_POWER_SUSPENDM;
-			musbfsh_writeb(mbase, MUSBFSH_POWER, power | MUSBFSH_POWER_RESUME);
+			musbfsh_writeb(mbase, MUSBFSH_POWER,
+				       power | MUSBFSH_POWER_RESUME);
 
 			musbfsh->port1_status |= (USB_PORT_STAT_C_SUSPEND << 16)
 			    | MUSBFSH_PORT_STAT_RESUME;
@@ -442,11 +382,12 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 			musbfsh_writeb(mbase, MUSBFSH_DEVCTL, devctl);
 		} else {
 			musbfsh->port1_status |=
-			    USB_PORT_STAT_OVERCURRENT | (USB_PORT_STAT_C_OVERCURRENT << 16);
+			    USB_PORT_STAT_OVERCURRENT |
+			    (USB_PORT_STAT_C_OVERCURRENT << 16);
 		}
 
 		ERR("VBUS_ERROR (%02x, %s), retry #%d, port1_status 0x%08x\n",
-			devctl, ({
+		    devctl, ({
 				char *s;
 
 				switch (devctl & MUSBFSH_DEVCTL_VBUS) {
@@ -456,15 +397,12 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 					s = "<AValid"; break;
 				case 2 << MUSBFSH_DEVCTL_VBUS_SHIFT:
 					s = "<VBusValid"; break;
-				/* case 3 << MUSBFSH_DEVCTL_VBUS_SHIFT: */
+				/*case 3 << MUSBFSH_DEVCTL_VBUS_SHIFT:*/
 				default:
-					s = "VALID"; break;
-				}; s; }
-		    ), VBUSERR_RETRY_COUNT - musbfsh->vbuserr_retry, musbfsh->port1_status);
-
-#ifdef CONFIG_POGO_PIN_DOCK
-		usb_root_hub_lost_power(musbfsh_to_hcd(musbfsh)->self.root_hub);
-#endif
+					s = "VALID"; break; };
+			     s; }
+		    ), VBUSERR_RETRY_COUNT - musbfsh->vbuserr_retry,
+		    musbfsh->port1_status);
 
 		/* go through A_WAIT_VFALL then start a new session */
 		if (!ignore)
@@ -481,7 +419,7 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 		struct usb_hcd *hcd = musbfsh_to_hcd(musbfsh);
 
 #ifndef MTK_DT_SUPPORT
-/*		wake_lock(&musbfsh_suspend_lock);*/
+/*		__pm_stay_awake(musbfsh_suspend_lock);*/
 #endif
 
 		handled = IRQ_HANDLED;
@@ -489,9 +427,11 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 
 		musbfsh->ep0_stage = MUSBFSH_EP0_START;
 		musbfsh->port1_status &= ~(USB_PORT_STAT_LOW_SPEED
-					   | USB_PORT_STAT_HIGH_SPEED | USB_PORT_STAT_ENABLE);
-		musbfsh->port1_status |= USB_PORT_STAT_CONNECTION
-		    | (USB_PORT_STAT_C_CONNECTION << 16);
+					   | USB_PORT_STAT_HIGH_SPEED |
+					   USB_PORT_STAT_ENABLE);
+		musbfsh->port1_status |=
+		    USB_PORT_STAT_CONNECTION | (USB_PORT_STAT_C_CONNECTION <<
+						16);
 
 		/* high vs full speed is just a guess until after reset */
 		if (devctl & MUSBFSH_DEVCTL_LSDEV)
@@ -543,10 +483,13 @@ static irqreturn_t musbfsh_stage0_irq(struct musbfsh *musbfsh, u8 int_usb, u8 de
 /*-------------------------------------------------------------------------*/
 
 #ifdef MTK_DT_SUPPORT
-/*wx, seconds for hold wake lock and suspend schedule, please also check cdc-acm.c to sync, they should be the same*/
+/*
+ *wx, seconds for hold wake lock and suspend schedule,
+ *please also check cdc-acm.c to sync, they should be the same
+ */
 #define USB_WAKE_TIME 5
 static struct musbfsh *mtk_musbfsh;
-struct wake_lock usb_resume_lock;
+struct wakeup_source *usb_resume_lock;
 
 void remote_wakeup_irq(void)
 {
@@ -564,7 +507,8 @@ void remote_wakeup_irq(void)
 	devctl = musbfsh_readb(mtk_musbfsh->mregs, MUSBFSH_DEVCTL);
 	if (devctl & MUSBFSH_DEVCTL_HM) {
 #ifndef EVDO_DT_SUPPORT
-		wake_lock_timeout(&usb_resume_lock, USB_WAKE_TIME * HZ);
+		__pm_wakeup_event(usb_resume_lock,
+				  jiffies_to_msecs(USB_WAKE_TIME * HZ));
 #endif
 		power = musbfsh_readb(mtk_musbfsh->mregs, MUSBFSH_POWER);
 		WARNING("Remote wakeup! power=0x%x\n", power);
@@ -575,7 +519,8 @@ void remote_wakeup_irq(void)
 		 * will stop RESUME signaling
 		 */
 		power &= ~MUSBFSH_POWER_SUSPENDM;
-		musbfsh_writeb(mtk_musbfsh->mregs, MUSBFSH_POWER, power | MUSBFSH_POWER_RESUME);
+		musbfsh_writeb(mtk_musbfsh->mregs, MUSBFSH_POWER,
+			       power | MUSBFSH_POWER_RESUME);
 
 		mtk_musbfsh->port1_status |= (USB_PORT_STAT_C_SUSPEND << 16)
 		    | MUSBFSH_PORT_STAT_RESUME;
@@ -590,11 +535,11 @@ out:
 #endif
 
 /*
-* Program the HDRC to start (enable interrupts, dma, etc.).
-*/
+ * Program the HDRC to start (enable interrupts, dma, etc.).
+ */
 void musbfsh_start(struct musbfsh *musbfsh)
 {
-	void __iomem *regs = musbfsh->mregs;	/*base address of usb mac*/
+	void __iomem *regs = musbfsh->mregs;	/*base address of usb mac */
 	u8 devctl = musbfsh_readb(regs, MUSBFSH_DEVCTL);
 	u8 power = musbfsh_readb(regs, MUSBFSH_POWER);
 	int int_level1 = 0;
@@ -629,39 +574,46 @@ void musbfsh_start(struct musbfsh *musbfsh)
 
 #ifndef IC_USB
 	/* start session, assume ID pin is hard-wired to ground */
-	devctl |= MUSBFSH_DEVCTL_SESSION;	/* wx? why not wait until device connected*/
+	/* wx? why not wait until device connected */
+	devctl |= MUSBFSH_DEVCTL_SESSION;
 	musbfsh_writeb(regs, MUSBFSH_DEVCTL, devctl);
 #endif
 
 	/* disable high speed negotiate */
 	power |= MUSBFSH_POWER_HSENAB;
 	power |= MUSBFSH_POWER_SOFTCONN;
-	/* enable SUSPENDM, this will put PHY into low power mode, not so "low" as save current mode,
-	   but it will be able to detect line state (remote wakeup/connect/disconnect) */
+	/* enable SUSPENDM, this will put PHY into low power mode,
+	 * not so "low" as save current mode,
+	 * but it will be able to detect line state
+	 * (remote wakeup/connect/disconnect)
+	 */
 	power |= MUSBFSH_POWER_ENSUSPEND;
 	musbfsh_writeb(regs, MUSBFSH_POWER, power);
 
 	devctl = musbfsh_readb(regs, MUSBFSH_DEVCTL);
 	power = musbfsh_readb(regs, MUSBFSH_POWER);
 	INFO(" musb ready. devctl=0x%x, power=0x%x\n", devctl, power);
-	mdelay(500);		/* wx?*/
+	mdelay(500);		/* wx? */
 
 #ifdef MTK_DT_SUPPORT
 	mtk_musbfsh = musbfsh;
 
 #ifndef EVDO_DT_SUPPORT
-	mt_set_gpio_out(GPIO_52_USB_SW2, GPIO_OUT_ONE);	/*switch 6252's USB to 6575's USB1.1 port*/
-	/*wx, need to be done before EINT unmask*/
-	wake_lock_init(&usb_resume_lock, WAKE_LOCK_SUSPEND, "USB11 wakelock");
+	/*switch 6252's USB to 6575's USB1.1 port */
+	mt_set_gpio_out(GPIO_52_USB_SW2, GPIO_OUT_ONE);
+	/*wx, need to be done before EINT unmask */
+	usb_resume_lock = wakeup_source_register("USB11 wakelock");
 
-	mt65xx_eint_set_sens(CUST_EINT_DT_EXT_MD_WK_UP_USB_NUM, CUST_EINT_DT_EXT_MD_WK_UP_USB_SENSITIVE);
+	mt65xx_eint_set_sens(CUST_EINT_DT_EXT_MD_WK_UP_USB_NUM,
+			     CUST_EINT_DT_EXT_MD_WK_UP_USB_SENSITIVE);
 	mt65xx_eint_set_polarity(CUST_EINT_DT_EXT_MD_WK_UP_USB_NUM,
 				 CUST_EINT_DT_EXT_MD_WK_UP_USB_POLARITY);
 	mt65xx_eint_set_hw_debounce(CUST_EINT_DT_EXT_MD_WK_UP_USB_NUM,
 				    CUST_EINT_DT_EXT_MD_WK_UP_USB_DEBOUNCE_CN);
 	mt65xx_eint_registration(CUST_EINT_DT_EXT_MD_WK_UP_USB_NUM,
 				 CUST_EINT_DT_EXT_MD_WK_UP_USB_DEBOUNCE_EN,
-				 CUST_EINT_DT_EXT_MD_WK_UP_USB_POLARITY, remote_wakeup_irq, false);
+				 CUST_EINT_DT_EXT_MD_WK_UP_USB_POLARITY,
+				 remote_wakeup_irq, false);
 #endif
 #endif
 }
@@ -738,20 +690,34 @@ static void musbfsh_shutdown(struct platform_device *pdev)
 #define MAXFIFOSIZE 8096
 
 static struct musbfsh_fifo_cfg epx_cfg[] __initdata = {
-	{.hw_ep_num = 1, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 1, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 2, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 2, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 3, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 3, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 4, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 4, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 5, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 5, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 6, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 6, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 7, .style = FIFO_TX, .maxpacket = 512, .mode = BUF_SINGLE},
-	{.hw_ep_num = 7, .style = FIFO_RX, .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 1, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 1, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 2, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 2, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 3, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 3, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 4, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 4, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 5, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 5, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 6, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 6, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 7, .style = FIFO_TX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
+	{.hw_ep_num = 7, .style = FIFO_RX,
+	 .maxpacket = 512, .mode = BUF_SINGLE},
 };
 
 static struct musbfsh_fifo_cfg ep0_cfg __initdata = {
@@ -775,9 +741,10 @@ fifo_setup(struct musbfsh *musbfsh, struct musbfsh_hw_ep *hw_ep,
 	int size = 0;
 	u16 maxpacket = cfg->maxpacket;
 	u16 c_off = offset >> 3;
-	u8 c_size;		/*will be written into the fifo register*/
+	u8 c_size;		/*will be written into the fifo register */
 
-	INFO("hw_ep->epnum=%d,cfg->hw_ep_num=%d\n", hw_ep->epnum, cfg->hw_ep_num);
+	INFO("hw_ep->epnum=%d,cfg->hw_ep_num=%d\n", hw_ep->epnum,
+	     cfg->hw_ep_num);
 	/* expect hw_ep has already been zero-initialized */
 
 	size = ffs(max_t(u16, maxpacket, 8)) - 1;
@@ -839,8 +806,8 @@ fifo_setup(struct musbfsh *musbfsh, struct musbfsh_hw_ep *hw_ep,
 static int __init ep_config_from_table(struct musbfsh *musbfsh)
 {
 	const struct musbfsh_fifo_cfg *cfg = NULL;
-	unsigned i = 0;
-	unsigned n = 0;
+	unsigned int i = 0;
+	unsigned int n = 0;
 	int offset;
 	struct musbfsh_hw_ep *hw_ep = musbfsh->endpoints;
 
@@ -869,15 +836,17 @@ done:
 		}
 		offset = fifo_setup(musbfsh, hw_ep + epn, cfg++, offset);
 		if (offset < 0) {
-			ERR("%s: mem overrun, ep %d\n", musbfsh_driver_name, epn);
+			ERR("%s: mem overrun, ep %d\n", musbfsh_driver_name,
+			    epn);
 			return -EINVAL;
 		}
 
-		epn++;		/*include ep0*/
+		epn++;		/*include ep0 */
 		musbfsh->nr_endpoints = max(epn, musbfsh->nr_endpoints);
 	}
 	INFO("%s: %d/%d max ep, %d/%d memory\n",
-	     musbfsh_driver_name, n + 1, musbfsh->config->num_eps * 2 - 1, offset, MAXFIFOSIZE);
+	     musbfsh_driver_name, n + 1, musbfsh->config->num_eps * 2 - 1,
+	     offset, MAXFIFOSIZE);
 
 	if (!musbfsh->bulk_ep) {
 		ERR("%s: missing bulk\n", musbfsh_driver_name);
@@ -901,7 +870,8 @@ static int __init musbfsh_core_init(struct musbfsh *musbfsh)
 	musbfsh_configure_ep0(musbfsh);
 
 	/* discover endpoint configuration */
-	musbfsh->nr_endpoints = 1;	/*will update in func: ep_config_from_table*/
+	/*will update in func: ep_config_from_table */
+	musbfsh->nr_endpoints = 1;
 	musbfsh->epmask = 1;
 
 	status = ep_config_from_table(musbfsh);
@@ -921,15 +891,17 @@ static int __init musbfsh_core_init(struct musbfsh *musbfsh)
 			INFO("%s: hw_ep %d%s, %smax %d,and hw_ep->epnum=%d\n",
 			     musbfsh_driver_name, i,
 			     hw_ep->is_shared_fifo ? "shared" : "tx",
-			     hw_ep->tx_double_buffered
-			     ? "doublebuffer, " : "", hw_ep->max_packet_sz_tx, hw_ep->epnum);
+			     hw_ep->tx_double_buffered ?
+			     "doublebuffer, " : "", hw_ep->max_packet_sz_tx,
+			     hw_ep->epnum);
 		}
 		if (hw_ep->max_packet_sz_rx && !hw_ep->is_shared_fifo) {
 			INFO("%s: hw_ep %d%s, %smax %d,and hw_ep->epnum=%d\n",
 			     musbfsh_driver_name, i,
 			     "rx",
-			     hw_ep->rx_double_buffered
-			     ? "doublebuffer, " : "", hw_ep->max_packet_sz_rx, hw_ep->epnum);
+			     hw_ep->rx_double_buffered ?
+			     "doublebuffer, " : "", hw_ep->max_packet_sz_rx,
+			     hw_ep->epnum);
 		}
 		if (!(hw_ep->max_packet_sz_tx || hw_ep->max_packet_sz_rx))
 			INFO("hw_ep %d not configured\n", i);
@@ -945,7 +917,8 @@ void musbfsh_read_clear_generic_interrupt(struct musbfsh *musbfsh)
 	musbfsh->int_rx = musbfsh_readw(musbfsh->mregs, MUSBFSH_INTRRX);
 	musbfsh->int_dma = musbfsh_readb(musbfsh->mregs, MUSBFSH_HSDMA_INTR);
 	INFO("** musbfsh::IRQ! usb%04x tx%04x rx%04x dma%04x\n",
-	     musbfsh->int_usb, musbfsh->int_tx, musbfsh->int_rx, musbfsh->int_dma);
+	     musbfsh->int_usb, musbfsh->int_tx, musbfsh->int_rx,
+	     musbfsh->int_dma);
 	/* clear interrupt status */
 	musbfsh_writew(musbfsh->mregs, MUSBFSH_INTRTX, musbfsh->int_tx);
 	musbfsh_writew(musbfsh->mregs, MUSBFSH_INTRRX, musbfsh->int_rx);
@@ -971,7 +944,9 @@ static irqreturn_t generic_interrupt(int irq, void *__hci)
 		retval = musbfsh_interrupt(musbfsh);
 #ifndef CONFIG_MUSBFSH_PIO_ONLY
 	if (musbfsh->int_dma)
-		retval = musbfsh_dma_controller_irq(irq, musbfsh->musbfsh_dma_controller);
+		retval =
+		    musbfsh_dma_controller_irq(irq,
+					       musbfsh->musbfsh_dma_controller);
 #endif
 
 	spin_unlock_irqrestore(&musbfsh->lock, flags);
@@ -1001,7 +976,9 @@ irqreturn_t musbfsh_interrupt(struct musbfsh *musbfsh)
 	 * a generic interrupt flowchart to follow
 	 */
 	if (musbfsh->int_usb)
-		retval |= musbfsh_stage0_irq(musbfsh, musbfsh->int_usb, devctl, power);
+		retval |=
+		    musbfsh_stage0_irq(musbfsh, musbfsh->int_usb, devctl,
+				       power);
 
 	/* "stage 1" is handling endpoint irqs */
 
@@ -1017,7 +994,8 @@ irqreturn_t musbfsh_interrupt(struct musbfsh *musbfsh)
 			/* musbfsh_ep_select(musbfsh->mregs, ep_num); */
 			/* REVISIT just retval = ep->rx_irq(...) */
 			retval = IRQ_HANDLED;
-			musbfsh_host_rx(musbfsh, ep_num);	/*the real ep_num*/
+			/*the real ep_num */
+			musbfsh_host_rx(musbfsh, ep_num);
 		}
 
 		reg >>= 1;
@@ -1045,7 +1023,7 @@ irqreturn_t musbfsh_interrupt(struct musbfsh *musbfsh)
 static bool use_dma __initdata = 1;
 
 /* "modprobe ... use_dma=0" etc */
-module_param(use_dma, bool, 0);
+module_param(use_dma, bool, 0644);
 MODULE_PARM_DESC(use_dma, "enable/disable use of DMA");
 
 void musbfsh_dma_completion(struct musbfsh *musbfsh, u8 epnum, u8 transmit)
@@ -1066,10 +1044,11 @@ void musbfsh_dma_completion(struct musbfsh *musbfsh, u8 epnum, u8 transmit)
 
 /* --------------------------------------------------------------------------
  * Init support
-*/
+ */
 
 static struct musbfsh *__init
-allocate_instance(struct device *dev, struct musbfsh_hdrc_config *config, void __iomem *mbase)
+allocate_instance(struct device *dev, struct musbfsh_hdrc_config *config,
+		  void __iomem *mbase)
 {
 	struct musbfsh *musbfsh;
 	struct musbfsh_hw_ep *ep;
@@ -1096,10 +1075,12 @@ allocate_instance(struct device *dev, struct musbfsh_hdrc_config *config, void _
 
 	musbfsh->mregs = mbase;
 	musbfsh->ctrl_base = mbase;
-	musbfsh->nIrq = -ENODEV;	/*will be update after return from this func*/
+	/*will be update after return from this func */
+	musbfsh->nIrq = -ENODEV;
 	musbfsh->config = config;
-	BUG_ON(musbfsh->config->num_eps > MUSBFSH_C_NUM_EPS);
-	for (epnum = 0, ep = musbfsh->endpoints; epnum < musbfsh->config->num_eps; epnum++, ep++) {
+	WARN_ON(musbfsh->config->num_eps > MUSBFSH_C_NUM_EPS);
+	for (epnum = 0, ep = musbfsh->endpoints;
+	     epnum < musbfsh->config->num_eps; epnum++, ep++) {
 		ep->musbfsh = musbfsh;
 		ep->epnum = epnum;
 	}
@@ -1140,9 +1121,11 @@ static void musbfsh_free(struct musbfsh *musbfsh)
  */
 #ifdef CONFIG_OF
 static int
-musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl, void __iomem *ctrlp)
+musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl,
+		     void __iomem *ctrlp)
 #else
-static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
+static int musb_init_controller(struct device *dev, int nIrq,
+				void __iomem *ctrl)
 #endif
 {
 	int status;
@@ -1155,7 +1138,7 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 	 * Fail when the board needs a feature that's not enabled.
 	 */
 	INFO("[Flow][USB11]%s:%d,pbase= 0x%lx\n", __func__, __LINE__,
-	       (unsigned long)ctrlp);
+	     (unsigned long)ctrlp);
 	if (!plat) {
 		dev_dbg(dev, "no platform_data?\n");
 		status = -ENODEV;
@@ -1175,7 +1158,8 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 	musbfsh->ops = plat->platform_ops;
 
 	musbfsh->config->fifo_cfg = epx_cfg;
-	musbfsh->config->fifo_cfg_size = sizeof(epx_cfg) / sizeof(struct musbfsh_fifo_cfg);
+	musbfsh->config->fifo_cfg_size =
+	    sizeof(epx_cfg) / sizeof(struct musbfsh_fifo_cfg);
 	/* The musbfsh_platform_init() call:
 	 *   - adjusts musbfsh->mregs and musbfsh->isr if needed,
 	 *   - may initialize an integrated tranceiver
@@ -1191,17 +1175,19 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 	 */
 	musbfsh_Device = musbfsh;
 #ifdef CONFIG_OF
-	INFO("[Flow][USB11]%s:%d  unsigned longbase == 0x%lx ,musbfsh_Device->phy_reg_base = 0x%lx\n",
-	     __func__, __LINE__, (unsigned long)ctrlp,
-	     (unsigned long)(musbfsh_Device->phy_reg_base));
+	INFO("[Flow][USB11]%s:%d  unsigned longbase == 0x%lx ,
+		musbfsh_Device->phy_reg_base = 0x%lx\n",
+		__func__, __LINE__, (unsigned long)ctrlp,
+		(unsigned long)(musbfsh_Device->phy_reg_base));
 
 	musbfsh_Device->phy_reg_base = ctrlp;
 
 #endif
 	musbfsh->isr = generic_interrupt;
-	INFO("[Flow][USB11]%s:%d  unsigned longbase == 0x%lx ,musbfsh_Device->phy_reg_base = 0x%lx\n",
-	     __func__, __LINE__, (unsigned long)ctrlp,
-	     (unsigned long)(musbfsh_Device->phy_reg_base));
+	INFO("[Flow][USB11]%s:%d  unsigned longbase == 0x%lx ,
+		musbfsh_Device->phy_reg_base = 0x%lx\n",
+		__func__, __LINE__, (unsigned long)ctrlp,
+		(unsigned long)(musbfsh_Device->phy_reg_base));
 	status = musbfsh_platform_init(musbfsh);
 	INFO("[Flow][USB11]%s:%d\n", __func__, __LINE__);
 	if (status < 0) {
@@ -1219,10 +1205,11 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 	if (use_dma && dev->dma_mask) {
 		struct dma_controller *c;
 
-		c = musbfsh_dma_controller_create(musbfsh, musbfsh->mregs);	/*only software config*/
+		/*only software config */
+		c = musbfsh_dma_controller_create(musbfsh, musbfsh->mregs);
 		musbfsh->dma_controller = c;
 		if (c)
-			(void)c->start(c);	/*do nothing in fact*/
+			(void)c->start(c);	/*do nothing in fact */
 	}
 #else
 	INFO("PIO mode\n");
@@ -1234,8 +1221,10 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 		dev->dma_mask = NULL;
 
 	/* be sure interrupts are disabled before connecting ISR */
-	musbfsh_platform_disable(musbfsh);	/*wz,need implement in MT65xx, but not power off!*/
-	musbfsh_generic_disable(musbfsh);	/*must power on the USB module*/
+	/*wz,need implement in MT65xx, but not power off! */
+	musbfsh_platform_disable(musbfsh);
+	/*must power on the USB module */
+	musbfsh_generic_disable(musbfsh);
 
 	/* setup musb parts of the core (especially endpoints) */
 	status = musbfsh_core_init(musbfsh);
@@ -1246,31 +1235,35 @@ static int musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl
 
 	/* attach to the IRQ */
 	INFO("[Flow][USB11]%s:%d ,request_irq %d\n", __func__, __LINE__, nIrq);
-	/*wx? usb_add_hcd will also try do request_irq, if hcd_driver.irq is set*/
-	if (request_irq(nIrq, musbfsh->isr, IRQF_TRIGGER_LOW, dev_name(dev), musbfsh)) {
+	/*usb_add_hcd will also try do request_irq, if hcd_driver.irq is set */
+	if (request_irq
+	    (nIrq, musbfsh->isr, IRQF_TRIGGER_LOW, dev_name(dev), musbfsh)) {
 		dev_err(dev, "musbfsh::request_irq %d failed!\n", nIrq);
 		status = -ENODEV;
 		goto fail2;
 	}
-	musbfsh->nIrq = nIrq;	/*update the musbfsh->nIrq after request_irq !*/
+	/*update the musbfsh->nIrq after request_irq ! */
+	musbfsh->nIrq = nIrq;
 	/* FIXME this handles wakeup irqs wrong */
-	if (enable_irq_wake(nIrq) == 0) {	/*wx, need to be replaced by modifying kernel/core/mt6573_ost.c*/
+	/*wx, need to be replaced by modifying kernel/core/mt6573_ost.c */
+	if (enable_irq_wake(nIrq) == 0) {
 		musbfsh->irq_wake = 1;
-		device_init_wakeup(dev, 1);	/*wx? usb_add_hcd will do this any way*/
+		/*wx? usb_add_hcd will do this any way */
+		device_init_wakeup(dev, 1);
 	} else {
 		musbfsh->irq_wake = 0;
 	}
 
 	/* host side needs more setup */
 	hcd = musbfsh_to_hcd(musbfsh);
-	/*plat->power can be set to 0,so the power is set to 500ma .*/
+	/*plat->power can be set to 0,so the power is set to 500ma . */
 	hcd->power_budget = 2 * (plat->power ? plat->power : 250);
 
 	/* For the host-only role, we can activate right away.
 	 * (We expect the ID pin to be forcibly grounded!!)
 	 * Otherwise, wait till the gadget driver hooks up.
 	 */
-	status = usb_add_hcd(musbfsh_to_hcd(musbfsh), -1, 0);	/*mportant!!*/
+	status = usb_add_hcd(musbfsh_to_hcd(musbfsh), -1, 0);	/*mportant!! */
 	hcd->self.uses_pio_for_control = 1;
 
 	if (status < 0) {
@@ -1301,7 +1294,8 @@ fail2:
 	musbfsh_platform_exit(musbfsh);
 
 fail1:
-	dev_err(musbfsh->controller, "musbfsh_init_controller failed with status %d\n", status);
+	dev_err(musbfsh->controller,
+		"musbfsh_init_controller failed with status %d\n", status);
 	musbfsh_free(musbfsh);
 
 fail0:
@@ -1341,7 +1335,7 @@ static int __init musbfsh_probe(struct platform_device *pdev)
 	void __iomem *pbase;
 	unsigned long usb_mac_base;
 	unsigned long usb_phy11_base;
-	int retval = 0;
+	int retval = 0
 
 	INFO("[Flow][USB11]%s:%d,CONFIG_OF\n", __func__, __LINE__);
 #if 0
@@ -1350,7 +1344,9 @@ static int __init musbfsh_probe(struct platform_device *pdev)
 		INFO("[Flow][USB11]dts node from dts_np\n");
 		pdev->dev.of_node = usb11_dts_np;
 	} else {
-		pdev->dev.of_node = of_find_compatible_node(NULL, NULL, "mediatek,mt8163-usb11");
+		pdev->dev.of_node =
+		    of_find_compatible_node(NULL, NULL,
+					    "mediatek,mt8163-usb11");
 	}
 	if (pdev->dev.of_node == NULL)
 		INFO("[Flow][USB11] get node failed\n");
@@ -1416,14 +1412,17 @@ static int __init musbfsh_probe(struct platform_device *pdev)
 	usb_phy11_base = (unsigned long)pbase;
 	irq = usb1_irq_number;
 
-	INFO("[Flow][USB11]musb probe reg: 0x%lx ,usb_phy11_base == 0x%lx ,pbase == 0x%lx irq: 0x%d\n",
-	     usb_mac_base, usb_phy11_base, (unsigned long)pbase, usb1_irq_number);
+	INFO("[Flow][USB11]musb probe reg: 0x%lx ,
+		usb_phy11_base == 0x%lx ,
+		pbase == 0x%lx irq: 0x%d\n",
+		usb_mac_base, usb_phy11_base,
+		(unsigned long)pbase, usb1_irq_number);
 
 #endif
 	INFO("++\n");
 	INFO("[Flow][USB11]%s: %d\n", __func__, __LINE__);
 
-#ifndef CONFIG_MUSBFSH_PIO_ONLY	/*using DMA*/
+#ifndef CONFIG_MUSBFSH_PIO_ONLY	/*using DMA */
 	/* clobbered by use_dma=n */
 	orig_dma_mask = dev->dma_mask;
 #endif
@@ -1493,7 +1492,8 @@ static void musbfsh_save_context(struct musbfsh *musbfsh)
 	musbfsh->context.power = musbfsh_readb(musbfsh_base, MUSBFSH_POWER);
 	musbfsh->context.intrtxe = musbfsh_readw(musbfsh_base, MUSBFSH_INTRTXE);
 	musbfsh->context.intrrxe = musbfsh_readw(musbfsh_base, MUSBFSH_INTRRXE);
-	musbfsh->context.intrusbe = musbfsh_readb(musbfsh_base, MUSBFSH_INTRUSBE);
+	musbfsh->context.intrusbe =
+	    musbfsh_readb(musbfsh_base, MUSBFSH_INTRUSBE);
 	musbfsh->context.index = musbfsh_readb(musbfsh_base, MUSBFSH_INDEX);
 	musbfsh->context.devctl = musbfsh_readb(musbfsh_base, MUSBFSH_DEVCTL);
 
@@ -1511,10 +1511,14 @@ static void musbfsh_save_context(struct musbfsh *musbfsh)
 			continue;
 
 		musbfsh_writeb(musbfsh_base, MUSBFSH_INDEX, i);
-		musbfsh->context.index_regs[i].txmaxp = musbfsh_readw(epio, MUSBFSH_TXMAXP);
-		musbfsh->context.index_regs[i].txcsr = musbfsh_readw(epio, MUSBFSH_TXCSR);
-		musbfsh->context.index_regs[i].rxmaxp = musbfsh_readw(epio, MUSBFSH_RXMAXP);
-		musbfsh->context.index_regs[i].rxcsr = musbfsh_readw(epio, MUSBFSH_RXCSR);
+		musbfsh->context.index_regs[i].txmaxp =
+		    musbfsh_readw(epio, MUSBFSH_TXMAXP);
+		musbfsh->context.index_regs[i].txcsr =
+		    musbfsh_readw(epio, MUSBFSH_TXCSR);
+		musbfsh->context.index_regs[i].rxmaxp =
+		    musbfsh_readw(epio, MUSBFSH_RXMAXP);
+		musbfsh->context.index_regs[i].rxcsr =
+		    musbfsh_readw(epio, MUSBFSH_RXCSR);
 
 		if (musbfsh->dyn_fifo) {
 			musbfsh->context.index_regs[i].txfifoadd =
@@ -1538,7 +1542,8 @@ static void musbfsh_restore_context(struct musbfsh *musbfsh)
 	musbfsh_writeb(musbfsh_base, MUSBFSH_POWER, musbfsh->context.power);
 	musbfsh_writew(musbfsh_base, MUSBFSH_INTRTXE, musbfsh->context.intrtxe);
 	musbfsh_writew(musbfsh_base, MUSBFSH_INTRRXE, musbfsh->context.intrrxe);
-	musbfsh_writeb(musbfsh_base, MUSBFSH_INTRUSBE, musbfsh->context.intrusbe);
+	musbfsh_writeb(musbfsh_base, MUSBFSH_INTRUSBE,
+		       musbfsh->context.intrusbe);
 	musbfsh_writeb(musbfsh_base, MUSBFSH_DEVCTL, musbfsh->context.devctl);
 
 	for (i = 0; i < MUSBFSH_C_NUM_EPS - 1; ++i) {
@@ -1553,25 +1558,33 @@ static void musbfsh_restore_context(struct musbfsh *musbfsh)
 			continue;
 
 		musbfsh_writeb(musbfsh_base, MUSBFSH_INDEX, i);
-		musbfsh_writew(epio, MUSBFSH_TXMAXP, musbfsh->context.index_regs[i].txmaxp);
-		musbfsh_writew(epio, MUSBFSH_TXCSR, musbfsh->context.index_regs[i].txcsr);
-		musbfsh_writew(epio, MUSBFSH_RXMAXP, musbfsh->context.index_regs[i].rxmaxp);
-		musbfsh_writew(epio, MUSBFSH_RXCSR, musbfsh->context.index_regs[i].rxcsr);
+		musbfsh_writew(epio, MUSBFSH_TXMAXP,
+			       musbfsh->context.index_regs[i].txmaxp);
+		musbfsh_writew(epio, MUSBFSH_TXCSR,
+			       musbfsh->context.index_regs[i].txcsr);
+		musbfsh_writew(epio, MUSBFSH_RXMAXP,
+			       musbfsh->context.index_regs[i].rxmaxp);
+		musbfsh_writew(epio, MUSBFSH_RXCSR,
+			       musbfsh->context.index_regs[i].rxcsr);
 
 		if (musbfsh->dyn_fifo) {
 			musbfsh_write_txfifosz(musbfsh_base,
-					       musbfsh->context.index_regs[i].txfifosz);
+					       musbfsh->context.
+					       index_regs[i].txfifosz);
 			musbfsh_write_rxfifosz(musbfsh_base,
-					       musbfsh->context.index_regs[i].rxfifosz);
+					       musbfsh->context.
+					       index_regs[i].rxfifosz);
 			musbfsh_write_txfifoadd(musbfsh_base,
-						musbfsh->context.index_regs[i].txfifoadd);
+						musbfsh->context.
+						index_regs[i].txfifoadd);
 			musbfsh_write_rxfifoadd(musbfsh_base,
-						musbfsh->context.index_regs[i].rxfifoadd);
+						musbfsh->context.
+						index_regs[i].rxfifoadd);
 		}
 	}
 
 	musbfsh_writeb(musbfsh_base, MUSBFSH_INDEX, musbfsh->context.index);
-	mb();/* */
+	mb(); /* */
 	/* Enable all interrupts at DMA
 	 * Caution: The DMA Reg type is WRITE to SET or CLEAR
 	 */
@@ -1588,21 +1601,10 @@ static int musbfsh_suspend(struct device *dev)
 	struct musbfsh *musbfsh = dev_to_musbfsh(&pdev->dev);
 
 	WARNING("++\n");
-#ifdef CONFIG_POGO_PIN_DOCK
-	if (true == musbfsh_power) {
-		disable_irq_nosync(usb1_irq_number);
-
-		spin_lock_irqsave(&musbfsh->lock, flags);
-		musbfsh_save_context(musbfsh);
-		musbfsh_platform_set_power(musbfsh, 0);
-		spin_unlock_irqrestore(&musbfsh->lock, flags);
-	}
-#else
 	spin_lock_irqsave(&musbfsh->lock, flags);
 	musbfsh_save_context(musbfsh);
 	musbfsh_platform_set_power(musbfsh, 0);
 	spin_unlock_irqrestore(&musbfsh->lock, flags);
-#endif
 
 	clk_unprepare(usb11_clk);
 	clk_unprepare(usb11_mcu_clk);
@@ -1622,46 +1624,12 @@ static int musbfsh_resume(struct device *dev)
 	clk_prepare(usb11_clk);
 
 	WARNING("++\n");
-#ifdef CONFIG_POGO_PIN_DOCK
-	if (false == musbfsh_power) {
-		spin_lock_irqsave(&musbfsh->lock, flags);
-		musbfsh_platform_set_power(musbfsh, 1);
-		musbfsh_restore_context(musbfsh);
-		spin_unlock_irqrestore(&musbfsh->lock, flags);
-
-		enable_irq(usb1_irq_number);
-	}
-#else
 	spin_lock_irqsave(&musbfsh->lock, flags);
 	musbfsh_platform_set_power(musbfsh, 1);
 	musbfsh_restore_context(musbfsh);
 	spin_unlock_irqrestore(&musbfsh->lock, flags);
-#endif
-
 	return 0;
 }
-
-#ifdef CONFIG_POGO_PIN_DOCK
-void musbfsh_force_enable(bool enable)
-{
-	unsigned long flags;
-
-	WARNING("musbfsh_power= %d enable= %d \n",musbfsh_power,enable);
-	if((false == musbfsh_power) && (true == enable)) {
-		spin_lock_irqsave(&musbfsh_Device->lock, flags);
-		musbfsh_platform_set_power(musbfsh_Device, true);
-		spin_unlock_irqrestore(&musbfsh_Device->lock, flags);
-		enable_irq(usb1_irq_number);
-	} else if((true == musbfsh_power) && (false == enable)) {
-		musbfsh_root_disconnect(musbfsh_Device);
-		disable_irq_nosync(usb1_irq_number);
-		spin_lock_irqsave(&musbfsh_Device->lock, flags);
-		musbfsh_platform_set_power(musbfsh_Device, false);
-		spin_unlock_irqrestore(&musbfsh_Device->lock, flags);
-	}
-}
-EXPORT_SYMBOL_GPL(musbfsh_force_enable);
-#endif
 
 static const struct dev_pm_ops musbfsh_dev_pm_ops = {
 	.suspend = musbfsh_suspend,
@@ -1690,7 +1658,7 @@ static struct platform_driver musbfsh_driver = {
 /*-------------------------------------------------------------------------*/
 static int __init musbfsh_init(void)
 {
-	if (usb_disabled())	/*based on the config variable.*/
+	if (usb_disabled())	/*based on the config variable. */
 		return 0;
 
 	WARNING("MUSBFSH is enabled\n");
@@ -1703,18 +1671,18 @@ static int __init musbfsh_init(void)
 
 /* make us init after usbcore and i2c (transceivers, regulators, etc)
  * and before usb gadget and host-side drivers start to register
-*/
+ */
 late_initcall_sync(musbfsh_init);
 
 static void __exit musbfsh_cleanup(void)
 {
-	/*wake_lock_destroy(&musbfsh_suspend_lock);*/
+	/*wakeup_source_unregister(musbfsh_suspend_lock); */
 	platform_driver_unregister(&musbfsh_driver);
 	usb11_exit();
 }
 
 module_exit(musbfsh_cleanup);
 
-int musbfsh_debug = 0;
+int musbfsh_debug;
 
 module_param(musbfsh_debug, int, 0644);

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _LIBMTK_CIPHER_EXPORT_H
 #define _LIBMTK_CIPHER_EXPORT_H
 
@@ -7,21 +20,21 @@
 #define HEVC_CIPHER_LEN                         (102400)    /* bytes */
 
 
-typedef struct {
+struct HEVC_BLK {
 	unsigned char buf[HEVC_BLK_LEN];
 	unsigned int len;
-} HEVC_BLK;
+};
 
-typedef enum {
+enum VIDEO_ENCRYPT_CODEC_T {
 	VIDEO_ENCRYPT_CODEC_NONE      = 0x0,
 	VIDEO_ENCRYPT_CODEC_HEVC_ENC  = 0x1,
 	VIDEO_ENCRYPT_CODEC_HEVC_DEC  = 0x2,
 	VIDEO_ENCRYPT_CODEC_MAX       = 0xffffffff
-} VIDEO_ENCRYPT_CODEC_T;
+};
 
 
-typedef int (*hevc_api_funp)(HEVC_BLK *p_hevc_blk);
-typedef int (*hevc_api_initk_funp)(unsigned char *key, unsigned int klen);
+/* typedef int (*hevc_api_funp)(HEVC_BLK *p_hevc_blk); */
+/* typedef int (*hevc_api_initk_funp)(unsigned char *key, unsigned int klen); */
 
 
 #define SEC_OK                                  0x0
@@ -73,11 +86,17 @@ typedef int (*hevc_api_initk_funp)(unsigned char *key, unsigned int klen);
 
 
 #define HEVC_ENCRYTP_FILE_PATH            "/data/mediaserver"
-#define HEVC_ENC_SW_ENCRYPT_FILE_PATH     "/vendor/lib/libhevce_sb.ca7.android.so"
-#define HEVC_ENC_HW_ENCRYPT_FILE_PATH     "/data/mediaserver/sb.ca7.android_hwenc.so"
-#define HEVC_ENC_HW_DECRYPT_FILE_PATH     "/data/mediaserver/sb.ca7.android_hwdec.so"
-#define HEVC_DEC_SW_ENCRYTP_FILE_PATH     "/vendor/lib/libHEVCdec_sa.ca7.android.so"
-#define HEVC_DEC_HW_ENCRYPT_FILE_PATH     "/data/mediaserver/dec_sa.ca7.android_hwenc.so"
-#define HEVC_DEC_HW_DECRYPT_FILE_PATH     "/data/mediaserver/dec_sa.ca7.android_hwdec.so"
+#define HEVC_ENC_SW_ENCRYPT_FILE_PATH	\
+	"/vendor/lib/libhevce_sb.ca7.android.so"
+#define HEVC_ENC_HW_ENCRYPT_FILE_PATH	\
+	"/data/mediaserver/sb.ca7.android_hwenc.so"
+#define HEVC_ENC_HW_DECRYPT_FILE_PATH	\
+	"/data/mediaserver/sb.ca7.android_hwdec.so"
+#define HEVC_DEC_SW_ENCRYTP_FILE_PATH	\
+	"/vendor/lib/libHEVCdec_sa.ca7.android.so"
+#define HEVC_DEC_HW_ENCRYPT_FILE_PATH	\
+	"/data/mediaserver/dec_sa.ca7.android_hwenc.so"
+#define HEVC_DEC_HW_DECRYPT_FILE_PATH	\
+	"/data/mediaserver/dec_sa.ca7.android_hwdec.so"
 
 #endif   /*_LIBMTK_CIPHER_EXPORT_H*/

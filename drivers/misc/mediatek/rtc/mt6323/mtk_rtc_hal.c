@@ -29,17 +29,13 @@
 #include <linux/delay.h>
 #include <linux/types.h>
 
-#include <mach/mtk_rtc_hal.h>
+//#include <mtk_rtc_hal.h>
 #include <mtk_rtc_hal_common.h>
-#include <mach/mt_rtc_hw.h>
-#include <mt_pmic_wrap.h>
+#include <mtk_rtc_hw.h>
 #if defined CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
-#include <mt_boot.h>
+#include <mtk_boot.h>
 #endif
 
-#include <mt_gpio.h>
-/*#include <mach/sync_write.h>
-#include "mach/ext_wd_drv.h"*/
 
 #define hal_rtc_xinfo(fmt, args...)		\
 	pr_notice(fmt, ##args)
@@ -50,31 +46,31 @@
 #define hal_rtc_xfatal(fmt, args...)	\
 	pr_emerg(fmt, ##args)
 
-/* Causion, can only use this hardcode in MT6323*/
+/* Causion, can only use this hardcode in MT6323 */
 #define GPIO_SRCLKEN_PIN (37 | 0x80000000)
 
-/*TODO: extern bool pmic_chrdet_status(void);*/
+/* TODO: extern bool pmic_chrdet_status(void); */
 
 /*
-	RTC_FGSOC = 0,
-	RTC_ANDROID,
-	RTC_RECOVERY,
-	RTC_FAC_RESET,
-	RTC_BYPASS_PWR,
-	RTC_PWRON_TIME,
-	RTC_FAST_BOOT,
-	RTC_KPOC,
-	RTC_DEBUG,
-	RTC_PWRON_AL,
-	RTC_UART,
-	RTC_AUTOBOOT,
-	RTC_PWRON_LOGO,
-	RTC_32K_LESS,
-	RTC_LP_DET,
-	RTC_ENTER_KPOC,
-	RTC_SPAR_NUM
+ *	RTC_FGSOC = 0,
+ *	RTC_ANDROID,
+ *	RTC_RECOVERY,
+ *	RTC_FAC_RESET,
+ *	RTC_BYPASS_PWR,
+ *	RTC_PWRON_TIME,
+ *	RTC_FAST_BOOT,
+ *	RTC_KPOC,
+ *	RTC_DEBUG,
+ *	RTC_PWRON_AL,
+ *	RTC_UART,
+ *	RTC_AUTOBOOT,
+ *	RTC_PWRON_LOGO,
+ *	RTC_32K_LESS,
+ *	RTC_LP_DET,
+ *	RTC_ENTER_KPOC,
+ *	RTC_SPAR_NUM
+ */
 
-*/
 /*
  * RTC_PDN1:
  *     bit 0 - 3  : Android bits
@@ -87,28 +83,30 @@
  *     bit 11     : RTC_GPIO_USER_FM bit
  *     bit 12     : RTC_GPIO_USER_PMIC bit
  *     bit 13     : Fast Boot
- *     bit 14	  : Kernel Power Off Charging
+ *     bit 14     : Kernel Power Off Charging
  *     bit 15     : Debug bit
  */
+
 /*
  * RTC_PDN2:
  *     bit 0 - 3 : MTH in power-on time
- *     bit 4	 : Power-On Alarm bit
+ *     bit 4     : Power-On Alarm bit
  *     bit 5 - 6 : UART bits
- *     bit 7	 : autoboot bit
+ *     bit 7     : autoboot bit
  *     bit 8 - 14: YEA in power-on time
- *     bit 15	 : Power-On Logo bit
+ *     bit 15    : Power-On Logo bit
  */
+
 /*
  * RTC_SPAR0:
  *     bit 0 - 5 : SEC in power-on time
- *     bit 6	 : 32K less bit. True:with 32K, False:Without 32K
+ *     bit 6     : 32K less bit. True:with 32K, False:Without 32K
  *     bit 7     : LP DET
  *     bit 8     : ENTER KPOC
  *     bit 9 - 15: reserved bits
  */
 
-u16 rtc_spare_reg[][3] = {
+u16 rtc_spare_reg[RTC_SPAR_NUM][3] = {
 	{RTC_AL_HOU, 0x7f, 8},
 	{RTC_PDN1, 0xf, 0},
 	{RTC_PDN1, 0x3, 4},
@@ -184,38 +182,43 @@ void hal_rtc_set_gpio_32k_status(u16 user, bool enable)
 		rtc_write(RTC_PDN1, pdn1);
 		rtc_write_trigger();
 	}
-	hal_rtc_xinfo("RTC_GPIO user %d enable = %d 32k (0x%x)\n", user, enable, pdn1);
+	hal_rtc_xinfo("RTC_GPIO user %d enable = %d 32k (0x%x)\n",
+			user, enable, pdn1);
 }
 
-u16 hal_rtc_get_register_status(const char * cmd)
+u16 hal_rtc_get_register_status(const char *cmd)
 {
 	u16 spar0, al_hou, pdn1, con;
 
 	if (!strcmp(cmd, "XTAL")) {
-		/*RTC_SPAR0 bit 6        : 32K less bit. True:with 32K, False:Without 32K*/
+		/* RTC_SPAR0 bit 6: 32K less bit.
+		 * True:with 32K, False:Without 32K
+		 */
 		spar0 = rtc_read(RTC_SPAR0);
-		if(spar0 & RTC_SPAR0_32K_LESS)
+		if (spar0 & RTC_SPAR0_32K_LESS)
 			return 1;
 		else
 			return 0;
 	} else if (!strcmp(cmd, "LPD")) {
 		spar0 = rtc_read(RTC_SPAR0);
-		if(spar0 & RTC_SPAR0_LP_DET)
+		if (spar0 & RTC_SPAR0_LP_DET)
 			return 1;
 		else
 			return 0;
 	} else if (!strcmp(cmd, "FG")) {
 		//RTC_AL_HOU bit8~14
 		al_hou = rtc_read(RTC_AL_HOU);
-		al_hou = (al_hou & RTC_NEW_SPARE_FG_MASK) >> RTC_NEW_SPARE_FG_SHIFT;
+		al_hou = (al_hou & RTC_NEW_SPARE_FG_MASK) >>
+			RTC_NEW_SPARE_FG_SHIFT;
 		return al_hou;
 	} else if (!strcmp(cmd, "GPIO")) {
 		pdn1 = rtc_read(RTC_PDN1);
 		con = rtc_read(RTC_CON);
 
-		hal_rtc_xinfo("RTC_GPIO 32k status(RTC_PDN1=0x%x)(RTC_CON=0x%x)\n",pdn1, con);
+		hal_rtc_xinfo("RTC_GPIO 32k status RTC_PDN1=0x%x RTC_CON=0x%x\n"
+				, pdn1, con);
 
-		if(con & RTC_CON_F32KOB)
+		if (con & RTC_CON_F32KOB)
 			return 0;
 		else
 			return 1;
@@ -246,18 +249,17 @@ u16 hal_rtc_get_register_status(const char * cmd)
 	return 0;
 }
 
-void hal_rtc_set_register_status(const char * cmd, u16 val)
+void hal_rtc_set_register_status(const char *cmd, u16 val)
 {
 #if 0
-	if (!strcmp(cmd, "FG")) {
+	if (!strcmp(cmd, "FG"))
 		hal_rtc_set_spare_fg_value(val);
-	} else if (!strcmp(cmd, "ABB")) {
+	else if (!strcmp(cmd, "ABB"))
 		hal_rtc_set_abb_32k(val);
-	}
+
 #ifndef CONFIG_MTK_PMIC_MT6397
-	else if (!strcmp(cmd, "AUTOBOOT")) {
+	else if (!strcmp(cmd, "AUTOBOOT"))
 		hal_rtc_set_auto_boot(val);
-	}
 #endif
 #endif
 }
@@ -270,12 +272,10 @@ void hal_rtc_mark_mode(const char *cmd)
 	if (!strcmp(cmd, "recv")) {
 		pdn1 = rtc_read(RTC_PDN1) & (~RTC_PDN1_RECOVERY_MASK);
 		rtc_write(RTC_PDN1, pdn1 | RTC_PDN1_FAC_RESET);
-	}
-	else if (!strcmp(cmd, "kpoc")) {
+	} else if (!strcmp(cmd, "kpoc")) {
 		pdn1 = rtc_read(RTC_PDN1) & (~RTC_PDN1_KPOC);
 		rtc_write(RTC_PDN1, pdn1 | RTC_PDN1_KPOC);
-	}
-	else if (!strcmp(cmd, "fast")) {
+	} else if (!strcmp(cmd, "fast")) {
 		pdn1 = rtc_read(RTC_PDN1) & (~RTC_PDN1_FAST_BOOT);
 		rtc_write(RTC_PDN1, pdn1 | RTC_PDN1_FAST_BOOT);
 	} else if (!strcmp(cmd, "enter_kpoc")) {
@@ -292,6 +292,7 @@ void hal_rtc_mark_mode(const char *cmd)
 		rtc_write(RTC_SPAR0, spar0 | RTC_SPAR0_SW_LONG_PRESS_RST);
 	} else if (!strncmp(cmd, "reboot", 6)) {
 		u16 spar0, reason;
+
 		spar0 = rtc_read(RTC_SPAR0) & RTC_SPAR0_CLEAR_REBOOT_REASON;
 		reason = (cmd[6] - '0') & RTC_SPAR0_REBOOT_REASON_MASK;
 		rtc_write(RTC_SPAR0, spar0
@@ -306,6 +307,17 @@ void hal_rtc_mark_mode(const char *cmd)
 	rtc_write_trigger();
 }
 
+void rtc_bbpu_pwrdown(bool auto_boot)
+{
+	u16 bbpu;
+
+	if (auto_boot)
+		bbpu = RTC_BBPU_KEY | RTC_BBPU_AUTO | RTC_BBPU_PWREN;
+	else
+		bbpu = RTC_BBPU_KEY | RTC_BBPU_PWREN;
+	rtc_write(RTC_BBPU, bbpu);
+	rtc_write_trigger();
+}
 
 void hal_rtc_bbpu_pwdn(void)
 {
@@ -342,8 +354,10 @@ void hal_rtc_get_pwron_alarm(struct rtc_time *tm, struct rtc_wkalrm *alm)
 	pdn1 = rtc_read(RTC_PDN1);
 	pdn2 = rtc_read(RTC_PDN2);
 
-	alm->enabled = (pdn1 & RTC_PDN1_PWRON_TIME ? (pdn2 & RTC_PDN2_PWRON_LOGO ? 3 : 2) : 0);
-	alm->pending = !!(pdn2 & RTC_PDN2_PWRON_ALARM);	/* return Power-On Alarm bit */
+	alm->enabled = (pdn1 & RTC_PDN1_PWRON_TIME ?
+			(pdn2 & RTC_PDN2_PWRON_LOGO ? 3 : 2) : 0);
+	/* return Power-On Alarm bit */
+	alm->pending = !!(pdn2 & RTC_PDN2_PWRON_ALARM);
 
 	hal_rtc_get_alarm_time(tm);
 }
@@ -376,7 +390,7 @@ bool hal_rtc_is_pwron_alarm(struct rtc_time *nowtm, struct rtc_time *tm)
 		hal_rtc_xinfo("pdn1 = 0x%4x\n", pdn1);
 		hal_rtc_get_tick_time(nowtm);
 		hal_rtc_xinfo("pdn1 = 0x%4x\n", pdn1);
-		if (rtc_read(RTC_TC_SEC) < nowtm->tm_sec) {	/* SEC has carried */
+		if (rtc_read(RTC_TC_SEC) < nowtm->tm_sec) {/* SEC has carried */
 			hal_rtc_get_tick_time(nowtm);
 		}
 
@@ -396,7 +410,8 @@ void hal_rtc_get_alarm(struct rtc_time *tm, struct rtc_wkalrm *alm)
 	hal_rtc_get_alarm_time(tm);
 	pdn2 = rtc_read(RTC_PDN2);
 	alm->enabled = !!(irqen & RTC_IRQ_EN_AL);
-	alm->pending = !!(pdn2 & RTC_PDN2_PWRON_ALARM);	/* return Power-On Alarm bit */
+	/* return Power-On Alarm bit */
+	alm->pending = !!(pdn2 & RTC_PDN2_PWRON_ALARM);
 }
 
 void hal_rtc_set_alarm(struct rtc_time *tm)

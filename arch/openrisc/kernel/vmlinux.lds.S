@@ -38,6 +38,8 @@ SECTIONS
         /* Read-only sections, merged into text segment: */
         . = LOAD_BASE ;
 
+	_text = .;
+
 	/* _s_kernel_ro must be page aligned */
 	. = ALIGN(PAGE_SIZE);
 	_s_kernel_ro = .;
@@ -47,9 +49,11 @@ SECTIONS
           _stext = .;
 	  TEXT_TEXT
 	  SCHED_TEXT
+	  CPUIDLE_TEXT
 	  LOCK_TEXT
 	  KPROBES_TEXT
 	  IRQENTRY_TEXT
+	  SOFTIRQENTRY_TEXT
 	  *(.fixup)
 	  *(.text.__*)
 	  _etext = .;

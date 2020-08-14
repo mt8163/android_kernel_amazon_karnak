@@ -70,6 +70,7 @@ EXPORT_SYMBOL_GPL(can_len2dlc);
 
 #ifdef CONFIG_CAN_CALC_BITTIMING
 #define CAN_CALC_MAX_ERROR 50 /* in one-tenth of a percent */
+#define CAN_CALC_SYNC_SEG 1
 
 /*
  * Bit-timing calculation derived from:
@@ -84,98 +85,126 @@ EXPORT_SYMBOL_GPL(can_len2dlc);
  * registers of the CAN controller. You can find more information
  * in the header file linux/can/netlink.h.
  */
-static int can_update_spt(const struct can_bittiming_const *btc,
-			  int sampl_pt, int tseg, int *tseg1, int *tseg2)
+static int can_update_sample_point(const struct can_bittiming_const *btc,
+			  unsigned int sample_point_nominal, unsigned int tseg,
+			  unsigned int *tseg1_ptr, unsigned int *tseg2_ptr,
+			  unsigned int *sample_point_error_ptr)
 {
-	*tseg2 = tseg + 1 - (sampl_pt * (tseg + 1)) / 1000;
-	if (*tseg2 < btc->tseg2_min)
-		*tseg2 = btc->tseg2_min;
-	if (*tseg2 > btc->tseg2_max)
-		*tseg2 = btc->tseg2_max;
-	*tseg1 = tseg - *tseg2;
-	if (*tseg1 > btc->tseg1_max) {
-		*tseg1 = btc->tseg1_max;
-		*tseg2 = tseg - *tseg1;
+	unsigned int sample_point_error, best_sample_point_error = UINT_MAX;
+	unsigned int sample_point, best_sample_point = 0;
+	unsigned int tseg1, tseg2;
+	int i;
+
+	for (i = 0; i <= 1; i++) {
+		tseg2 = tseg + CAN_CALC_SYNC_SEG - (sample_point_nominal * (tseg + CAN_CALC_SYNC_SEG)) / 1000 - i;
+		tseg2 = clamp(tseg2, btc->tseg2_min, btc->tseg2_max);
+		tseg1 = tseg - tseg2;
+		if (tseg1 > btc->tseg1_max) {
+			tseg1 = btc->tseg1_max;
+			tseg2 = tseg - tseg1;
+		}
+
+		sample_point = 1000 * (tseg + CAN_CALC_SYNC_SEG - tseg2) / (tseg + CAN_CALC_SYNC_SEG);
+		sample_point_error = abs(sample_point_nominal - sample_point);
+
+		if ((sample_point <= sample_point_nominal) && (sample_point_error < best_sample_point_error)) {
+			best_sample_point = sample_point;
+			best_sample_point_error = sample_point_error;
+			*tseg1_ptr = tseg1;
+			*tseg2_ptr = tseg2;
+		}
 	}
-	return 1000 * (tseg + 1 - *tseg2) / (tseg + 1);
+
+	if (sample_point_error_ptr)
+		*sample_point_error_ptr = best_sample_point_error;
+
+	return best_sample_point;
 }
 
 static int can_calc_bittiming(struct net_device *dev, struct can_bittiming *bt,
 			      const struct can_bittiming_const *btc)
 {
 	struct can_priv *priv = netdev_priv(dev);
-	long best_error = 1000000000, error = 0;
-	int best_tseg = 0, best_brp = 0, brp = 0;
-	int tsegall, tseg = 0, tseg1 = 0, tseg2 = 0;
-	int spt_error = 1000, spt = 0, sampl_pt;
-	long rate;
+	unsigned int bitrate;			/* current bitrate */
+	unsigned int bitrate_error;		/* difference between current and nominal value */
+	unsigned int best_bitrate_error = UINT_MAX;
+	unsigned int sample_point_error;	/* difference between current and nominal value */
+	unsigned int best_sample_point_error = UINT_MAX;
+	unsigned int sample_point_nominal;	/* nominal sample point */
+	unsigned int best_tseg = 0;		/* current best value for tseg */
+	unsigned int best_brp = 0;		/* current best value for brp */
+	unsigned int brp, tsegall, tseg, tseg1 = 0, tseg2 = 0;
 	u64 v64;
 
 	/* Use CiA recommended sample points */
 	if (bt->sample_point) {
-		sampl_pt = bt->sample_point;
+		sample_point_nominal = bt->sample_point;
 	} else {
 		if (bt->bitrate > 800000)
-			sampl_pt = 750;
+			sample_point_nominal = 750;
 		else if (bt->bitrate > 500000)
-			sampl_pt = 800;
+			sample_point_nominal = 800;
 		else
-			sampl_pt = 875;
+			sample_point_nominal = 875;
 	}
 
 	/* tseg even = round down, odd = round up */
 	for (tseg = (btc->tseg1_max + btc->tseg2_max) * 2 + 1;
 	     tseg >= (btc->tseg1_min + btc->tseg2_min) * 2; tseg--) {
-		tsegall = 1 + tseg / 2;
+		tsegall = CAN_CALC_SYNC_SEG + tseg / 2;
+
 		/* Compute all possible tseg choices (tseg=tseg1+tseg2) */
 		brp = priv->clock.freq / (tsegall * bt->bitrate) + tseg % 2;
-		/* chose brp step which is possible in system */
+
+		/* choose brp step which is possible in system */
 		brp = (brp / btc->brp_inc) * btc->brp_inc;
 		if ((brp < btc->brp_min) || (brp > btc->brp_max))
 			continue;
-		rate = priv->clock.freq / (brp * tsegall);
-		error = bt->bitrate - rate;
+
+		bitrate = priv->clock.freq / (brp * tsegall);
+		bitrate_error = abs(bt->bitrate - bitrate);
+
 		/* tseg brp biterror */
-		if (error < 0)
-			error = -error;
-		if (error > best_error)
+		if (bitrate_error > best_bitrate_error)
 			continue;
-		best_error = error;
-		if (error == 0) {
-			spt = can_update_spt(btc, sampl_pt, tseg / 2,
-					     &tseg1, &tseg2);
-			error = sampl_pt - spt;
-			if (error < 0)
-				error = -error;
-			if (error > spt_error)
-				continue;
-			spt_error = error;
-		}
+
+		/* reset sample point error if we have a better bitrate */
+		if (bitrate_error < best_bitrate_error)
+			best_sample_point_error = UINT_MAX;
+
+		can_update_sample_point(btc, sample_point_nominal, tseg / 2, &tseg1, &tseg2, &sample_point_error);
+		if (sample_point_error > best_sample_point_error)
+			continue;
+
+		best_sample_point_error = sample_point_error;
+		best_bitrate_error = bitrate_error;
 		best_tseg = tseg / 2;
 		best_brp = brp;
-		if (error == 0)
+
+		if (bitrate_error == 0 && sample_point_error == 0)
 			break;
 	}
 
-	if (best_error) {
+	if (best_bitrate_error) {
 		/* Error in one-tenth of a percent */
-		error = (best_error * 1000) / bt->bitrate;
-		if (error > CAN_CALC_MAX_ERROR) {
+		v64 = (u64)best_bitrate_error * 1000;
+		do_div(v64, bt->bitrate);
+		bitrate_error = (u32)v64;
+		if (bitrate_error > CAN_CALC_MAX_ERROR) {
 			netdev_err(dev,
-				   "bitrate error %ld.%ld%% too high\n",
-				   error / 10, error % 10);
+				   "bitrate error %d.%d%% too high\n",
+				   bitrate_error / 10, bitrate_error % 10);
 			return -EDOM;
-		} else {
-			netdev_warn(dev, "bitrate error %ld.%ld%%\n",
-				    error / 10, error % 10);
 		}
+		netdev_warn(dev, "bitrate error %d.%d%%\n",
+			    bitrate_error / 10, bitrate_error % 10);
 	}
 
 	/* real sample point */
-	bt->sample_point = can_update_spt(btc, sampl_pt, best_tseg,
-					  &tseg1, &tseg2);
+	bt->sample_point = can_update_sample_point(btc, sample_point_nominal, best_tseg,
+					  &tseg1, &tseg2, NULL);
 
-	v64 = (u64)best_brp * 1000000000UL;
+	v64 = (u64)best_brp * 1000 * 1000 * 1000;
 	do_div(v64, priv->clock.freq);
 	bt->tq = (u32)v64;
 	bt->prop_seg = tseg1 / 2;
@@ -183,9 +212,9 @@ static int can_calc_bittiming(struct net_device *dev, struct can_bittiming *bt,
 	bt->phase_seg2 = tseg2;
 
 	/* check for sjw user settings */
-	if (!bt->sjw || !btc->sjw_max)
+	if (!bt->sjw || !btc->sjw_max) {
 		bt->sjw = 1;
-	else {
+	} else {
 		/* bt->sjw is at least 1 -> sanitize upper bound to sjw_max */
 		if (bt->sjw > btc->sjw_max)
 			bt->sjw = btc->sjw_max;
@@ -195,8 +224,9 @@ static int can_calc_bittiming(struct net_device *dev, struct can_bittiming *bt,
 	}
 
 	bt->brp = best_brp;
-	/* real bit-rate */
-	bt->bitrate = priv->clock.freq / (bt->brp * (tseg1 + tseg2 + 1));
+
+	/* real bitrate */
+	bt->bitrate = priv->clock.freq / (bt->brp * (CAN_CALC_SYNC_SEG + tseg1 + tseg2));
 
 	return 0;
 }
@@ -274,6 +304,86 @@ static int can_get_bittiming(struct net_device *dev, struct can_bittiming *bt,
 	return err;
 }
 
+static void can_update_state_error_stats(struct net_device *dev,
+					 enum can_state new_state)
+{
+	struct can_priv *priv = netdev_priv(dev);
+
+	if (new_state <= priv->state)
+		return;
+
+	switch (new_state) {
+	case CAN_STATE_ERROR_WARNING:
+		priv->can_stats.error_warning++;
+		break;
+	case CAN_STATE_ERROR_PASSIVE:
+		priv->can_stats.error_passive++;
+		break;
+	case CAN_STATE_BUS_OFF:
+		priv->can_stats.bus_off++;
+		break;
+	default:
+		break;
+	}
+}
+
+static int can_tx_state_to_frame(struct net_device *dev, enum can_state state)
+{
+	switch (state) {
+	case CAN_STATE_ERROR_ACTIVE:
+		return CAN_ERR_CRTL_ACTIVE;
+	case CAN_STATE_ERROR_WARNING:
+		return CAN_ERR_CRTL_TX_WARNING;
+	case CAN_STATE_ERROR_PASSIVE:
+		return CAN_ERR_CRTL_TX_PASSIVE;
+	default:
+		return 0;
+	}
+}
+
+static int can_rx_state_to_frame(struct net_device *dev, enum can_state state)
+{
+	switch (state) {
+	case CAN_STATE_ERROR_ACTIVE:
+		return CAN_ERR_CRTL_ACTIVE;
+	case CAN_STATE_ERROR_WARNING:
+		return CAN_ERR_CRTL_RX_WARNING;
+	case CAN_STATE_ERROR_PASSIVE:
+		return CAN_ERR_CRTL_RX_PASSIVE;
+	default:
+		return 0;
+	}
+}
+
+void can_change_state(struct net_device *dev, struct can_frame *cf,
+		      enum can_state tx_state, enum can_state rx_state)
+{
+	struct can_priv *priv = netdev_priv(dev);
+	enum can_state new_state = max(tx_state, rx_state);
+
+	if (unlikely(new_state == priv->state)) {
+		netdev_warn(dev, "%s: oops, state did not change", __func__);
+		return;
+	}
+
+	netdev_dbg(dev, "New error state: %d\n", new_state);
+
+	can_update_state_error_stats(dev, new_state);
+	priv->state = new_state;
+
+	if (unlikely(new_state == CAN_STATE_BUS_OFF)) {
+		cf->can_id |= CAN_ERR_BUSOFF;
+		return;
+	}
+
+	cf->can_id |= CAN_ERR_CRTL;
+	cf->data[1] |= tx_state >= rx_state ?
+		       can_tx_state_to_frame(dev, tx_state) : 0;
+	cf->data[1] |= tx_state <= rx_state ?
+		       can_rx_state_to_frame(dev, rx_state) : 0;
+}
+EXPORT_SYMBOL_GPL(can_change_state);
+
 /*
  * Local echo of CAN messages
  *
@@ -343,33 +453,6 @@ void can_put_echo_skb(struct sk_buff *skb, struct net_device *dev,
 }
 EXPORT_SYMBOL_GPL(can_put_echo_skb);
 
-struct sk_buff *__can_get_echo_skb(struct net_device *dev, unsigned int idx, u8 *len_ptr)
-{
-	struct can_priv *priv = netdev_priv(dev);
-
-	if (idx >= priv->echo_skb_max) {
-		netdev_err(dev, "%s: BUG! Trying to access can_priv::echo_skb out of bounds (%u/max %u)\n",
-			   __func__, idx, priv->echo_skb_max);
-		return NULL;
-	}
-
-	if (priv->echo_skb[idx]) {
-		/* Using "struct canfd_frame::len" for the frame
-		 * length is supported on both CAN and CANFD frames.
-		 */
-		struct sk_buff *skb = priv->echo_skb[idx];
-		struct canfd_frame *cf = (struct canfd_frame *)skb->data;
-		u8 len = cf->len;
-
-		*len_ptr = len;
-		priv->echo_skb[idx] = NULL;
-
-		return skb;
-	}
-
-	return NULL;
-}
-
 /*
  * Get the skb from the stack and loop it back locally
  *
@@ -379,16 +462,22 @@ struct sk_buff *__can_get_echo_skb(struct net_device *dev, unsigned int idx, u8 
  */
 unsigned int can_get_echo_skb(struct net_device *dev, unsigned int idx)
 {
-	struct sk_buff *skb;
-	u8 len;
+	struct can_priv *priv = netdev_priv(dev);
 
-	skb = __can_get_echo_skb(dev, idx, &len);
-	if (!skb)
-		return 0;
+	BUG_ON(idx >= priv->echo_skb_max);
 
-	netif_rx(skb);
+	if (priv->echo_skb[idx]) {
+		struct sk_buff *skb = priv->echo_skb[idx];
+		struct can_frame *cf = (struct can_frame *)skb->data;
+		u8 dlc = cf->can_dlc;
 
-	return len;
+		netif_rx(priv->echo_skb[idx]);
+		priv->echo_skb[idx] = NULL;
+
+		return dlc;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(can_get_echo_skb);
 
@@ -492,10 +581,9 @@ void can_bus_off(struct net_device *dev)
 {
 	struct can_priv *priv = netdev_priv(dev);
 
-	netdev_info(dev, "bus-off\n");
+	netdev_dbg(dev, "bus-off\n");
 
 	netif_carrier_off(dev);
-	priv->can_stats.bus_off++;
 
 	if (priv->restart_ms)
 		schedule_delayed_work(&priv->restart_work,
@@ -535,6 +623,7 @@ struct sk_buff *alloc_can_skb(struct net_device *dev, struct can_frame **cf)
 
 	can_skb_reserve(skb);
 	can_skb_prv(skb)->ifindex = dev->ifindex;
+	can_skb_prv(skb)->skbcnt = 0;
 
 	*cf = (struct can_frame *)skb_put(skb, sizeof(struct can_frame));
 	memset(*cf, 0, sizeof(struct can_frame));
@@ -563,6 +652,7 @@ struct sk_buff *alloc_canfd_skb(struct net_device *dev,
 
 	can_skb_reserve(skb);
 	can_skb_prv(skb)->ifindex = dev->ifindex;
+	can_skb_prv(skb)->skbcnt = 0;
 
 	*cfd = (struct canfd_frame *)skb_put(skb, sizeof(struct canfd_frame));
 	memset(*cfd, 0, sizeof(struct canfd_frame));
@@ -912,7 +1002,7 @@ static int can_fill_info(struct sk_buff *skb, const struct net_device *dev)
 	     nla_put(skb, IFLA_CAN_BITTIMING_CONST,
 		     sizeof(*priv->bittiming_const), priv->bittiming_const)) ||
 
-	    nla_put(skb, IFLA_CAN_CLOCK, sizeof(cm), &priv->clock) ||
+	    nla_put(skb, IFLA_CAN_CLOCK, sizeof(priv->clock), &priv->clock) ||
 	    nla_put_u32(skb, IFLA_CAN_STATE, state) ||
 	    nla_put(skb, IFLA_CAN_CTRLMODE, sizeof(cm), &cm) ||
 	    nla_put_u32(skb, IFLA_CAN_RESTART_MS, priv->restart_ms) ||

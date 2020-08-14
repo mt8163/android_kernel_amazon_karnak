@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef BUILD_LK
 #include <string.h>
 #include <platform/mt_gpio.h>
@@ -45,24 +58,22 @@ static struct pinctrl_state *lcd_rst_high;
 static struct pinctrl_state *lcd_rst_low;
 static struct regulator *lcm_vio_ldo;
 
-
 static int lcm_get_vio_supply(struct device *dev)
 {
-	int ret;
-
+	int ret = 0;
 
 	pr_debug("LCM: lcm_get_vgp_supply is going\n");
 
 	lcm_vio_ldo = devm_regulator_get(dev, "reg-lcm");
 	if (IS_ERR(lcm_vio_ldo)) {
 		ret = PTR_ERR(lcm_vio_ldo);
-		dev_err(dev, "failed to get reg-lcm LDO, %d\n", ret);
+		pr_info("failed to get reg-lcm LDO, %d\n", ret);
 		return ret;
 	}
 
 	pr_debug("LCM: lcm get supply ok.\n");
 
-	return ret;
+	return 0;
 }
 
 static int lcm_get_gpio(struct device *dev)
@@ -71,7 +82,7 @@ static int lcm_get_gpio(struct device *dev)
 
 	lcmctrl = devm_pinctrl_get(dev);
 	if (IS_ERR(lcmctrl)) {
-		dev_err(dev, "Cannot find lcm pinctrl!");
+		pr_info("Cannot find lcm pinctrl!");
 		ret = PTR_ERR(lcmctrl);
 	}
 	/*lcm power pin lookup */
@@ -107,38 +118,49 @@ static int lcm_get_gpio(struct device *dev)
 		ret = PTR_ERR(lcd_pwr_n_low);
 		pr_info("%s : pinctrl err, lcd_pwr_n_low\n", __func__);
 	}
-return ret;
+
+	return ret;
 }
 
 static void lcm_set_pwr(int val)
 {
-	if (val == 0) {
-		pinctrl_select_state(lcmctrl, lcd_pwr_low);
-	} else {
-		pinctrl_select_state(lcmctrl, lcd_pwr_high);
+	if(!lcd_pwr_high || !lcd_pwr_low) {
+		pr_err("%s: pinctrl pwr is not ready\n",__func__);
+		return;
 	}
+	if (val == 0)
+		pinctrl_select_state(lcmctrl, lcd_pwr_low);
+	else
+		pinctrl_select_state(lcmctrl, lcd_pwr_high);
 }
 
 static void lcm_set_rst(int val)
 {
-	if (val == 0) {
-		pinctrl_select_state(lcmctrl, lcd_rst_low);
-	} else {
-		pinctrl_select_state(lcmctrl, lcd_rst_high);
+	if(!lcd_rst_high || !lcd_rst_low) {
+		pr_err("%s: pinctrl rst is not ready\n",__func__);
+		return;
 	}
-}
 
+	if (val == 0)
+		pinctrl_select_state(lcmctrl, lcd_rst_low);
+	else
+		pinctrl_select_state(lcmctrl, lcd_rst_high);
+}
 
 static void lcm_set_pwr_n(int val)
 {
-	if (val == 0 && (!IS_ERR(lcd_pwr_n_low)))  {
-		pinctrl_select_state(lcmctrl, lcd_pwr_n_low);
-	} else if (val == 1 && (!IS_ERR(lcd_pwr_n_high))) {
-		pinctrl_select_state(lcmctrl, lcd_pwr_n_high);
+	if(!lcd_pwr_n_high || !lcd_pwr_n_low) {
+		pr_err("%s: pinctrl pwr_n is not ready\n",__func__);
+		return;
 	}
+
+	if (val == 0 && (!IS_ERR(lcd_pwr_n_low)))
+		pinctrl_select_state(lcmctrl, lcd_pwr_n_low);
+	else if (val == 1 && (!IS_ERR(lcd_pwr_n_high)))
+		pinctrl_select_state(lcmctrl, lcd_pwr_n_high);
 }
 
-static int lcm_probe(struct device *dev)
+static int lcm_driver_probe(struct device *dev, void const *data)
 {
 	lcm_get_vio_supply(dev);
 	lcm_get_gpio(dev);
@@ -148,14 +170,25 @@ static int lcm_probe(struct device *dev)
 
 static const struct of_device_id lcm_of_ids[] = {
 	{.compatible = "jd,jd936x",},
-	{}
+	{ }
 };
 
+static int lcm_platform_probe(struct platform_device *pdev)
+{
+	const struct of_device_id *id;
+
+	id = of_match_node(lcm_of_ids, pdev->dev.of_node);
+	if (!id)
+		return -ENODEV;
+
+	return lcm_driver_probe(&pdev->dev, id->data);
+}
+
 static struct platform_driver lcm_driver = {
+	.probe = lcm_platform_probe,
 	.driver = {
 		   .name = "jd936x",
 		   .owner = THIS_MODULE,
-		   .probe = lcm_probe,
 #ifdef CONFIG_OF
 		   .of_match_table = lcm_of_ids,
 #endif
@@ -166,7 +199,7 @@ static int __init lcm_drv_init(void)
 {
 	pr_notice("LCM: Register lcm driver\n");
 	if (platform_driver_register(&lcm_driver)) {
-		pr_err("LCM: failed to register disp driver\n");
+		pr_info("LCM: failed to register disp driver\n");
 		return -ENODEV;
 	}
 
@@ -185,17 +218,20 @@ MODULE_DESCRIPTION("Display subsystem Driver");
 MODULE_LICENSE("GPL");
 #endif
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#endif
 
 /* ---------------------------------------------------
  *  Local Constants
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 
 #define FRAME_WIDTH				(800)
 #define FRAME_HEIGHT				(1280)
 
 #define REGFLAG_DELAY				0xFE
-#define REGFLAG_END_OF_TABLE		0x00   /* END OF REGISTERS MARKER */
-
+#define REGFLAG_END_OF_TABLE		0x00
 
 /* ID1 DAh - Vendor and Build Designation
  * Bit[7:5] - Vendor Code (KD, TPV)
@@ -210,14 +246,22 @@ MODULE_LICENSE("GPL");
 #define MP			0x6
 #define BUILD_MASK	0x7
 
-
-#define FITI_INX			0x2		/* INX, using FITI IC */
-#define FITI_TXD			0xF		/* TXD is not used,modify the ID value 0x3 to 0xF to avoid ID conflict with KD_HSD */
-#define FITI_KD2			0x4		/* KD, using FITI IC*/
-#define FITI_TPV			0x5		/* TPV */
-#define FITI_STARRY			0x6		/* STARRY, using FITI IC */
-#define FITI_KD				0x7		/* KD*/
-#define FITI_KD_HSD			0x3		/* KD, using FITI IC */
+/* INX, using FITI IC */
+#define FITI_INX			0x2
+/* TXD is not used,modify the ID value 0x3 to 0xF
+ * to avoid ID conflict with KD_HSD
+ */
+#define FITI_TXD			0xF
+/* KD, using FITI IC*/
+#define FITI_KD2			0x4
+/* TPV */
+#define FITI_TPV			0x5
+/* STARRY, using FITI IC */
+#define FITI_STARRY			0x6
+/* KD*/
+#define FITI_KD				0x7
+/* KD, using FITI IC */
+#define FITI_KD_HSD			0x3
 
 /* CABC Mode Selection */
 #define OFF			0x0
@@ -226,31 +270,29 @@ MODULE_LICENSE("GPL");
 #define MOVING		0x3
 /* ---------------------------------------------------
  *  Global Variables
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 
 /* ---------------------------------------------------
  *  Local Variables
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 static unsigned char lcm_id;
 static unsigned char vendor_id = 0xFF;
 static unsigned char build_id = 0xFF;
 
-static LCM_UTIL_FUNCS lcm_util = {
-	.set_reset_pin = NULL,
-	.udelay = NULL,
-	.mdelay = NULL,
-};
+static struct LCM_UTIL_FUNCS lcm_util = { 0 };
 
 static void get_lcm_id(void);
 
 #define SET_RESET_PIN(v)		(lcm_util.set_reset_pin((v)))
-
 #define UDELAY(n)				(lcm_util.udelay(n))
 #define MDELAY(n)				(lcm_util.mdelay(n))
 
 /* ---------------------------------------------------
  *  Local Functions
- * --------------------------------------------------- */
+ * ---------------------------------------------------
+ */
 
 #define dsi_set_cmdq_V2(cmd, count, ppara, force_update) \
 		 (lcm_util.dsi_set_cmdq_V2(cmd, count, ppara, force_update))
@@ -264,7 +306,6 @@ static void get_lcm_id(void);
 		 (lcm_util.dsi_read_reg())
 #define read_reg_v2(cmd, buffer, buffer_size) \
 		 (lcm_util.dsi_dcs_read_lcm_reg_v2(cmd, buffer, buffer_size))
-
 
 #ifdef BUILD_LK
 static void power_on(void)
@@ -280,7 +321,7 @@ static void power_on(void)
 		dprintf(INFO, "[LK/LCM] GPIO110 - Control AVDD/AVEE/VDD\n");
 	#else
 		pr_info("[jd936x] %s, GPIO110 - Control AVDD/AVEE/VDD\n",
-				 __func__);
+			__func__);
 	#endif
 #ifdef BUILD_LK
 	mt_set_gpio_mode(GPIO_LCD_LED_EN, GPIO_MODE_00);
@@ -296,11 +337,13 @@ static void power_on(void)
 #endif
 
 	/* GHGL_EN/GPIO110 waveform has a gentle rising,
-	 * so enlarge delay time from 40ms to 50ms */
+	 * so enlarge delay time from 40ms to 50ms
+	 */
 	MDELAY(50);
 
 	/* Fixme - Turn on MIPI lanes after AVEE ready,
-	 * before Reset pin Low->High */
+	 * before Reset pin Low->High
+	 */
 	SET_RESET_PIN(1);
 	SET_RESET_PIN(0);
 	MDELAY(1);
@@ -2312,487 +2355,487 @@ static void init_karnak_fiti_kd2_lcm(void)
 	unsigned int data_array[64];
 
 	/* page0 */
-	data_array[0] =0x00E01500;
+	data_array[0] = 0x00E01500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* PASSWORD */
-	data_array[0] =0x93E11500;
+	data_array[0] = 0x93E11500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x65E21500;
+	data_array[0] = 0x65E21500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xF8E31500;
+	data_array[0] = 0xF8E31500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x03801500;
+	data_array[0] = 0x03801500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Page1 */
-	data_array[0] =0x01E01500;
+	data_array[0] = 0x01E01500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Set Gamma Power, VGMP,VGMN,VGSP,VGSN */
-	data_array[0] =0x00171500;
+	data_array[0] = 0x00171500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xCF181500;
+	data_array[0] = 0xCF181500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x01191500;
+	data_array[0] = 0x01191500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x001A1500;
+	data_array[0] = 0x001A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xCF1B1500;
+	data_array[0] = 0xCF1B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x011C1500;
+	data_array[0] = 0x011C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Set Gate Power */
-	data_array[0] =0x3E1F1500;
+	data_array[0] = 0x3E1F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x28201500;
+	data_array[0] = 0x28201500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x28211500;
+	data_array[0] = 0x28211500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0E221500;
+	data_array[0] = 0x0E221500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xC8241500;
+	data_array[0] = 0xC8241500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* SET RGBCYC */
-	data_array[0] =0x29371500;
+	data_array[0] = 0x29371500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x05381500;
+	data_array[0] = 0x05381500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x08391500;
+	data_array[0] = 0x08391500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x123A1500;
+	data_array[0] = 0x123A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x783C1500;
+	data_array[0] = 0x783C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xFF3D1500;
+	data_array[0] = 0xFF3D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xFF3E1500;
+	data_array[0] = 0xFF3E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xFF3F1500;
+	data_array[0] = 0xFF3F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Set TCON */
-	data_array[0] =0x06401500;
+	data_array[0] = 0x06401500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0xA0411500;
+	data_array[0] = 0xA0411500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x15431500;
+	data_array[0] = 0x15431500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x12441500;
+	data_array[0] = 0x12441500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x50451500;
+	data_array[0] = 0x50451500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x044B1500;
+	data_array[0] = 0x044B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* power voltage */
-	data_array[0] =0x0F551500;
+	data_array[0] = 0x0F551500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x01561500;
+	data_array[0] = 0x01561500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x89571500;
+	data_array[0] = 0x89571500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0A581500;
+	data_array[0] = 0x0A581500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x2A591500;
+	data_array[0] = 0x2A591500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x315A1500;
+	data_array[0] = 0x315A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x155B1500;
+	data_array[0] = 0x155B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Gamma */
-	data_array[0] =0x7C5D1500;
+	data_array[0] = 0x7C5D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x505E1500;
+	data_array[0] = 0x505E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x3B5F1500;
+	data_array[0] = 0x3B5F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x2B601500;
+	data_array[0] = 0x2B601500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x25611500;
+	data_array[0] = 0x25611500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x15621500;
+	data_array[0] = 0x15621500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1A631500;
+	data_array[0] = 0x1A631500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x04641500;
+	data_array[0] = 0x04641500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1C651500;
+	data_array[0] = 0x1C651500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1A661500;
+	data_array[0] = 0x1A661500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x19671500;
+	data_array[0] = 0x19671500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x36681500;
+	data_array[0] = 0x36681500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x27691500;
+	data_array[0] = 0x27691500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x2F6A1500;
+	data_array[0] = 0x2F6A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x236B1500;
+	data_array[0] = 0x236B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x216C1500;
+	data_array[0] = 0x216C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x176D1500;
+	data_array[0] = 0x176D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x056E1500;
+	data_array[0] = 0x056E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x006F1500;
+	data_array[0] = 0x006F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x7C701500;
+	data_array[0] = 0x7C701500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x50711500;
+	data_array[0] = 0x50711500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x3B721500;
+	data_array[0] = 0x3B721500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x2B731500;
+	data_array[0] = 0x2B731500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x25741500;
+	data_array[0] = 0x25741500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x15751500;
+	data_array[0] = 0x15751500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1A761500;
+	data_array[0] = 0x1A761500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x04771500;
+	data_array[0] = 0x04771500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1C781500;
+	data_array[0] = 0x1C781500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1A791500;
+	data_array[0] = 0x1A791500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x197A1500;
+	data_array[0] = 0x197A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x367B1500;
+	data_array[0] = 0x367B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x277C1500;
+	data_array[0] = 0x277C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x2F7D1500;
+	data_array[0] = 0x2F7D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x237E1500;
+	data_array[0] = 0x237E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x217F1500;
+	data_array[0] = 0x217F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x17801500;
+	data_array[0] = 0x17801500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x05811500;
+	data_array[0] = 0x05811500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00821500;
+	data_array[0] = 0x00821500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Page2 */
-	data_array[0] =0x02E01500;
+	data_array[0] = 0x02E01500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* GIP_L */
-	data_array[0] =0x00001500;
+	data_array[0] = 0x00001500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x04011500;
+	data_array[0] = 0x04011500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x08021500;
+	data_array[0] = 0x08021500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x05031500;
+	data_array[0] = 0x05031500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x09041500;
+	data_array[0] = 0x09041500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x06051500;
+	data_array[0] = 0x06051500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0A061500;
+	data_array[0] = 0x0A061500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x07071500;
+	data_array[0] = 0x07071500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0B081500;
+	data_array[0] = 0x0B081500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F091500;
+	data_array[0] = 0x1F091500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F0A1500;
+	data_array[0] = 0x1F0A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F0B1500;
+	data_array[0] = 0x1F0B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F0C1500;
+	data_array[0] = 0x1F0C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F0D1500;
+	data_array[0] = 0x1F0D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F0E1500;
+	data_array[0] = 0x1F0E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x170F1500;
+	data_array[0] = 0x170F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x37101500;
+	data_array[0] = 0x37101500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x10111500;
+	data_array[0] = 0x10111500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F121500;
+	data_array[0] = 0x1F121500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F131500;
+	data_array[0] = 0x1F131500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F141500;
+	data_array[0] = 0x1F141500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F151500;
+	data_array[0] = 0x1F151500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* GIP_R Pin mapping */
-	data_array[0] =0x00161500;
+	data_array[0] = 0x00161500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x04171500;
+	data_array[0] = 0x04171500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x08181500;
+	data_array[0] = 0x08181500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x05191500;
+	data_array[0] = 0x05191500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x091A1500;
+	data_array[0] = 0x091A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x061B1500;
+	data_array[0] = 0x061B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0A1C1500;
+	data_array[0] = 0x0A1C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x071D1500;
+	data_array[0] = 0x071D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0B1E1500;
+	data_array[0] = 0x0B1E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1f1F1500;
+	data_array[0] = 0x1f1F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1f201500;
+	data_array[0] = 0x1f201500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1f211500;
+	data_array[0] = 0x1f211500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1f221500;
+	data_array[0] = 0x1f221500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1f231500;
+	data_array[0] = 0x1f231500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1f241500;
+	data_array[0] = 0x1f241500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x17251500;
+	data_array[0] = 0x17251500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x37261500;
+	data_array[0] = 0x37261500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x10271500;
+	data_array[0] = 0x10271500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F281500;
+	data_array[0] = 0x1F281500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F291500;
+	data_array[0] = 0x1F291500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F2A1500;
+	data_array[0] = 0x1F2A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1F2B1500;
+	data_array[0] = 0x1F2B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* GIP Timing */
-	data_array[0] =0x01581500;
+	data_array[0] = 0x01581500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00591500;
+	data_array[0] = 0x00591500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x005A1500;
+	data_array[0] = 0x005A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x005B1500;
+	data_array[0] = 0x005B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x0C5C1500;
+	data_array[0] = 0x0C5C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x605D1500;
+	data_array[0] = 0x605D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x005E1500;
+	data_array[0] = 0x005E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x005F1500;
+	data_array[0] = 0x005F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x30601500;
+	data_array[0] = 0x30601500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00611500;
+	data_array[0] = 0x00611500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00621500;
+	data_array[0] = 0x00621500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x03631500;
+	data_array[0] = 0x03631500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x6A641500;
+	data_array[0] = 0x6A641500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x45651500;
+	data_array[0] = 0x45651500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x14661500;
+	data_array[0] = 0x14661500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x73671500;
+	data_array[0] = 0x73671500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x10681500;
+	data_array[0] = 0x10681500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x06691500;
+	data_array[0] = 0x06691500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x6A6A1500;
+	data_array[0] = 0x6A6A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x006B1500;
+	data_array[0] = 0x006B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x006C1500;
+	data_array[0] = 0x006C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x036D1500;
+	data_array[0] = 0x036D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x006E1500;
+	data_array[0] = 0x006E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x086F1500;
+	data_array[0] = 0x086F1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00701500;
+	data_array[0] = 0x00701500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00711500;
+	data_array[0] = 0x00711500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x06721500;
+	data_array[0] = 0x06721500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x7B731500;
+	data_array[0] = 0x7B731500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00741500;
+	data_array[0] = 0x00741500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x80751500;
+	data_array[0] = 0x80751500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00761500;
+	data_array[0] = 0x00761500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x05771500;
+	data_array[0] = 0x05771500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x1B781500;
+	data_array[0] = 0x1B781500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00791500;
+	data_array[0] = 0x00791500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x007A1500;
+	data_array[0] = 0x007A1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x007B1500;
+	data_array[0] = 0x007B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x007C1500;
+	data_array[0] = 0x007C1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x037D1500;
+	data_array[0] = 0x037D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x7B7E1500;
+	data_array[0] = 0x7B7E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Page4 */
-	data_array[0] =0x04E01500;
+	data_array[0] = 0x04E01500;
 	dsi_set_cmdq(data_array, 1, 1);
 
 	data_array[0] = 0x003F1500;
@@ -2801,16 +2844,16 @@ static void init_karnak_fiti_kd2_lcm(void)
 	data_array[0] = 0xFF411500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x10091500;
+	data_array[0] = 0x10091500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x2B2B1500;
+	data_array[0] = 0x2B2B1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x442E1500;
+	data_array[0] = 0x442E1500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x032D1500;
+	data_array[0] = 0x032D1500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* Page3 */
 	data_array[0] = 0x03E01500;
@@ -2827,13 +2870,13 @@ static void init_karnak_fiti_kd2_lcm(void)
 	data_array[0] = 0x2C531500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x02E61500;
+	data_array[0] = 0x02E61500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x06E71500;
+	data_array[0] = 0x06E71500;
 	dsi_set_cmdq(data_array, 1, 1);
 
-	data_array[0] =0x00E01500;
+	data_array[0] = 0x00E01500;
 	dsi_set_cmdq(data_array, 1, 1);
 	/* SLP OUT */
 	data_array[0] = 0x00111500;
@@ -4215,20 +4258,20 @@ static void init_karnak_fiti_starry_lcm(void)
 	dsi_set_cmdq(data_array, 1, 1);
 	data_array[0] = 0x00E01500;
 	dsi_set_cmdq(data_array, 1, 1);
-
 }
 
 /* -----------------------------------------
  *  LCM Driver Implementations
- * ----------------------------------------- */
-static void lcm_set_util_funcs(const LCM_UTIL_FUNCS *util)
+ * -----------------------------------------
+ */
+static void lcm_set_util_funcs(const struct LCM_UTIL_FUNCS *util)
 {
-	memcpy(&lcm_util, util, sizeof(LCM_UTIL_FUNCS));
+	memcpy(&lcm_util, util, sizeof(struct LCM_UTIL_FUNCS));
 }
 
-static void lcm_get_params(LCM_PARAMS *params)
+static void lcm_get_params(struct LCM_PARAMS *params)
 {
-	memset(params, 0, sizeof(LCM_PARAMS));
+	memset(params, 0, sizeof(struct LCM_PARAMS));
 
 	params->type   = LCM_TYPE_DSI;
 
@@ -4255,86 +4298,86 @@ static void lcm_get_params(LCM_PARAMS *params)
 
 	params->dsi.PS = LCM_PACKED_PS_24BIT_RGB888;
 
-	/* we can get vendor_id in cmdline passed from lk using key : nt35521_id=xxx */
+	/* we can get vendor_id in cmdline passed from lk using key :
+	 * nt35521_id=xxx
+	 */
 	get_lcm_id();
 
 	if (vendor_id == FITI_KD) {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 10;
-		params->dsi.vertical_frontporch			= 20;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 10;
+		params->dsi.vertical_frontporch = 20;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 18;
-		params->dsi.horizontal_backporch		= 53;
-		params->dsi.horizontal_frontporch		= 52;
-		params->dsi.horizontal_active_pixel		= FRAME_WIDTH;
+		params->dsi.horizontal_sync_active = 18;
+		params->dsi.horizontal_backporch = 53;
+		params->dsi.horizontal_frontporch = 52;
+		params->dsi.horizontal_active_pixel = FRAME_WIDTH;
 	} else if (vendor_id == FITI_KD_HSD) {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 12;
-		params->dsi.vertical_frontporch			= 18;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 12;
+		params->dsi.vertical_frontporch = 18;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 24;
-		params->dsi.horizontal_backporch		= 47;
-		params->dsi.horizontal_frontporch		= 52;
+		params->dsi.horizontal_sync_active = 24;
+		params->dsi.horizontal_backporch = 47;
+		params->dsi.horizontal_frontporch = 52;
 	} else if (vendor_id == FITI_KD2) {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 15;
-		params->dsi.vertical_frontporch			= 37;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 15;
+		params->dsi.vertical_frontporch = 37;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 26;
-		params->dsi.horizontal_backporch		= 28;
-		params->dsi.horizontal_frontporch		= 28;
-		params->dsi.horizontal_active_pixel		= FRAME_WIDTH;
+		params->dsi.horizontal_sync_active = 26;
+		params->dsi.horizontal_backporch = 28;
+		params->dsi.horizontal_frontporch = 28;
+		params->dsi.horizontal_active_pixel = FRAME_WIDTH;
 	} else if (vendor_id == FITI_INX) {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 10;
-		params->dsi.vertical_frontporch			= 20;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 10;
+		params->dsi.vertical_frontporch = 20;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 20;
-		params->dsi.horizontal_backporch		= 43;
-		params->dsi.horizontal_frontporch		= 43;
-		params->dsi.horizontal_active_pixel		= FRAME_WIDTH;
+		params->dsi.horizontal_sync_active = 20;
+		params->dsi.horizontal_backporch = 43;
+		params->dsi.horizontal_frontporch = 43;
+		params->dsi.horizontal_active_pixel = FRAME_WIDTH;
 	} else if (vendor_id == FITI_TXD) {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 10;
-		params->dsi.vertical_frontporch			= 20;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 10;
+		params->dsi.vertical_frontporch = 20;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 18;
-		params->dsi.horizontal_backporch		= 53;
-		params->dsi.horizontal_frontporch		= 53;
-		params->dsi.horizontal_active_pixel		= FRAME_WIDTH;
+		params->dsi.horizontal_sync_active = 18;
+		params->dsi.horizontal_backporch = 53;
+		params->dsi.horizontal_frontporch = 53;
+		params->dsi.horizontal_active_pixel = FRAME_WIDTH;
 	} else if (vendor_id == FITI_STARRY) {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 4;
-		params->dsi.vertical_frontporch			= 8;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 4;
+		params->dsi.vertical_frontporch = 8;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 20;
-		params->dsi.horizontal_backporch		= 63;
-		params->dsi.horizontal_frontporch		= 63;
-		params->dsi.horizontal_active_pixel		= FRAME_WIDTH;
+		params->dsi.horizontal_sync_active = 20;
+		params->dsi.horizontal_backporch = 63;
+		params->dsi.horizontal_frontporch = 63;
+		params->dsi.horizontal_active_pixel = FRAME_WIDTH;
 	} else {
-		params->dsi.vertical_sync_active		= 4;
-		params->dsi.vertical_backporch			= 15;
-		params->dsi.vertical_frontporch 		= 21;
-		params->dsi.vertical_active_line		= FRAME_HEIGHT;
+		params->dsi.vertical_sync_active = 4;
+		params->dsi.vertical_backporch = 15;
+		params->dsi.vertical_frontporch = 21;
+		params->dsi.vertical_active_line = FRAME_HEIGHT;
 
-		params->dsi.horizontal_sync_active		= 26;
-		params->dsi.horizontal_backporch		= 40;
-		params->dsi.horizontal_frontporch		= 40;
-		params->dsi.horizontal_active_pixel 		= FRAME_WIDTH;
+		params->dsi.horizontal_sync_active = 26;
+		params->dsi.horizontal_backporch = 40;
+		params->dsi.horizontal_frontporch = 40;
+		params->dsi.horizontal_active_pixel = FRAME_WIDTH;
 	}
-
 
 	params->dsi.PLL_CLOCK = 234;
 	params->dsi.clk_lp_per_line_enable = 1;
 
-	//params->dsi.ssc_disable = 1;
-	params->dsi.cont_clock= 0;
+	params->dsi.cont_clock = 0;
 	params->dsi.DA_HS_EXIT = 1;
 	params->dsi.CLK_ZERO = 16;
 	params->dsi.HS_ZERO = 9;
@@ -4342,8 +4385,13 @@ static void lcm_get_params(LCM_PARAMS *params)
 	params->dsi.CLK_TRAIL = 5;
 	params->dsi.CLK_HS_POST = 8;
 	params->dsi.CLK_HS_EXIT = 6;
-	/* params->dsi.CLK_HS_PRPR = 1; */
-
+#if 0
+	params->dsi.esd_check_enable = 1;
+	params->dsi.customization_esd_check_enable = 1;
+	params->dsi.lcm_esd_check_table[0].cmd = 0x0A;
+	params->dsi.lcm_esd_check_table[0].count = 1;
+	params->dsi.lcm_esd_check_table[0].para_list[0] = 0x9C;
+#endif
 	params->dsi.TA_GO = 8;
 	params->dsi.TA_GET = 10;
 
@@ -4432,23 +4480,17 @@ static void lcm_reset(void)
 	MDELAY(5);
 }
 
-
 static void lcm_init(void)
 {
-
 #ifdef BUILD_LK
 	power_on();
 #endif
 
-
 #ifdef BUILD_LK
 
 	dprintf(CRITICAL,
-			 "[LK/LCM] %s enter, build type: %s, vendor type: %s\n",
-			 __func__,
-			 lcm_get_build_type(),
-			 lcm_get_vendor_type());
-
+		"[LK/LCM] %s enter, build type: %s, vendor type: %s\n",
+		__func__, lcm_get_build_type(), lcm_get_vendor_type());
 
 	if (vendor_id == FITI_KD)
 		init_karnak_fiti_kd_lcm();
@@ -4468,45 +4510,58 @@ static void lcm_init(void)
 #else
 	get_lcm_id();
 
-	pr_info("[jd936x] %s enter, skip power_on & init lcm since it's done by lk\n",
-			 __func__);
+	pr_info("[jd936x] %s skip power_on & init lcm since it's done by lk\n",
+		__func__);
 	pr_info("[jd936x] build type: %s, vendor type: %s\n",
-			 lcm_get_build_type(),
-			 lcm_get_vendor_type());
+		lcm_get_build_type(), lcm_get_vendor_type());
 #endif
 }
 
 static void lcm_suspend(void)
 {
+	#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[128];
+
+	snprintf(buf, sizeof(buf), "%s:lcd:suspend=1;CT;1:NR",
+		 __func__);
+	log_to_metrics(ANDROID_LOG_INFO, "LCDEvent", buf);
+	#endif
+
 	#ifdef BUILD_LK
-		dprintf(INFO, "[LK/LCM] %s\n", __func__);
+	dprintf(INFO, "[LK/LCM] %s\n", __func__);
 	#else
-		pr_info("[jd936x] %s\n", __func__);
+	pr_info("[jd936x] %s\n", __func__);
 	#endif
 
 	lcm_set_rst(0);
 
 	MDELAY(120);
-
 }
 
 static void lcm_resume(void)
 {
+	#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[128];
+
+	snprintf(buf, sizeof(buf), "%s:lcd:resume=1;CT;1:NR", __func__);
+	log_to_metrics(ANDROID_LOG_INFO, "LCDEvent", buf);
+	#endif
+
 	#ifdef BUILD_LK
-		dprintf(INFO, "[LK/LCM] %s\n", __func__);
+	dprintf(INFO, "[LK/LCM] %s\n", __func__);
 	#else
-		pr_info("[jd936x] %s\n", __func__);
+	pr_info("[jd936x] %s\n", __func__);
 	#endif
 
 	MDELAY(5);
 	lcm_reset();
 	get_lcm_id();
 
-	if(vendor_id == FITI_KD)
+	if (vendor_id == FITI_KD)
 		init_karnak_fiti_kd_lcm();
-	else if(vendor_id == FITI_KD_HSD)
+	else if (vendor_id == FITI_KD_HSD)
 		init_karnak_fiti_kd_hsd_lcm();
-	else if(vendor_id == FITI_KD2)
+	else if (vendor_id == FITI_KD2)
 		init_karnak_fiti_kd2_lcm();
 	else if (vendor_id == FITI_INX)
 		init_karnak_fiti_inx_lcm();
@@ -4516,19 +4571,20 @@ static void lcm_resume(void)
 		init_karnak_fiti_starry_lcm();
 	else
 		init_karnak_fiti_tpv_lcm(); /* TPV panel */
-
 }
 
-/* Seperate lcm_resume_power and lcm_reset from power_on func,
+/* Separate lcm_resume_power and lcm_reset from power_on func,
  * to meet turn on MIPI lanes after AVEE ready,
- * before Reset pin Low->High */
+ * before Reset pin Low->High
+ */
 static void lcm_resume_power(void)
 {
 	int ret;
-	/* GHGL_EN/GPIO110 - Control AVDD/AVEE/VDD,
-	 * their sequence rests entirely on NT50357 */
+/* GHGL_EN/GPIO110 - Control AVDD/AVEE/VDD,
+ * their sequence rests entirely on NT50357
+ */
 #ifdef BUILD_LK
-	dprintf(ALWAYS, "[LK/LCM] GPIO110 - Control AVDD/AVEE/VDD resume_power\n");
+	dprintf(ALWAYS, "[LK/LCM] GPIO110 - Control AVDD/AVEE/VDD power\n");
 	mt_set_gpio_mode(GPIO_LCD_LED_EN, GPIO_MODE_00);
 	mt_set_gpio_dir(GPIO_LCD_LED_EN, GPIO_DIR_OUT);
 	mt_set_gpio_out(GPIO_LCD_LED_EN, GPIO_OUT_ONE);
@@ -4539,7 +4595,7 @@ static void lcm_resume_power(void)
 	MDELAY(30);
 #else
 	pr_info("[jd936x] %s, GPIO110 - Control AVDD/AVEE/VDD\n",
-		 __func__);
+		__func__);
 	ret = regulator_enable(lcm_vio_ldo);
 	MDELAY(6);
 	lcm_set_pwr(1);
@@ -4547,8 +4603,7 @@ static void lcm_resume_power(void)
 #endif
 }
 
-
-/* Seperate lcm_suspend_power from lcm_suspend
+/* Separate lcm_suspend_power from lcm_suspend
  * to meet turn off MIPI lanes after after sleep in cmd,
  * then Reset High->Low, GHGL_EN High->Low
  */
@@ -4585,25 +4640,24 @@ static void lcm_suspend_power(void)
 
 static void lcm_set_backlight(unsigned int level)
 {
-       if(level > 255)
-       {
-           pr_debug("%s invalid brightness level=%d\n", __FUNCTION__, level);
-	   return ;
-       }
-       dsi_set_cmdq_V2(0x51, 1, ((unsigned char *)&level), 1);
+	if (level > 255) {
+		pr_debug("%s invalid brightness level=%d\n", __func__,
+			 level);
+		return;
+	}
+	dsi_set_cmdq_V2(0x51, 1, ((unsigned char *)&level), 1);
 }
 
 static void lcm_set_backlight_mode(unsigned int mode)
 {
-       if(mode > 3)
-       {
-           pr_debug("%s invalid CABC mode=%d\n", __FUNCTION__, mode);
-	   return ;
-       }
-       dsi_set_cmdq_V2(0x55, 1, ((unsigned char *)&mode), 1);
+	if (mode > 3) {
+		pr_debug("%s invalid CABC mode=%d\n", __func__, mode);
+		return;
+	}
+	dsi_set_cmdq_V2(0x55, 1, ((unsigned char *)&mode), 1);
 }
 
-LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_tpv_lcm_drv = {
+struct LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_tpv_lcm_drv = {
 	.name			= "jd9366_wxga_dsi_vdo_karnak_tpv",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,
@@ -4617,7 +4671,7 @@ LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_tpv_lcm_drv = {
 
 };
 
-LCM_DRIVER jd9367_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv = {
+struct LCM_DRIVER jd9367_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv = {
 	.name			= "jd9367_wxga_dsi_vdo_karnak_fiti_kd",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,
@@ -4630,7 +4684,7 @@ LCM_DRIVER jd9367_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv = {
 	.set_backlight_mode     = lcm_set_backlight_mode,
 };
 
-LCM_DRIVER jd9365_wxga_dsi_vdo_karnak_fiti_kd_hsd_lcm_drv = {
+struct LCM_DRIVER jd9365_wxga_dsi_vdo_karnak_fiti_kd_hsd_lcm_drv = {
 	.name			= "jd9365_wxga_dsi_vdo_karnak_fiti_kd_hsd",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,
@@ -4643,7 +4697,7 @@ LCM_DRIVER jd9365_wxga_dsi_vdo_karnak_fiti_kd_hsd_lcm_drv = {
 	.set_backlight_mode     = lcm_set_backlight_mode,
 };
 
-LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv = {
+struct LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv = {
 	.name			= "jd9366_wxga_dsi_vdo_karnak_fiti_kd",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,
@@ -4656,7 +4710,7 @@ LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_kd_lcm_drv = {
 	.set_backlight_mode     = lcm_set_backlight_mode,
 };
 
-LCM_DRIVER jd9367_wxga_dsi_vdo_karnak_fiti_inx_lcm_drv = {
+struct LCM_DRIVER jd9367_wxga_dsi_vdo_karnak_fiti_inx_lcm_drv = {
 	.name			= "jd9367_wxga_dsi_vdo_karnak_fiti_inx",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,
@@ -4669,7 +4723,7 @@ LCM_DRIVER jd9367_wxga_dsi_vdo_karnak_fiti_inx_lcm_drv = {
 	.set_backlight_mode     = lcm_set_backlight_mode,
 };
 
-LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_txd_lcm_drv = {
+struct LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_txd_lcm_drv = {
 	.name			= "jd9366_wxga_dsi_vdo_karnak_fiti_txd",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,
@@ -4682,7 +4736,7 @@ LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_txd_lcm_drv = {
 	.set_backlight_mode     = lcm_set_backlight_mode,
 };
 
-LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_starry_lcm_drv = {
+struct LCM_DRIVER jd9366_wxga_dsi_vdo_karnak_fiti_starry_lcm_drv = {
 	.name			= "jd9366_wxga_dsi_vdo_karnak_fiti_starry",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params     = lcm_get_params,

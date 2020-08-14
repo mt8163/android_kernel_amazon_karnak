@@ -1,0 +1,9 @@
+evb.*
+tb.*
+cv.*
+fpga.*
+.*_pre_.*
+.*_schem.*
+karnak.*
+abc123.*
+abf123.*

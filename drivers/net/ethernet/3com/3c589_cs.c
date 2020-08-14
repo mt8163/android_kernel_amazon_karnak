@@ -518,11 +518,8 @@ static int el3_open(struct net_device *dev)
 	netif_start_queue(dev);
 
 	tc589_reset(dev);
-	init_timer(&lp->media);
-	lp->media.function = media_check;
-	lp->media.data = (unsigned long) dev;
-	lp->media.expires = jiffies + HZ;
-	add_timer(&lp->media);
+	setup_timer(&lp->media, media_check, (unsigned long)dev);
+	mod_timer(&lp->media, jiffies + HZ);
 
 	dev_dbg(&link->dev, "%s: opened, status %4.4x.\n",
 	  dev->name, inw(dev->base_addr + EL3_STATUS));
@@ -537,7 +534,7 @@ static void el3_tx_timeout(struct net_device *dev)
 	netdev_warn(dev, "Transmit timed out!\n");
 	dump_status(dev);
 	dev->stats.tx_errors++;
-	dev->trans_start = jiffies; /* prevent tx timeout */
+	netif_trans_update(dev); /* prevent tx timeout */
 	/* Issue TX_RESET and TX_START commands. */
 	tc589_wait_for_completion(dev, TxReset);
 	outw(TxEnable, ioaddr + EL3_CMD);

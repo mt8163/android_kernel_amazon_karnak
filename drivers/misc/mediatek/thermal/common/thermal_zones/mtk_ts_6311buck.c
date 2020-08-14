@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2017 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -24,12 +24,14 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include "mt-plat/mtk_thermal_monitor.h"
-#include "mach/mt_thermal.h"
+#include "mach/mtk_thermal.h"
 #include <mt-plat/upmu_common.h>
 #include <mach/upmu_hw.h>
-#include <mach/mt_pmic_wrap.h>
+#include <mach/mtk_pmic_wrap.h>
 #include <mt6311.h>
-#include "mt_cpufreq.h"
+
+
+
 #include <tmp_6311buck.h>
 #include <linux/uidgid.h>
 #include <linux/slab.h>
@@ -39,7 +41,9 @@ static kgid_t gid = KGIDT_INIT(1000);
 static DEFINE_SEMAPHORE(sem_mutex);
 
 static unsigned int interval;	/* seconds, 0 : no auto polling */
-static int trip_temp[10] = { 125000, 110000, 100000, 90000, 80000, 70000, 65000, 60000, 55000, 50000 };
+static int trip_temp[10] = {
+		125000, 110000, 100000, 90000, 80000,
+		70000, 65000, 60000, 55000, 50000 };
 
 #if 1
 static unsigned int cl_dev_sysrst_state;
@@ -76,25 +80,25 @@ static char g_bind9[20] = "";
 #define mtkts6331_dprintk(fmt, args...)   \
 do {									\
 	if (mtkts6311_debug_log) {				\
-		pr_debug("[Thermal/PMIC_6311]" fmt, ##args); \
+		pr_debug("[Thermal/TZ/PMIC6311]" fmt, ##args); \
 	}								   \
 } while (0)
 
 #define PMIC6333_INT_TEMP_CUNT 0xF
 /* static __u32 tempsetting_count=0; */
-typedef struct {
+struct pmic6333_TEMPERATURE {
 	__s32 regsetting;
 	__s32 Temperature;
-} pmic6333_TEMPERATURE;
+};
 
 #define mtkts6311_dprintk(fmt, args...)   \
 do {									\
 	if (mtkts6311_debug_log) {				\
-		pr_debug("[Power/6311_Thermal]" fmt, ##args); \
+		pr_debug("[Thermal/TZ/PMIC6311]" fmt, ##args); \
 	}								   \
 } while (0)
 
-static int mtkts6311_get_temp(struct thermal_zone_device *thermal, unsigned long *t)
+static int mtkts6311_get_temp(struct thermal_zone_device *thermal, int *t)
 {
 	mtkts6311_dprintk("[mtkts6311_get_temp]\n");
 
@@ -104,18 +108,25 @@ static int mtkts6311_get_temp(struct thermal_zone_device *thermal, unsigned long
 	if (mt6311_get_pmu_thr_status() == 0x0) {/* T<110 */
 		*t = 60000;
 		mtkts6331_dprintk("mt6311_get_pmu_thr_status()==0x0\n");
-		if (mt6311_get_rg_thr_l_int_status() == 1) {	/* receive interrupt */
+		/* receive interrupt */
+		if (mt6311_get_rg_thr_l_int_status() == 1) {
 
 			*t = 80000;	/* 60 degree */
-			pr_debug("[Thermal/PMIC_6331]mt6311_get_thr_l_int_status()==1,6311 T=80 deg\n");
+			pr_debug(
+				"[Thermal/PMIC_6331]mt6311_get_thr_l_int_status()==1,6311 T=80 deg\n");
+
 			mt6311_clr_thr_l_int_status();
 
-			mt6311_set_rg_strup_thr_110_clr(1);	/* Set 0x28 bit 0=1 ;CLR 110 INT */
+			/* Set 0x28 bit 0=1 ;CLR 110 INT */
+			mt6311_set_rg_strup_thr_110_clr(1);
 			udelay(10);
 			mt6311_set_rg_strup_thr_110_clr(0);
 
-			mt6311_set_rg_strup_thr_110_irq_en(0);	/* Set 0x28 bit 2=0 ; disable 110 INT */
-			mt6311_set_rg_strup_thr_125_irq_en(1);	/* Set 0x28 bit 3=1; EN >125 INT */
+			/* Set 0x28 bit 2=0 ; disable 110 INT */
+			mt6311_set_rg_strup_thr_110_irq_en(0);
+
+			/* Set 0x28 bit 3=1; EN >125 INT */
+			mt6311_set_rg_strup_thr_125_irq_en(1);
 
 		}
 	} else if (mt6311_get_pmu_thr_status() == 0x1) {/* 110<T<125 */
@@ -126,32 +137,44 @@ static int mtkts6311_get_temp(struct thermal_zone_device *thermal, unsigned long
 		pr_debug("[Thermal/PMIC_6331]6311 pmic temp : 110<T<125 deg\n");
 	} else if (mt6311_get_pmu_thr_status() == 0x3) {/* 125<T<150 */
 		*t = 130000;	/* 130 degree */
-		/*pr_debug("[Thermal/PMIC_6331]mt6311_get_pmu_thr_status()==0x3\n"); */
+		/* pr_debug(
+		 * "[Thermal/PMIC_6331]mt6311_get_pmu_thr_status()==0x3\n");
+		 */
 		pr_debug("[Thermal/PMIC_6331]6311 pmic temp 125<T<150 deg\n");
 
-		if (mt6311_get_rg_thr_h_int_status() == 1) {	/* receive interrupt */
+		/* receive interrupt */
+		if (mt6311_get_rg_thr_h_int_status() == 1) {
 
 			*t = 135000;	/* 135 degree */
-			pr_debug("[Thermal/PMIC_6331]6311 pmic temp =140 deg\n");
-			/*pr_debug("[Thermal/PMIC_6331]mt6311_get_rg_thr_h_int_status()==1,6311 T=135 deg\n"); */
+			pr_debug(
+				"[Thermal/PMIC_6331]6311 pmic temp =140 deg\n");
+			/* pr_debug(
+			 * "[Thermal/PMIC_6331]mt6311_get_rg_thr_h_int_status()"
+			 * "==1,6311 T=135 deg\n");
+			 */
 
 			mtkts6331_dprintk("mt6311_get_thr_h_int_status()==1\n");
 			mt6311_clr_thr_h_int_status();
 
-			mt6311_set_rg_strup_thr_125_clr(1);	/* Set 0x28 bit 1=1 ;CLR 125 INT */
+			/* Set 0x28 bit 1=1 ;CLR 125 INT */
+			mt6311_set_rg_strup_thr_125_clr(1);
 			udelay(10);
 			mt6311_set_rg_strup_thr_125_clr(0);
 
-			mt6311_set_rg_strup_thr_125_irq_en(0);	/* Set 0x28 bit 3=0 ; disable 125 INT */
-			mt6311_set_rg_strup_thr_110_irq_en(1);	/* Set 0x28 bit 2=1; EN <110 INT */
+			/* Set 0x28 bit 3=0 ; disable 125 INT */
+			mt6311_set_rg_strup_thr_125_irq_en(0);
+
+			/* Set 0x28 bit 2=1; EN <110 INT */
+			mt6311_set_rg_strup_thr_110_irq_en(1);
 		}
 
 	}
-	mtkts6331_dprintk("6311 pmic temp =%lu\n", *t);
+	mtkts6331_dprintk("6311 pmic temp = %u\n", *t);
 	return 0;
 }
 
-static int mtkts6311_bind(struct thermal_zone_device *thermal, struct thermal_cooling_device *cdev)
+static int mtkts6311_bind(
+struct thermal_zone_device *thermal, struct thermal_cooling_device *cdev)
 {
 	int table_val = 0;
 
@@ -179,7 +202,8 @@ static int mtkts6311_bind(struct thermal_zone_device *thermal, struct thermal_co
 		return 0;
 
 	if (mtk_thermal_zone_bind_cooling_device(thermal, table_val, cdev)) {
-		mtkts6311_dprintk("[mtkts6311_bind] error binding cooling dev\n");
+		mtkts6311_dprintk(
+			"[mtkts6311_bind] error binding cooling dev\n");
 		return -EINVAL;
 	}
 
@@ -216,7 +240,8 @@ static int mtkts6311_unbind(struct thermal_zone_device *thermal,
 		return 0;
 
 	if (thermal_zone_unbind_cooling_device(thermal, table_val, cdev)) {
-		mtkts6311_dprintk("[mtkts6311_unbind] error unbinding cooling dev\n");
+		mtkts6311_dprintk(
+			"[mtkts6311_unbind] error unbinding cooling dev\n");
 		return -EINVAL;
 	}
 
@@ -224,33 +249,36 @@ static int mtkts6311_unbind(struct thermal_zone_device *thermal,
 	return 0;
 }
 
-static int mtkts6311_get_mode(struct thermal_zone_device *thermal, enum thermal_device_mode *mode)
+static int mtkts6311_get_mode(
+struct thermal_zone_device *thermal, enum thermal_device_mode *mode)
 {
 	*mode = (kernelmode) ? THERMAL_DEVICE_ENABLED : THERMAL_DEVICE_DISABLED;
 	return 0;
 }
 
-static int mtkts6311_set_mode(struct thermal_zone_device *thermal, enum thermal_device_mode mode)
+static int mtkts6311_set_mode(
+struct thermal_zone_device *thermal, enum thermal_device_mode mode)
 {
 	kernelmode = mode;
 	return 0;
 }
 
-static int mtkts6311_get_trip_type(struct thermal_zone_device *thermal, int trip,
-				   enum thermal_trip_type *type)
+static int mtkts6311_get_trip_type(
+struct thermal_zone_device *thermal, int trip, enum thermal_trip_type *type)
 {
 	*type = g_THERMAL_TRIP[trip];
 	return 0;
 }
 
-static int mtkts6311_get_trip_temp(struct thermal_zone_device *thermal, int trip,
-				   unsigned long *temp)
+static int mtkts6311_get_trip_temp(
+struct thermal_zone_device *thermal, int trip, int *temp)
 {
 	*temp = trip_temp[trip];
 	return 0;
 }
 
-static int mtkts6311_get_crit_temp(struct thermal_zone_device *thermal, unsigned long *temperature)
+static int mtkts6311_get_crit_temp(
+struct thermal_zone_device *thermal, int *temperature)
 {
 	*temperature = mtkts6311_TEMP_CRIT;
 	return 0;
@@ -269,59 +297,30 @@ static struct thermal_zone_device_ops mtkts6311_dev_ops = {
 };
 
 #if 1
-/*
-static int mtkts6311_get_max_state(struct thermal_cooling_device *cdev,
-				unsigned long *state)
-{
-	mtkts6311_dprintk("[mtkts6311_get_max_state]\n");
-	*state = 1;
-	return 0;
-}
-
-static int mtkts6311_get_cur_state(struct thermal_cooling_device *cdev,
-				unsigned long *state)
-{
-	mtkts6311_dprintk("[mtkts6311_get_cur_state]\n");
-    *state = "cpu01";
-
-	return 0;
-}
-
-static int mtkts6311_set_cur_state(struct thermal_cooling_device *cdev,
-				unsigned long state)
-{
-	mtkts6311_dprintk("[mtkts6311_set_cur_state]\n");
-	mt_cpufreq_thermal_protect(700);
-
-	return 0;
-
-}
-
-static struct thermal_cooling_device_ops mtktscpu_cooler_cpu_ops = {
-	.get_max_state = mtkts6311_get_max_state,
-	.get_cur_state = mtkts6311_get_cur_state,
-	.set_cur_state = mtkts6311_set_cur_state,
-};
-*/
 
 
-static int ts6311_sysrst_get_max_state(struct thermal_cooling_device *cdev, unsigned long *state)
+static int ts6311_sysrst_get_max_state(
+struct thermal_cooling_device *cdev, unsigned long *state)
 {
 	mtkts6311_dprintk("ts6311_sysrst_get_max_state!!!\n");
 	*state = 1;
 	return 0;
 }
 
-static int ts6311_sysrst_get_cur_state(struct thermal_cooling_device *cdev, unsigned long *state)
+static int ts6311_sysrst_get_cur_state(
+struct thermal_cooling_device *cdev, unsigned long *state)
 {
-	mtkts6311_dprintk("ts6311_sysrst_get_cur_state = %d\n", cl_dev_sysrst_state);
+	mtkts6311_dprintk("ts6311_sysrst_get_cur_state = %d\n",
+						cl_dev_sysrst_state);
 	*state = cl_dev_sysrst_state;
 	return 0;
 }
 
-static int ts6311_sysrst_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
+static int ts6311_sysrst_set_cur_state(
+struct thermal_cooling_device *cdev, unsigned long state)
 {
-	mtkts6311_dprintk("ts6311_sysrst_set_cur_state = %d\n", cl_dev_sysrst_state);
+	mtkts6311_dprintk("ts6311_sysrst_set_cur_state = %d\n",
+						cl_dev_sysrst_state);
 	cl_dev_sysrst_state = state;
 	if (cl_dev_sysrst_state == 1) {
 		pr_debug("Power/6311_Thermal: reset, reset, reset!!!");
@@ -329,11 +328,11 @@ static int ts6311_sysrst_set_cur_state(struct thermal_cooling_device *cdev, unsi
 		pr_debug("*****************************************");
 		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 
-#ifndef CONFIG_ARM64
-		BUG();
-#else
-		BUG();	/* To trigger data abort to reset the system for thermal protection. */
-#endif
+
+		/* To trigger data abort to reset the system
+		 * for thermal protection.
+		 */
+		*(unsigned int *)0x0 = 0xdead;
 	}
 	return 0;
 }
@@ -347,12 +346,13 @@ static struct thermal_cooling_device_ops mtkts6311_cooling_sysrst_ops = {
 
 int mtkts6311_register_cooler(void)
 {
-	cl_dev_sysrst = mtk_thermal_cooling_device_register("mtkts6311-sysrst", NULL,
-							    &mtkts6311_cooling_sysrst_ops);
-/*
-    cl_dev_6311 = mtk_thermal_cooling_device_register("cpu01", NULL,
-					&mtktscpu_cooler_cpu_ops);
-*/
+	cl_dev_sysrst = mtk_thermal_cooling_device_register(
+						"mtkts6311-sysrst", NULL,
+						&mtkts6311_cooling_sysrst_ops);
+	/*
+	 *    cl_dev_6311 = mtk_thermal_cooling_device_register("cpu01", NULL,
+	 *					&mtktscpu_cooler_cpu_ops);
+	 */
 	return 0;
 }
 
@@ -361,19 +361,35 @@ int mtkts6311_register_cooler(void)
 static int mtkts6311_read(struct seq_file *m, void *v)
 {
 
-	seq_printf(m, "[ mtkts6311_read] trip_0_temp=%d,trip_1_temp=%d,trip_2_temp=%d,trip_3_temp=%d,trip_4_temp=%d,\n",
-		trip_temp[0], trip_temp[1], trip_temp[2], trip_temp[3], trip_temp[4]);
-	seq_printf(m, "trip_5_temp=%d,trip_6_temp=%d,trip_7_temp=%d,trip_8_temp=%d,trip_9_temp=%d,\n",
-		trip_temp[5], trip_temp[6], trip_temp[7], trip_temp[8], trip_temp[9]);
-	seq_printf(m, "g_THERMAL_TRIP_0=%d,g_THERMAL_TRIP_1=%d,g_THERMAL_TRIP_2=%d,g_THERMAL_TRIP_3=%d\n",
-		g_THERMAL_TRIP[0], g_THERMAL_TRIP[1], g_THERMAL_TRIP[2], g_THERMAL_TRIP[3]);
-	seq_printf(m, "g_THERMAL_TRIP_4=%d, g_THERMAL_TRIP_5=%d,g_THERMAL_TRIP_6=%d,g_THERMAL_TRIP_7=%d\n",
-		g_THERMAL_TRIP[4], g_THERMAL_TRIP[5], g_THERMAL_TRIP[6], g_THERMAL_TRIP[7]);
+	seq_printf(m,
+		"[ mtkts6311_read] trip_0_temp=%d,trip_1_temp=%d,trip_2_temp=%d,trip_3_temp=%d,trip_4_temp=%d,\n",
+		trip_temp[0], trip_temp[1], trip_temp[2],
+		trip_temp[3], trip_temp[4]);
+
+	seq_printf(m,
+		"trip_5_temp=%d,trip_6_temp=%d,trip_7_temp=%d,trip_8_temp=%d,trip_9_temp=%d,\n",
+		trip_temp[5], trip_temp[6], trip_temp[7],
+		trip_temp[8], trip_temp[9]);
+
+	seq_printf(m,
+		"g_THERMAL_TRIP_0=%d,g_THERMAL_TRIP_1=%d,g_THERMAL_TRIP_2=%d,g_THERMAL_TRIP_3=%d\n",
+		g_THERMAL_TRIP[0], g_THERMAL_TRIP[1],
+		g_THERMAL_TRIP[2], g_THERMAL_TRIP[3]);
+
+	seq_printf(m,
+		"g_THERMAL_TRIP_4=%d, g_THERMAL_TRIP_5=%d,g_THERMAL_TRIP_6=%d,g_THERMAL_TRIP_7=%d\n",
+		g_THERMAL_TRIP[4], g_THERMAL_TRIP[5],
+		g_THERMAL_TRIP[6], g_THERMAL_TRIP[7]);
+
 	seq_printf(m, "g_THERMAL_TRIP_8=%d,g_THERMAL_TRIP_9=%d,\n",
 		g_THERMAL_TRIP[8], g_THERMAL_TRIP[9]);
-	seq_printf(m, "cooldev0=%s,cooldev1=%s,cooldev2=%s,cooldev3=%s,cooldev4=%s,\n",
+
+	seq_printf(m,
+		"cooldev0=%s,cooldev1=%s,cooldev2=%s,cooldev3=%s,cooldev4=%s,\n",
 		g_bind0, g_bind1, g_bind2, g_bind3, g_bind4);
-	seq_printf(m, "cooldev5=%s,cooldev6=%s,cooldev7=%s,cooldev8=%s,cooldev9=%s,time_ms=%d\n",
+
+	seq_printf(m,
+		"cooldev5=%s,cooldev6=%s,cooldev7=%s,cooldev8=%s,cooldev9=%s,time_ms=%d\n",
 		g_bind5, g_bind6, g_bind7, g_bind8, g_bind9, interval * 1000);
 
 	return 0;
@@ -382,8 +398,8 @@ static int mtkts6311_read(struct seq_file *m, void *v)
 static int mtkts6311_register_thermal(void);
 static void mtkts6311_unregister_thermal(void);
 
-static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, size_t count,
-			       loff_t *data)
+static ssize_t mtkts6311_write(
+struct file *file, const char __user *buffer, size_t count, loff_t *data)
 {
 	int len = 0, i;
 	struct mtkts6311_data {
@@ -395,12 +411,16 @@ static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, siz
 	char desc[512];
 	};
 
-	struct mtkts6311_data *ptr_mtkts6311_data = kmalloc(sizeof(*ptr_mtkts6311_data), GFP_KERNEL);
+	struct mtkts6311_data *ptr_mtkts6311_data
+					= kmalloc(sizeof(*ptr_mtkts6311_data),
+					GFP_KERNEL);
 
 	if (ptr_mtkts6311_data == NULL)
 		return -ENOMEM;
 
-	len = (count < (sizeof(ptr_mtkts6311_data->desc) - 1)) ? count : (sizeof(ptr_mtkts6311_data->desc) - 1);
+	len = (count < (sizeof(ptr_mtkts6311_data->desc) - 1)) ?
+				count : (sizeof(ptr_mtkts6311_data->desc) - 1);
+
 	if (copy_from_user(ptr_mtkts6311_data->desc, buffer, len)) {
 		kfree(ptr_mtkts6311_data);
 		return 0;
@@ -412,24 +432,38 @@ static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, siz
 	    (ptr_mtkts6311_data->desc,
 	     "%d %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d",
 		&num_trip,
-		&ptr_mtkts6311_data->trip[0], &ptr_mtkts6311_data->t_type[0], ptr_mtkts6311_data->bind0,
-		&ptr_mtkts6311_data->trip[1], &ptr_mtkts6311_data->t_type[1], ptr_mtkts6311_data->bind1,
-		&ptr_mtkts6311_data->trip[2], &ptr_mtkts6311_data->t_type[2], ptr_mtkts6311_data->bind2,
-		&ptr_mtkts6311_data->trip[3], &ptr_mtkts6311_data->t_type[3], ptr_mtkts6311_data->bind3,
-		&ptr_mtkts6311_data->trip[4], &ptr_mtkts6311_data->t_type[4], ptr_mtkts6311_data->bind4,
-		&ptr_mtkts6311_data->trip[5], &ptr_mtkts6311_data->t_type[5], ptr_mtkts6311_data->bind5,
-		&ptr_mtkts6311_data->trip[6], &ptr_mtkts6311_data->t_type[6], ptr_mtkts6311_data->bind6,
-		&ptr_mtkts6311_data->trip[7], &ptr_mtkts6311_data->t_type[7], ptr_mtkts6311_data->bind7,
-		&ptr_mtkts6311_data->trip[8], &ptr_mtkts6311_data->t_type[8], ptr_mtkts6311_data->bind8,
-		&ptr_mtkts6311_data->trip[9], &ptr_mtkts6311_data->t_type[9], ptr_mtkts6311_data->bind9,
+		&ptr_mtkts6311_data->trip[0], &ptr_mtkts6311_data->t_type[0],
+		ptr_mtkts6311_data->bind0,
+		&ptr_mtkts6311_data->trip[1], &ptr_mtkts6311_data->t_type[1],
+		ptr_mtkts6311_data->bind1,
+		&ptr_mtkts6311_data->trip[2], &ptr_mtkts6311_data->t_type[2],
+		ptr_mtkts6311_data->bind2,
+		&ptr_mtkts6311_data->trip[3], &ptr_mtkts6311_data->t_type[3],
+		ptr_mtkts6311_data->bind3,
+		&ptr_mtkts6311_data->trip[4], &ptr_mtkts6311_data->t_type[4],
+		ptr_mtkts6311_data->bind4,
+		&ptr_mtkts6311_data->trip[5], &ptr_mtkts6311_data->t_type[5],
+		ptr_mtkts6311_data->bind5,
+		&ptr_mtkts6311_data->trip[6], &ptr_mtkts6311_data->t_type[6],
+		ptr_mtkts6311_data->bind6,
+		&ptr_mtkts6311_data->trip[7], &ptr_mtkts6311_data->t_type[7],
+		ptr_mtkts6311_data->bind7,
+		&ptr_mtkts6311_data->trip[8], &ptr_mtkts6311_data->t_type[8],
+		ptr_mtkts6311_data->bind8,
+		&ptr_mtkts6311_data->trip[9], &ptr_mtkts6311_data->t_type[9],
+		ptr_mtkts6311_data->bind9,
 		&ptr_mtkts6311_data->time_msec) == 32) {
 		down(&sem_mutex);
-		mtkts6311_dprintk("[mtkts6311_write] mtkts6311_unregister_thermal\n");
+		mtkts6311_dprintk(
+			"[mtkts6311_write] mtkts6311_unregister_thermal\n");
 		mtkts6311_unregister_thermal();
 
 		if (num_trip < 0 || num_trip > 10) {
-			aee_kernel_warning_api(__FILE__, __LINE__, DB_OPT_DEFAULT, "mtkts6311_write",
+			#ifdef CONFIG_MTK_AEE_FEATURE
+			aee_kernel_warning_api(__FILE__, __LINE__,
+					DB_OPT_DEFAULT, "mtkts6311_write",
 					"Bad argument");
+			#endif
 			mtkts6311_dprintk("[mtkts6311_write] bad argument\n");
 			kfree(ptr_mtkts6311_data);
 			up(&sem_mutex);
@@ -439,8 +473,9 @@ static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, siz
 		for (i = 0; i < num_trip; i++)
 			g_THERMAL_TRIP[i] = ptr_mtkts6311_data->t_type[i];
 
-		g_bind0[0] = g_bind1[0] = g_bind2[0] = g_bind3[0] = g_bind4[0] = g_bind5[0] =
-		    g_bind6[0] = g_bind7[0] = g_bind8[0] = g_bind9[0] = '\0';
+		g_bind0[0] = g_bind1[0] = g_bind2[0] = g_bind3[0]
+			= g_bind4[0] = g_bind5[0] = g_bind6[0]
+			= g_bind7[0] = g_bind8[0] = g_bind9[0] = '\0';
 
 		for (i = 0; i < 20; i++) {
 			g_bind0[i] = ptr_mtkts6311_data->bind0[i];
@@ -455,15 +490,27 @@ static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, siz
 			g_bind9[i] = ptr_mtkts6311_data->bind9[i];
 		}
 
-		mtkts6311_dprintk("[mtkts6311_write] g_THERMAL_TRIP_0=%d,g_THERMAL_TRIP_1=%d,g_THERMAL_TRIP_2=%d,",
-			g_THERMAL_TRIP[0], g_THERMAL_TRIP[1], g_THERMAL_TRIP[2]);
-		mtkts6311_dprintk("g_THERMAL_TRIP_3=%d,g_THERMAL_TRIP_4=%d,g_THERMAL_TRIP_5=%d,g_THERMAL_TRIP_6=%d",
-			g_THERMAL_TRIP[3], g_THERMAL_TRIP[4], g_THERMAL_TRIP[5], g_THERMAL_TRIP[6]);
-		mtkts6311_dprintk("g_THERMAL_TRIP_7=%d,g_THERMAL_TRIP_8=%d,g_THERMAL_TRIP_9=%d,\n",
-			g_THERMAL_TRIP[7], g_THERMAL_TRIP[8], g_THERMAL_TRIP[9]);
-		mtkts6311_dprintk("[mtkts6311_write] cooldev0=%s,cooldev1=%s,cooldev2=%s,cooldev3=%s,cooldev4=%s,",
+		mtkts6311_dprintk(
+			"[mtkts6311_write] g_THERMAL_TRIP_0=%d,g_THERMAL_TRIP_1=%d,g_THERMAL_TRIP_2=%d,",
+			g_THERMAL_TRIP[0], g_THERMAL_TRIP[1],
+			g_THERMAL_TRIP[2]);
+
+		mtkts6311_dprintk(
+			"g_THERMAL_TRIP_3=%d,g_THERMAL_TRIP_4=%d,g_THERMAL_TRIP_5=%d,g_THERMAL_TRIP_6=%d",
+			g_THERMAL_TRIP[3], g_THERMAL_TRIP[4],
+			g_THERMAL_TRIP[5], g_THERMAL_TRIP[6]);
+
+		mtkts6311_dprintk(
+			"g_THERMAL_TRIP_7=%d,g_THERMAL_TRIP_8=%d,g_THERMAL_TRIP_9=%d,\n",
+			g_THERMAL_TRIP[7], g_THERMAL_TRIP[8],
+			g_THERMAL_TRIP[9]);
+
+		mtkts6311_dprintk(
+			"[mtkts6311_write] cooldev0=%s,cooldev1=%s,cooldev2=%s,cooldev3=%s,cooldev4=%s,",
 			g_bind0, g_bind1, g_bind2, g_bind3, g_bind4);
-		mtkts6311_dprintk("cooldev5=%s,cooldev6=%s,cooldev7=%s,cooldev8=%s,cooldev9=%s\n",
+
+		mtkts6311_dprintk(
+			"cooldev5=%s,cooldev6=%s,cooldev7=%s,cooldev8=%s,cooldev9=%s\n",
 			g_bind5, g_bind6, g_bind7, g_bind8, g_bind9);
 
 		for (i = 0; i < num_trip; i++)
@@ -471,13 +518,22 @@ static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, siz
 
 		interval = ptr_mtkts6311_data->time_msec / 1000;
 
-		mtkts6311_dprintk("[mtkts6311_write] trip_0_temp=%d,trip_1_temp=%d,trip_2_temp=%d,trip_3_temp=%d,",
+		mtkts6311_dprintk(
+			"[mtkts6311_write] trip_0_temp=%d,trip_1_temp=%d,trip_2_temp=%d,trip_3_temp=%d,",
 			trip_temp[0], trip_temp[1], trip_temp[2], trip_temp[3]);
-		mtkts6311_dprintk("trip_4_temp=%d,trip_5_temp=%d,trip_6_temp=%d,trip_7_temp=%d,trip_8_temp=%d,",
-			trip_temp[4], trip_temp[5], trip_temp[6], trip_temp[7], trip_temp[8]);
-		mtkts6311_dprintk("trip_9_temp=%d,time_ms=%d\n", trip_temp[9], interval * 1000);
 
-		mtkts6311_dprintk("[mtkts6311_write] mtkts6311_register_thermal\n");
+		mtkts6311_dprintk(
+			"trip_4_temp=%d,trip_5_temp=%d,trip_6_temp=%d,trip_7_temp=%d,trip_8_temp=%d,",
+			trip_temp[4], trip_temp[5], trip_temp[6],
+			trip_temp[7], trip_temp[8]);
+
+		mtkts6311_dprintk("trip_9_temp=%d,time_ms=%d\n",
+							trip_temp[9],
+							interval * 1000);
+
+		mtkts6311_dprintk(
+			"[mtkts6311_write] mtkts6311_register_thermal\n");
+
 		mtkts6311_register_thermal();
 		up(&sem_mutex);
 
@@ -497,7 +553,8 @@ static int mtkts6311_register_thermal(void)
 
 	/* trips : trip 0~2 */
 	thz_dev = mtk_thermal_zone_device_register("mtkts6311", num_trip, NULL,
-						   &mtkts6311_dev_ops, 0, 0, 0, interval * 1000);
+						&mtkts6311_dev_ops, 0, 0, 0,
+						interval * 1000);
 
 	return 0;
 }
@@ -527,8 +584,9 @@ static int mtkts63116333_thermal_zone_handler(void)
 {
 	int temp = 0;
 
-	mtkts6311_dprintk("[mtkts63116333_thermal_zone_handler] ,tempsetting_count=0x%x\n",
-			  tempsetting_count);
+	mtkts6311_dprintk(
+		"[mtkts63116333_thermal_zone_handler] ,tempsetting_count=0x%x\n",
+		tempsetting_count);
 
 	mt6333_6311_int = get_thermal_mt6333_6311_int_status();
 
@@ -541,26 +599,35 @@ static int mtkts63116333_thermal_zone_handler(void)
 
 		set_thermal_mt6333_6311_int_status(0);
 		/* increase temperature */
-		mt6333_set_rg_strup_ther_rg_th((pmic6333_temp_map[tempsetting_count].regsetting));
+		mt6333_set_rg_strup_ther_rg_th((
+			pmic6333_temp_map[tempsetting_count].regsetting));
 
-		mtkts6311_dprintk("increase change INT threshold to tempsetting_count=%d\n",
+		mtkts6311_dprintk(
+		"increase change INT threshold to tempsetting_count=%d\n",
 				  tempsetting_count);
 	} else {
 		tempsetting_count++;
 		if (tempsetting_count >= PMIC6333_INT_TEMP_CUNT) {
-			tempsetting_count = PMIC6333_INT_TEMP_CUNT;	/* 65 degree */
+			/* 65 degree */
+			tempsetting_count = PMIC6333_INT_TEMP_CUNT;
 			mtkts6311_dprintk("6333 temp is below 65 degree\n");
 		}
 		/* decrease temperature */
-		mt6333_set_rg_strup_ther_rg_th((pmic6333_temp_map[tempsetting_count].regsetting));
-		mtkts6311_dprintk("decrease change INT threshold to tempsetting_count=%d\n",
-				  tempsetting_count);
+		mt6333_set_rg_strup_ther_rg_th((
+			pmic6333_temp_map[tempsetting_count].regsetting));
+
+		mtkts6311_dprintk(
+			"decrease change INT threshold to tempsetting_count=%d\n",
+			tempsetting_count);
 	}
 
-	mtkts6311_dprintk("decrease pmic6333_temp_map[%d].regsetting=0x%x\n", tempsetting_count,
-			  pmic6333_temp_map[tempsetting_count].regsetting);
-	mtkts6311_dprintk("decrease pmic6333_temp_map[%d].Temperature=%d\n", tempsetting_count,
-			  pmic6333_temp_map[tempsetting_count].Temperature);
+	mtkts6311_dprintk("decrease pmic6333_temp_map[%d].regsetting=0x%x\n",
+			tempsetting_count,
+			pmic6333_temp_map[tempsetting_count].regsetting);
+
+	mtkts6311_dprintk("decrease pmic6333_temp_map[%d].Temperature=%d\n",
+			tempsetting_count,
+			pmic6333_temp_map[tempsetting_count].Temperature);
 
 	temp = pmic6333_temp_map[tempsetting_count].Temperature;
 
@@ -580,10 +647,10 @@ static void mtktspmic6311_thermal_zone_init(void)
 
 	mtkts6311_dprintk("[mtktspmic6311_thermal_zone_init]\n");
 
-	mt6311_set_rg_thrdet_sel(0);	/* 0x6C  bit0=0 ; thermal 110/125 EN */
-	mt6311_set_rg_strup_thr_125_irq_en(1);	/* 0x28  bit3=1 ; >125 INT EN */
-	mt6311_set_rg_strup_thr_110_irq_en(0);	/* 0x28  bit3=1 ; <110 INT DIS */
-	mt6311_set_rg_int_en(1);	/* 0x18  bit1=1 ; Top INT EN */
+	mt6311_set_rg_thrdet_sel(0); /* 0x6C  bit0=0 ; thermal 110/125 EN */
+	mt6311_set_rg_strup_thr_125_irq_en(1); /* 0x28  bit3=1 ; >125 INT EN */
+	mt6311_set_rg_strup_thr_110_irq_en(0); /* 0x28  bit3=1 ; <110 INT DIS */
+	mt6311_set_rg_int_en(1); /* 0x18  bit1=1 ; Top INT EN */
 
 	mt6311_clr_thr_l_int_status();
 	mt6311_clr_thr_h_int_status();
@@ -631,15 +698,18 @@ static int __init mtkts6311_init(void)
 
 	mtkts6311_dir = mtk_thermal_get_proc_drv_therm_dir_entry();
 	if (!mtkts6311_dir) {
-		mtkts6311_dprintk("[%s]: mkdir /proc/driver/thermal failed\n", __func__);
+		mtkts6311_dprintk("[%s]: mkdir /proc/driver/thermal failed\n",
+								__func__);
+
 	} else {
-		entry =
-		    proc_create("tz6311", S_IRUGO | S_IWUSR | S_IWGRP, mtkts6311_dir,
-				&mtkts6311_fops);
+		entry = proc_create("tz6311", 0664, mtkts6311_dir,
+							&mtkts6311_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
-		/* entry = proc_create("mtkts6311_log", S_IRUGO | S_IWUSR, mtkts6311_dir, &mtkts6311_log_fops); */
+		/* entry = proc_create("mtkts6311_log",
+		 * S_IRUGO | S_IWUSR, mtkts6311_dir, &mtkts6311_log_fops);
+		 */
 	}
 
 	return 0;

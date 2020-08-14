@@ -611,9 +611,7 @@ static int cpwd_probe(struct platform_device *op)
 	}
 
 	if (p->broken) {
-		init_timer(&cpwd_timer);
-		cpwd_timer.function	= cpwd_brokentimer;
-		cpwd_timer.data		= (unsigned long) p;
+		setup_timer(&cpwd_timer, cpwd_brokentimer, (unsigned long)p);
 		cpwd_timer.expires	= WD_BTIMEOUT;
 
 		pr_info("PLD defect workaround enabled for model %s\n",
@@ -679,7 +677,6 @@ MODULE_DEVICE_TABLE(of, cpwd_match);
 static struct platform_driver cpwd_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
-		.owner = THIS_MODULE,
 		.of_match_table = cpwd_match,
 	},
 	.probe		= cpwd_probe,

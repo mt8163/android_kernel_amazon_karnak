@@ -192,10 +192,11 @@ static int klsi_105_get_line_state(struct usb_serial_port *port,
 			     status_buf, KLSI_STATUSBUF_LEN,
 			     10000
 			     );
-	if (rc < 0)
-		dev_err(&port->dev, "Reading line status failed (error = %d)\n",
-			rc);
-	else {
+	if (rc != KLSI_STATUSBUF_LEN) {
+		dev_err(&port->dev, "reading line status failed: %d\n", rc);
+		if (rc >= 0)
+			rc = -EIO;
+	} else {
 		status = get_unaligned_le16(status_buf);
 
 		dev_info(&port->serial->dev->dev, "read status %x %x\n",
@@ -311,6 +312,7 @@ static int  klsi_105_open(struct tty_struct *tty, struct usb_serial_port *port)
 	if (rc < 0) {
 		dev_err(&port->dev, "Enabling read failed (error = %d)\n", rc);
 		retval = rc;
+		goto err_generic_close;
 	} else
 		dev_dbg(&port->dev, "%s - enabled reading\n", __func__);
 
@@ -337,6 +339,7 @@ err_disable_read:
 			     0, /* index */
 			     NULL, 0,
 			     KLSI_TIMEOUT);
+err_generic_close:
 	usb_serial_generic_close(port);
 err_free_cfg:
 	kfree(cfg);
@@ -487,7 +490,6 @@ static void klsi_105_set_termios(struct tty_struct *tty,
 		/* maybe this should be simulated by sending read
 		 * disable and read enable messages?
 		 */
-		;
 #if 0
 		priv->control_state &= ~(TIOCM_DTR | TIOCM_RTS);
 		mct_u232_set_modem_ctrl(serial, priv->control_state);
@@ -542,7 +544,6 @@ static void klsi_105_set_termios(struct tty_struct *tty,
 
 		mct_u232_set_line_ctrl(serial, priv->last_lcr);
 #endif
-		;
 	}
 	/*
 	 * Set flow control: well, I do not really now how to handle DTR/RTS.
@@ -561,7 +562,6 @@ static void klsi_105_set_termios(struct tty_struct *tty,
 			priv->control_state &= ~(TIOCM_DTR | TIOCM_RTS);
 		mct_u232_set_modem_ctrl(serial, priv->control_state);
 #endif
-		;
 	}
 	memcpy(cfg, &priv->cfg, sizeof(*cfg));
 	spin_unlock_irqrestore(&priv->lock, flags);

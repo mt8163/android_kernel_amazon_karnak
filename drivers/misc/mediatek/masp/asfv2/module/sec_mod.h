@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef SECMOD_H
 #define SECMOD_H
 
@@ -25,7 +38,9 @@ extern struct semaphore hacc_sem;
 /**************************************************************************
  *  EXTERNAL FUNCTION
  **************************************************************************/
-extern long sec_core_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+extern long sec_core_ioctl(struct file *file,
+			   unsigned int cmd,
+			   unsigned long arg);
 extern void sec_core_init(void);
 extern void sec_core_exit(void);
 #define NUM_SBC_PUBK_HASH           8

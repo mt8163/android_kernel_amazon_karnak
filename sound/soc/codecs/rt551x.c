@@ -28,6 +28,9 @@
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include  <linux/metricslog.h>
+#endif
 #include <linux/of_gpio.h>
 
 #include "rt551x.h"
@@ -43,6 +46,7 @@ static char fw_ver[VERSION_LEN];
 static int rt551x_dsp_set_idle_mode(struct snd_soc_codec *codec, int IdleMode);
 static int rt551x_set_dsp_mode(struct snd_soc_codec *codec, int DSPMode);
 static struct rt551x_priv *rt551x_pointer;
+static u32 hw_analog_gain = 0xd, hw_digital_gain = 0x892f;
 
 #define PRIO_TWO_BIGS_TWO_LITTLES_MAX_FREQ 11
 extern int set_dynamic_boost(int duration, int prio_mode);
@@ -143,8 +147,6 @@ static void rt5514_enable_dsp_clock(void *param)
 	/* 33.8MHz end */
 	regmap_write(rt551x->regmap, 0x18002124, 0x80220012);  //DFLL,reset DFLL
 	regmap_write(rt551x->regmap, 0x18002124, 0xc0220012);  //DFLL
-//	regmap_write(rt551x->regmap, 0x18002010, 0x10000772);  //(I2S) i2s format, TDM 4ch
-//	regmap_write(rt551x->regmap, 0x180020ac, 0x44000eee);  //(I2S) source sel; tdm_0=ad0, tdm_1=ad1
 #ifdef RT551X_USE_AMIC
 	regmap_write(rt551x->regmap, 0x18002190, 0x0002082f);  //(ad0)source of AMIC
 	regmap_write(rt551x->regmap, 0x18002194, 0x0002082f);  //(ad0)source of AMIC
@@ -420,7 +422,7 @@ static const struct reg_default rt5518_reg[] = {
 static void rt5518_enable_dsp_clock(void *param)
 {
 	struct rt551x_priv *rt551x = (struct rt551x_priv *)param;
-	int val;
+	int val = 0;
 	regmap_write(rt551x->regmap, 0x18002000,0x000010ec); //<SW reset> regtop reset
 	regmap_write(rt551x->regmap, 0x18002000,0x55185518); //<SW reset> minicore reset
 	regmap_write(rt551x->regmap, 0x18002000,0x23792379); //<SW reset> minitop reset
@@ -442,14 +444,14 @@ static void rt5518_enable_dsp_clock(void *param)
 	regmap_write(rt551x->regmap, 0x18002190,0x0002082f); //(ad0)source of AMIC_IN
 	regmap_write(rt551x->regmap, 0x18002194,0x0002082f); //(ad0)source of AMIC_IN
 	regmap_write(rt551x->regmap, 0x18002198,0x10000162); //(ad0)ad0 compensation gain = 0dB
-	regmap_write(rt551x->regmap, 0x180020D0,0x0000892f); //(ad2) gain=12dB
+	regmap_write(rt551x->regmap, 0x180020D0,hw_digital_gain & RT551X_HW_DIGITAL_GAIN_MASK); //(ad2) gain=12dB by default
 	regmap_read(rt551x->regmap, 0x18002ff0, &val);       //ID1, get chip version, 0 is 5518, 1 is 5518B
 	if ((val & RT551X_VENDOR_ID1_MASK) == RT551X_VENDOR_ID1_5518)
 		regmap_write(rt551x->regmap, 0x18001114,0x00000000); //dsp clk auto switch disable for 5518 chip
 	else // RT551X_VENDOR_ID1_5518B or later chip version
 		regmap_write(rt551x->regmap, 0x18001114,0x00000001); //dsp clk auto switch enable for 5518B and later chips
 	regmap_write(rt551x->regmap, 0x18001118,0x00000001); //reduce DSP power
-	regmap_write(rt551x->regmap, 0x18002228,0x0000014D); //fix INBUF bias (INBUF=15dB)
+	regmap_write(rt551x->regmap, 0x18002228,0x00000140 | (hw_analog_gain & RT551X_GAIN_INBUF_MASK)); //fix INBUF bias (INBUF=15dB by default)
 	regmap_write(rt551x->regmap, 0x1800221c,0x00171023); //fix ADC2 bias
 	regmap_write(rt551x->regmap, 0x18002218,0x0000aaa8); //fix ADC2 bias
 	regmap_write(rt551x->regmap, 0x18002204,0x02000345); //fix LDO16 bias
@@ -477,7 +479,7 @@ static void rt5518_enable_dsp(void *param)
 static void rt5518_reset(void *param)
 {
 	struct rt551x_priv *rt551x = (struct rt551x_priv *)param;
-	int val,val2;
+	int val = 0, val2 = 0;
 	regmap_write(rt551x->regmap, 0x18002000, 0x000010ec);  //<SW reset> regtop reset
 	regmap_write(rt551x->regmap, 0x18002000, 0x55185518);  //<SW reset> minicore reset
 	regmap_write(rt551x->regmap, 0x18002000, 0x23792379);  //<SW reset> minitop reset
@@ -606,6 +608,10 @@ static bool rt5518_readable_register(struct device *dev, unsigned int reg)
 	case RT551X_VENDOR_ID1:
 	case RT551X_VENDOR_ID2:
 	case RT551X_I2C_BYPASS:
+	case RT551X_MBIST_DRAM_1:
+	case RT551X_MBIST_DRAM_3:
+	case RT551X_MBIST_DRAM_5:
+
 		return true;
 	default:
 		return false;
@@ -675,16 +681,13 @@ static unsigned int rt551x_4byte_le_to_uint(const u8 *data)
 
 void rt551x_parse_header(struct snd_soc_codec *codec, const u8 *buf)
 {
-	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
-//	const struct firmware *fw = NULL;
 #ifdef CONFIG_SND_SOC_RT551X_TEST_ONLY
+	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 	u8 *cmp_buf = NULL;
 #endif
 	SMicFWHeader sMicFWHeader;
-//	SMicFWSubHeader sMicFWSubHeader;
 
 	int i, offset = 0;
-//	char file_path[32];
 
 	sMicFWHeader.Sync = rt551x_4byte_le_to_uint(buf);
 	dev_dbg(codec->dev, "sMicFWHeader.Sync = %08x\n", sMicFWHeader.Sync);
@@ -754,9 +757,11 @@ void rt551x_parse_header(struct snd_soc_codec *codec, const u8 *buf)
 #endif
 	}
 
+#ifdef CONFIG_SND_SOC_RT551X_TEST_ONLY
 exit_BinArray:
 	if (sMicFWHeader.BinArray)
 		kfree(sMicFWHeader.BinArray);
+#endif
 }
 
 static int rt551x_dsp_mode_put(struct snd_kcontrol *kcontrol,
@@ -778,7 +783,6 @@ static int rt551x_set_dsp_mode(struct snd_soc_codec *codec, int DSPMode)
 {
 	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 	const struct firmware *fw = NULL;
-	char file_path[32];
 	bool restart = false;
 
 	if  (rt551x->dsp_enabled == DSPMode)
@@ -788,7 +792,7 @@ static int rt551x_set_dsp_mode(struct snd_soc_codec *codec, int DSPMode)
 	{
 		return -EINVAL;
 	}
-	if (codec->dapm.bias_level == SND_SOC_BIAS_OFF)
+	if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_OFF)
 	{
 		if (rt551x->dsp_enabled && DSPMode)
 			restart = true;
@@ -1092,19 +1096,7 @@ static const struct snd_kcontrol_new rt551x_snd_controls[] = {
 	SOC_SINGLE_EXT("DSP Idle", SND_SOC_NOPM, 0, 1, 0,
 		rt551x_dsp_idle_get, rt551x_dsp_idle_put),
 };
-/*
-static int rt551x_is_sys_clk_from_pll(struct snd_soc_dapm_widget *source,
-			 struct snd_soc_dapm_widget *sink)
-{
-	struct snd_soc_codec *codec = source->codec;
-	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 
-	if (rt551x->sysclk_src == RT551X_SCLK_S_PLL1)
-		return 1;
-	else
-		return 0;
-}
-*/
 static int get_clk_info(int sclk, int rate)
 {
 	int i, pd[] = {1, 2, 3, 4, 6, 8, 12, 16};
@@ -1141,7 +1133,6 @@ static int rt551x_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_codec *codec = dai->codec;
 	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 	int pre_div, pre_div_adc, bclk_ms, frame_size;
-//	unsigned int val_len = 0;
 
 	rt551x->lrck = params_rate(params);
 	pre_div = get_clk_info(rt551x->sysclk, rt551x->lrck);
@@ -1183,8 +1174,6 @@ static int rt551x_hw_params(struct snd_pcm_substream *substream,
 
 static int rt551x_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
-//	struct snd_soc_codec *codec = dai->codec;
-//	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 	return 0;
 }
 
@@ -1237,7 +1226,7 @@ static int rt551x_pll_calc(const unsigned int freq_in,
 	const unsigned int freq_out, struct rt551x_pll_code *pll_code)
 {
 	int max_n = RT5514_PLL_N_MAX, max_m = RT5514_PLL_M_MAX;
-	int k, n = 0, m = 0, red, n_t, m_t, pll_out, in_t;
+	int k, n = 0, m = 0, red, n_t, m_t = 0, pll_out, in_t;
 	int out_t, red_t = abs(freq_out - freq_in);
 	bool m_bypass = false, k_bypass = false;
 
@@ -1365,8 +1354,6 @@ static int rt551x_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 static int rt551x_set_tdm_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
 			unsigned int rx_mask, int slots, int slot_width)
 {
-//	struct snd_soc_codec *codec = dai->codec;
-//	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 	return 0;
 }
 
@@ -1380,7 +1367,7 @@ static int rt551x_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_PREPARE:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_STANDBY) {
+		if (snd_soc_codec_get_bias_level(codec) == SND_SOC_BIAS_STANDBY) {
 			if (rt551x->dsp_enabled) {
 				rt551x->dsp_enabled = 0;
 				rt551x_reset(rt551x);
@@ -1399,7 +1386,6 @@ static int rt551x_set_bias_level(struct snd_soc_codec *codec,
 	default:
 		break;
 	}
-	codec->dapm.bias_level = level;
 
 	return 0;
 }
@@ -1436,7 +1422,7 @@ static int rt551x_suspend(struct snd_soc_codec *codec)
 	struct rt551x_priv *rt551x = snd_soc_codec_get_drvdata(codec);
 
 	rt551x->had_suspend = true;
-	//pr_info("%s -- OK!\n", __func__);
+	pr_info("%s -- OK!\n", __func__);
 	return 0;
 }
 
@@ -1483,8 +1469,10 @@ static struct snd_soc_codec_driver soc_codec_dev_rt551x = {
 	.resume = rt551x_resume,
 	.set_bias_level = rt551x_set_bias_level,
 	.idle_bias_off = true,
-	.controls = rt551x_snd_controls,
-	.num_controls = ARRAY_SIZE(rt551x_snd_controls),
+	.component_driver = {
+		.controls		= rt551x_snd_controls,
+		.num_controls		= ARRAY_SIZE(rt551x_snd_controls),
+	},
 };
 
 static const struct regmap_config precfg_regmap = {
@@ -1556,7 +1544,7 @@ static irqreturn_t rt551x_irq_handler(int irq, void *dev_id)
 
 static void rt551x_handler_work(struct work_struct *work)
 {
-	int iVdIdVal, wdg_status = 0;
+	int iVdIdVal = 0, wdg_status = 0;
 	struct rt551x_priv *rt551x = container_of(work, struct rt551x_priv, handler_work);
 
 	regcache_cache_bypass(rt551x->regmap, true);
@@ -1573,10 +1561,20 @@ static void rt551x_handler_work(struct work_struct *work)
 	if ((iVdIdVal == rt551x->chip_id) && !wdg_status)
 	{
 		schedule_work(&rt551x->hotword_work);
-		wake_lock_timeout(&rt551x->vad_wake, msecs_to_jiffies(800));
+		__pm_wakeup_event(&rt551x->vad_wake, 800);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel","RT5514_DSP_metrics_count","DSP_IRQ", 1, "count", NULL, VITALS_NORMAL);
+
+		log_to_metrics(ANDROID_LOG_INFO, "voice_dsp", "voice_dsp:def:DSP_IRQ=1;CT;1:NR");
+#endif
 	}
 	else
 	{
+#ifdef CONFIG_AMAZON_METRICS_LOG
+		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel","RT5514_DSP_metrics_count","DSP_Watchdog", 1, "count", NULL, VITALS_NORMAL);
+
+		log_to_metrics(ANDROID_LOG_INFO, "voice_dsp", "voice_dsp:def:DSP_Watchdog=1;CT;1:NR");
+#endif
 		schedule_work(&rt551x->watchdog_work);
 	}
 }
@@ -1589,7 +1587,7 @@ void rt551x_reset_duetoSPI(void)
 		return;
 	}
 	schedule_work(&rt551x_pointer->watchdog_work);
-	wake_lock_timeout(&rt551x_pointer->vad_wake, msecs_to_jiffies(3500));
+	__pm_wakeup_event(&rt551x_pointer->vad_wake, 3500);
 	pr_err("%s -- exit\n", __func__);
 }
 
@@ -1628,7 +1626,6 @@ static void rt551x_do_hotword_work(struct work_struct *work)
 static void rt551x_do_watchdog_work(struct work_struct *work)
 {
 	struct rt551x_priv *rt551x = container_of(work, struct rt551x_priv, watchdog_work);
-//	static const char * const wdg_event[] = { "ACTION=WATCHDOG", NULL };
 	int PrevDspMode;
 	int PrevIdleMode;
 	int ret;
@@ -1658,11 +1655,8 @@ static void rt551x_do_watchdog_work(struct work_struct *work)
 
 	rt551x_dsp_set_idle_mode(rt551x->codec, PrevIdleMode);
 	mutex_unlock(&rt551x->dspcontrol_lock);
-	//pr_info("%s -- send watchdog uevent!\n", __func__);
-	//kobject_uevent_env(&rt551x->codec->dev->kobj, KOBJ_CHANGE, wdg_event);
 }
 
-#ifdef CONFIG_SND_SOC_RT551X_TEST_ONLY
 static ssize_t rt551x_reg_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1789,11 +1783,11 @@ static ssize_t rt551x_i2c_reg_show(struct device *dev,
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt551x_priv *rt551x = i2c_get_clientdata(client);
 	int count = 0;
-	unsigned int i, value;
-	int ret;
+	unsigned int i = 0, value = 0;
+	int ret = 0;
 
 	regcache_cache_bypass(rt551x->regmap, true);
-	for (i = RT551X_BUFFER_VOICE_BASE; i <= RT551X_VENDOR_ID2; i+=4) {
+	for (i = RT551X_BUFFER_VOICE_BASE; i <= RT551X_MBIST_DRAM_5; i+=4) {
 		if (rt551x->fp_readable_register(NULL, i)) {
 
 			ret = regmap_read(rt551x->regmap, i, &value);
@@ -1891,6 +1885,8 @@ static ssize_t rt551x_debug_info_show(struct device *dev,
 	int ret, count = 0;
 	DBGBUF_MEM dbgBuf;
 
+	memset((void *)&dbgBuf, 0, sizeof(DBGBUF_MEM));
+
 	ret = rt551x_spi_burst_read(RT551X_DBG_BUF_ADDR, (u8 *)&dbgBuf, sizeof(DBGBUF_MEM));
 	if (!ret)
 		count = snprintf(buf, (ssize_t)PAGE_SIZE, "Warning! Failed to read DBG_BUF!\n");
@@ -1906,7 +1902,6 @@ static ssize_t rt551x_debug_info_show(struct device *dev,
 	return count;
 }
 static DEVICE_ATTR(rt551x_debug, 0444, rt551x_debug_info_show, NULL);
-#endif
 
 static int rt5518_hw_irq_init(struct rt551x_priv *rt551x)
 {
@@ -1958,11 +1953,29 @@ err_gpio:
 	return ret;
 }
 
+static void rt5518_gain_init(void)
+{
+	struct device_node *node = NULL;
+	int ret;
+	node = of_find_matching_node(node, rt551x_match_table);
+	if (node) {
+		// get the dsp hw analog/digital gain here
+		ret = of_property_read_u32(node, "hw_analog_gain", &hw_analog_gain);
+		if (ret < 0)
+			pr_info("%s: dsp hardware analog gain is not enabled, use 0xd (15dB) by default\n", __func__);
+		ret = of_property_read_u32(node, "hw_digital_gain", &hw_digital_gain);
+		if (ret < 0)
+			pr_info("%s: dsp hardware digital gain is not enabled, use 0x892f (12dB) by default\n", __func__);
+	}
+	else
+		pr_info("%s: dsp gain init cannot find matching node, use default setting\n", __func__);
+}
+
 static int rt551x_i2c_probe(struct i2c_client *i2c,
 		    const struct i2c_device_id *id)
 {
-	struct rt551x_priv *rt551x;
-	int ret;
+	struct rt551x_priv *rt551x = NULL;
+	int ret = 0;
 
 	rt551x = devm_kzalloc(&i2c->dev, sizeof(struct rt551x_priv),
 				GFP_KERNEL);
@@ -2012,18 +2025,17 @@ static int rt551x_i2c_probe(struct i2c_client *i2c,
 			rt551x->fp_enable_dsp_clock = rt5518_enable_dsp_clock;
 			rt551x->fp_readable_register = rt5518_readable_register;
 			ret = rt5518_hw_reset_gpio_init(rt551x);
-			if (ret) {
-				printk("%s: rt5518_hw_reset request failed!\n",__func__);
-			}
 			// return -ENODEV;
 	}
+	// get the gain settings from dts in the early stage
+	rt5518_gain_init();
+	// now reset the chip
 	rt551x_reset(rt551x);
-#ifdef CONFIG_SND_SOC_RT551X_TEST_ONLY
+
 	ret = device_create_file(&i2c->dev, &dev_attr_rt551x_reg);
 
 	if (ret < 0)
 		printk("failed to add rt551x_reg sysfs files\n");
-#endif
 
 	rt551x->had_suspend = false;
 
@@ -2044,9 +2056,7 @@ static int rt551x_i2c_probe(struct i2c_client *i2c,
 	INIT_WORK(&rt551x->watchdog_work, rt551x_do_watchdog_work);
 	INIT_WORK(&rt551x->handler_work, rt551x_handler_work);
 	mutex_init(&rt551x->dspcontrol_lock);
-	wake_lock_init(&rt551x->vad_wake, WAKE_LOCK_SUSPEND, "rt551x_wake");
-
-#ifdef CONFIG_SND_SOC_RT551X_TEST_ONLY
+	wakeup_source_init(&rt551x->vad_wake, "rt551x_wake");
 	ret = device_create_file(&i2c->dev, &dev_attr_rt551x_reg_i2c);
 	if (ret < 0)
 		printk("failed to add rt551x_reg_i2c sysfs files\n");
@@ -2061,14 +2071,15 @@ static int rt551x_i2c_probe(struct i2c_client *i2c,
 	ret = device_create_file(&i2c->dev, &dev_attr_rt551x_debug);
 	if (ret < 0)
 		printk("failed to add rt551x_debug sysfs files\n");
-#endif
 	memset((void *)&dbgBufLast, 0, sizeof(DBGBUF_MEM));
 	return snd_soc_register_codec(&i2c->dev, &soc_codec_dev_rt551x,
 			rt551x_dai, ARRAY_SIZE(rt551x_dai));
 }
 
-static int rt551x_i2c_supspend(struct i2c_client *client, pm_message_t mesg)
+#ifdef CONFIG_PM_SLEEP
+static int rt551x_i2c_supspend(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
 	struct rt551x_priv *rt551x = i2c_get_clientdata(client);
 	rt551x->i2c_suppend = true;
 	rt551x->dsp_had_irq = false;
@@ -2076,8 +2087,9 @@ static int rt551x_i2c_supspend(struct i2c_client *client, pm_message_t mesg)
 	return 0;
 }
 
-static int rt551x_i2c_resume(struct i2c_client *client)
+static int rt551x_i2c_resume(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
 	struct rt551x_priv *rt551x = i2c_get_clientdata(client);
 	rt551x->i2c_suppend = false;
 
@@ -2087,7 +2099,7 @@ static int rt551x_i2c_resume(struct i2c_client *client)
 	pr_info("%s -- OK!\n", __func__);
 	return 0;
 }
-
+#endif
 static int rt551x_i2c_remove(struct i2c_client *i2c)
 {
 	snd_soc_unregister_codec(&i2c->dev);
@@ -2103,19 +2115,18 @@ void rt551x_i2c_shutdown(struct i2c_client *client)
 	if (codec != NULL)
 		rt551x_set_bias_level(codec, SND_SOC_BIAS_OFF);
 }
-
+static SIMPLE_DEV_PM_OPS(rt551x_i2c_pm_ops, rt551x_i2c_supspend, rt551x_i2c_resume);
 struct i2c_driver rt551x_i2c_driver = {
 	.driver = {
 		.name = "rt551x",
 		.owner = THIS_MODULE,
+		.pm = &rt551x_i2c_pm_ops,
 #ifdef CONFIG_OF
 		.of_match_table = rt551x_match_table,
 #endif
 	},
 	.probe = rt551x_i2c_probe,
 	.remove   = rt551x_i2c_remove,
-	.suspend = rt551x_i2c_supspend,
-	.resume = rt551x_i2c_resume,
 	.shutdown = rt551x_i2c_shutdown,
 	.id_table = rt551x_i2c_id,
 };

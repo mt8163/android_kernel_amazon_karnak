@@ -878,6 +878,7 @@ struct fc_lport {
 	struct libfc_function_template tt;
 	u8			       link_up;
 	u8			       qfull;
+	u16			       vlan;
 	enum fc_lport_state	       state;
 	unsigned long		       boot_time;
 	struct fc_host_statistics      host_stats;
@@ -1105,8 +1106,6 @@ int fc_eh_abort(struct scsi_cmnd *);
 int fc_eh_device_reset(struct scsi_cmnd *);
 int fc_eh_host_reset(struct scsi_cmnd *);
 int fc_slave_alloc(struct scsi_device *);
-int fc_change_queue_depth(struct scsi_device *, int qdepth, int reason);
-int fc_change_queue_type(struct scsi_device *, int tag_type);
 
 /*
  * ELS/CT interface

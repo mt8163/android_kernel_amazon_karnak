@@ -1,13 +1,14 @@
 /*
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
 /*
  * Definitions for MT6381 als/ps sensor chip.
@@ -15,24 +16,26 @@
 #ifndef __MT6381_H__
 #define __MT6381_H__
 
-/** @brief  This macro defines the SRAM length used in #vsm_driver_read_sram() function.
-  */
+/** @brief  This macro defines the SRAM length used
+ *          in #vsm_driver_read_sram() function.
+ */
 #define VSM_SRAM_LEN    (384)
 
 /**
-  * @}
-  */
+ * @}
+ */
 
 /** @defgroup vsm_driver_enum Enum
-  * @{
-  */
+ * @{
+ */
 
 /** @brief  This enum defines the API return type.  */
 enum vsm_status_t {
 	VSM_STATUS_ERROR = -3,		 /**<  The function call failed. */
-	VSM_STATUS_INVALID_PARAMETER = -2,	    /**<  Invalid parameter was given. */
-	VSM_STATUS_UNINITIALIZED = -1,		    /**<  The VSM is not initialized. */
-	VSM_STATUS_OK = 0					    /**<  This function call was successful. */
+	/**<  Invalid parameter was given. */
+	VSM_STATUS_INVALID_PARAMETER = -2,
+	VSM_STATUS_UNINITIALIZED = -1, /**<  The VSM is not initialized. */
+	VSM_STATUS_OK = 0 /**<  This function call was successful. */
 };
 
 
@@ -48,7 +51,8 @@ enum vsm_signal_t {
 	VSM_SIGNAL_PPG1 = 0x00000010L,		/**<  PPG1 signal. */
 	VSM_SIGNAL_PPG2 = 0x00000020L,		/**<  PPG2 signal. */
 	VSM_SIGNAL_BISI = 0x00000040L,		/**<  BISI signal. */
-	VSM_SIGNAL_PPG1_512HZ = 0x00000080L,	/**<  PPG1 512 Hz signal for blood pressure. */
+	/**<  PPG1 512 Hz signal for blood pressure. */
+	VSM_SIGNAL_PPG1_512HZ = 0x00000080L,
 };
 
 /** @brief This enum defines the sram types. */
@@ -112,12 +116,12 @@ enum vsm_ekg_fps_t {
 };
 
 /**
-  * @}
-  */
+ * @}
+ */
 
 /** @defgroup hal_wdt_struct Struct
-  * @{
-  */
+ * @{
+ */
 
 /**
  * @brief This structure defines the bus data structure. For more information,

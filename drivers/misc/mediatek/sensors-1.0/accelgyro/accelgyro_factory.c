@@ -1,15 +1,16 @@
 /*
-* Copyright (C) 2016 MediaTek Inc.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+#define pr_fmt(fmt) "<ACCELGYRO_FAC> " fmt
 
 #include "inc/accelgyro_factory.h"
 
@@ -32,7 +33,8 @@ static int acc_factory_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
+				       unsigned long arg)
 {
 	void __user *ptr = (void __user *)arg;
 	int err = 0, status = 0;
@@ -42,12 +44,15 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsi
 	struct SENSOR_DATA sensor_data = {0};
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
+				 _IOC_SIZE(cmd));
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
+		err = !access_ok(VERIFY_READ, (void __user *)arg,
+				 _IOC_SIZE(cmd));
 
 	if (err) {
-		ACC_PR_ERR("access error: %08X, (%2d, %2d)\n", cmd, _IOC_DIR(cmd), _IOC_SIZE(cmd));
+		pr_err("access error: %08X, (%2d, %2d)\n", cmd,
+			   _IOC_DIR(cmd), _IOC_SIZE(cmd));
 		return -EFAULT;
 	}
 
@@ -55,49 +60,57 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsi
 	case GSENSOR_IOCTL_INIT:
 		if (copy_from_user(&flag, ptr, sizeof(flag)))
 			return -EFAULT;
-		if (accel_factory.fops != NULL && accel_factory.fops->enable_sensor != NULL) {
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->enable_sensor != NULL) {
 			err = accel_factory.fops->enable_sensor(flag, 5);
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_INIT fail!\n");
+				pr_err("GSENSOR_IOCTL_INIT fail!\n");
 				return -EINVAL;
 			}
-			ACC_LOG("GSENSOR_IOCTL_INIT, enable: %d, sample_period:%dms\n", flag, 5);
+			pr_debug("GSENSOR_IOCTL_INIT, en: %d, sam:%dms\n",
+				flag, 5);
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_INIT NULL\n");
+			pr_debug("GSENSOR_IOCTL_INIT NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GSENSOR_IOCTL_READ_CHIPINFO:
 		return 0;
 	case GSENSOR_IOCTL_READ_SENSORDATA:
-		if (accel_factory.fops != NULL && accel_factory.fops->get_data != NULL) {
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->get_data != NULL) {
 			err = accel_factory.fops->get_data(data_buf, &status);
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_READ_SENSORDATA read data fail!\n");
+				pr_debug("GSENSOR_SENSORDATA read fail!\n");
 				return -EINVAL;
 			}
-			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1], data_buf[2]);
-			ACC_LOG("GSENSOR_IOCTL_READ_SENSORDATA read strbuf : (%s)!\n", strbuf);
-			if (copy_to_user(ptr, strbuf, strlen(strbuf)+1))
+			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1],
+				data_buf[2]);
+			pr_debug("GSENSOR_READ_SENSORDATA read strbuf: (%s)!\n",
+				strbuf);
+			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
 				return -EFAULT;
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_READ_SENSORDATA NULL\n");
+			pr_debug("GSENSOR_IOCTL_READ_SENSORDATA NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GSENSOR_IOCTL_READ_RAW_DATA:
-		if (accel_factory.fops != NULL && accel_factory.fops->get_raw_data != NULL) {
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->get_raw_data != NULL) {
 			err = accel_factory.fops->get_raw_data(data_buf);
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_READ_RAW_DATA read data fail!\n");
+				pr_debug("GSENSOR_IOCTL_RAW_DATA read fail!\n");
 				return -EINVAL;
 			}
-			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1], data_buf[2]);
-			ACC_LOG("GSENSOR_IOCTL_READ_SENSORDATA_RAW read strbuf : (%s)!\n", strbuf);
-			if (copy_to_user(ptr, strbuf, strlen(strbuf)+1))
+			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1],
+				data_buf[2]);
+			pr_debug("GSENSOR_READ_RAW read strbuf : (%s)!\n",
+				strbuf);
+			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
 				return -EFAULT;
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_READ_SENSORDATA_RAW NULL\n");
+			pr_debug("GSENSOR_IOCTL_READ_SENSORDATA_RAW NULL\n");
 			return -EINVAL;
 		}
 		return 0;
@@ -107,42 +120,47 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsi
 		data_buf[0] = sensor_data.x;
 		data_buf[1] = sensor_data.y;
 		data_buf[2] = sensor_data.z;
-		ACC_LOG("GSENSOR_IOCTL_SET_CALI: (%d, %d, %d)!\n", data_buf[0], data_buf[1], data_buf[2]);
-		if (accel_factory.fops != NULL && accel_factory.fops->set_cali != NULL) {
+		pr_debug("GSENSOR_IOCTL_SET_CALI: (%d, %d, %d)!\n", data_buf[0],
+			data_buf[1], data_buf[2]);
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->set_cali != NULL) {
 			err = accel_factory.fops->set_cali(data_buf);
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_SET_CALI FAIL!\n");
+				pr_debug("GSENSOR_IOCTL_SET_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_SET_CALI NULL\n");
+			pr_debug("GSENSOR_IOCTL_SET_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GSENSOR_IOCTL_CLR_CALI:
-		if (accel_factory.fops != NULL && accel_factory.fops->clear_cali != NULL) {
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->clear_cali != NULL) {
 			err = accel_factory.fops->clear_cali();
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_CLR_CALI FAIL!\n");
+				pr_debug("GSENSOR_IOCTL_CLR_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_CLR_CALI NULL\n");
+			pr_debug("GSENSOR_IOCTL_CLR_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GSENSOR_IOCTL_GET_CALI:
-		if (accel_factory.fops != NULL && accel_factory.fops->get_cali != NULL) {
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->get_cali != NULL) {
 			err = accel_factory.fops->get_cali(data_buf);
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_GET_CALI FAIL!\n");
+				pr_debug("GSENSOR_IOCTL_GET_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_GET_CALI NULL\n");
+			pr_debug("GSENSOR_IOCTL_GET_CALI NULL\n");
 			return -EINVAL;
 		}
-		ACC_LOG("GSENSOR_IOCTL_GET_CALI: (%d, %d, %d)!\n", data_buf[0], data_buf[1], data_buf[2]);
+		pr_debug("GSENSOR_IOCTL_GET_CALI: (%d, %d, %d)!\n", data_buf[0],
+			data_buf[1], data_buf[2]);
 		sensor_data.x = data_buf[0];
 		sensor_data.y = data_buf[1];
 		sensor_data.z = data_buf[2];
@@ -150,19 +168,20 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsi
 			return -EFAULT;
 		return 0;
 	case GSENSOR_IOCTL_ENABLE_CALI:
-		if (accel_factory.fops != NULL && accel_factory.fops->enable_calibration != NULL) {
+		if (accel_factory.fops != NULL &&
+		    accel_factory.fops->enable_calibration != NULL) {
 			err = accel_factory.fops->enable_calibration();
 			if (err < 0) {
-				ACC_LOG("GSENSOR_IOCTL_ENABLE_CALI FAIL!\n");
+				pr_debug("GSENSOR_IOCTL_ENABLE_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			ACC_LOG("GSENSOR_IOCTL_ENABLE_CALI NULL\n");
+			pr_debug("GSENSOR_IOCTL_ENABLE_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	default:
-		ACC_PR_ERR("unknown IOCTL: 0x%08x\n", cmd);
+		pr_err("unknown IOCTL: 0x%08x\n", cmd);
 		return -ENOIOCTLCMD;
 	}
 
@@ -170,10 +189,13 @@ static long acc_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsi
 }
 
 #if IS_ENABLED(CONFIG_COMPAT)
-static long compat_acc_factory_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long compat_acc_factory_unlocked_ioctl(struct file *filp,
+					      unsigned int cmd,
+					      unsigned long arg)
 {
 	if (!filp->f_op || !filp->f_op->unlocked_ioctl) {
-		ACC_PR_ERR("compat_ion_ioctl file has no f_op or no f_op->unlocked_ioctl.\n");
+		pr_err(
+			"compat_ion_ioctl file has no f_op or no f_op->unlocked_ioctl.\n");
 		return -ENOTTY;
 	}
 
@@ -183,17 +205,17 @@ static long compat_acc_factory_unlocked_ioctl(struct file *filp, unsigned int cm
 	/* case COMPAT_GSENSOR_IOCTL_READ_GAIN: */
 	case COMPAT_GSENSOR_IOCTL_READ_RAW_DATA:
 	case COMPAT_GSENSOR_IOCTL_READ_SENSORDATA:
-		/* NVRAM will use below ioctl */
+	/* NVRAM will use below ioctl */
 	case COMPAT_GSENSOR_IOCTL_SET_CALI:
 	case COMPAT_GSENSOR_IOCTL_CLR_CALI:
 	case COMPAT_GSENSOR_IOCTL_GET_CALI:
 	case COMPAT_GSENSOR_IOCTL_ENABLE_CALI:
-		ACC_LOG("compat_ion_ioctl : GSENSOR_IOCTL_XXX command is 0x%x\n", cmd);
-		return filp->f_op->unlocked_ioctl(filp, cmd,
-						  (unsigned long)compat_ptr(arg));
+		pr_debug("compat_ion_ioctl : GSENSOR_IOCTL is 0x%x\n", cmd);
+		return filp->f_op->unlocked_ioctl(
+			filp, cmd, (unsigned long)compat_ptr(arg));
 
 	default:
-		ACC_PR_ERR("compat_ion_ioctl : No such command!! 0x%x\n", cmd);
+		pr_err("compat_ion_ioctl : No such command!! 0x%x\n", cmd);
 		return -ENOIOCTLCMD;
 	}
 }
@@ -225,7 +247,7 @@ int accel_factory_device_register(struct accel_factory_public *dev)
 	accel_factory.fops = dev->fops;
 	err = misc_register(&accel_factory_device);
 	if (err) {
-		ACC_LOG("accel_factory_device register failed\n");
+		pr_debug("accel_factory_device register failed\n");
 		err = -1;
 	}
 	return err;
@@ -255,7 +277,8 @@ static int gyro_factory_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd,
+					unsigned long arg)
 {
 	void __user *ptr = (void __user *)arg;
 	long err = 0;
@@ -266,13 +289,15 @@ static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd, uns
 	struct SENSOR_DATA sensor_data = {0};
 
 	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+		err = !access_ok(VERIFY_WRITE, (void __user *)arg,
+				 _IOC_SIZE(cmd));
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
-
+		err = !access_ok(VERIFY_READ, (void __user *)arg,
+				 _IOC_SIZE(cmd));
 
 	if (err) {
-		GYRO_PR_ERR("access error: %08X, (%2d, %2d)\n", cmd, _IOC_DIR(cmd), _IOC_SIZE(cmd));
+		pr_err("access error: %08X, (%2d, %2d)\n", cmd,
+			    _IOC_DIR(cmd), _IOC_SIZE(cmd));
 		return -EFAULT;
 	}
 
@@ -280,52 +305,66 @@ static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd, uns
 	case GYROSCOPE_IOCTL_INIT:
 		if (copy_from_user(&flag, ptr, sizeof(flag)))
 			return -EFAULT;
-		if (gyro_factory.fops != NULL && gyro_factory.fops->enable_sensor != NULL) {
-			err = gyro_factory.fops->enable_sensor(flag, 5); /* 5ms */
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->enable_sensor != NULL) {
+			err = gyro_factory.fops->enable_sensor(flag,
+							       5); /* 5ms */
 			if (err < 0) {
-				GYRO_LOG("GYROSCOPE_IOCTL_INIT fail!\n");
+				pr_debug("GYROSCOPE_IOCTL_INIT fail!\n");
 				return -EINVAL;
 			}
-			GYRO_LOG("GYROSCOPE_IOCTL_INIT, enable: %d, sample_period:%dms\n", flag, 5);
+			pr_debug(
+				"GYROSCOPE_IOCTL_INIT, enable: %d, sample_period:%dms\n",
+				flag, 5);
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_INIT NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_INIT NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GYROSCOPE_IOCTL_SMT_DATA:
 		smtRes = 1;
-		if (copy_to_user(ptr, &smtRes,  sizeof(smtRes)))
+		if (copy_to_user(ptr, &smtRes, sizeof(smtRes)))
 			return -EFAULT;
 		return 0;
 	case GYROSCOPE_IOCTL_READ_SENSORDATA:
-		if (gyro_factory.fops != NULL && gyro_factory.fops->get_data != NULL) {
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->get_data != NULL) {
 			err = gyro_factory.fops->get_data(data_buf, &status);
 			if (err < 0) {
-				GYRO_LOG("GYROSCOPE_IOCTL_READ_SENSORDATA read data fail!\n");
+				pr_debug(
+					"GYROSCOPE_IOCTL_READ_SENSORDATA read data fail!\n");
 				return -EINVAL;
 			}
-			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1], data_buf[2]);
-			GYRO_LOG("GYROSCOPE_IOCTL_READ_SENSORDATA read strbuf : (%s)!\n", strbuf);
-			if (copy_to_user(ptr, strbuf, strlen(strbuf)+1))
+			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1],
+				data_buf[2]);
+			pr_debug(
+				"GYROSCOPE_IOCTL_READ_SENSORDATA read strbuf : (%s)!\n",
+				strbuf);
+			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
 				return -EFAULT;
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_READ_SENSORDATA NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_READ_SENSORDATA NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GYROSCOPE_IOCTL_READ_SENSORDATA_RAW:
-		if (gyro_factory.fops != NULL && gyro_factory.fops->get_raw_data != NULL) {
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->get_raw_data != NULL) {
 			err = gyro_factory.fops->get_raw_data(data_buf);
 			if (err < 0) {
-				GYRO_LOG("GSENSOR_IOCTL_READ_RAW_DATA read data fail!\n");
+				pr_debug(
+					"GSENSOR_IOCTL_READ_RAW_DATA read data fail!\n");
 				return -EINVAL;
 			}
-			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1], data_buf[2]);
-			GYRO_LOG("GYROSCOPE_IOCTL_READ_SENSORDATA_RAW read strbuf : (%s)!\n", strbuf);
-			if (copy_to_user(ptr, strbuf, strlen(strbuf)+1))
+			sprintf(strbuf, "%x %x %x", data_buf[0], data_buf[1],
+				data_buf[2]);
+			pr_debug(
+				"GYROSCOPE_IOCTL_READ_SENSORDATA_RAW read strbuf : (%s)!\n",
+				strbuf);
+			if (copy_to_user(ptr, strbuf, strlen(strbuf) + 1))
 				return -EFAULT;
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_READ_SENSORDATA_RAW NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_READ_SENSORDATA_RAW NULL\n");
 			return -EINVAL;
 		}
 		return 0;
@@ -335,42 +374,47 @@ static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd, uns
 		data_buf[0] = sensor_data.x;
 		data_buf[1] = sensor_data.y;
 		data_buf[2] = sensor_data.z;
-		GYRO_LOG("GYROSCOPE_IOCTL_SET_CALI: (%d, %d, %d)!\n", data_buf[0], data_buf[1], data_buf[2]);
-		if (gyro_factory.fops != NULL && gyro_factory.fops->set_cali != NULL) {
+		pr_debug("GYROSCOPE_IOCTL_SET_CALI: (%d, %d, %d)!\n",
+			 data_buf[0], data_buf[1], data_buf[2]);
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->set_cali != NULL) {
 			err = gyro_factory.fops->set_cali(data_buf);
 			if (err < 0) {
-				GYRO_LOG("GYROSCOPE_IOCTL_SET_CALI FAIL!\n");
+				pr_debug("GYROSCOPE_IOCTL_SET_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_SET_CALI NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_SET_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GYROSCOPE_IOCTL_CLR_CALI:
-		if (gyro_factory.fops != NULL && gyro_factory.fops->clear_cali != NULL) {
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->clear_cali != NULL) {
 			err = gyro_factory.fops->clear_cali();
 			if (err < 0) {
-				GYRO_LOG("GYROSCOPE_IOCTL_CLR_CALI FAIL!\n");
+				pr_debug("GYROSCOPE_IOCTL_CLR_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_CLR_CALI NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_CLR_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	case GYROSCOPE_IOCTL_GET_CALI:
-		if (gyro_factory.fops != NULL && gyro_factory.fops->get_cali != NULL) {
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->get_cali != NULL) {
 			err = gyro_factory.fops->get_cali(data_buf);
 			if (err < 0) {
-				GYRO_LOG("GYROSCOPE_IOCTL_GET_CALI FAIL!\n");
+				pr_debug("GYROSCOPE_IOCTL_GET_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_GET_CALI NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_GET_CALI NULL\n");
 			return -EINVAL;
 		}
-		GYRO_LOG("GYROSCOPE_IOCTL_GET_CALI: (%d, %d, %d)!\n", data_buf[0], data_buf[1], data_buf[2]);
+		pr_debug("GYROSCOPE_IOCTL_GET_CALI: (%d, %d, %d)!\n",
+			 data_buf[0], data_buf[1], data_buf[2]);
 		sensor_data.x = data_buf[0];
 		sensor_data.y = data_buf[1];
 		sensor_data.z = data_buf[2];
@@ -378,19 +422,20 @@ static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd, uns
 			return -EFAULT;
 		return 0;
 	case GYROSCOPE_IOCTL_ENABLE_CALI:
-		if (gyro_factory.fops != NULL && gyro_factory.fops->enable_calibration != NULL) {
+		if (gyro_factory.fops != NULL &&
+		    gyro_factory.fops->enable_calibration != NULL) {
 			err = gyro_factory.fops->enable_calibration();
 			if (err < 0) {
-				GYRO_LOG("GYROSCOPE_IOCTL_ENABLE_CALI FAIL!\n");
+				pr_debug("GYROSCOPE_IOCTL_ENABLE_CALI FAIL!\n");
 				return -EINVAL;
 			}
 		} else {
-			GYRO_LOG("GYROSCOPE_IOCTL_ENABLE_CALI NULL\n");
+			pr_debug("GYROSCOPE_IOCTL_ENABLE_CALI NULL\n");
 			return -EINVAL;
 		}
 		return 0;
 	default:
-		GYRO_LOG("unknown IOCTL: 0x%08x\n", cmd);
+		pr_debug("unknown IOCTL: 0x%08x\n", cmd);
 		return -ENOIOCTLCMD;
 	}
 
@@ -398,10 +443,13 @@ static long gyro_factory_unlocked_ioctl(struct file *file, unsigned int cmd, uns
 }
 
 #if IS_ENABLED(CONFIG_COMPAT)
-static long compat_gyro_factory_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long compat_gyro_factory_unlocked_ioctl(struct file *filp,
+					       unsigned int cmd,
+					       unsigned long arg)
 {
 	if (!filp->f_op || !filp->f_op->unlocked_ioctl) {
-		GYRO_PR_ERR("compat_ion_ioctl file has no f_op or no f_op->unlocked_ioctl.\n");
+		pr_err(
+			"compat_ion_ioctl file has no f_op or no f_op->unlocked_ioctl.\n");
 		return -ENOTTY;
 	}
 
@@ -410,16 +458,18 @@ static long compat_gyro_factory_unlocked_ioctl(struct file *filp, unsigned int c
 	case COMPAT_GYROSCOPE_IOCTL_SMT_DATA:
 	case COMPAT_GYROSCOPE_IOCTL_READ_SENSORDATA_RAW:
 	case COMPAT_GYROSCOPE_IOCTL_READ_SENSORDATA:
-		/* NVRAM will use below ioctl */
+	/* NVRAM will use below ioctl */
 	case COMPAT_GYROSCOPE_IOCTL_SET_CALI:
 	case COMPAT_GYROSCOPE_IOCTL_CLR_CALI:
 	case COMPAT_GYROSCOPE_IOCTL_GET_CALI:
 	case COMPAT_GYROSCOPE_IOCTL_ENABLE_CALI:
-		GYRO_LOG("compat_ion_ioctl : GYROSCOPE_IOCTL_XXX command is 0x%x\n", cmd);
-		return filp->f_op->unlocked_ioctl(filp, cmd,
-						  (unsigned long)compat_ptr(arg));
+		pr_debug(
+			"compat_ion_ioctl : GYROSCOPE_IOCTL_XXX command is 0x%x\n",
+			cmd);
+		return filp->f_op->unlocked_ioctl(
+			filp, cmd, (unsigned long)compat_ptr(arg));
 	default:
-		GYRO_PR_ERR("compat_ion_ioctl : No such command!! 0x%x\n", cmd);
+		pr_err("compat_ion_ioctl : No such command!! 0x%x\n", cmd);
 		return -ENOIOCTLCMD;
 	}
 }
@@ -452,7 +502,7 @@ int gyro_factory_device_register(struct gyro_factory_public *dev)
 	gyro_factory.fops = dev->fops;
 	err = misc_register(&gyro_factory_device);
 	if (err) {
-		GYRO_LOG("gyro_factory_device register failed\n");
+		pr_debug("gyro_factory_device register failed\n");
 		err = -1;
 	}
 	return err;
@@ -464,5 +514,3 @@ int gyro_factory_device_deregister(struct gyro_factory_public *dev)
 	misc_deregister(&gyro_factory_device);
 	return 0;
 }
-
-

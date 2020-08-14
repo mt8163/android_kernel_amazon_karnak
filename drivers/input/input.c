@@ -29,6 +29,10 @@
 #include <linux/rcupdate.h>
 #include "input-compat.h"
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#endif
+
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@suse.cz>");
 MODULE_DESCRIPTION("Input core");
 MODULE_LICENSE("GPL");
@@ -39,6 +43,13 @@ static DEFINE_IDA(input_ida);
 
 static LIST_HEAD(input_dev_list);
 static LIST_HEAD(input_handler_list);
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+static atomic_t vol_up_counter;
+static atomic_t vol_down_counter;
+static atomic_t touch_tap_counter;
+struct delayed_work metrics_work;
+#endif
 
 /*
  * input_mutex protects access to both input_dev_list and input_handler_list.
@@ -100,23 +111,24 @@ static unsigned int input_to_handler(struct input_handle *handle,
 	struct input_value *end = vals;
 	struct input_value *v;
 
-	for (v = vals; v != vals + count; v++) {
-		if (handler->filter &&
-		    handler->filter(handle, v->type, v->code, v->value))
-			continue;
-		if (end != v)
-			*end = *v;
-		end++;
+	if (handler->filter) {
+		for (v = vals; v != vals + count; v++) {
+			if (handler->filter(handle, v->type, v->code, v->value))
+				continue;
+			if (end != v)
+				*end = *v;
+			end++;
+		}
+		count = end - vals;
 	}
 
-	count = end - vals;
 	if (!count)
 		return 0;
 
 	if (handler->events)
 		handler->events(handle, vals, count);
 	else if (handler->event)
-		for (v = vals; v != end; v++)
+		for (v = vals; v != vals + count; v++)
 			handler->event(handle, v->type, v->code, v->value);
 
 	return count;
@@ -143,21 +155,24 @@ static void input_pass_values(struct input_dev *dev,
 		count = input_to_handler(handle, vals, count);
 	} else {
 		list_for_each_entry_rcu(handle, &dev->h_list, d_node)
-			if (handle->open)
+			if (handle->open) {
 				count = input_to_handler(handle, vals, count);
+				if (!count)
+					break;
+			}
 	}
 
 	rcu_read_unlock();
 
-	add_input_randomness(vals->type, vals->code, vals->value);
-
 	/* trigger auto repeat for key events */
-	for (v = vals; v != vals + count; v++) {
-		if (v->type == EV_KEY && v->value != 2) {
-			if (v->value)
-				input_start_autorepeat(dev, v->code);
-			else
-				input_stop_autorepeat(dev);
+	if (test_bit(EV_REP, dev->evbit) && test_bit(EV_KEY, dev->evbit)) {
+		for (v = vals; v != vals + count; v++) {
+			if (v->type == EV_KEY && v->value != 2) {
+				if (v->value)
+					input_start_autorepeat(dev, v->code);
+				else
+					input_stop_autorepeat(dev);
+			}
 		}
 	}
 }
@@ -365,9 +380,10 @@ static int input_get_disposition(struct input_dev *dev,
 static void input_handle_event(struct input_dev *dev,
 			       unsigned int type, unsigned int code, int value)
 {
-	int disposition;
+	int disposition = input_get_disposition(dev, type, code, &value);
 
-	disposition = input_get_disposition(dev, type, code, &value);
+	if (disposition != INPUT_IGNORE_EVENT && type != EV_SYN)
+		add_input_randomness(type, code, value);
 
 	if ((disposition & INPUT_PASS_TO_DEVICE) && dev->event)
 		dev->event(dev, type, code, value);
@@ -430,6 +446,16 @@ void input_event(struct input_dev *dev,
 		spin_lock_irqsave(&dev->event_lock, flags);
 		input_handle_event(dev, type, code, value);
 		spin_unlock_irqrestore(&dev->event_lock, flags);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+		if (type == EV_ABS && code == ABS_MT_POSITION_Y)
+			atomic_inc(&touch_tap_counter);
+
+		if (type == EV_KEY && code == KEY_VOLUMEDOWN)
+			atomic_inc(&vol_down_counter);
+
+		if (type == EV_KEY && code == KEY_VOLUMEUP)
+			atomic_inc(&vol_up_counter);
+#endif
 	}
 }
 EXPORT_SYMBOL(input_event);
@@ -668,19 +694,19 @@ EXPORT_SYMBOL(input_close_device);
  */
 static void input_dev_release_keys(struct input_dev *dev)
 {
-	int code;
 	bool need_sync = false;
+	int code;
 
 	if (is_event_supported(EV_KEY, dev->evbit, EV_MAX)) {
-		for (code = 0; code <= KEY_MAX; code++) {
-			if (is_event_supported(code, dev->keybit, KEY_MAX) &&
-			    __test_and_clear_bit(code, dev->key)) {
-				input_pass_event(dev, EV_KEY, code, 0);
-				need_sync = true;
-			}
+		for_each_set_bit(code, dev->key, KEY_CNT) {
+			input_pass_event(dev, EV_KEY, code, 0);
+			need_sync = true;
 		}
+
 		if (need_sync)
 			input_pass_event(dev, EV_SYN, SYN_REPORT, 1);
+
+		memset(dev->key, 0, sizeof(dev->key));
 	}
 }
 
@@ -1009,7 +1035,7 @@ static int input_bits_to_string(char *buf, int buf_size,
 {
 	int len = 0;
 
-	if (INPUT_COMPAT_TEST) {
+	if (in_compat_syscall()) {
 		u32 dword = bits >> 32;
 		if (dword || !skip_empty)
 			len += snprintf(buf, buf_size, "%x ", dword);
@@ -1623,10 +1649,7 @@ static int input_dev_uevent(struct device *device, struct kobj_uevent_env *env)
 		if (!test_bit(EV_##type, dev->evbit))			\
 			break;						\
 									\
-		for (i = 0; i < type##_MAX; i++) {			\
-			if (!test_bit(i, dev->bits##bit))		\
-				continue;				\
-									\
+		for_each_set_bit(i, dev->bits##bit, type##_CNT) {	\
 			active = test_bit(i, dev->bits);		\
 			if (!active && !on)				\
 				continue;				\
@@ -1778,7 +1801,7 @@ EXPORT_SYMBOL_GPL(input_class);
  */
 struct input_dev *input_allocate_device(void)
 {
-	static atomic_t input_no = ATOMIC_INIT(0);
+	static atomic_t input_no = ATOMIC_INIT(-1);
 	struct input_dev *dev;
 
 	dev = kzalloc(sizeof(struct input_dev), GFP_KERNEL);
@@ -1793,7 +1816,7 @@ struct input_dev *input_allocate_device(void)
 		INIT_LIST_HEAD(&dev->node);
 
 		dev_set_name(&dev->dev, "input%lu",
-			     (unsigned long) atomic_inc_return(&input_no) - 1);
+			     (unsigned long)atomic_inc_return(&input_no));
 
 		__module_get(THIS_MODULE);
 	}
@@ -1977,18 +2000,12 @@ static unsigned int input_estimate_events_per_packet(struct input_dev *dev)
 
 	events = mt_slots + 1; /* count SYN_MT_REPORT and SYN_REPORT */
 
-	for (i = 0; i < ABS_CNT; i++) {
-		if (test_bit(i, dev->absbit)) {
-			if (input_is_mt_axis(i))
-				events += mt_slots;
-			else
-				events++;
-		}
-	}
+	if (test_bit(EV_ABS, dev->evbit))
+		for_each_set_bit(i, dev->absbit, ABS_CNT)
+			events += input_is_mt_axis(i) ? mt_slots : 1;
 
-	for (i = 0; i < REL_CNT; i++)
-		if (test_bit(i, dev->relbit))
-			events++;
+	if (test_bit(EV_REL, dev->evbit))
+		events += bitmap_weight(dev->relbit, REL_CNT);
 
 	/* Make room for KEY and MSC events */
 	events += 7;
@@ -2046,6 +2063,23 @@ static void devm_input_device_unregister(struct device *dev, void *res)
 		__func__, dev_name(&input->dev));
 	__input_unregister_device(input);
 }
+
+/**
+ * input_enable_softrepeat - enable software autorepeat
+ * @dev: input device
+ * @delay: repeat delay
+ * @period: repeat period
+ *
+ * Enable software autorepeat on the input device.
+ */
+void input_enable_softrepeat(struct input_dev *dev, int delay, int period)
+{
+	dev->timer.data = (unsigned long) dev;
+	dev->timer.function = input_repeat_key;
+	dev->rep[REP_DELAY] = delay;
+	dev->rep[REP_PERIOD] = period;
+}
+EXPORT_SYMBOL(input_enable_softrepeat);
 
 /**
  * input_register_device - register device with input core
@@ -2111,12 +2145,8 @@ int input_register_device(struct input_dev *dev)
 	 * If delay and period are pre-set by the driver, then autorepeating
 	 * is handled by the driver itself and we don't do it in input.c.
 	 */
-	if (!dev->rep[REP_DELAY] && !dev->rep[REP_PERIOD]) {
-		dev->timer.data = (long) dev;
-		dev->timer.function = input_repeat_key;
-		dev->rep[REP_DELAY] = 250;
-		dev->rep[REP_PERIOD] = 33;
-	}
+	if (!dev->rep[REP_DELAY] && !dev->rep[REP_PERIOD])
+		input_enable_softrepeat(dev, 250, 33);
 
 	if (!dev->getkeycode)
 		dev->getkeycode = input_default_getkeycode;
@@ -2255,7 +2285,7 @@ EXPORT_SYMBOL(input_unregister_handler);
  *
  * Iterate over @bus's list of devices, and call @fn for each, passing
  * it @data and stop when @fn returns a non-zero value. The function is
- * using RCU to traverse the list and therefore may be usind in atonic
+ * using RCU to traverse the list and therefore may be using in atomic
  * contexts. The @fn callback is invoked from RCU critical section and
  * thus must not sleep.
  */
@@ -2404,6 +2434,36 @@ void input_free_minor(unsigned int minor)
 }
 EXPORT_SYMBOL(input_free_minor);
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+static void metrics_count_work(struct work_struct *work)
+{
+	char buf[128] = {0};
+	struct delayed_work *dw = container_of(work, struct delayed_work, work);
+
+	snprintf(buf, sizeof(buf),
+		"input_event:def:touch_tap=%d;CT;1:NA",
+		atomic_xchg(&touch_tap_counter, 0));
+
+	log_to_metrics(ANDROID_LOG_INFO, "InputEvent", buf);
+	memset(buf, 0, sizeof(buf));
+
+	snprintf(buf, sizeof(buf),
+		"input_event:def:key_voldown=%d;CT;1:NA",
+		atomic_xchg(&vol_down_counter, 0));
+
+	log_to_metrics(ANDROID_LOG_INFO, "InputEvent", buf);
+	memset(buf, 0, sizeof(buf));
+
+	snprintf(buf, sizeof(buf),
+		"input_event:def:key_volup=%d;CT;1:NA",
+		atomic_xchg(&vol_up_counter, 0));
+
+	log_to_metrics(ANDROID_LOG_INFO, "InputEvent", buf);
+
+	schedule_delayed_work(dw, 7200*HZ);
+}
+#endif
+
 static int __init input_init(void)
 {
 	int err;
@@ -2424,6 +2484,12 @@ static int __init input_init(void)
 		pr_err("unable to register char major %d", INPUT_MAJOR);
 		goto fail2;
 	}
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	INIT_DELAYED_WORK(&metrics_work, metrics_count_work);
+	schedule_delayed_work(&metrics_work, 0);
+#endif
+
 	return 0;
 
  fail2:	input_proc_exit();
@@ -2437,6 +2503,11 @@ static void __exit input_exit(void)
 	unregister_chrdev_region(MKDEV(INPUT_MAJOR, 0),
 				 INPUT_MAX_CHAR_DEVICES);
 	class_unregister(&input_class);
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	cancel_delayed_work(&metrics_work);
+#endif
+
 }
 
 subsys_initcall(input_init);

@@ -53,17 +53,7 @@ static int lp55xx_detect_device(struct lp55xx_chip *chip)
 	struct lp55xx_device_config *cfg = chip->cfg;
 	u8 addr = cfg->enable.addr;
 	u8 val  = cfg->enable.val;
-	u8 buf;
 	int ret;
-
-	ret = lp55xx_read(chip, addr, &buf);
-	if (ret)
-		return ret;
-
-	if (buf == val)
-		return 0;
-
-	val |= buf;
 
 	ret = lp55xx_write(chip, addr, val);
 	if (ret)
@@ -71,11 +61,11 @@ static int lp55xx_detect_device(struct lp55xx_chip *chip)
 
 	usleep_range(1000, 2000);
 
-	ret = lp55xx_read(chip, addr, &buf);
+	ret = lp55xx_read(chip, addr, &val);
 	if (ret)
 		return ret;
 
-	if (val != buf)
+	if (val != cfg->enable.val)
 		return -ENODEV;
 
 	return 0;
@@ -144,13 +134,14 @@ static struct attribute *lp55xx_led_attrs[] = {
 };
 ATTRIBUTE_GROUPS(lp55xx_led);
 
-static void lp55xx_set_brightness(struct led_classdev *cdev,
+static int lp55xx_set_brightness(struct led_classdev *cdev,
 			     enum led_brightness brightness)
 {
 	struct lp55xx_led *led = cdev_to_lp55xx_led(cdev);
+	struct lp55xx_device_config *cfg = led->chip->cfg;
 
-	led->brightness_new = (u8)brightness;
-	schedule_work(&led->brightness_work);
+	led->brightness = (u8)brightness;
+	return cfg->brightness_fn(led);
 }
 
 static int lp55xx_init_led(struct lp55xx_led *led,
@@ -182,7 +173,7 @@ static int lp55xx_init_led(struct lp55xx_led *led,
 		return -EINVAL;
 	}
 
-	led->cdev.brightness_set = lp55xx_set_brightness;
+	led->cdev.brightness_set_blocking = lp55xx_set_brightness;
 	led->cdev.groups = lp55xx_led_groups;
 
 	if (pdata->led_config[chan].name) {
@@ -210,7 +201,7 @@ static void lp55xx_firmware_loaded(const struct firmware *fw, void *context)
 
 	if (!fw) {
 		dev_err(dev, "firmware request failed\n");
-		return;
+		goto out;
 	}
 
 	/* handling firmware data is chip dependent */
@@ -223,9 +214,9 @@ static void lp55xx_firmware_loaded(const struct firmware *fw, void *context)
 
 	mutex_unlock(&chip->lock);
 
+out:
 	/* firmware should be released for other channel use */
 	release_firmware(chip->fw);
-	chip->fw = NULL;
 }
 
 static int lp55xx_request_firmware(struct lp55xx_chip *chip)
@@ -233,7 +224,7 @@ static int lp55xx_request_firmware(struct lp55xx_chip *chip)
 	const char *name = chip->cl->name;
 	struct device *dev = &chip->cl->dev;
 
-	return request_firmware_nowait(THIS_MODULE, true, name, dev,
+	return request_firmware_nowait(THIS_MODULE, false, name, dev,
 				GFP_KERNEL, chip, lp55xx_firmware_loaded);
 }
 
@@ -285,17 +276,8 @@ static ssize_t lp55xx_store_engine_select(struct device *dev,
 
 static inline void lp55xx_run_engine(struct lp55xx_chip *chip, bool start)
 {
-	if (chip->cfg->run_engine) {
+	if (chip->cfg->run_engine)
 		chip->cfg->run_engine(chip, start);
-		chip->cache_inv = 0xFF; /* Invalidate brightness cache */
-	}
-}
-
-static inline bool lp55xx_is_engine_active(struct lp55xx_chip *chip)
-{
-	if (chip->cfg->is_engine_active)
-		return chip->cfg->is_engine_active(chip);
-	return false;
 }
 
 static ssize_t lp55xx_store_engine_run(struct device *dev,
@@ -416,22 +398,6 @@ int lp55xx_init_device(struct lp55xx_chip *chip)
 	if (!pdata || !cfg)
 		return -EINVAL;
 
-	ret = lp55xx_detect_device(chip);
-	if (ret) {
-		dev_err(dev, "detect failed, trying reset: %d\n", ret);
-		goto reset_dev;
-	}
-
-	if (!lp55xx_is_engine_active(chip)) {
-		dev_err(dev, "no active pattern, resetting device\n");
-		goto reset_dev;
-	}
-
-	dev_dbg(dev, "lp55xx already configured, skipping reset\n");
-
-	return 0;
-
-reset_dev:
 	if (gpio_is_valid(pdata->enable_gpio)) {
 		ret = devm_gpio_request_one(dev, pdata->enable_gpio,
 					    GPIOF_DIR_OUT, "lp5523_enable");
@@ -499,7 +465,7 @@ int lp55xx_register_leds(struct lp55xx_led *led, struct lp55xx_chip *chip)
 	int ret;
 	int i;
 
-	if (!cfg->brightness_work_fn) {
+	if (!cfg->brightness_fn) {
 		dev_err(&chip->cl->dev, "empty brightness configuration\n");
 		return -EINVAL;
 	}
@@ -515,8 +481,6 @@ int lp55xx_register_leds(struct lp55xx_led *led, struct lp55xx_chip *chip)
 		ret = lp55xx_init_led(each, chip, i);
 		if (ret)
 			goto err_init_led;
-
-		INIT_WORK(&each->brightness_work, cfg->brightness_work_fn);
 
 		chip->num_leds++;
 		each->chip = chip;
@@ -542,7 +506,6 @@ void lp55xx_unregister_leds(struct lp55xx_led *led, struct lp55xx_chip *chip)
 	for (i = 0; i < chip->num_leds; i++) {
 		each = led + i;
 		led_classdev_unregister(&each->cdev);
-		flush_work(&each->brightness_work);
 	}
 }
 EXPORT_SYMBOL_GPL(lp55xx_unregister_leds);
@@ -578,7 +541,8 @@ void lp55xx_unregister_sysfs(struct lp55xx_chip *chip)
 }
 EXPORT_SYMBOL_GPL(lp55xx_unregister_sysfs);
 
-int lp55xx_of_populate_pdata(struct device *dev, struct device_node *np)
+struct lp55xx_platform_data *lp55xx_of_populate_pdata(struct device *dev,
+						      struct device_node *np)
 {
 	struct device_node *child;
 	struct lp55xx_platform_data *pdata;
@@ -588,17 +552,17 @@ int lp55xx_of_populate_pdata(struct device *dev, struct device_node *np)
 
 	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 	if (!pdata)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 
 	num_channels = of_get_child_count(np);
 	if (num_channels == 0) {
 		dev_err(dev, "no LED channels\n");
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	cfg = devm_kzalloc(dev, sizeof(*cfg) * num_channels, GFP_KERNEL);
 	if (!cfg)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 
 	pdata->led_config = &cfg[0];
 	pdata->num_channels = num_channels;
@@ -620,12 +584,10 @@ int lp55xx_of_populate_pdata(struct device *dev, struct device_node *np)
 
 	pdata->enable_gpio = of_get_named_gpio(np, "enable-gpio", 0);
 
-	/* LP5523 specific */
-	of_property_read_u8(np, "gpo_enable", (u8 *)&pdata->gpo_enable);
+	/* LP8501 specific */
+	of_property_read_u8(np, "pwr-sel", (u8 *)&pdata->pwr_sel);
 
-	dev->platform_data = pdata;
-
-	return 0;
+	return pdata;
 }
 EXPORT_SYMBOL_GPL(lp55xx_of_populate_pdata);
 

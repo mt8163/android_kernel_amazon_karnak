@@ -39,7 +39,6 @@ struct virtrng_info {
 	bool hwrng_removed;
 };
 
-
 static void random_recv_done(struct virtqueue *vq)
 {
 	struct virtrng_info *vi = vq->vdev->priv;
@@ -74,7 +73,7 @@ static int virtio_read(struct hwrng *rng, void *buf, size_t size, bool wait)
 
 	if (!vi->busy) {
 		vi->busy = true;
-		reinit_completion(&vi->have_data);
+		init_completion(&vi->have_data);
 		register_buffer(vi, buf, size);
 	}
 

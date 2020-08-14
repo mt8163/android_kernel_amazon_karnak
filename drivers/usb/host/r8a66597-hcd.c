@@ -1990,8 +1990,6 @@ static int r8a66597_urb_dequeue(struct usb_hcd *hcd, struct urb *urb,
 
 static void r8a66597_endpoint_disable(struct usb_hcd *hcd,
 				      struct usb_host_endpoint *hep)
-__acquires(r8a66597->lock)
-__releases(r8a66597->lock)
 {
 	struct r8a66597 *r8a66597 = hcd_to_r8a66597(hcd);
 	struct r8a66597_pipe *pipe = (struct r8a66597_pipe *)hep->hcpriv;
@@ -2004,14 +2002,13 @@ __releases(r8a66597->lock)
 		return;
 	pipenum = pipe->info.pipenum;
 
-	spin_lock_irqsave(&r8a66597->lock, flags);
 	if (pipenum == 0) {
 		kfree(hep->hcpriv);
 		hep->hcpriv = NULL;
-		spin_unlock_irqrestore(&r8a66597->lock, flags);
 		return;
 	}
 
+	spin_lock_irqsave(&r8a66597->lock, flags);
 	pipe_stop(r8a66597, pipe);
 	pipe_irq_disable(r8a66597, pipenum);
 	disable_irq_empty(r8a66597, pipenum);
@@ -2104,16 +2101,13 @@ static void r8a66597_check_detect_child(struct r8a66597 *r8a66597,
 
 	memset(now_map, 0, sizeof(now_map));
 
-	list_for_each_entry(bus, &usb_bus_list, bus_list) {
-		if (!bus->root_hub)
-			continue;
-
-		if (bus->busnum != hcd->self.busnum)
-			continue;
-
+	mutex_lock(&usb_bus_idr_lock);
+	bus = idr_find(&usb_bus_idr, hcd->self.busnum);
+	if (bus && bus->root_hub) {
 		collect_usb_address_map(bus->root_hub, now_map);
 		update_usb_address_map(r8a66597, bus->root_hub, now_map);
 	}
+	mutex_unlock(&usb_bus_idr_lock);
 }
 
 static int r8a66597_hub_status_data(struct usb_hcd *hcd, char *buf)
@@ -2141,12 +2135,13 @@ static int r8a66597_hub_status_data(struct usb_hcd *hcd, char *buf)
 static void r8a66597_hub_descriptor(struct r8a66597 *r8a66597,
 				    struct usb_hub_descriptor *desc)
 {
-	desc->bDescriptorType = 0x29;
+	desc->bDescriptorType = USB_DT_HUB;
 	desc->bHubContrCurrent = 0;
 	desc->bNbrPorts = r8a66597->max_root_hub;
 	desc->bDescLength = 9;
 	desc->bPwrOn2PwrGood = 0;
-	desc->wHubCharacteristics = cpu_to_le16(0x0011);
+	desc->wHubCharacteristics =
+		cpu_to_le16(HUB_CHAR_INDV_PORT_LPSM | HUB_CHAR_NO_OCPM);
 	desc->u.hs.DeviceRemovable[0] =
 		((1 << r8a66597->max_root_hub) - 1) << 1;
 	desc->u.hs.DeviceRemovable[1] = ~0;
@@ -2488,9 +2483,8 @@ static int r8a66597_probe(struct platform_device *pdev)
 		r8a66597->max_root_hub = 2;
 
 	spin_lock_init(&r8a66597->lock);
-	init_timer(&r8a66597->rh_timer);
-	r8a66597->rh_timer.function = r8a66597_timer;
-	r8a66597->rh_timer.data = (unsigned long)r8a66597;
+	setup_timer(&r8a66597->rh_timer, r8a66597_timer,
+		    (unsigned long)r8a66597);
 	r8a66597->reg = reg;
 
 	/* make sure no interrupts are pending */
@@ -2501,9 +2495,8 @@ static int r8a66597_probe(struct platform_device *pdev)
 
 	for (i = 0; i < R8A66597_MAX_NUM_PIPE; i++) {
 		INIT_LIST_HEAD(&r8a66597->pipe_queue[i]);
-		init_timer(&r8a66597->td_timer[i]);
-		r8a66597->td_timer[i].function = r8a66597_td_timer;
-		r8a66597->td_timer[i].data = (unsigned long)r8a66597;
+		setup_timer(&r8a66597->td_timer[i], r8a66597_td_timer,
+			    (unsigned long)r8a66597);
 		setup_timer(&r8a66597->interval_timer[i],
 				r8a66597_interval_timer,
 				(unsigned long)r8a66597);
@@ -2540,7 +2533,6 @@ static struct platform_driver r8a66597_driver = {
 	.remove =	r8a66597_remove,
 	.driver		= {
 		.name = hcd_name,
-		.owner	= THIS_MODULE,
 		.pm	= R8A66597_DEV_PM_OPS,
 	},
 };

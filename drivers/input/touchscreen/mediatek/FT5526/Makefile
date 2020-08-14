@@ -1,15 +1,14 @@
+# Makefile for the focaltech touchscreen drivers.
 
-# Linux driver folder
-#ccflags-y += -I$(srctree)/drivers/input/touchscreen/mediatek/ft3427_zaw875/include/
-#ccflags-y += -I$(srctree)/drivers/input/touchscreen/mediatek/
-#ccflags-y += -I$(srctree)/drivers/input/touchscreen/mediatek/ft3427_zaw875/include/$(CONFIG_FT5X0X_FIRMWARE)/
-#ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
-#ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
 
-obj-y	+=  focaltech_ctl.o
-obj-y	+=  focaltech_ex_fun.o
-obj-y	+=  focaltech_flash.o
-obj-y	+=  focaltech_Gesture.o
-obj-y	+=  focaltech_core.o
-obj-y   +=  focaltech_test/
-obj-y   +=  focaltech_global/
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_core.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_ex_fun.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_ex_mode.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_gesture.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_esdcheck.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_point_report_check.o
+obj-$(CONFIG_TOUCHSCREEN_FTS_TEST)	+=  focaltech_test/
+
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_i2c.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_flash.o
+obj-$(CONFIG_TOUCHSCREEN_FTS)	+=  focaltech_flash/

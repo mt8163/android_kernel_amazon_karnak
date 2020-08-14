@@ -64,7 +64,6 @@
 #include "btree.h"
 
 #include <linux/blkdev.h>
-#include <linux/freezer.h>
 #include <linux/kthread.h>
 #include <linux/random.h>
 #include <trace/events/bcache.h>
@@ -290,7 +289,6 @@ do {									\
 			return 0;					\
 		}							\
 									\
-		try_to_freeze();					\
 		schedule();						\
 		mutex_lock(&(ca)->set->bucket_lock);			\
 	}								\
@@ -481,7 +479,7 @@ int __bch_bucket_alloc_set(struct cache_set *c, unsigned reserve,
 		if (b == -1)
 			goto err;
 
-		k->ptr[i] = PTR(ca->buckets[b].gen,
+		k->ptr[i] = MAKE_PTR(ca->buckets[b].gen,
 				bucket_to_sector(c, b),
 				ca->sb.nr_this_dev);
 

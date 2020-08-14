@@ -27,7 +27,7 @@
 /* Routing table calls. */
 #define SIOCADDRT	0x890B		/* add routing table entry	*/
 #define SIOCDELRT	0x890C		/* delete routing table entry	*/
-#define SIOCRTMSG	0x890D		/* call to routing system	*/
+#define SIOCRTMSG	0x890D		/* unused			*/
 
 /* Socket configuration controls. */
 #define SIOCGIFNAME	0x8910		/* get iface name		*/
@@ -65,8 +65,7 @@
 #define SIOCDIFADDR	0x8936		/* delete PA address		*/
 #define	SIOCSIFHWBROADCAST	0x8937	/* set hardware broadcast addr	*/
 #define SIOCGIFCOUNT	0x8938		/* get number of devices */
-#define SIOCKILLADDR	0x8939		/* kill sockets with this local addr */
-#define SIOCKILLSOCK	0x893a		/* MTK_NET_CHANGES kill socket with by uid */
+
 #define SIOCGIFBR	0x8940		/* Bridging support		*/
 #define SIOCSIFBR	0x8941		/* Set bridging options 	*/
 

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #ifndef __TPD_H
 #define __TPD_H
 #include <linux/init.h>
@@ -18,16 +31,19 @@
 #include <linux/regulator/consumer.h>
 
 /*debug macros */
-/*#define TPD_DEBUG */
+#define TPD_DEBUG
 #define TPD_DEBUG_CODE
 /* #define TPD_DEBUG_TRACK */
-#define TPD_DMESG(a, arg...) pr_info(TPD_DEVICE ": " a, ##arg)
+#define TPD_DMESG(a, arg...) \
+	pr_info(TPD_DEVICE ":[%s:%d] " a, __func__, __LINE__, ##arg)
 #if defined(TPD_DEBUG)
 #undef TPD_DEBUG
-#define TPD_DEBUG(a, arg...) pr_info(TPD_DEVICE ": " a, ##arg)
+#define TPD_DEBUG(a, arg...) \
+	pr_info(TPD_DEVICE ":[%s:%d] " a, __func__, __LINE__, ##arg)
 #else
 #define TPD_DEBUG(arg...)
 #endif
+#define SPLIT ", "
 
 /* register, address, configurations */
 #define TPD_DEVICE            "mtk-tpd"
@@ -74,7 +90,8 @@ extern int tpd_v_magnify_x;
 extern int tpd_v_magnify_y;
 extern unsigned int DISP_GetScreenHeight(void);
 extern unsigned int DISP_GetScreenWidth(void);
-#if defined(CONFIG_MTK_S3320) || defined(CONFIG_MTK_S3320_47) || defined(CONFIG_MTK_S3320_50)
+#if defined(CONFIG_MTK_S3320) || defined(CONFIG_MTK_S3320_47) || \
+	defined(CONFIG_MTK_S3320_50)
 extern void synaptics_init_sysfs(void);
 #endif /* CONFIG_MTK_S3320 */
 extern void tpd_button_init(void);
@@ -108,6 +125,8 @@ struct tpd_dts_info {
 	int use_tpd_button;
 	int tpd_key_num;
 	int tpd_key_local[4];
+	bool tpd_use_ext_gpio;
+	int rst_ext_gpio_num;
 	struct tpd_key_dim_local tpd_key_dim_local[4];
 	struct tpd_filter_t touch_filter;
 };
@@ -146,7 +165,7 @@ extern void tpd_get_dts_info(void);
 #define GTP_INT_PORT    1
 extern void tpd_gpio_as_int(int pin);
 extern void tpd_gpio_output(int pin, int level);
-extern struct of_device_id touch_of_match[];
+extern const struct of_device_id touch_of_match[];
 #ifdef TPD_DEBUG_CODE
 #include "tpd_debug.h"
 #endif

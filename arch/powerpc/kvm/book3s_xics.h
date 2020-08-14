@@ -39,8 +39,11 @@ struct ics_irq_state {
 	u8  saved_priority;
 	u8  resend;
 	u8  masked_pending;
+	u8  lsi;		/* level-sensitive interrupt */
 	u8  asserted; /* Only for LSI */
 	u8  exists;
+	int intr_cpu;
+	u32 host_irq;
 };
 
 /* Atomic ICP state, updated with a single compare & swap */
@@ -74,8 +77,18 @@ struct kvmppc_icp {
 #define XICS_RM_NOTIFY_EOI	0x8
 	u32 rm_action;
 	struct kvm_vcpu *rm_kick_target;
+	struct kvmppc_icp *rm_resend_icp;
 	u32  rm_reject;
 	u32  rm_eoied_irq;
+
+	/* Counters for each reason we exited real mode */
+	unsigned long n_rm_kick_vcpu;
+	unsigned long n_rm_check_resend;
+	unsigned long n_rm_reject;
+	unsigned long n_rm_notify_eoi;
+	/* Counters for handling ICP processing in real mode */
+	unsigned long n_check_resend;
+	unsigned long n_reject;
 
 	/* Debug stuff for real mode */
 	union kvmppc_icp_state rm_dbgstate;
@@ -83,7 +96,7 @@ struct kvmppc_icp {
 };
 
 struct kvmppc_ics {
-	struct mutex lock;
+	arch_spinlock_t lock;
 	u16 icsid;
 	struct ics_irq_state irq_state[KVMPPC_XICS_IRQ_PER_ICS];
 };
@@ -95,6 +108,8 @@ struct kvmppc_xics {
 	u32 max_icsid;
 	bool real_mode;
 	bool real_mode_dbg;
+	u32 err_noics;
+	u32 err_noicp;
 	struct kvmppc_ics *ics[KVMPPC_XICS_MAX_ICS_ID + 1];
 };
 

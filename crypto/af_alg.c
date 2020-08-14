@@ -149,6 +149,7 @@ EXPORT_SYMBOL_GPL(af_alg_release_parent);
 
 static int alg_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 {
+	const u32 allowed = CRYPTO_ALG_KERN_DRIVER_ONLY;
 	struct sock *sk = sock->sk;
 	struct alg_sock *ask = alg_sk(sk);
 	struct sockaddr_alg *sa = (void *)uaddr;
@@ -160,6 +161,10 @@ static int alg_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		return -EINVAL;
 
 	if (addr_len != sizeof(*sa))
+		return -EINVAL;
+
+	/* If caller uses non-allowed flag, return error. */
+	if ((sa->salg_feat & ~allowed) || (sa->salg_mask & ~allowed))
 		return -EINVAL;
 
 	sa->salg_type[sizeof(sa->salg_type) - 1] = 0;
@@ -217,7 +222,7 @@ static int alg_setkey(struct sock *sk, char __user *ukey,
 	err = type->setkey(ask->private, key, keylen);
 
 out:
-	sock_kfree_s(sk, key, keylen);
+	sock_kzfree_s(sk, key, keylen);
 
 	return err;
 }
@@ -248,6 +253,13 @@ static int alg_setsockopt(struct socket *sock, int level, int optname,
 			goto unlock;
 
 		err = alg_setkey(sk, optval, optlen);
+		break;
+	case ALG_SET_AEAD_AUTHSIZE:
+		if (sock->state == SS_CONNECTED)
+			goto unlock;
+		if (!type->setauthsize)
+			goto unlock;
+		err = type->setauthsize(ask->private, optlen);
 	}
 
 unlock:
@@ -271,7 +283,7 @@ int af_alg_accept(struct sock *sk, struct socket *newsock)
 	if (!type)
 		goto unlock;
 
-	sk2 = sk_alloc(sock_net(sk), PF_ALG, GFP_KERNEL, &alg_proto);
+	sk2 = sk_alloc(sock_net(sk), PF_ALG, GFP_KERNEL, &alg_proto, 0);
 	err = -ENOMEM;
 	if (!sk2)
 		goto unlock;
@@ -360,7 +372,7 @@ static int alg_create(struct net *net, struct socket *sock, int protocol,
 		return -EPROTONOSUPPORT;
 
 	err = -ENOMEM;
-	sk = sk_alloc(net, PF_ALG, GFP_KERNEL, &alg_proto);
+	sk = sk_alloc(net, PF_ALG, GFP_KERNEL, &alg_proto, kern);
 	if (!sk)
 		goto out;
 
@@ -381,60 +393,50 @@ static const struct net_proto_family alg_family = {
 	.owner	=	THIS_MODULE,
 };
 
-int af_alg_make_sg(struct af_alg_sgl *sgl, void __user *addr, int len,
-		   int write)
+int af_alg_make_sg(struct af_alg_sgl *sgl, struct iov_iter *iter, int len)
 {
-	unsigned long from = (unsigned long)addr;
-	unsigned long npages;
-	unsigned off;
-	int err;
-	int i;
+	size_t off;
+	ssize_t n;
+	int npages, i;
 
-	err = -EFAULT;
-	if (!access_ok(write ? VERIFY_READ : VERIFY_WRITE, addr, len))
-		goto out;
+	n = iov_iter_get_pages(iter, sgl->pages, len, ALG_MAX_PAGES, &off);
+	if (n < 0)
+		return n;
 
-	off = from & ~PAGE_MASK;
-	npages = (off + len + PAGE_SIZE - 1) >> PAGE_SHIFT;
-	if (npages > ALG_MAX_PAGES)
-		npages = ALG_MAX_PAGES;
-
-	err = get_user_pages_fast(from, npages, write, sgl->pages);
-	if (err < 0)
-		goto out;
-
-	npages = err;
-	err = -EINVAL;
+	npages = (off + n + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	if (WARN_ON(npages == 0))
-		goto out;
+		return -EINVAL;
+	/* Add one extra for linking */
+	sg_init_table(sgl->sg, npages + 1);
 
-	err = 0;
-
-	sg_init_table(sgl->sg, npages);
-
-	for (i = 0; i < npages; i++) {
+	for (i = 0, len = n; i < npages; i++) {
 		int plen = min_t(int, len, PAGE_SIZE - off);
 
 		sg_set_page(sgl->sg + i, sgl->pages[i], plen, off);
 
 		off = 0;
 		len -= plen;
-		err += plen;
 	}
+	sg_mark_end(sgl->sg + npages - 1);
+	sgl->npages = npages;
 
-out:
-	return err;
+	return n;
 }
 EXPORT_SYMBOL_GPL(af_alg_make_sg);
+
+void af_alg_link_sg(struct af_alg_sgl *sgl_prev, struct af_alg_sgl *sgl_new)
+{
+	sg_unmark_end(sgl_prev->sg + sgl_prev->npages - 1);
+	sg_chain(sgl_prev->sg, sgl_prev->npages + 1, sgl_new->sg);
+}
+EXPORT_SYMBOL_GPL(af_alg_link_sg);
 
 void af_alg_free_sg(struct af_alg_sgl *sgl)
 {
 	int i;
 
-	i = 0;
-	do {
+	for (i = 0; i < sgl->npages; i++)
 		put_page(sgl->pages[i]);
-	} while (!sg_is_last(sgl->sg + (i++)));
 }
 EXPORT_SYMBOL_GPL(af_alg_free_sg);
 
@@ -442,13 +444,13 @@ int af_alg_cmsg_send(struct msghdr *msg, struct af_alg_control *con)
 {
 	struct cmsghdr *cmsg;
 
-	for (cmsg = CMSG_FIRSTHDR(msg); cmsg; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+	for_each_cmsghdr(cmsg, msg) {
 		if (!CMSG_OK(msg, cmsg))
 			return -EINVAL;
 		if (cmsg->cmsg_level != SOL_ALG)
 			continue;
 
-		switch(cmsg->cmsg_type) {
+		switch (cmsg->cmsg_type) {
 		case ALG_SET_IV:
 			if (cmsg->cmsg_len < CMSG_LEN(sizeof(*con->iv)))
 				return -EINVAL;
@@ -462,6 +464,12 @@ int af_alg_cmsg_send(struct msghdr *msg, struct af_alg_control *con)
 			if (cmsg->cmsg_len < CMSG_LEN(sizeof(u32)))
 				return -EINVAL;
 			con->op = *(u32 *)CMSG_DATA(cmsg);
+			break;
+
+		case ALG_SET_AEAD_ASSOCLEN:
+			if (cmsg->cmsg_len < CMSG_LEN(sizeof(u32)))
+				return -EINVAL;
+			con->aead_assoclen = *(u32 *)CMSG_DATA(cmsg);
 			break;
 
 		default:

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _MUSBFSH_HOST_H
 #define _MUSBFSH_HOST_H
 
@@ -13,7 +26,8 @@ extern struct usb_interface *stor_intf;
 #ifdef MTK_USB_RUNTIME_SUPPORT
 extern void mt_eint_unmask(unsigned int line);
 extern void mt_eint_mask(unsigned int line);
-extern void request_wakeup_md_timeout(unsigned int dev_id, unsigned int dev_sub_id);
+extern void request_wakeup_md_timeout(unsigned int dev_id,
+					unsigned int dev_sub_id);
 #endif
 
 #ifdef MTK_ICUSB_SUPPORT
@@ -40,8 +54,8 @@ struct musbfsh_qh {
 	/* struct musbfsh_qh		*next; */	/* for periodic tree */
 	u8			mux;		/* qh multiplexed to hw_ep */
 
-	unsigned		offset;		/* in urb->transfer_buffer */
-	unsigned		segsize;	/* current xfer fragment */
+	unsigned int offset;		/* in urb->transfer_buffer */
+	unsigned int segsize;	/* current xfer fragment */
 
 	u8			type_reg;	/* {rx,tx} type register */
 	u8			intv_reg;	/* {rx,tx} interval register */
@@ -55,7 +69,7 @@ struct musbfsh_qh {
 	u8			hb_mult;	/* high bandwidth pkts per uf */
 	u16			maxpacket;
 	u16			frame;		/* for periodic schedule */
-	unsigned		iso_idx;	/* in urb->iso_frame_desc[] */
+	unsigned int iso_idx;	/* in urb->iso_frame_desc[] */
 	struct sg_mapping_iter sg_miter;	/* for highmem in PIO mode */
 };
 

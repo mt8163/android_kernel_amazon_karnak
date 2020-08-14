@@ -23,6 +23,7 @@
 #  define DEBUG
 #endif
 #endif
+#define CREATE_TRACE_POINTS
 
 #include <linux/memblock.h>
 #include <linux/err.h>
@@ -34,17 +35,13 @@
 #include <linux/cma.h>
 #include <linux/highmem.h>
 #include <linux/io.h>
+#include <trace/events/cma.h>
+#include <linux/swap.h>
 
-struct cma {
-	unsigned long	base_pfn;
-	unsigned long	count;
-	unsigned long	*bitmap;
-	unsigned int order_per_bit; /* Order of pages represented by one bit */
-	struct mutex	lock;
-};
+#include "cma.h"
 
-static struct cma cma_areas[MAX_CMA_AREAS];
-static unsigned cma_area_count;
+struct cma cma_areas[MAX_CMA_AREAS];
+unsigned cma_area_count;
 static DEFINE_MUTEX(cma_mutex);
 
 phys_addr_t cma_get_base(const struct cma *cma)
@@ -55,6 +52,30 @@ phys_addr_t cma_get_base(const struct cma *cma)
 unsigned long cma_get_size(const struct cma *cma)
 {
 	return cma->count << PAGE_SHIFT;
+}
+
+/* Get all cma range */
+void cma_get_range(phys_addr_t *base, phys_addr_t *size)
+{
+	int i;
+	unsigned long base_pfn = ULONG_MAX, max_pfn = 0;
+
+	for (i = 0; i < cma_area_count; i++) {
+		struct cma *cma = &cma_areas[i];
+
+		if (cma->base_pfn < base_pfn)
+			base_pfn = cma->base_pfn;
+
+		if (cma->base_pfn + cma->count > max_pfn)
+			max_pfn = cma->base_pfn + cma->count;
+	}
+
+	if (max_pfn) {
+		*base = PFN_PHYS(base_pfn);
+		*size = PFN_PHYS(max_pfn) - PFN_PHYS(base_pfn);
+	} else {
+		*base = *size = 0;
+	}
 }
 
 static unsigned long cma_bitmap_aligned_mask(const struct cma *cma,
@@ -74,11 +95,6 @@ static unsigned long cma_bitmap_aligned_offset(const struct cma *cma,
 {
 	return (cma->base_pfn & ((1UL << align_order) - 1))
 		>> cma->order_per_bit;
-}
-
-static unsigned long cma_bitmap_maxno(struct cma *cma)
-{
-	return cma->count >> cma->order_per_bit;
 }
 
 static unsigned long cma_bitmap_pages_to_bits(const struct cma *cma,
@@ -134,6 +150,12 @@ static int __init cma_activate_area(struct cma *cma)
 	} while (--i);
 
 	mutex_init(&cma->lock);
+
+#ifdef CONFIG_CMA_DEBUGFS
+	INIT_HLIST_HEAD(&cma->mem_head);
+	spin_lock_init(&cma->mem_head_lock);
+#endif
+
 	return 0;
 
 err:
@@ -141,6 +163,27 @@ err:
 	cma->count = 0;
 	return -EINVAL;
 }
+
+#ifdef CONFIG_ZONE_MOVABLE_CMA
+int cma_alloc_range_ok(struct cma *cma, int count, int align)
+{
+	unsigned long mask, offset;
+	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
+
+	mask = cma_bitmap_aligned_mask(cma, align);
+	offset = cma_bitmap_aligned_offset(cma, align);
+	bitmap_maxno = cma_bitmap_maxno(cma);
+	bitmap_count = cma_bitmap_pages_to_bits(cma, count);
+
+	bitmap_no = bitmap_find_next_zero_area_off(cma->bitmap,
+			bitmap_maxno, 0, bitmap_count, mask,
+			offset);
+
+	if (bitmap_no >= bitmap_maxno)
+		return false;
+	return true;
+}
+#endif
 
 static int __init cma_init_reserved_areas(void)
 {
@@ -182,7 +225,7 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 	if (!size || !memblock_is_region_reserved(base, size))
 		return -EINVAL;
 
-	/* ensure minimal alignment requied by mm core */
+	/* ensure minimal alignment required by mm core */
 	alignment = PAGE_SIZE <<
 			max_t(unsigned long, MAX_ORDER - 1, pageblock_order);
 
@@ -239,7 +282,7 @@ int __init cma_declare_contiguous(phys_addr_t base,
 	/*
 	 * high_memory isn't direct mapped memory so retrieving its physical
 	 * address isn't appropriate.  But it would be useful to check the
-	 * physical address of the highmem boundary so it's justfiable to get
+	 * physical address of the highmem boundary so it's justifiable to get
 	 * the physical address from it.  On x86 there is a validation check for
 	 * this case, so the following workaround is needed to avoid it.
 	 */
@@ -317,13 +360,15 @@ int __init cma_declare_contiguous(phys_addr_t base,
 		 */
 		if (base < highmem_start && limit > highmem_start) {
 			addr = memblock_alloc_range(size, alignment,
-						    highmem_start, limit);
+						    highmem_start, limit,
+						    MEMBLOCK_NONE);
 			limit = highmem_start;
 		}
 
 		if (!addr) {
 			addr = memblock_alloc_range(size, alignment, base,
-						    limit);
+						    limit,
+						    MEMBLOCK_NONE);
 			if (!addr) {
 				ret = -ENOMEM;
 				goto err;
@@ -334,20 +379,18 @@ int __init cma_declare_contiguous(phys_addr_t base,
 		 * kmemleak scans/reads tracked objects for pointers to other
 		 * objects but this address isn't mapped and accessible
 		 */
-		kmemleak_ignore(phys_to_virt(addr));
+		kmemleak_ignore_phys(addr);
 		base = addr;
 	}
 
 	ret = cma_init_reserved_mem(base, size, order_per_bit, res_cma);
 	if (ret)
-		goto free_mem;
+		goto err;
 
 	pr_info("Reserved %ld MiB at %pa\n", (unsigned long)size / SZ_1M,
 		&base);
 	return 0;
 
-free_mem:
-	memblock_free(base, size);
 err:
 	pr_err("Failed to reserve %ld MiB\n", (unsigned long)size / SZ_1M);
 	return ret;
@@ -364,7 +407,9 @@ err:
  */
 struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 {
-	unsigned long mask, offset, pfn, start = 0;
+	unsigned long mask, offset;
+	unsigned long pfn = -1;
+	unsigned long start = 0;
 	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
 	struct page *page = NULL;
 	int ret;
@@ -382,6 +427,9 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	offset = cma_bitmap_aligned_offset(cma, align);
 	bitmap_maxno = cma_bitmap_maxno(cma);
 	bitmap_count = cma_bitmap_pages_to_bits(cma, count);
+
+	if (bitmap_count > bitmap_maxno)
+		return NULL;
 
 	for (;;) {
 		mutex_lock(&cma->lock);
@@ -419,6 +467,8 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 		start = bitmap_no + mask + 1;
 	}
 
+	trace_cma_alloc(pfn, page, count, align);
+
 	pr_debug("%s(): returned %p\n", __func__, page);
 	return page;
 }
@@ -451,6 +501,35 @@ bool cma_release(struct cma *cma, const struct page *pages, unsigned int count)
 
 	free_contig_range(pfn, count);
 	cma_clear_bitmap(cma, pfn, count);
+	trace_cma_release(pfn, pages, count);
 
 	return true;
 }
+
+#ifdef CONFIG_MTEE_CMA_SECURE_MEMORY
+/**
+ * cma_alloc_large() - Allocate large chunk of memory from the cma zone.
+ * @cma:   Contiguous memory region for which the allocation is performed.
+ * @count: Requested number of pages.
+ * @align: Requested alignment of pages (in PAGE_SIZE order).
+ *
+ * Normal cma_alloc will easily to fail and/or take lots of time when user
+ * trying to allocate large chunk of memory from it. Add helper function
+ * to improve this usage.
+ *
+ * return first page of allocated memory.
+ */
+struct page *cma_alloc_large(struct cma *cma, int count, unsigned int align)
+{
+	struct page *page;
+	int retries = 0;
+
+	for (retries = 0; retries < 10; retries++) {
+		page = cma_alloc(cma, count, align);
+		if (page)
+			return page;
+	}
+
+	return 0;
+}
+#endif

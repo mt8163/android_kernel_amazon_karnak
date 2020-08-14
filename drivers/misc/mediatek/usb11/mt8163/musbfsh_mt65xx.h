@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __MUSBFSH_MT65XX_H__
 #define __MUSBFSH_MT65XX_H__
 #ifndef CONFIG_OF
@@ -6,20 +19,21 @@
 
 #if defined(MTK_DT_SUPPORT) && !defined(EVDO_DT_SUPPORT)
 #include <cust_eint.h>
+
+typedef void (*EINT_FUNC_PTR)(void);
+
 extern void mt65xx_eint_unmask(unsigned int line);
 extern void mt65xx_eint_mask(unsigned int line);
-extern void mt65xx_eint_set_polarity(kal_uint8 eintno, kal_bool ACT_Polarity);
-extern void mt65xx_eint_set_hw_debounce(kal_uint8 eintno, kal_uint32 ms);
-extern kal_uint32 mt65xx_eint_set_sens(kal_uint8 eintno, kal_bool sens);
-extern void mt65xx_eint_registration(kal_uint8 eintno, kal_bool Dbounce_En,
-				     kal_bool ACT_Polarity, void (EINT_FUNC_PTR) (void),
-				     kal_bool auto_umask);
+extern void mt65xx_eint_set_polarity(uint8_t eintno,
+					enum kal_bool ACT_Polarity);
+extern void mt65xx_eint_set_hw_debounce(uint8_t eintno, unsigned int ms);
+extern unsigned int mt65xx_eint_set_sens(uint8_t eintno, enum kal_bool sens);
+extern void mt65xx_eint_registration(uint8_t eintno, enum kal_bool Dbounce_En,
+		     enum kal_bool ACT_Polarity, EINT_FUNC_PTR func,
+		     enum kal_bool auto_umask);
 #endif
 extern int usb11_init(void);
 extern void usb11_exit(void);
-#ifndef CONFIG_MTK_CLKMGR
-extern struct clk *icusb_clk;
-#endif
 #ifdef CONFIG_OF
 extern struct musbfsh *musbfsh_Device;
 #ifdef CONFIG_MTK_USB_RESET_WIFI_DONGLE
@@ -45,7 +59,8 @@ extern void wifi_set_high(void);
 #define USB11_PHY_ADDR (USB_SIF_BASE + 0x900)
 
 #define U1PHYCR0 0xC0
-#define RG_USB11_FSLS_ENBGRI 0x08	/* @U1PHYCR0+1, 1:power on or recovery; 0:save current*/
+/* @U1PHYCR0+1, 1:power on or recovery; 0:save current*/
+#define RG_USB11_FSLS_ENBGRI 0x08
 
 #define U1PHYCR1 0xC4
 #define force_usb11_en_fs_ls_rcv 0x04	/* @U1PHYCR1+2*/
@@ -74,19 +89,31 @@ extern void wifi_set_high(void);
 #ifdef CONFIG_OF
 
 /*USB11 PHY access macro: Need Modify Later*/
-#define USB11PHY_READ32(offset)         __raw_readl((void __iomem *)(musbfsh_Device->phy_reg_base + 0x900 + (offset)))
-#define USB11PHY_READ8(offset)          __raw_readb((void __iomem *)(musbfsh_Device->phy_reg_base + 0x900 + (offset)))
+#define USB11PHY_READ32(offset) \
+	__raw_readl((void __iomem *)(musbfsh_Device->phy_reg_base \
+	+ 0x900 + (offset)))
+#define USB11PHY_READ8(offset) \
+	__raw_readb((void __iomem *)(musbfsh_Device->phy_reg_base \
+	+ 0x900 + (offset)))
 #define USB11PHY_WRITE8(offset, value)  \
-	__raw_writeb(value, (void __iomem *)(musbfsh_Device->phy_reg_base + 0x900 + (offset)))
-#define USB11PHY_SET8(offset, mask)     USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) | (mask))
-#define USB11PHY_CLR8(offset, mask)     USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) & (~(mask)))
+	__raw_writeb(value, \
+	(void __iomem *)(musbfsh_Device->phy_reg_base + 0x900 + (offset)))
+#define USB11PHY_SET8(offset, mask) \
+	USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) | (mask))
+#define USB11PHY_CLR8(offset, mask) \
+	USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) & (~(mask)))
 #else
 
 /*USB11 PHY access macro:*/
-#define USB11PHY_READ32(offset)         __raw_readl((void __iomem *)(USB11_PHY_ADDR + (offset)))
-#define USB11PHY_READ8(offset)          __raw_readb((void __iomem *)(USB11_PHY_ADDR + (offset)))
-#define USB11PHY_WRITE8(offset, value)  __raw_writeb(value, (void __iomem *)(USB11_PHY_ADDR + (offset)))
-#define USB11PHY_SET8(offset, mask)     USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) | (mask))
-#define USB11PHY_CLR8(offset, mask)     USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) & (~(mask)))
+#define USB11PHY_READ32(offset) \
+	__raw_readl((void __iomem *)(USB11_PHY_ADDR + (offset)))
+#define USB11PHY_READ8(offset) \
+	__raw_readb((void __iomem *)(USB11_PHY_ADDR + (offset)))
+#define USB11PHY_WRITE8(offset, value) \
+	__raw_writeb(value, (void __iomem *)(USB11_PHY_ADDR + (offset)))
+#define USB11PHY_SET8(offset, mask) \
+	USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) | (mask))
+#define USB11PHY_CLR8(offset, mask) \
+	USB11PHY_WRITE8((offset), USB11PHY_READ8(offset) & (~(mask)))
 #endif
 #endif

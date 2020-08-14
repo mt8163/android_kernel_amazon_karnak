@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) 2018 MediaTek Inc.
+ * Author: Michael Mei <michael.mei@mediatek.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/* it's a dummy energy cost model for the platform because energy cost
+ * table is only used in EAS or scheduler driven dvfs government, and
+ * it is not considered in CFS + interactive-gov platform. We add this
+ * table to avoid warning log from sched_capacity upload model.
+ */
+energy-costs {
+	MT8163_CPU_COST_0: mt8163-core-cost0 {
+		busy-cost-data = <
+			1024	0
+		>;
+		idle-cost-data = <
+			0
+			0
+		>;
+	};
+	MT8163_CLUSTER_COST_0: mt8163-cluster-cost0 {
+		busy-cost-data = <
+			1024	0
+		>;
+		idle-cost-data = <
+			0
+			0
+		>;
+	};
+};

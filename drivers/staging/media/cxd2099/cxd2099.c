@@ -25,7 +25,6 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/moduleparam.h>
 #include <linux/i2c.h>
 #include <linux/wait.h>
 #include <linux/delay.h>
@@ -527,7 +526,7 @@ static int slot_reset(struct dvb_ca_en50221 *ca, int slot)
 		u8 val;
 #endif
 		for (i = 0; i < 100; i++) {
-			msleep(10);
+			usleep_range(10000, 11000);
 #if 0
 			read_reg(ci, 0x06, &val);
 			dev_info(&ci->i2c->dev, "%d:%02x\n", i, val);
@@ -661,7 +660,7 @@ static int write_data(struct dvb_ca_en50221 *ca, int slot, u8 *ebuf, int ecount)
 	struct cxd *ci = ca->data;
 
 	mutex_lock(&ci->lock);
-	printk(kern_INFO "write_data %d\n", ecount);
+	dev_info(&ci->i2c->dev, "write_data %d\n", ecount);
 	write_reg(ci, 0x0d, ecount>>8);
 	write_reg(ci, 0x0e, ecount&0xff);
 	write_block(ci, 0x11, ebuf, ecount);

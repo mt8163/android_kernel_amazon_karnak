@@ -187,9 +187,11 @@ int sr_do_ioctl(Scsi_CD *cd, struct packet_command *cgc)
 	struct scsi_device *SDev;
 	struct scsi_sense_hdr sshdr;
 	int result, err = 0, retries = 0;
-	unsigned char sense_buffer[SCSI_SENSE_BUFFERSIZE];
+	unsigned char sense_buffer[SCSI_SENSE_BUFFERSIZE], *senseptr = NULL;
 
 	SDev = cd->device;
+	if (cgc->sense)
+		senseptr = sense_buffer;
 
       retry:
 	if (!scsi_block_when_processing_errors(SDev)) {
@@ -197,15 +199,14 @@ int sr_do_ioctl(Scsi_CD *cd, struct packet_command *cgc)
 		goto out;
 	}
 
-	memset(sense_buffer, 0, sizeof(sense_buffer));
 	result = scsi_execute(SDev, cgc->cmd, cgc->data_direction,
-			      cgc->buffer, cgc->buflen, sense_buffer,
+			      cgc->buffer, cgc->buflen, senseptr,
 			      cgc->timeout, IOCTL_RETRIES, 0, NULL);
-
-	scsi_normalize_sense(sense_buffer, sizeof(sense_buffer), &sshdr);
 
 	if (cgc->sense)
 		memcpy(cgc->sense, sense_buffer, sizeof(*cgc->sense));
+
+	scsi_normalize_sense((char *)cgc->sense, sizeof(*cgc->sense), &sshdr);
 
 	/* Minimal error checking.  Ignore cases we know about, and report the rest. */
 	if (driver_byte(result) != 0) {
@@ -240,9 +241,6 @@ int sr_do_ioctl(Scsi_CD *cd, struct packet_command *cgc)
 				sr_printk(KERN_INFO, cd,
 					  "CDROM not ready.  Make sure there "
 					  "is a disc in the drive.\n");
-#ifdef DEBUG
-			scsi_print_sense_hdr("sr", &sshdr);
-#endif
 			err = -ENOMEDIUM;
 			break;
 		case ILLEGAL_REQUEST:
@@ -251,16 +249,8 @@ int sr_do_ioctl(Scsi_CD *cd, struct packet_command *cgc)
 			    sshdr.ascq == 0x00)
 				/* sense: Invalid command operation code */
 				err = -EDRIVE_CANT_DO_THIS;
-#ifdef DEBUG
-			__scsi_print_command(cgc->cmd);
-			scsi_print_sense_hdr("sr", &sshdr);
-#endif
 			break;
 		default:
-			sr_printk(KERN_ERR, cd,
-				  "CDROM (ioctl) error, command: ");
-			__scsi_print_command(cgc->cmd);
-			scsi_print_sense_hdr("sr", &sshdr);
 			err = -EIO;
 		}
 	}

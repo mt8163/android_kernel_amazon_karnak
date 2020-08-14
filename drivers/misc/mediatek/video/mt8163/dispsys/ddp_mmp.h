@@ -1,16 +1,29 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __H_DDP_MMP__
 #define __H_DDP_MMP__
 
-#include "mmprofile.h"
 #include "ddp_info.h"
 #include "ddp_ovl.h"
-extern char *disp_get_fmt_name(DP_COLOR_ENUM color);
+#include "mmprofile.h"
+extern char *disp_get_fmt_name(enum DP_COLOR_ENUM color);
 #ifdef DEFAULT_MMP_ENABLE
-extern void MMProfileEnable(int enable);
-extern void MMProfileStart(int start);
+extern void mmprofile_enable(int enable);
+extern void mmprofile_start(int start);
 #endif
 
-typedef struct {
+struct DDP_MMP_Events_t {
 	MMP_Event DDP;
 	MMP_Event layerParent;
 	MMP_Event layer[4];
@@ -54,6 +67,9 @@ typedef struct {
 	MMP_Event primary_seq_release;
 	MMP_Event primary_ovl_fence_release;
 	MMP_Event primary_wdma_fence_release;
+	MMP_Event present_fence_release;
+	MMP_Event present_fence_get;
+	MMP_Event present_fence_set;
 	MMP_Event ovl_trigger;
 	MMP_Event interface_trigger;
 	MMP_Event Extd_Parent;
@@ -103,21 +119,26 @@ typedef struct {
 	MMP_Event dpmgr_wait_event_timeout;
 	MMP_Event cmdq_rebuild;
 	MMP_Event dsi_te;
-} DDP_MMP_Events_t;
+};
 
-DDP_MMP_Events_t *ddp_mmp_get_events(void);
+struct DDP_MMP_Events_t *ddp_mmp_get_events(void);
 void init_ddp_mmp_events(void);
 void ddp_mmp_init(void);
-void ddp_mmp_ovl_layer(OVL_CONFIG_STRUCT *pLayer, unsigned int down_sample_x,
-		       unsigned int down_sample_y,
-		       unsigned int session /*1:primary, 2:external, 3:memory */);
-void ddp_mmp_wdma_layer(WDMA_CONFIG_STRUCT *wdma_layer, unsigned int wdma_num,
-			unsigned int down_sample_x, unsigned int down_sample_y);
-void ddp_mmp_rdma_layer(RDMA_CONFIG_STRUCT *rdma_layer, unsigned int rdma_num,
-			unsigned int down_sample_x, unsigned int down_sample_y);
-void _ddp_mmp_ovl_raw_under_session(unsigned int session, OVL_CONFIG_STRUCT *pLayer,
-	MMP_MetaData_t *meta);
-void _ddp_mmp_ovl_not_raw_under_session(unsigned int session, OVL_CONFIG_STRUCT *pLayer,
-	MMP_MetaDataBitmap_t *Bitmap);
+void ddp_mmp_ovl_layer(
+	struct OVL_CONFIG_STRUCT *pLayer, unsigned int down_sample_x,
+	unsigned int down_sample_y,
+	unsigned int session /*1:primary, 2:external, 3:memory */);
+void ddp_mmp_wdma_layer(struct WDMA_CONFIG_STRUCT *wdma_layer,
+			unsigned int wdma_num, unsigned int down_sample_x,
+			unsigned int down_sample_y);
+void ddp_mmp_rdma_layer(struct RDMA_CONFIG_STRUCT *rdma_layer,
+			unsigned int rdma_num, unsigned int down_sample_x,
+			unsigned int down_sample_y);
+void _ddp_mmp_ovl_raw_under_session(unsigned int session,
+				    struct OVL_CONFIG_STRUCT *pLayer,
+				    struct mmp_metadata_t *meta);
+void _ddp_mmp_ovl_not_raw_under_session(unsigned int session,
+					struct OVL_CONFIG_STRUCT *pLayer,
+					struct mmp_metadata_bitmap_t *Bitmap);
 
 #endif

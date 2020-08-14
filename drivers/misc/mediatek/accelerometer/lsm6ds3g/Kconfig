@@ -1,0 +1,4 @@
+
+config MTK_LSM6DS3G
+	bool "LSM6DS3 accelerometer for MediaTek package"
+	default n

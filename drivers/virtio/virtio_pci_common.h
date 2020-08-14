@@ -35,12 +35,6 @@ struct virtio_pci_vq_info {
 	/* the actual virtqueue */
 	struct virtqueue *vq;
 
-	/* the number of entries in the queue */
-	int num;
-
-	/* the virtual address of the ring queue */
-	void *queue;
-
 	/* the list node for the virtqueues list */
 	struct list_head node;
 
@@ -53,11 +47,33 @@ struct virtio_pci_device {
 	struct virtio_device vdev;
 	struct pci_dev *pci_dev;
 
+	/* In legacy mode, these two point to within ->legacy. */
+	/* Where to read and clear interrupt */
+	u8 __iomem *isr;
+
+	/* Modern only fields */
+	/* The IO mapping for the PCI config space (non-legacy mode) */
+	struct virtio_pci_common_cfg __iomem *common;
+	/* Device-specific data (non-legacy mode)  */
+	void __iomem *device;
+	/* Base of vq notifications (non-legacy mode). */
+	void __iomem *notify_base;
+
+	/* So we can sanity-check accesses. */
+	size_t notify_len;
+	size_t device_len;
+
+	/* Capability for when we need to map notifications per-vq. */
+	int notify_map_cap;
+
+	/* Multiply queue_notify_off by this value. (non-legacy mode). */
+	u32 notify_offset_multiplier;
+
+	int modern_bars;
+
+	/* Legacy only field */
 	/* the IO mapping for the PCI config space */
 	void __iomem *ioaddr;
-
-	/* the IO mapping for ISR operation */
-	void __iomem *isr;
 
 	/* a list of queues so we can dispatch IRQs */
 	spinlock_t lock;
@@ -117,7 +133,7 @@ void vp_del_vqs(struct virtio_device *vdev);
 int vp_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 		       struct virtqueue *vqs[],
 		       vq_callback_t *callbacks[],
-		       const char *names[]);
+		       const char * const names[]);
 const char *vp_bus_name(struct virtio_device *vdev);
 
 /* Setup the affinity for a virtqueue:
@@ -127,8 +143,19 @@ const char *vp_bus_name(struct virtio_device *vdev);
  */
 int vp_set_vq_affinity(struct virtqueue *vq, int cpu);
 
-int virtio_pci_legacy_probe(struct pci_dev *pci_dev,
-			    const struct pci_device_id *id);
-void virtio_pci_legacy_remove(struct pci_dev *pci_dev);
+#if IS_ENABLED(CONFIG_VIRTIO_PCI_LEGACY)
+int virtio_pci_legacy_probe(struct virtio_pci_device *);
+void virtio_pci_legacy_remove(struct virtio_pci_device *);
+#else
+static inline int virtio_pci_legacy_probe(struct virtio_pci_device *vp_dev)
+{
+	return -ENODEV;
+}
+static inline void virtio_pci_legacy_remove(struct virtio_pci_device *vp_dev)
+{
+}
+#endif
+int virtio_pci_modern_probe(struct virtio_pci_device *);
+void virtio_pci_modern_remove(struct virtio_pci_device *);
 
 #endif

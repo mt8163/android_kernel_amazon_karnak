@@ -14,16 +14,18 @@
 #ifndef __ION_SEC_HEAP_H__
 #define __ION_SEC_HEAP_H__
 
-typedef struct {
-	struct mutex lock;
-	int eModuleID;
+struct ion_sec_buffer_info {
+	struct mutex lock;	/*mutex lock on secure buffer */
+	int module_id;
 	unsigned int security;
 	unsigned int coherent;
-	void *pVA;
+	void *VA;
 	unsigned int MVA;
+	unsigned int FIXED_MVA;
+	unsigned long iova_start;
+	unsigned long iova_end;
 	ion_phys_addr_t priv_phys;
-	ion_mm_buf_debug_info_t dbg_info;
-	ion_mm_sf_buf_info_t sf_buf_info;
-} ion_sec_buffer_info;
+	struct ion_mm_buf_debug_info dbg_info;
+};
 
 #endif

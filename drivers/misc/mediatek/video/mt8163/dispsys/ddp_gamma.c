@@ -1,63 +1,75 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
+#include <linux/uaccess.h>
 #include <linux/kernel.h>
-#include <asm/uaccess.h>
 #include <linux/slab.h>
 #ifdef CONFIG_MTK_CLKMGR
 #include <mach/mt_clkmgr.h>
 #endif
 #include "cmdq_record.h"
 #include "ddp_drv.h"
-#include "ddp_reg.h"
-#include "ddp_path.h"
 #include "ddp_gamma.h"
-
+#include "ddp_path.h"
+#include "ddp_reg.h"
 
 static DEFINE_SPINLOCK(g_gamma_global_lock);
-
 
 /* ======================================================================== */
 /*  GAMMA                                                                   */
 /* ======================================================================== */
 
-static DISP_GAMMA_LUT_T *g_disp_gamma_lut[DISP_GAMMA_TOTAL] = { NULL };
+static struct DISP_GAMMA_LUT_T *g_disp_gamma_lut[DISP_GAMMA_TOTAL] = {NULL};
 
 static ddp_module_notify g_gamma_ddp_notify;
 
+static int disp_gamma_write_lut_reg(struct cmdqRecStruct *cmdq,
+		enum disp_gamma_id_t id, int lock);
 
-static int disp_gamma_write_lut_reg(cmdqRecHandle cmdq, disp_gamma_id_t id, int lock);
-
-
-static void disp_gamma_init(disp_gamma_id_t id, unsigned int width, unsigned int height, void *cmdq)
+static void disp_gamma_init(enum disp_gamma_id_t id, unsigned int width,
+			    unsigned int height, void *cmdq)
 {
 	DISP_REG_SET(cmdq, DISP_REG_GAMMA_SIZE, (width << 16) | height);
 
 	disp_gamma_write_lut_reg(cmdq, id, 1);
 }
 
-
-static int disp_gamma_config(DISP_MODULE_ENUM module, disp_ddp_path_config *pConfig, void *cmdq)
+static int disp_gamma_config(enum DISP_MODULE_ENUM module,
+			     struct disp_ddp_path_config *pConfig, void *cmdq)
 {
 	if (pConfig->dst_dirty)
-		disp_gamma_init(DISP_GAMMA0, pConfig->dst_w, pConfig->dst_h, cmdq);
+		disp_gamma_init(DISP_GAMMA0, pConfig->dst_w, pConfig->dst_h,
+				cmdq);
 	return 0;
 }
 
-
-static void disp_gamma_trigger_refresh(disp_gamma_id_t id)
+static void disp_gamma_trigger_refresh(enum disp_gamma_id_t id)
 {
 	if (g_gamma_ddp_notify != NULL)
 		g_gamma_ddp_notify(DISP_MODULE_GAMMA, DISP_PATH_EVENT_TRIGGER);
 }
 
-
-static int disp_gamma_write_lut_reg(cmdqRecHandle cmdq, disp_gamma_id_t id, int lock)
+static int disp_gamma_write_lut_reg(struct cmdqRecStruct *cmdq,
+		enum disp_gamma_id_t id, int lock)
 {
 	unsigned long lut_base = 0;
-	DISP_GAMMA_LUT_T *gamma_lut;
+	struct DISP_GAMMA_LUT_T *gamma_lut;
 	int i;
 	int ret = 0;
 
 	if (id >= DISP_GAMMA_TOTAL) {
-		pr_err("[GAMMA] disp_gamma_write_lut_reg: invalid ID = %d\n", id);
+		pr_err("[GAMMA] disp_gamma_write_lut_reg: invalid ID = %d\n",
+		       id);
 		return -EFAULT;
 	}
 
@@ -66,7 +78,9 @@ static int disp_gamma_write_lut_reg(cmdqRecHandle cmdq, disp_gamma_id_t id, int 
 
 	gamma_lut = g_disp_gamma_lut[id];
 	if (gamma_lut == NULL) {
-		pr_debug("[GAMMA] disp_gamma_write_lut_reg: gamma table [%d] not initialized\n", id);
+		pr_debug(
+			"[GAMMA] disp_gamma_write_lut_reg: gamma table [%d] not initialized\n",
+			id);
 		ret = -EFAULT;
 		goto gamma_write_lut_unlock;
 	}
@@ -84,13 +98,13 @@ static int disp_gamma_write_lut_reg(cmdqRecHandle cmdq, disp_gamma_id_t id, int 
 		DISP_REG_MASK(cmdq, (lut_base + i * 4), gamma_lut->lut[i], ~0);
 
 		if ((i & 0x3f) == 0) {
-			pr_debug("[GAMMA] [0x%08lx](%d) = 0x%x\n", (lut_base + i * 4), i,
-			       gamma_lut->lut[i]);
+			pr_debug("[GAMMA] [0x%08lx](%d) = 0x%x\n",
+				 (lut_base + i * 4), i, gamma_lut->lut[i]);
 		}
 	}
 	i--;
 	pr_debug("[GAMMA] [0x%08lx](%d) = 0x%x\n", (lut_base + i * 4), i,
-	       gamma_lut->lut[i]);
+		 gamma_lut->lut[i]);
 
 gamma_write_lut_unlock:
 
@@ -100,27 +114,30 @@ gamma_write_lut_unlock:
 	return ret;
 }
 
-
-static int disp_gamma_set_lut(const DISP_GAMMA_LUT_T __user *user_gamma_lut, void *cmdq)
+static int
+disp_gamma_set_lut(const struct DISP_GAMMA_LUT_T __user *user_gamma_lut,
+		   void *cmdq)
 {
 	int ret = 0;
-	disp_gamma_id_t id;
-	DISP_GAMMA_LUT_T *gamma_lut, *old_lut;
+	enum disp_gamma_id_t id;
+	struct DISP_GAMMA_LUT_T *gamma_lut, *old_lut;
 
-	pr_debug("[GAMMA] disp_gamma_set_lut(cmdq = %d)", (cmdq != NULL ? 1 : 0));
+	pr_debug("[GAMMA] disp_gamma_set_lut(cmdq = %d)",
+		 (cmdq != NULL ? 1 : 0));
 
-	gamma_lut = kmalloc(sizeof(DISP_GAMMA_LUT_T), GFP_KERNEL);
+	gamma_lut = kmalloc(sizeof(struct DISP_GAMMA_LUT_T), GFP_KERNEL);
 	if (gamma_lut == NULL) {
 		/*pr_err("[GAMMA] disp_gamma_set_lut: no memory\n");*/
 		return -EFAULT;
 	}
 
-	if (copy_from_user(gamma_lut, user_gamma_lut, sizeof(DISP_GAMMA_LUT_T)) != 0) {
+	if (copy_from_user(gamma_lut, user_gamma_lut,
+			   sizeof(struct DISP_GAMMA_LUT_T)) != 0) {
 		ret = -EFAULT;
 		kfree(gamma_lut);
 	} else {
 		id = gamma_lut->hw_id;
-		if (0 <= id && id < DISP_GAMMA_TOTAL) {
+		if (id >= 0 && id < DISP_GAMMA_TOTAL) {
 			spin_lock(&g_gamma_global_lock);
 
 			old_lut = g_disp_gamma_lut[id];
@@ -135,7 +152,8 @@ static int disp_gamma_set_lut(const DISP_GAMMA_LUT_T __user *user_gamma_lut, voi
 
 			disp_gamma_trigger_refresh(id);
 		} else {
-			pr_err("[GAMMA] disp_gamma_set_lut: invalid ID = %d\n", id);
+			pr_err("[GAMMA] disp_gamma_set_lut: invalid ID = %d\n",
+			       id);
 			ret = -EFAULT;
 		}
 	}
@@ -143,12 +161,13 @@ static int disp_gamma_set_lut(const DISP_GAMMA_LUT_T __user *user_gamma_lut, voi
 	return ret;
 }
 
-
-static int disp_gamma_io(DISP_MODULE_ENUM module, int msg, unsigned long arg, void *cmdq)
+static int disp_gamma_io(enum DISP_MODULE_ENUM module, int msg,
+			 unsigned long arg, void *cmdq)
 {
 	switch (msg) {
 	case DISP_IOCTL_SET_GAMMALUT:
-		if (disp_gamma_set_lut((DISP_GAMMA_LUT_T *) arg, cmdq) < 0) {
+		if (disp_gamma_set_lut((struct DISP_GAMMA_LUT_T *)arg, cmdq) <
+		    0) {
 			pr_err("DISP_IOCTL_SET_GAMMALUT: failed\n");
 			return -EFAULT;
 		}
@@ -158,15 +177,14 @@ static int disp_gamma_io(DISP_MODULE_ENUM module, int msg, unsigned long arg, vo
 	return 0;
 }
 
-
-static int disp_gamma_set_listener(DISP_MODULE_ENUM module, ddp_module_notify notify)
+static int disp_gamma_set_listener(enum DISP_MODULE_ENUM module,
+				   ddp_module_notify notify)
 {
 	g_gamma_ddp_notify = notify;
 	return 0;
 }
 
-
-static int disp_gamma_bypass(DISP_MODULE_ENUM module, int bypass)
+static int disp_gamma_bypass(enum DISP_MODULE_ENUM module, int bypass)
 {
 	int relay = 0;
 
@@ -180,27 +198,23 @@ static int disp_gamma_bypass(DISP_MODULE_ENUM module, int bypass)
 	return 0;
 }
 
-
-static int disp_gamma_power_on(DISP_MODULE_ENUM module, void *handle)
+static int disp_gamma_power_on(enum DISP_MODULE_ENUM module, void *handle)
 {
-	if (module == DISP_MODULE_GAMMA) {
+	if (module == DISP_MODULE_GAMMA)
 		ddp_module_clock_enable(MM_CLK_DISP_GAMMA, true);
-	}
 
 	return 0;
 }
 
-static int disp_gamma_power_off(DISP_MODULE_ENUM module, void *handle)
+static int disp_gamma_power_off(enum DISP_MODULE_ENUM module, void *handle)
 {
-	if (module == DISP_MODULE_GAMMA) {
+	if (module == DISP_MODULE_GAMMA)
 		ddp_module_clock_enable(MM_CLK_DISP_GAMMA, false);
-	}
 
 	return 0;
 }
 
-
-DDP_MODULE_DRIVER ddp_driver_gamma = {
+struct DDP_MODULE_DRIVER ddp_driver_gamma = {
 	.config = disp_gamma_config,
 	.bypass = disp_gamma_bypass,
 	.set_listener = disp_gamma_set_listener,
@@ -211,41 +225,42 @@ DDP_MODULE_DRIVER ddp_driver_gamma = {
 	.power_off = disp_gamma_power_off,
 };
 
-
-
 /* ======================================================================== */
 /*  COLOR CORRECTION                                                        */
 /* ======================================================================== */
 
-static DISP_CCORR_COEF_T *g_disp_ccorr_coef[DISP_CCORR_TOTAL] = { NULL };
+static struct DISP_CCORR_COEF_T *g_disp_ccorr_coef[DISP_CCORR_TOTAL] = {NULL};
 
 static ddp_module_notify g_ccorr_ddp_notify;
 
-static int disp_ccorr_write_coef_reg(cmdqRecHandle cmdq, disp_ccorr_id_t id, int lock);
+static int disp_ccorr_write_coef_reg(struct cmdqRecStruct *cmdq,
+				     enum disp_ccorr_id_t id, int lock);
 
-
-static void disp_ccorr_init(disp_ccorr_id_t id, unsigned int width, unsigned int height, void *cmdq)
+static void disp_ccorr_init(enum disp_ccorr_id_t id, unsigned int width,
+			    unsigned int height, void *cmdq)
 {
 	DISP_REG_SET(cmdq, DISP_REG_CCORR_SIZE, (width << 16) | height);
 
 	disp_ccorr_write_coef_reg(cmdq, id, 1);
 }
 
+#define CCORR_REG(base, idx) (base + (idx)*4)
 
-#define CCORR_REG(base, idx) (base + (idx) * 4)
-
-static int disp_ccorr_write_coef_reg(cmdqRecHandle cmdq, disp_ccorr_id_t id, int lock)
+static int disp_ccorr_write_coef_reg(struct cmdqRecStruct *cmdq,
+				     enum disp_ccorr_id_t id, int lock)
 {
 	const unsigned long ccorr_base = DISPSYS_CCORR_BASE + 0x80;
 	int ret = 0;
-	DISP_CCORR_COEF_T *ccorr;
+	struct DISP_CCORR_COEF_T *ccorr;
 
 	if (lock)
 		spin_lock(&g_gamma_global_lock);
 
 	ccorr = g_disp_ccorr_coef[id];
 	if (ccorr == NULL) {
-		pr_debug("[GAMMA] disp_ccorr_write_coef_reg: [%d] not initialized\n", id);
+		pr_debug(
+			"[GAMMA] disp_ccorr_write_coef_reg: [%d] not initialized\n",
+			id);
 		ret = -EFAULT;
 		goto ccorr_write_coef_unlock;
 	}
@@ -271,32 +286,33 @@ ccorr_write_coef_unlock:
 	return ret;
 }
 
-
-static void disp_ccorr_trigger_refresh(disp_ccorr_id_t id)
+static void disp_ccorr_trigger_refresh(enum disp_ccorr_id_t id)
 {
 	if (g_ccorr_ddp_notify != NULL)
 		g_ccorr_ddp_notify(DISP_MODULE_CCORR, DISP_PATH_EVENT_TRIGGER);
 }
 
-
-static int disp_ccorr_set_coef(const DISP_CCORR_COEF_T __user *user_color_corr, void *cmdq)
+static int
+disp_ccorr_set_coef(const struct DISP_CCORR_COEF_T __user *user_color_corr,
+		    void *cmdq)
 {
 	int ret = 0;
-	DISP_CCORR_COEF_T *ccorr, *old_ccorr;
-	disp_ccorr_id_t id;
+	struct DISP_CCORR_COEF_T *ccorr, *old_ccorr;
+	enum disp_ccorr_id_t id;
 
-	ccorr = kmalloc(sizeof(DISP_CCORR_COEF_T), GFP_KERNEL);
+	ccorr = kmalloc(sizeof(struct DISP_CCORR_COEF_T), GFP_KERNEL);
 	if (ccorr == NULL) {
 		/*pr_err("[GAMMA] disp_ccorr_set_coef: no memory\n");*/
 		return -EFAULT;
 	}
 
-	if (copy_from_user(ccorr, user_color_corr, sizeof(DISP_CCORR_COEF_T)) != 0) {
+	if (copy_from_user(ccorr, user_color_corr,
+			   sizeof(struct DISP_CCORR_COEF_T)) != 0) {
 		ret = -EFAULT;
 		kfree(ccorr);
 	} else {
 		id = ccorr->hw_id;
-		if (0 <= id && id < DISP_CCORR_TOTAL) {
+		if (id >= 0 && id < DISP_CCORR_TOTAL) {
 			spin_lock(&g_gamma_global_lock);
 
 			old_ccorr = g_disp_ccorr_coef[id];
@@ -311,7 +327,8 @@ static int disp_ccorr_set_coef(const DISP_CCORR_COEF_T __user *user_color_corr, 
 
 			disp_ccorr_trigger_refresh(id);
 		} else {
-			pr_err("[GAMMA] disp_ccorr_set_coef: invalid ID = %d\n", id);
+			pr_err("[GAMMA] disp_ccorr_set_coef: invalid ID = %d\n",
+			       id);
 			ret = -EFAULT;
 		}
 	}
@@ -319,21 +336,23 @@ static int disp_ccorr_set_coef(const DISP_CCORR_COEF_T __user *user_color_corr, 
 	return ret;
 }
 
-
-static int disp_ccorr_config(DISP_MODULE_ENUM module, disp_ddp_path_config *pConfig, void *cmdq)
+static int disp_ccorr_config(enum DISP_MODULE_ENUM module,
+			     struct disp_ddp_path_config *pConfig, void *cmdq)
 {
 	if (pConfig->dst_dirty)
-		disp_ccorr_init(DISP_CCORR0, pConfig->dst_w, pConfig->dst_h, cmdq);
+		disp_ccorr_init(DISP_CCORR0, pConfig->dst_w, pConfig->dst_h,
+				cmdq);
 
 	return 0;
 }
 
-
-static int disp_ccorr_io(DISP_MODULE_ENUM module, int msg, unsigned long arg, void *cmdq)
+static int disp_ccorr_io(enum DISP_MODULE_ENUM module, int msg,
+			 unsigned long arg, void *cmdq)
 {
 	switch (msg) {
 	case DISP_IOCTL_SET_CCORR:
-		if (disp_ccorr_set_coef((DISP_CCORR_COEF_T *) arg, cmdq) < 0) {
+		if (disp_ccorr_set_coef((struct DISP_CCORR_COEF_T *)arg, cmdq) <
+		    0) {
 			pr_err("DISP_IOCTL_SET_CCORR: failed\n");
 			return -EFAULT;
 		}
@@ -343,15 +362,14 @@ static int disp_ccorr_io(DISP_MODULE_ENUM module, int msg, unsigned long arg, vo
 	return 0;
 }
 
-
-static int disp_ccorr_set_listener(DISP_MODULE_ENUM module, ddp_module_notify notify)
+static int disp_ccorr_set_listener(enum DISP_MODULE_ENUM module,
+				   ddp_module_notify notify)
 {
 	g_ccorr_ddp_notify = notify;
 	return 0;
 }
 
-
-static int disp_ccorr_bypass(DISP_MODULE_ENUM module, int bypass)
+static int disp_ccorr_bypass(enum DISP_MODULE_ENUM module, int bypass)
 {
 	int relay = 0;
 
@@ -365,28 +383,23 @@ static int disp_ccorr_bypass(DISP_MODULE_ENUM module, int bypass)
 	return 0;
 }
 
-
-static int disp_ccorr_power_on(DISP_MODULE_ENUM module, void *handle)
+static int disp_ccorr_power_on(enum DISP_MODULE_ENUM module, void *handle)
 {
-	if (module == DISP_MODULE_CCORR) {
+	if (module == DISP_MODULE_CCORR)
 		ddp_module_clock_enable(MM_CLK_DISP_CCORR, true);
-	}
 
 	return 0;
 }
 
-static int disp_ccorr_power_off(DISP_MODULE_ENUM module, void *handle)
+static int disp_ccorr_power_off(enum DISP_MODULE_ENUM module, void *handle)
 {
-	if (module == DISP_MODULE_CCORR) {
+	if (module == DISP_MODULE_CCORR)
 		ddp_module_clock_enable(MM_CLK_DISP_CCORR, false);
-	}
 
 	return 0;
 }
 
-
-
-DDP_MODULE_DRIVER ddp_driver_ccorr = {
+struct DDP_MODULE_DRIVER ddp_driver_ccorr = {
 	.config = disp_ccorr_config,
 	.bypass = disp_ccorr_bypass,
 	.set_listener = disp_ccorr_set_listener,

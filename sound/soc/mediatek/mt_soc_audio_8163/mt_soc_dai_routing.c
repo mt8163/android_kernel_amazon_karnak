@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -45,20 +47,22 @@ static unsigned int supported_sample_rates[] = {
 	96000
 };
 #endif
-static int mt6589_routing_startup(struct snd_pcm_substream *substream, struct snd_soc_dai *Daiport)
+static int mt6589_routing_startup(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *Daiport)
 {
 	pr_debug("mt6589_routing_startup\n");
 	return 0;
 }
 
-static int mt6589_routing_prepare(struct snd_pcm_substream *substream, struct snd_soc_dai *Daiport)
+static int mt6589_routing_prepare(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *Daiport)
 {
 	pr_debug("mt6589_routing_prepare\n");
 	return 0;
 }
 
-static int mt6589_routing_trigger(struct snd_pcm_substream *substream, int command,
-				  struct snd_soc_dai *Daiport)
+static int mt6589_routing_trigger(struct snd_pcm_substream *substream,
+	int command, struct snd_soc_dai *Daiport)
 {
 	pr_debug("mt6589_routing_trigger command = %d\n", command);
 	return 0;
@@ -83,7 +87,7 @@ static struct snd_soc_dai_driver mtk_routing_dai[] = {
 		      .rate_min = 8000,
 		      .rate_max = 48000,
 		      },
-	 /*
+#if 0
 	    .capture = {
 	    .stream_name = MT_SOC_ROUTING_STREAM_NAME,
 	    .rates = SNDRV_PCM_RATE_8000_48000,
@@ -93,7 +97,7 @@ static struct snd_soc_dai_driver mtk_routing_dai[] = {
 	    .rate_min = 8000,
 	    .rate_max = 48000,
 	    },
-	  */
+#endif
 	 .name = "PLATOFRM_CONTROL",
 	 .ops = &mtk_routing_ops,
 	 },
@@ -120,7 +124,7 @@ static int mtk_routing_dev_probe(struct platform_device *pdev)
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
 
 	rc = snd_soc_register_component(&pdev->dev, &dai_routing_component,
-					mtk_routing_dai, ARRAY_SIZE(mtk_routing_dai));
+		mtk_routing_dai, ARRAY_SIZE(mtk_routing_dai));
 	return rc;
 }
 

@@ -9,7 +9,6 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/wakelock.h>
 #include <linux/interrupt.h>
 #include <linux/of_irq.h>
 
@@ -58,6 +57,10 @@
 #define RT551X_VENDOR_ID1_MASK		0xFF
 #define RT551X_VENDOR_ID1_5518		0x00
 #define RT551X_VENDOR_ID1_5518B		0x01
+
+#define RT551X_MBIST_DRAM_1			0x18003000
+#define RT551X_MBIST_DRAM_3			0x18003100
+#define RT551X_MBIST_DRAM_5			0x18003200
 
 /********************/
 /* RT5514 registers */
@@ -508,6 +511,8 @@
 #define RT5518_DSP_INB0_SRC_PCMDATA0_L		(0x1 << 24)
 #define RT5518_DSP_INB0_SRC_PCMDATA_MONO	(0x2 << 24)
 
+/* RT5518_DOWNFILTER2_CTRL1 (0x20d0), common for rt551x */
+#define RT551X_HW_DIGITAL_GAIN_MASK     (0xFFFF)
 
 /* RT5518_PLL_SOURCE_CTRL (0x2100) */
 #define RT5518_PLL_2_SEL_MASK			(0x7 << 8)
@@ -552,8 +557,9 @@
 #define RT5518_DMICR_SEL_SFT			1
 #define RT5518_DMICL_SEL_SFT			0
 
-/* RT5518_ANA_CTRL_INBUF (0x2228) */
-#define RT5518_GAIN_INBUF_SFT			0
+/* RT5518_ANA_CTRL_INBUF (0x2228), common for rt551x */
+#define RT551X_GAIN_INBUF_SFT			0
+#define RT551X_GAIN_INBUF_MASK			0xF
 
 /* RT5518_ANA_CTRL_PLL22 (0x2254) */
 #define RT5518_EN_LDO_PLL2_BIT			0
@@ -608,7 +614,7 @@ struct rt551x_priv {
 	struct work_struct hotword_work;
 	struct work_struct watchdog_work;
 	struct work_struct handler_work;
-	struct wake_lock vad_wake;
+	struct wakeup_source vad_wake;
 	struct mutex dspcontrol_lock;
 	struct i2c_client *i2c;
 	unsigned int dbg_base, dbg_limit, dbg_rp, dbg_wp;

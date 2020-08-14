@@ -359,7 +359,7 @@ send_sync:
 		goto discard;
 	}
 
-	DCCP_INC_STATS_BH(DCCP_MIB_INERRS);
+	DCCP_INC_STATS(DCCP_MIB_INERRS);
 discard:
 	__kfree_skb(skb);
 	return 0;
@@ -537,7 +537,7 @@ static int dccp_rcv_respond_partopen_state_process(struct sock *sk,
 	case DCCP_PKT_DATAACK:
 	case DCCP_PKT_ACK:
 		/*
-		 * FIXME: we should be reseting the PARTOPEN (DELACK) timer
+		 * FIXME: we should be resetting the PARTOPEN (DELACK) timer
 		 * here but only if we haven't used the DELACK timer for
 		 * something else, like sending a delayed ack for a TIMESTAMP
 		 * echo, etc, for now were not clearing it, sending an extra
@@ -577,6 +577,7 @@ int dccp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	struct dccp_sock *dp = dccp_sk(sk);
 	struct dccp_skb_cb *dcb = DCCP_SKB_CB(skb);
 	const int old_state = sk->sk_state;
+	bool acceptable;
 	int queued = 0;
 
 	/*
@@ -603,8 +604,13 @@ int dccp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 	 */
 	if (sk->sk_state == DCCP_LISTEN) {
 		if (dh->dccph_type == DCCP_PKT_REQUEST) {
-			if (inet_csk(sk)->icsk_af_ops->conn_request(sk,
-								    skb) < 0)
+			/* It is possible that we process SYN packets from backlog,
+			 * so we need to make sure to disable BH right there.
+			 */
+			local_bh_disable();
+			acceptable = inet_csk(sk)->icsk_af_ops->conn_request(sk, skb) >= 0;
+			local_bh_enable();
+			if (!acceptable)
 				return 1;
 			consume_skb(skb);
 			return 0;

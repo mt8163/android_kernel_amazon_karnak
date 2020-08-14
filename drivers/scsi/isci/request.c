@@ -694,7 +694,7 @@ sci_io_request_construct_sata(struct isci_request *ireq,
 	}
 
 	/* ATAPI */
-	if (dev->sata_dev.command_set == ATAPI_COMMAND_SET &&
+	if (dev->sata_dev.class == ATA_DEV_ATAPI &&
 	    task->ata_task.fis.command == ATA_CMD_PACKET) {
 		sci_atapi_construct(ireq);
 		return SCI_SUCCESS;
@@ -2980,7 +2980,7 @@ static void sci_request_started_state_enter(struct sci_base_state_machine *sm)
 		state = SCI_REQ_SMP_WAIT_RESP;
 	} else if (task && sas_protocol_ata(task->task_proto) &&
 		   !task->ata_task.use_ncq) {
-		if (dev->sata_dev.command_set == ATAPI_COMMAND_SET &&
+		if (dev->sata_dev.class == ATA_DEV_ATAPI &&
 			task->ata_task.fis.command == ATA_CMD_PACKET) {
 			state = SCI_REQ_ATAPI_WAIT_H2D;
 		} else if (task->data_dir == DMA_NONE) {
@@ -3169,7 +3169,10 @@ static enum sci_status isci_request_stp_request_construct(struct isci_request *i
 	status = sci_io_request_construct_basic_sata(ireq);
 
 	if (qc && (qc->tf.command == ATA_CMD_FPDMA_WRITE ||
-		   qc->tf.command == ATA_CMD_FPDMA_READ)) {
+		   qc->tf.command == ATA_CMD_FPDMA_READ ||
+		   qc->tf.command == ATA_CMD_FPDMA_RECV ||
+		   qc->tf.command == ATA_CMD_FPDMA_SEND ||
+		   qc->tf.command == ATA_CMD_NCQ_NON_DATA)) {
 		fis->sector_count = qc->tag << 3;
 		ireq->tc->type.stp.ncq_tag = qc->tag;
 	}

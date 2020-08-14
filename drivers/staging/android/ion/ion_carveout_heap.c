@@ -22,9 +22,10 @@
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <linux/seq_file.h>
 #include "ion.h"
 #include "ion_priv.h"
+
+#define ION_CARVEOUT_ALLOCATE_FAIL	-1
 
 struct ion_carveout_heap {
 	struct ion_heap heap;
@@ -32,25 +33,22 @@ struct ion_carveout_heap {
 	ion_phys_addr_t base;
 };
 
-ion_phys_addr_t ion_carveout_allocate(struct ion_heap *heap,
-				      unsigned long size,
-				      unsigned long align)
+static ion_phys_addr_t ion_carveout_allocate(struct ion_heap *heap,
+					     unsigned long size,
+					     unsigned long align)
 {
 	struct ion_carveout_heap *carveout_heap =
 		container_of(heap, struct ion_carveout_heap, heap);
 	unsigned long offset = gen_pool_alloc(carveout_heap->pool, size);
 
-	if (!offset) {
-		IONMSG("ion_carveout alloc fail! size=0x%lu, free=0x%zu\n", size,
-			gen_pool_avail(carveout_heap->pool));
+	if (!offset)
 		return ION_CARVEOUT_ALLOCATE_FAIL;
-	}
 
 	return offset;
 }
 
-void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
-		       unsigned long size)
+static void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
+			      unsigned long size)
 {
 	struct ion_carveout_heap *carveout_heap =
 		container_of(heap, struct ion_carveout_heap, heap);
@@ -58,19 +56,6 @@ void ion_carveout_free(struct ion_heap *heap, ion_phys_addr_t addr,
 	if (addr == ION_CARVEOUT_ALLOCATE_FAIL)
 		return;
 	gen_pool_free(carveout_heap->pool, addr, size);
-}
-
-static int ion_carveout_heap_phys(struct ion_heap *heap,
-				  struct ion_buffer *buffer,
-				  ion_phys_addr_t *addr, size_t *len)
-{
-	struct sg_table *table = buffer->priv_virt;
-	struct page *page = sg_page(table->sgl);
-	ion_phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
-
-	*addr = paddr;
-	*len = buffer->size;
-	return 0;
 }
 
 static int ion_carveout_heap_allocate(struct ion_heap *heap,
@@ -85,7 +70,7 @@ static int ion_carveout_heap_allocate(struct ion_heap *heap,
 	if (align > PAGE_SIZE)
 		return -EINVAL;
 
-	table = kmalloc(sizeof(struct sg_table), GFP_KERNEL);
+	table = kmalloc(sizeof(*table), GFP_KERNEL);
 	if (!table)
 		return -ENOMEM;
 	ret = sg_alloc_table(table, 1, GFP_KERNEL);
@@ -99,7 +84,7 @@ static int ion_carveout_heap_allocate(struct ion_heap *heap,
 	}
 
 	sg_set_page(table->sgl, pfn_to_page(PFN_DOWN(paddr)), size, 0);
-	buffer->priv_virt = table;
+	buffer->sg_table = table;
 
 	return 0;
 
@@ -113,7 +98,7 @@ err_free:
 static void ion_carveout_heap_free(struct ion_buffer *buffer)
 {
 	struct ion_heap *heap = buffer->heap;
-	struct sg_table *table = buffer->priv_virt;
+	struct sg_table *table = buffer->sg_table;
 	struct page *page = sg_page(table->sgl);
 	ion_phys_addr_t paddr = PFN_PHYS(page_to_pfn(page));
 
@@ -121,70 +106,20 @@ static void ion_carveout_heap_free(struct ion_buffer *buffer)
 
 	if (ion_buffer_cached(buffer))
 		dma_sync_sg_for_device(NULL, table->sgl, table->nents,
-							DMA_BIDIRECTIONAL);
+				       DMA_BIDIRECTIONAL);
 
 	ion_carveout_free(heap, paddr, buffer->size);
 	sg_free_table(table);
 	kfree(table);
 }
 
-static struct sg_table *ion_carveout_heap_map_dma(struct ion_heap *heap,
-						  struct ion_buffer *buffer)
-{
-	return buffer->priv_virt;
-}
-
-static void ion_carveout_heap_unmap_dma(struct ion_heap *heap,
-					struct ion_buffer *buffer)
-{
-}
-
 static struct ion_heap_ops carveout_heap_ops = {
 	.allocate = ion_carveout_heap_allocate,
 	.free = ion_carveout_heap_free,
-	.phys = ion_carveout_heap_phys,
-	.map_dma = ion_carveout_heap_map_dma,
-	.unmap_dma = ion_carveout_heap_unmap_dma,
 	.map_user = ion_heap_map_user,
 	.map_kernel = ion_heap_map_kernel,
 	.unmap_kernel = ion_heap_unmap_kernel,
 };
-
-static void ion_carveout_chunk_show(struct gen_pool *pool,
-		struct gen_pool_chunk *chunk,
-		void *data)
-{
-	int order, nlongs, nbits, i;
-	struct seq_file *s = (struct seq_file *)data;
-
-	order = pool->min_alloc_order;
-	nbits = (chunk->end_addr - chunk->start_addr) >> order;
-	nlongs = BITS_TO_LONGS(nbits);
-
-	seq_printf(s, "phys_addr=0x%x bits=", (unsigned int)chunk->phys_addr);
-
-	for (i = 0; i < nlongs; i++)
-		seq_printf(s, "0x%x ", (unsigned int)chunk->bits[i]);
-
-	seq_puts(s, "\n");
-}
-
-static int ion_carveout_heap_debug_show(struct ion_heap *heap, struct seq_file *s,
-				      void *unused)
-{
-	struct ion_carveout_heap *carveout_heap = container_of(heap, struct ion_carveout_heap, heap);
-	size_t size_avail, total_size;
-
-	total_size = gen_pool_size(carveout_heap->pool);
-	size_avail = gen_pool_avail(carveout_heap->pool);
-
-	seq_printf(s, "total_size=0x%zu, free=0x%zu, base=0x%lu\n",
-	total_size, size_avail, carveout_heap->base);
-
-	gen_pool_for_each_chunk(carveout_heap->pool, ion_carveout_chunk_show, s);
-
-	return 0;
-}
 
 struct ion_heap *ion_carveout_heap_create(struct ion_platform_heap *heap_data)
 {
@@ -197,13 +132,14 @@ struct ion_heap *ion_carveout_heap_create(struct ion_platform_heap *heap_data)
 	page = pfn_to_page(PFN_DOWN(heap_data->base));
 	size = heap_data->size;
 
-	ion_pages_sync_for_device(NULL, page, size, DMA_BIDIRECTIONAL);
+	ion_pages_sync_for_device(g_ion_device->dev.this_device,
+				  page, size, DMA_BIDIRECTIONAL);
 
 	ret = ion_heap_pages_zero(page, size, pgprot_writecombine(PAGE_KERNEL));
 	if (ret)
 		return ERR_PTR(ret);
 
-	carveout_heap = kzalloc(sizeof(struct ion_carveout_heap), GFP_KERNEL);
+	carveout_heap = kzalloc(sizeof(*carveout_heap), GFP_KERNEL);
 	if (!carveout_heap)
 		return ERR_PTR(-ENOMEM);
 
@@ -218,7 +154,7 @@ struct ion_heap *ion_carveout_heap_create(struct ion_platform_heap *heap_data)
 	carveout_heap->heap.ops = &carveout_heap_ops;
 	carveout_heap->heap.type = ION_HEAP_TYPE_CARVEOUT;
 	carveout_heap->heap.flags = ION_HEAP_FLAG_DEFER_FREE;
-	carveout_heap->heap.debug_show = ion_carveout_heap_debug_show;
+
 	return &carveout_heap->heap;
 }
 

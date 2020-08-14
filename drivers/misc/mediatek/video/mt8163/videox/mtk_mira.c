@@ -1,21 +1,34 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #define LOG_TAG "mtk_mira"
 
 #include "disp_drv_log.h"
 
 #include <linux/kernel.h>
 #include <linux/mm.h>
-#include <linux/proc_fs.h>
 #include <linux/module.h>
+#include <linux/proc_fs.h>
 
-#include "mtk_mira.h"
 #include "mtk_disp_mgr.h"
-
+#include "mtk_mira.h"
 
 #define DISP_DEVNAME "mtk_mira"
 
 static struct proc_dir_entry *proc_entry;
 
-static long disp_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long disp_unlocked_ioctl(struct file *file, unsigned int cmd,
+				unsigned long arg)
 {
 	return mtk_disp_mgr_ioctl(file, cmd, arg);
 }
@@ -25,7 +38,8 @@ static int disp_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t disp_read(struct file *file, char __user *data, size_t len, loff_t *ppos)
+static ssize_t disp_read(struct file *file, char __user *data, size_t len,
+			 loff_t *ppos)
 {
 	return 0;
 }
@@ -47,14 +61,15 @@ static int disp_mmap(struct file *file, struct vm_area_struct *a_pstVMArea)
 }
 
 #ifdef CONFIG_COMPAT
-static long disp_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long disp_compat_ioctl(struct file *file, unsigned int cmd,
+			      unsigned long arg)
 {
 	long ret = -ENOIOCTLCMD;
 
 	switch (cmd) {
 
-		/* add cases here for 32bit/64bit conversion */
-		/* ... */
+	/* add cases here for 32bit/64bit conversion */
+	/* ... */
 
 	default:
 		return mtk_disp_mgr_ioctl(file, cmd, arg);
@@ -62,7 +77,6 @@ static long disp_compat_ioctl(struct file *file, unsigned int cmd, unsigned long
 	return ret;
 }
 #endif
-
 
 /* Kernel interface */
 static const struct file_operations disp_fops = {
@@ -75,8 +89,7 @@ static const struct file_operations disp_fops = {
 	.release = disp_release,
 	.flush = disp_flush,
 	.read = disp_read,
-	.mmap = disp_mmap
-};
+	.mmap = disp_mmap};
 
 static int __init disp_init(void)
 {

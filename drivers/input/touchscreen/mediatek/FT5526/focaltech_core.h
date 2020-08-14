@@ -2,7 +2,7 @@
  *
  * FocalTech TouchScreen driver.
  *
- * Copyright (c) 2010-2016, FocalTech Systems, Ltd., all rights reserved.
+ * Copyright (c) 2012-2019, Focaltech Ltd. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -14,7 +14,7 @@
  * GNU General Public License for more details.
  *
  */
-/*******************************************************************************
+/*****************************************************************************
 *
 * File Name: focaltech_core.h
 
@@ -22,301 +22,248 @@
 *
 * Created: 2016-08-08
 *
-* Abstract: entrance for focaltech ts driver
+* Abstract:
 *
-* Version: V1.0
+* Reference:
 *
-*******************************************************************************/
+*****************************************************************************/
 
-#ifndef __LINUX_FTXXXX_H__
-#define __LINUX_FTXXXX_H__
-
-/*******************************************************************************
-* 1.Included header files
-*******************************************************************************/
-
-/* #include "tpd.h" */
-#include <linux/hrtimer.h>
-#include <linux/string.h>
-#include <linux/vmalloc.h>
+#ifndef __LINUX_FOCALTECH_CORE_H__
+#define __LINUX_FOCALTECH_CORE_H__
+/*****************************************************************************
+* Included header files
+*****************************************************************************/
+#include <linux/kernel.h>
+#include <linux/device.h>
 #include <linux/i2c.h>
+#include <linux/spi/spi.h>
 #include <linux/input.h>
-#include <linux/slab.h>
-#include <linux/gpio.h>
-#include <linux/bitops.h>
-#include <linux/delay.h>
-#include <linux/semaphore.h>
-#include <linux/mutex.h>
-#include <linux/syscalls.h>
-#include <linux/byteorder/generic.h>
+#include <linux/input/mt.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/delay.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
+#include <linux/gpio.h>
+#include <linux/regulator/consumer.h>
+#include <asm/uaccess.h>
+#include <linux/firmware.h>
+#include <linux/debugfs.h>
+#include <linux/mutex.h>
+#include <linux/workqueue.h>
+#include <linux/wait.h>
 #include <linux/time.h>
-#include <linux/rtpm_prio.h>
-#include <asm/unistd.h>
 #include <linux/jiffies.h>
-#ifdef CONFIG_HAS_EARLYSUSPEND
-#include <linux/earlysuspend.h>
-#endif
+#include <linux/fs.h>
+#include <linux/proc_fs.h>
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/kthread.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/fs.h>
-#include <linux/cdev.h>
-#include <linux/device.h>
-#include <asm/uaccess.h>
-#include <linux/mount.h>
-#include <linux/unistd.h>
-#include <linux/proc_fs.h>
-#include <linux/netdevice.h>
-#include <../fs/proc/internal.h>
-/*******************************************************************************
+#include <linux/dma-mapping.h>
+#include "focaltech_common.h"
+
+/*****************************************************************************
 * Private constant and macro definitions using #define
-*******************************************************************************/
-#define TPD_DMESG printk
-#define TPD_DEBUG_ON 1
-#define TPD_DEBUG(fmt, arg...)          do {\
-					 if (TPD_DEBUG_ON)\
-					 printk("<<-FTS-DEBUG->>"fmt"\n", ##arg);\
-				       } while (0)
-#define TPD_DEVICE "focal-tp"
+*****************************************************************************/
+#define FTS_MAX_POINTS_SUPPORT              10 /* constant value, can't be changed */
+#define FTS_MAX_KEYS                        4
+#define FTS_KEY_DIM                         10
+#define FTS_ONE_TCH_LEN                     6
+#define FTS_TOUCH_DATA_LEN  (FTS_MAX_POINTS_SUPPORT * FTS_ONE_TCH_LEN + 3)
 
+#define FTS_SPI_CLK_MAX                     10000000
 
-/**********************Custom define begin**********************************************/
-#define TPD_POWER_SOURCE_CUSTOM             MT6323_POWER_LDO_VGP1
-#define IIC_PORT                            0       /* MT6572: 1  MT6589:0 , Based on the I2C index you choose for TPM */
-#define TPD_HAVE_BUTTON                             /* if have virtual key,need define the MACRO */
-#define TPD_BUTTON_HEIGH                    (40)    /* 100 */
-#define TPD_KEY_COUNT                       3
-#define TPD_KEYS                            { KEY_MENU, KEY_HOMEPAGE, KEY_BACK}
-#define TPD_KEYS_DIM                        {{80, 900, 20, TPD_BUTTON_HEIGH}, {240, 900, 20, TPD_BUTTON_HEIGH}, {400, 900, 20, TPD_BUTTON_HEIGH} }
-#define FT_ESD_PROTECT                      0
-/*********************Custom Define end*************************************************/
-#define MT_PROTOCOL_B
-#define A_TYPE                              0
-#define TPD_TYPE_CAPACITIVE
-#define TPD_TYPE_RESISTIVE
-#define TPD_POWER_SOURCE
-#define TPD_NAME                            "FTS"
-#define TPD_I2C_NUMBER                      0
-#define TPD_WAKEUP_TRIAL                    60
-#define TPD_WAKEUP_DELAY                    100
-#define TPD_VELOCITY_CUSTOM_X               15
-#define TPD_VELOCITY_CUSTOM_Y               20
+#define FTS_GESTURE_POINTS_MAX              6
+#define FTS_GESTURE_DATA_LEN               (FTS_GESTURE_POINTS_MAX * 4 + 4)
 
-#define CFG_MAX_TOUCH_POINTS                5
-#define MT_MAX_TOUCH_POINTS                 10
-#define FTS_MAX_ID                          0x0F
-#define FTS_TOUCH_STEP                      6
-#define FTS_FACE_DETECT_POS                 1
+#define FTS_MAX_ID                          0x0A
 #define FTS_TOUCH_X_H_POS                   3
 #define FTS_TOUCH_X_L_POS                   4
 #define FTS_TOUCH_Y_H_POS                   5
 #define FTS_TOUCH_Y_L_POS                   6
+#define FTS_TOUCH_PRE_POS                   7
+#define FTS_TOUCH_AREA_POS                  8
+#define FTS_TOUCH_POINT_NUM                 2
 #define FTS_TOUCH_EVENT_POS                 3
 #define FTS_TOUCH_ID_POS                    5
-#define FT_TOUCH_POINT_NUM                  2
-#define FTS_TOUCH_XY_POS                    7
-#define FTS_TOUCH_MISC                      8
-#define POINT_READ_BUF                      (3 + FTS_TOUCH_STEP * CFG_MAX_TOUCH_POINTS)
-#define FT_FW_NAME_MAX_LEN                  50
-#define TPD_DELAY                           (2*HZ/100)
-/* #define TPD_RES_X                        1080//480 */
-/* #define TPD_RES_Y                        1280//800 */
-#define TPD_CALIBRATION_MATRIX              {962, 0, 0, 0, 1600, 0, 0, 0}
-#define FT_PROXIMITY_ENABLE                 0
-/* #define TPD_AUTO_UPGRADE */
-/* #define TPD_HAVE_CALIBRATION */
-/* #define TPD_HAVE_TREMBLE_ELIMINATION */
-/* #define TPD_CLOSE_POWER_IN_SLEEP */
-/******************************************************************************/
-/* Chip Device Type */
-#define IC_FT5X06		 0		/* x=2,3,4 */
-/*#define IC_FT5606*/				/* ft5506/FT5606/FT5816 */
-#define IC_FT5316		 2		/* ft5x16 */
-#define IC_FT6208		 3		/* ft6208 */
-#define IC_FT6x06		 4		/* ft6206/FT6306 */
-#define IC_FT5x06i		 5		/* ft5306i */
-#define IC_FT5x36		 6		/* ft5336/ft5436/FT5436i */
+#define FTS_COORDS_ARR_SIZE                 4
+#define FTS_X_MIN_DISPLAY_DEFAULT           0
+#define FTS_Y_MIN_DISPLAY_DEFAULT           0
+#define FTS_X_MAX_DISPLAY_DEFAULT           720
+#define FTS_Y_MAX_DISPLAY_DEFAULT           1280
 
+#define FTS_TOUCH_DOWN                      0
+#define FTS_TOUCH_UP                        1
+#define FTS_TOUCH_CONTACT                   2
+#define EVENT_DOWN(flag)                    ((FTS_TOUCH_DOWN == flag) || (FTS_TOUCH_CONTACT == flag))
+#define EVENT_UP(flag)                      (FTS_TOUCH_UP == flag)
+#define EVENT_NO_DOWN(data)                 (!data->point_num)
 
+#define FTX_MAX_COMPATIBLE_TYPE             4
+#define FTX_MAX_COMMMAND_LENGTH             16
 
-/*register address*/
-#define FTS_REG_CHIP_ID                     0xA3            /* chip ID */
-#define FTS_REG_FW_VER                      0xA6            /* FW  version */
-#define FTS_REG_VENDOR_ID                   0xA8            /* TP vendor ID */
-#define FTS_REG_POINT_RATE                  0x88            /* report rate */
-#define TPD_MAX_POINTS_2                    2
-#define TPD_MAX_POINTS_5                    5
-#define TPD_MAX_POINTS_10                   10
-#define AUTO_CLB_NEED                       1
-#define AUTO_CLB_NONEED                     0
-#define LEN_FLASH_ECC_MAX                   0xFFFE
-/* #define FTS_PACKET_LENGTH                120 */
-#define FTS_GESTRUE_POINTS                  255
-#define FTS_GESTRUE_POINTS_ONETIME          62
-#define FTS_GESTRUE_POINTS_HEADER           8
-#define FTS_GESTURE_OUTPUT_ADRESS           0xD3
-#define FTS_GESTURE_OUTPUT_UNIT_LENGTH      4
-
-/*#define KEY_GESTURE_U                     KEY_U
-#define KEY_GESTURE_UP                      KEY_UP
-#define KEY_GESTURE_DOWN                    KEY_DOWN
-#define KEY_GESTURE_LEFT                    KEY_LEFT
-#define KEY_GESTURE_RIGHT                   KEY_RIGHT
-#define KEY_GESTURE_O                       KEY_O
-#define KEY_GESTURE_E                       KEY_E
-#define KEY_GESTURE_M                       KEY_M
-#define KEY_GESTURE_L                       KEY_L
-#define KEY_GESTURE_W                       KEY_W
-#define KEY_GESTURE_S                       KEY_S
-#define KEY_GESTURE_V                       KEY_V
-#define KEY_GESTURE_Z                       KEY_Z
-*/
-#define GESTURE_LEFT                        0x20
-#define GESTURE_RIGHT                       0x21
-#define GESTURE_UP                          0x22
-#define GESTURE_DOWN                        0x23
-#define GESTURE_DOUBLECLICK                 0x24
-#define GESTURE_O                           0x30
-#define GESTURE_W                           0x31
-#define GESTURE_M                           0x32
-#define GESTURE_E                           0x33
-#define GESTURE_L                           0x44
-#define GESTURE_S                           0x46
-#define GESTURE_V                           0x54
-#define GESTURE_Z                           0x41
-/*******************************************************************************
+/*****************************************************************************
 * Private enumerations, structures and unions using typedef
-*******************************************************************************/
-/* IC info */
-struct fts_Upgrade_Info {
-    u8 CHIP_ID;
-    u8 TPD_MAX_POINTS;
-    u8 AUTO_CLB;
-    u16 delay_aa;          /* delay of write FT_UPGRADE_AA */
-    u16 delay_55;          /* delay of write FT_UPGRADE_55 */
-    u8 upgrade_id_1;       /* upgrade id 1 */
-    u8 upgrade_id_2;       /* upgrade id 2 */
-    u16 delay_readid;      /* delay of read id */
-    u16 delay_erase_flash;     /* delay of earse flash */
+*****************************************************************************/
+struct ftxxxx_proc {
+    struct proc_dir_entry *proc_entry;
+    u8 opmode;
+    u8 cmd_len;
+    u8 cmd[FTX_MAX_COMMMAND_LENGTH];
 };
 
-/*touch event info*/
-struct ts_event {
-    u16 au16_x[CFG_MAX_TOUCH_POINTS];               /* x coordinate */
-    u16 au16_y[CFG_MAX_TOUCH_POINTS];               /* y coordinate */
-    u8 au8_touch_event[CFG_MAX_TOUCH_POINTS];       /* touch event: 0 -- down; 1-- up; 2 -- contact */
-    u8 au8_finger_id[CFG_MAX_TOUCH_POINTS];         /* touch ID */
-    u16 pressure[CFG_MAX_TOUCH_POINTS];
-    u16 area[CFG_MAX_TOUCH_POINTS];
-    u8 touch_point;
-    int touchs;
-    u8 touch_point_num;
+struct fts_ts_platform_data {
+    u32 irq_gpio;
+    u32 irq_gpio_flags;
+    u32 reset_gpio;
+    u32 reset_gpio_flags;
+    bool have_key;
+    u32 key_number;
+    u32 keys[FTS_MAX_KEYS];
+    u32 key_y_coords[FTS_MAX_KEYS];
+    u32 key_x_coords[FTS_MAX_KEYS];
+    u32 x_max;
+    u32 y_max;
+    u32 x_min;
+    u32 y_min;
+    u32 max_touch_number;
 };
+
+struct ts_event {
+    int x;      /*x coordinate */
+    int y;      /*y coordinate */
+    int p;      /* pressure */
+    int flag;   /* touch event flag: 0 -- down; 1-- up; 2 -- contact */
+    int id;     /*touch ID */
+    int area;
+};
+
 struct fts_ts_data {
     struct i2c_client *client;
+    struct spi_device *spi;
+    struct device *dev;
     struct input_dev *input_dev;
-    struct ts_event event;
-    const struct ftxxxx_ts_platform_data *pdata;
-    struct work_struct  touch_event_work;
+    struct fts_ts_platform_data *pdata;
+    struct ts_ic_info ic_info;
     struct workqueue_struct *ts_workqueue;
+    struct work_struct fwupg_work;
+    struct delayed_work esdcheck_work;
+    struct delayed_work prc_work;
+    struct work_struct resume_work;
+    struct ftxxxx_proc proc;
+    spinlock_t irq_lock;
+    struct mutex report_mutex;
+    struct mutex bus_lock;
+    int irq;
+    int log_level;
+    int fw_is_running;      /* confirm fw is running when using spi:default 0 */
+    bool suspended;
+    bool fw_loading;
+    bool irq_disabled;
+    bool power_disabled;
+    bool glove_mode;
+    bool cover_mode;
+    bool charger_mode;
+    /* multi-touch */
+    struct ts_event *events;
+    u8 *bus_buf;
+    u8 *point_buf;
+    int pnt_buf_size;
+    int touchs;
+    int key_state;
+    int touch_point;
+    int point_num;
     struct regulator *vdd;
     struct regulator *vcc_i2c;
-    char fw_name[FT_FW_NAME_MAX_LEN];
-    bool loading_fw;
-    u8 family_id;
-    struct dentry *dir;
-    u16 addr;
-    bool suspended;
-    char *ts_info;
-    u8 *tch_data;
-    u32 tch_data_len;
-    u8 fw_ver[3];
-    u8 fw_vendor_id;
+#if FTS_PINCTRL_EN
+    struct pinctrl *pinctrl;
+    struct pinctrl_state *pins_active;
+    struct pinctrl_state *pins_suspend;
+    struct pinctrl_state *pins_release;
+#endif
 #if defined(CONFIG_FB)
     struct notifier_block fb_notif;
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
     struct early_suspend early_suspend;
 #endif
 };
-/*******************************************************************************
-* Static variables
-*******************************************************************************/
 
-
-
-
-/*******************************************************************************
+/*****************************************************************************
 * Global variable or extern global variabls/functions
-*******************************************************************************/
-/* Function Switchs: define to open,  comment to close */
-#define FTS_GESTRUE_EN                          0
-#define MTK_EN                                  1
-#define FTS_APK_DEBUG
-#define SYSFS_DEBUG
-#define FTS_TEST_EN                             0
-#define TPD_AUTO_UPGRADE                        1
-#define FTS_CTL_IIC                             1
+*****************************************************************************/
+extern struct fts_ts_data *fts_data;
 
-#define FT_TP                                   0
-/* #define CONFIG_TOUCHPANEL_PROXIMITY_SENSOR */
-/* #if FT_ESD_PROTECT */
-/* extern int apk_debug_flag; */
-/* #endif */
+/* communication interface */
+int fts_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen);
+int fts_read_reg(u8 addr, u8 *value);
+int fts_write(u8 *writebuf, u32 writelen);
+int fts_write_reg(u8 addr, u8 value);
+void fts_hid2std(void);
+int fts_bus_init(struct fts_ts_data *ts_data);
+int fts_bus_exit(struct fts_ts_data *ts_data);
 
-extern struct i2c_client *fts_i2c_client;
-extern struct input_dev *fts_input_dev;
-/* extern struct tpd_device *tpd; */
-
-
-extern struct fts_Upgrade_Info fts_updateinfo_curr;
-int fts_rw_iic_drv_init(struct i2c_client *client);
-void  fts_rw_iic_drv_exit(void);
-void fts_get_upgrade_array(void);
-#if FTS_GESTRUE_EN
-extern int fts_Gesture_init(struct input_dev *input_dev);
-extern int fts_read_Gestruedata(void);
-#endif
-extern int fts_write_reg(struct i2c_client *client, u8 regaddr, u8 regvalue);
-extern int fts_read_reg(struct i2c_client *client, u8 regaddr, u8 *regvalue);
-extern int fts_i2c_read(struct i2c_client *client, char *writebuf, int writelen, char *readbuf, int readlen);
-extern int fts_i2c_write(struct i2c_client *client, char *writebuf, int writelen);
-extern int hidi2c_to_stdi2c(struct i2c_client *client);
-extern int fts_ctpm_fw_upgrade_with_app_file(struct i2c_client *client, char *firmware_name);
-extern int fts_ctpm_auto_clb(struct i2c_client *client);
-extern int fts_ctpm_fw_upgrade_with_i_file(struct i2c_client *client);
-extern int fts_ctpm_get_i_file_ver(struct i2c_client *client);
-extern int fts_remove_sysfs(struct i2c_client *client);
-extern void fts_release_apk_debug_channel(void);
-extern int fts_ctpm_auto_upgrade(struct i2c_client *client);
-#if FT_ESD_PROTECT
-extern void esd_switch(s32 on);
+/* Gesture functions */
+#if FTS_GESTURE_EN
+int fts_gesture_init(struct fts_ts_data *ts_data);
+int fts_gesture_exit(struct fts_ts_data *ts_data);
+void fts_gesture_recovery(struct fts_ts_data *ts_data);
+int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data);
+int fts_gesture_suspend(struct fts_ts_data *ts_data);
+int fts_gesture_resume(struct fts_ts_data *ts_data);
 #endif
 
+/* Apk and functions */
+#if FTS_APK_NODE_EN
+int fts_create_apk_debug_channel(struct fts_ts_data *);
+void fts_release_apk_debug_channel(struct fts_ts_data *);
+#endif
+
+/* ADB functions */
+#if FTS_SYSFS_NODE_EN
+int fts_create_sysfs(struct fts_ts_data *ts_data);
+int fts_remove_sysfs(struct fts_ts_data *ts_data);
+#endif
+
+/* ESD */
+#if FTS_ESDCHECK_EN
+int fts_esdcheck_init(struct fts_ts_data *ts_data);
+int fts_esdcheck_exit(struct fts_ts_data *ts_data);
+int fts_esdcheck_switch(bool enable);
+int fts_esdcheck_proc_busy(bool proc_debug);
+int fts_esdcheck_set_intr(bool intr);
+int fts_esdcheck_suspend(void);
+int fts_esdcheck_resume(void);
+#endif
+
+/* Production test */
 #if FTS_TEST_EN
-extern int fts_test_init(struct i2c_client *client);
-extern int fts_test_exit(struct i2c_client *client);
+int fts_test_init(struct fts_ts_data *ts_data);
+int fts_test_exit(struct fts_ts_data *ts_data);
 #endif
 
-extern void fts_reset_tp(int HighOrLow);
-extern int fts_create_sysfs(struct i2c_client *client);
-/* Apk and ADB functions */
-extern int fts_create_apk_debug_channel(struct i2c_client *client);
+/* Point Report Check*/
+#if FTS_POINT_REPORT_CHECK_EN
+int fts_point_report_check_init(struct fts_ts_data *ts_data);
+int fts_point_report_check_exit(struct fts_ts_data *ts_data);
+void fts_prc_queue_work(struct fts_ts_data *ts_data);
+#endif
 
+/* FW upgrade */
+int fts_fwupg_init(struct fts_ts_data *ts_data);
+int fts_fwupg_exit(struct fts_ts_data *ts_data);
+int fts_upgrade_bin(char *fw_name, bool force);
+int fts_enter_test_environment(bool test_state);
 
-/*******************************************************************************
-* Static function prototypes
-*******************************************************************************/
-#if 0
-#define FTS_DBG
-#ifdef FTS_DBG
-#define FTS_DBG(fmt, args...)               printk("[FTS]" fmt, ## args)
-#else
-#define FTS_DBG(fmt, args...)               do { } while (0)
-#endif
-#endif
-#endif
+/* Other */
+int fts_reset_proc(int hdelayms);
+int fts_wait_tp_to_valid(void);
+void fts_release_all_finger(void);
+void fts_tp_state_recovery(struct fts_ts_data *ts_data);
+int fts_ex_mode_init(struct fts_ts_data *ts_data);
+int fts_ex_mode_exit(struct fts_ts_data *ts_data);
+int fts_ex_mode_recovery(struct fts_ts_data *ts_data);
+
+void fts_irq_disable(void);
+void fts_irq_enable(void);
+#endif /* __LINUX_FOCALTECH_CORE_H__ */

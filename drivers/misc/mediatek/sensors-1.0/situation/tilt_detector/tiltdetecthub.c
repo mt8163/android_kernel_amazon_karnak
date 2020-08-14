@@ -1,15 +1,18 @@
 /* tiltdetecthub motion sensor driver
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
+#define pr_fmt(fmt) "[tiltdetecthub] " fmt
 
 #include <hwmsensor.h>
 #include "tiltdetecthub.h"
@@ -18,12 +21,6 @@
 #include <linux/notifier.h>
 #include "scp_helper.h"
 
-
-#define TILTDETHUB_TAG                  "[tiltdetecthub] "
-#define TILTDETHUB_FUN(f)               pr_debug(TILTDETHUB_TAG"%s\n", __func__)
-#define TILTDETHUB_ERR(fmt, args...)    pr_err(TILTDETHUB_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
-#define TILTDETHUB_LOG(fmt, args...)    pr_debug(TILTDETHUB_TAG fmt, ##args)
-
 static struct situation_init_info tiltdetecthub_init_info;
 
 static int tilt_detect_get_data(int *probability, int *status)
@@ -31,18 +28,14 @@ static int tilt_detect_get_data(int *probability, int *status)
 	int err = 0;
 	struct data_unit_t data;
 	uint64_t time_stamp = 0;
-	uint64_t time_stamp_gpt = 0;
 
 	err = sensor_get_data_from_hub(ID_TILT_DETECTOR, &data);
 	if (err < 0) {
-		TILTDETHUB_ERR("sensor_get_data_from_hub fail!!\n");
+		pr_err("sensor_get_data_from_hub fail!!\n");
 		return -1;
 	}
 	time_stamp		= data.time_stamp;
-	time_stamp_gpt	= data.time_stamp_gpt;
 	*probability	= data.gesture_data_t.probability;
-	TILTDETHUB_LOG("recv ipi: timestamp: %lld, timestamp_gpt: %lld, probability: %d!\n",
-		time_stamp, time_stamp_gpt, *probability);
 	return 0;
 }
 static int tilt_detect_open_report_data(int open)
@@ -59,9 +52,11 @@ static int tilt_detect_open_report_data(int open)
 	ret = sensor_enable_to_hub(ID_TILT_DETECTOR, open);
 	return ret;
 }
-static int tilt_detect_batch(int flag, int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
+static int tilt_detect_batch(int flag,
+	int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
 {
-	return sensor_batch_to_hub(ID_TILT_DETECTOR, flag, samplingPeriodNs, maxBatchReportLatencyNs);
+	return sensor_batch_to_hub(ID_TILT_DETECTOR,
+		flag, samplingPeriodNs, maxBatchReportLatencyNs);
 }
 
 static int tilt_detect_flush(void)
@@ -71,11 +66,14 @@ static int tilt_detect_flush(void)
 
 static int tilt_detect_recv_data(struct data_unit_t *event, void *reserved)
 {
+	int err = 0;
+
 	if (event->flush_action == FLUSH_ACTION)
-		situation_flush_report(ID_TILT_DETECTOR);
+		err = situation_flush_report(ID_TILT_DETECTOR);
 	else if (event->flush_action == DATA_ACTION)
-		situation_notify(ID_TILT_DETECTOR);
-	return 0;
+		err = situation_data_report(ID_TILT_DETECTOR,
+			event->tilt_event.state);
+	return err;
 }
 
 static int tiltdetecthub_local_init(void)
@@ -91,19 +89,20 @@ static int tiltdetecthub_local_init(void)
 	ctl.is_support_batch = false;
 	err = situation_register_control_path(&ctl, ID_TILT_DETECTOR);
 	if (err) {
-		TILTDETHUB_ERR("register tilt_detect control path err\n");
+		pr_err("register tilt_detect control path err\n");
 		goto exit;
 	}
 
 	data.get_data = tilt_detect_get_data;
 	err = situation_register_data_path(&data, ID_TILT_DETECTOR);
 	if (err) {
-		TILTDETHUB_ERR("register tilt_detect data path err\n");
+		pr_err("register tilt_detect data path err\n");
 		goto exit;
 	}
-	err = scp_sensorHub_data_registration(ID_TILT_DETECTOR, tilt_detect_recv_data);
+	err = scp_sensorHub_data_registration(ID_TILT_DETECTOR,
+		tilt_detect_recv_data);
 	if (err) {
-		TILTDETHUB_ERR("SCP_sensorHub_data_registration fail!!\n");
+		pr_err("SCP_sensorHub_data_registration fail!!\n");
 		goto exit;
 	}
 	return 0;
@@ -129,7 +128,7 @@ static int __init tiltdetecthub_init(void)
 
 static void __exit tiltdetecthub_exit(void)
 {
-	TILTDETHUB_FUN();
+	pr_debug("%s\n", __func__);
 }
 
 module_init(tiltdetecthub_init);

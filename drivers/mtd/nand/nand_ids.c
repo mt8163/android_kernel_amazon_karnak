@@ -1,6 +1,4 @@
 /*
- *  drivers/mtd/nandids.c
- *
  *  Copyright (C) 2002 Thomas Gleixner (tglx@linutronix.de)
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,6 +29,10 @@ struct nand_flash_dev nand_flash_ids[] = {
 	 * listed by full ID. We list them first so that we can easily identify
 	 * the most specific match.
 	 */
+	{"TC58NVG0S3E 1G 3.3V 8-bit",
+		{ .id = {0x98, 0xd1, 0x90, 0x15, 0x76, 0x14, 0x01, 0x00} },
+		  SZ_2K, SZ_128, SZ_128K, 0, 8, 64, NAND_ECC_INFO(1, SZ_512),
+		  2 },
 	{"TC58NVG2S0F 4G 3.3V 8-bit",
 		{ .id = {0x98, 0xdc, 0x90, 0x26, 0x76, 0x15, 0x01, 0x08} },
 		  SZ_4K, SZ_512, SZ_256K, 0, 8, 224, NAND_ECC_INFO(4, SZ_512) },
@@ -48,38 +50,8 @@ struct nand_flash_dev nand_flash_ids[] = {
 		  SZ_16K, SZ_8K, SZ_4M, 0, 6, 1280, NAND_ECC_INFO(40, SZ_1K) },
 	{"H27UCG8T2ATR-BC 64G 3.3V 8-bit",
 		{ .id = {0xad, 0xde, 0x94, 0xda, 0x74, 0xc4} },
-		  SZ_8K, SZ_8K, SZ_2M, 0, 6, 640, NAND_ECC_INFO(40, SZ_1K),
-		  4 },
-	{"MT29F32G08CBADB 32G 3.3V 8-bit",
-		{.id = {0x2C, 0x44, 0x44, 0x4B, 0xA9, 0x00} },
-		SZ_8K, SZ_4K, SZ_2M, 0, 5, 640},
-	{"SDTNQGAMA008G 64G 3.3V 8-bit",
-		{.id = {0x45, 0xDE, 0x94, 0x93, 0x76, 0x57} },
-		SZ_16K, SZ_8K, SZ_4M, 0, 6, 1280},
-	{"TC58TEG5DCKTA00 32G 3.3V 8-bit",
-		{ .id = {0x98, 0xD7, 0x84, 0x93, 0x72, 0x00} },
-		SZ_16K, SZ_4K, SZ_4M, 0, 5, 1280},
-	{"SDTNRGAMA008GK 64G 3.3V 8-bit",
-		{ .id = {0x45, 0xDE, 0x94, 0x93, 0x76, 0x00} },
-		SZ_16K, SZ_8K, SZ_4M, 0, 5, 1280},
-	{"H27UCG8T2ETR 64G 3.3V 8-bit",
-		{ .id = {0xAD, 0xDE, 0x14, 0xA7, 0x42, 0x00} },
-		SZ_16K, SZ_8K, SZ_4M, 0, 5, 1280},
-	{"BW27UCG8T2ETR 64G 3.3V 8-bit",
-		{ .id = {0xAD, 0xDE, 0x94, 0xA7, 0x42, 0x00} },
-		SZ_16K, SZ_8K, SZ_4M, 0, 5, 1280},
-	{"SDTNRGAMA004GK 32G 3.3V 8-bit",
-		{ .id = {0x45, 0xD7, 0x84, 0x93, 0x72, 0x00} },
-		SZ_16K, SZ_4K, SZ_4M, 0, 5, 1280},
-	{"MT29F128G08CFABA 128G 3.3V 8-bit",
-		{ .id = {0x2C, 0x64, 0x44, 0x4B, 0xA9, 0x00} },
-		SZ_8K, SZ_8K, SZ_2M, 0, 5, 640},
-	{"H27UBG8T2CTR 32G 3.3V 8-bit",
-		{ .id = {0xAD, 0xD7, 0x94, 0x91, 0x60, 0x00} },
-		SZ_8K, SZ_4K, SZ_2M, 0, 5, 640},
-	{"TC58TEG6DDKTA00 64G 3.3V 8-bit",
-		{ .id = {0x98, 0xDE, 0x94, 0x93, 0x76, 0x00} },
-		SZ_16K, SZ_8K, SZ_4M, 0, 5, 1280},
+		  SZ_8K, SZ_8K, SZ_2M, NAND_NEED_SCRAMBLING, 6, 640,
+		  NAND_ECC_INFO(40, SZ_1K), 4 },
 
 	LEGACY_ID_NAND("NAND 4MiB 5V 8-bit",   0x6B, 4, SZ_8K, SP_OPTIONS),
 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE3, 4, SZ_8K, SP_OPTIONS),
@@ -196,6 +168,7 @@ struct nand_flash_dev nand_flash_ids[] = {
 /* Manufacturer IDs */
 struct nand_manufacturers nand_manuf_ids[] = {
 	{NAND_MFR_TOSHIBA, "Toshiba"},
+	{NAND_MFR_ESMT, "ESMT"},
 	{NAND_MFR_SAMSUNG, "Samsung"},
 	{NAND_MFR_FUJITSU, "Fujitsu"},
 	{NAND_MFR_NATIONAL, "National"},
@@ -208,6 +181,7 @@ struct nand_manufacturers nand_manuf_ids[] = {
 	{NAND_MFR_EON, "Eon"},
 	{NAND_MFR_SANDISK, "SanDisk"},
 	{NAND_MFR_INTEL, "Intel"},
+	{NAND_MFR_ATO, "ATO"},
 	{0x0, "Unknown"}
 };
 

@@ -126,19 +126,18 @@ out:
 	return ret;
 }
 
-int pm_prepare_console(void)
+void pm_prepare_console(void)
 {
 	if (!pm_vt_switch())
-		return 0;
+		return;
 
 	orig_fgconsole = vt_move_to_console(SUSPEND_CONSOLE, 1);
 	if (orig_fgconsole < 0)
-		return 1;
+		return;
 
 	orig_kmsg = vt_kmsg_redirect(SUSPEND_CONSOLE);
-	return 0;
+	return;
 }
-EXPORT_SYMBOL_GPL(pm_prepare_console);
 
 void pm_restore_console(void)
 {
@@ -150,4 +149,3 @@ void pm_restore_console(void)
 		vt_kmsg_redirect(orig_kmsg);
 	}
 }
-EXPORT_SYMBOL_GPL(pm_restore_console);

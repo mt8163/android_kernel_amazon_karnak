@@ -39,13 +39,11 @@
 #define APS_FUN(f)               printk(KERN_INFO APS_TAG"%s\n", __FUNCTION__)
 
 #define APS_ERR(fmt, args...)	printk(APS_TAG fmt, ##args)
-#if 1
 #define APS_LOG(fmt, args...)	printk(APS_TAG fmt, ##args)
-
+#ifdef ALSPS_DEBUG
 #define APS_DBG(fmt, args...)	pr_debug(APS_TAG fmt, ##args)
 #else
 #define APS_DBG(fmt, args...)
-#define APS_LOG(fmt, args...)
 #endif
 
 struct wake_lock alsps_wakelock;
@@ -68,8 +66,8 @@ static int ltr559_i2c_remove(struct i2c_client *client);
 static int ltr559_i2c_detect(struct i2c_client *client,
 			     struct i2c_board_info *info);
 /*----------------------------------------------------------------------------*/
-static int ltr559_i2c_suspend(struct i2c_client *client, pm_message_t msg);
-static int ltr559_i2c_resume(struct i2c_client *client);
+static int ltr559_suspend(struct device *dev);
+static int ltr559_resume(struct device *dev);
 
 //static int ps_gainrange;
 static int als_gainrange;
@@ -194,6 +192,12 @@ static struct alsps_init_info ltr559_init_info = {
 
 };
 
+#ifdef CONFIG_PM_SLEEP
+static const struct dev_pm_ops ltr559_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(ltr559_suspend, ltr559_resume)
+};
+#endif
+
 #ifdef CONFIG_OF
 static const struct of_device_id alsps_of_match[] = {
 	{.compatible = "mediatek,alsps"},
@@ -206,11 +210,12 @@ static struct i2c_driver ltr559_i2c_driver = {
 	.probe = ltr559_i2c_probe,
 	.remove = ltr559_i2c_remove,
 	.detect = ltr559_i2c_detect,
-	.suspend = ltr559_i2c_suspend,
-	.resume = ltr559_i2c_resume,
 	.id_table = ltr559_i2c_id,
 	.driver = {
 		   .name = LTR559_DEV_NAME,
+#ifdef CONFIG_PM_SLEEP
+		   .pm = &ltr559_pm_ops,
+#endif
 #ifdef CONFIG_OF
 		   .of_match_table = alsps_of_match,
 #endif
@@ -1533,6 +1538,17 @@ static int als_set_delay(u64 ns)
 	return 0;
 }
 
+static int als_batch(int flag, int64_t samplingPeriodNs,
+		     int64_t maxBatchReportLatencyNs)
+{
+	return als_set_delay(samplingPeriodNs);
+}
+
+static int als_flush(void)
+{
+	return als_flush_report();
+}
+
 static int als_get_data(int *value, int *status)
 {
 	int err = 0;
@@ -1672,7 +1688,7 @@ static void ltr559_eint_work(struct work_struct *work)
 		value = ltr559_get_ps_value(obj, obj->ps);
 		//sensor_data.values[0] = ltr559_get_ps_value(obj, obj->ps);
 		//sensor_data.value_divide = 1;
-		//sensor_data.status = SENSOR_STATUS_ACCURACY_MEDIUM;    
+		//sensor_data.status = SENSOR_STATUS_ACCURACY_MEDIUM;
 		/*singal interrupt function add*/
 		//intr_flag_value = value;
 		APS_DBG("intr_flag_value=%d\n", intr_flag_value);
@@ -2075,78 +2091,82 @@ static struct miscdevice ltr559_device = {
 	.fops = &ltr559_fops,
 };
 
-static int ltr559_i2c_suspend(struct i2c_client *client, pm_message_t msg)
+#ifdef CONFIG_PM_SLEEP
+static int ltr559_suspend(struct device *dev)
 {
+	struct i2c_client *client = to_i2c_client(dev);
 	struct ltr559_priv *obj = i2c_get_clientdata(client);
 	int err;
 
 	APS_FUN();
 
-	if(msg.event == PM_EVENT_SUSPEND)
-	{
-		if(!obj)
-		{
-			APS_ERR("null pointer!!\n");
-			return -EINVAL;
-		}
-
-		atomic_set(&obj->als_suspend, 1);
-		err = ltr559_als_enable(obj->client, 0);
-		if(err < 0)
-		{
-			APS_ERR("disable als: %d\n", err);
-			return err;
-		}
-
-#ifdef SUPPORT_PSENSOR
-		atomic_set(&obj->ps_suspend, 1);
-		err = ltr559_ps_enable(obj->client, 0);
-		if(err < 0)
-		{
-			APS_ERR("disable ps:  %d\n", err);
-			return err;
-		}
-#endif
-	}
-
-	return 0;
-}
-/*----------------------------------------------------------------------------*/
-static int ltr559_i2c_resume(struct i2c_client *client)
-{
-	struct ltr559_priv *obj = i2c_get_clientdata(client);
-	int err;
-	APS_FUN();
-
-	if(!obj)
-	{
+	if (!obj) {
 		APS_ERR("null pointer!!\n");
 		return -EINVAL;
 	}
 
-	atomic_set(&obj->als_suspend, 0);
-	if(test_bit(CMC_BIT_ALS, &obj->enable))
-	{
+	alsps_driver_pause_polling(1);
+	atomic_set(&obj->als_suspend, 1);
+	err = ltr559_als_enable(obj->client, 0);
+	if (err < 0) {
+		alsps_driver_pause_polling(0);
+		atomic_set(&obj->als_suspend, 0);
+		APS_ERR("disable als: %d\n", err);
+		return err;
+	}
+
+#ifdef SUPPORT_PSENSOR
+	atomic_set(&obj->ps_suspend, 1);
+	err = ltr559_ps_enable(obj->client, 0);
+	if (err < 0) {
+		alsps_driver_pause_polling(0);
+		atomic_set(&obj->ps_suspend, 0);
+		APS_ERR("disable ps:  %d\n", err);
+		return err;
+	}
+#endif
+
+	return 0;
+}
+
+static int ltr559_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct ltr559_priv *obj = i2c_get_clientdata(client);
+	int err;
+
+	APS_FUN();
+
+	if (!obj) {
+		APS_ERR("null pointer!!\n");
+		return -EINVAL;
+	}
+
+	if (alsps_driver_query_polling_state(ID_LIGHT) == 1) {
 	    err = ltr559_als_enable(obj->client, 1);
 	    if (err < 0)
 		{
 			APS_ERR("enable als fail: %d\n", err);
 		}
 	}
-	atomic_set(&obj->ps_suspend, 0);
-	if(test_bit(CMC_BIT_PS,  &obj->enable))
-	{
+	atomic_set(&obj->als_suspend, 0);
+
 #ifdef SUPPORT_PSENSOR
+	if (alsps_driver_query_polling_state(ID_PROXIMITY) == 1) {
 		err = ltr559_ps_enable(obj->client, 1);
 	    if (err < 0)
 		{
 			APS_ERR("enable ps fail: %d\n", err);
 		}
-#endif
 	}
+	atomic_set(&obj->ps_suspend, 0);
+#endif
+	alsps_driver_pause_polling(0);
 
 	return 0;
 }
+#endif
+
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 static void ltr559_early_suspend(struct early_suspend *h)
 {				/*early_suspend is only applied for ALS */
@@ -2212,6 +2232,12 @@ static int ltr559_i2c_probe(struct i2c_client *client,
 	int err = 0;
 
 	APS_LOG("ltr559_i2c_probe\n");
+
+	err = get_alsps_dts_func(client->dev.of_node, hw);
+	if (err < 0) {
+		APS_ERR("get customization info from dts failed\n");
+		return -EFAULT;
+	}
 
 	if (!(obj = kzalloc(sizeof(*obj), GFP_KERNEL))) {
 		err = -ENOMEM;
@@ -2286,6 +2312,8 @@ static int ltr559_i2c_probe(struct i2c_client *client,
 	als_ctl.open_report_data = als_open_report_data;
 	als_ctl.enable_nodata = als_enable_nodata;
 	als_ctl.set_delay = als_set_delay;
+	als_ctl.batch = als_batch;
+	als_ctl.flush = als_flush;
 	als_ctl.is_report_input_direct = false;
 	als_ctl.is_support_batch = false;
 
@@ -2294,7 +2322,6 @@ static int ltr559_i2c_probe(struct i2c_client *client,
 		APS_ERR("register fail = %d\n", err);
 		goto exit_sensor_obj_attach_fail;
 	}
-
 	als_data.get_data = als_get_data;
 	als_data.vender_div = 100;
 	err = als_register_data_path(&als_data);
@@ -2322,19 +2349,6 @@ static int ltr559_i2c_probe(struct i2c_client *client,
 		goto exit_sensor_obj_attach_fail;
 	}
 #endif
-	err =
-	    batch_register_support_info(ID_LIGHT, als_ctl.is_support_batch, 1,
-					0);
-	if (err)
-		APS_ERR("register light batch support err = %d\n", err);
-#ifdef SUPPORT_PSENSOR
-	err =
-	    batch_register_support_info(ID_PROXIMITY, ps_ctl.is_support_batch,
-					1, 0);
-	if (err)
-		APS_ERR("register proximity batch support err = %d\n", err);
-#endif
-
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 	obj->early_drv.level = EARLY_SUSPEND_LEVEL_DISABLE_FB - 1,
 	    obj->early_drv.suspend = ltr559_early_suspend,
@@ -2380,10 +2394,7 @@ static int ltr559_i2c_remove(struct i2c_client *client)
 		APS_ERR("ltr559_delete_attr fail: %d\n", err);
 	}
 
-	err = misc_deregister(&ltr559_device);
-	if (err) {
-		APS_ERR("misc_deregister fail: %d\n", err);
-	}
+	misc_deregister(&ltr559_device);
 
 	ltr559_i2c_client = NULL;
 	i2c_unregister_device(client);
@@ -2418,13 +2429,8 @@ static int ltr559_local_init(void)
 /*----------------------------------------------------------------------------*/
 static int __init ltr559_init(void)
 {
-	const char *name = "mediatek,ltr559";
-
 	APS_FUN();
 
-	hw = get_alsps_dts_func(name, hw);
-	if (!hw)
-		APS_ERR("get dts info fail\n");
 	alsps_driver_add(&ltr559_init_info);
 	return 0;
 }

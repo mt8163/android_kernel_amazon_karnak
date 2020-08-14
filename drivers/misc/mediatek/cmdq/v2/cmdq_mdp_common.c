@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include "cmdq_mdp_common.h"
 #include "cmdq_core.h"
 #include "cmdq_device.h"
@@ -6,14 +19,18 @@
 #include "cmdq_mmp.h"
 #endif
 
-/**************************************************************************************/
-/*******************                    Platform dependent function                    ********************/
-/**************************************************************************************/
+static struct cmdqMDPTaskStruct gCmdqMDPTask[MDP_MAX_TASK_NUM];
+static int gCmdqMDPTaskIndex;
 
-typedef struct RegDef {
+/*******************************
+ * Platform dependent function
+ *******************************
+ */
+
+struct RegDef {
 	int offset;
 	const char *name;
-} RegDef;
+};
 
 void cmdq_mdp_dump_mmsys_config_virtual(void)
 {
@@ -50,11 +67,12 @@ void cmdq_mdp_dump_mmsys_config_virtual(void)
 		{0x8a8, "DISP_DL_READY_0"},
 		{0x8ac, "DISP_DL_READY_1"},
 		{0x8b0, "MDP_DL_VALID_0"},
-		{0x8b4, "MDP_DL_READY_0"}
-	};
+		{0x8b4, "MDP_DL_READY_0"} };
 
-	for (i = 0; i < sizeof(configRegisters) / sizeof(configRegisters[0]); ++i) {
-		value = CMDQ_REG_GET16(MMSYS_CONFIG_BASE + configRegisters[i].offset);
+	for (i = 0; i < ARRAY_SIZE(configRegisters);
+	     ++i) {
+		value = CMDQ_REG_GET16(MMSYS_CONFIG_BASE +
+				       configRegisters[i].offset);
 		CMDQ_ERR("%s: 0x%08x\n", configRegisters[i].name, value);
 	}
 }
@@ -77,13 +95,13 @@ void cmdq_mdp_deinit_module_base_VA_virtual(void)
 }
 
 /* query MDP clock is on  */
-bool cmdq_mdp_clock_is_on_virtual(CMDQ_ENG_ENUM engine)
+bool cmdq_mdp_clock_is_on_virtual(enum CMDQ_ENG_ENUM engine)
 {
 	return false;
 }
 
 /* enable MDP clock  */
-void cmdq_mdp_enable_clock_virtual(bool enable, CMDQ_ENG_ENUM engine)
+void cmdq_mdp_enable_clock_virtual(bool enable, enum CMDQ_ENG_ENUM engine)
 {
 	/* Do Nothing */
 }
@@ -97,8 +115,8 @@ void cmdq_mdp_init_module_clk_virtual(void)
 /* MDP engine dump */
 void cmdq_mdp_dump_rsz_virtual(const unsigned long base, const char *label)
 {
-	uint32_t value[8] = { 0 };
-	uint32_t request[4] = { 0 };
+	uint32_t value[8] = {0};
+	uint32_t request[8] = {0};
 	uint32_t state = 0;
 
 	value[0] = CMDQ_REG_GET32(base + 0x004);
@@ -113,30 +131,43 @@ void cmdq_mdp_dump_rsz_virtual(const unsigned long base, const char *label)
 	CMDQ_REG_SET32(base + 0x040, 0x00000003);
 	value[7] = CMDQ_REG_GET32(base + 0x044);
 
-	CMDQ_ERR("=============== [CMDQ] %s Status ====================================\n", label);
-	CMDQ_ERR("RSZ_CONTROL: 0x%08x, RSZ_INPUT_IMAGE: 0x%08x RSZ_OUTPUT_IMAGE: 0x%08x\n",
-		 value[0], value[1], value[2]);
-	CMDQ_ERR("RSZ_HORIZONTAL_COEFF_STEP: 0x%08x, RSZ_VERTICAL_COEFF_STEP: 0x%08x\n",
-		 value[3], value[4]);
-	CMDQ_ERR("RSZ_DEBUG_1: 0x%08x, RSZ_DEBUG_2: 0x%08x, RSZ_DEBUG_3: 0x%08x\n",
-		 value[5], value[6], value[7]);
+	CMDQ_ERR(
+		"=============== [CMDQ] %s Status ====================================\n",
+		label);
+	CMDQ_ERR(
+		"RSZ_CONTROL: 0x%08x, RSZ_INPUT_IMAGE: 0x%08x RSZ_OUTPUT_IMAGE: 0x%08x\n",
+		value[0], value[1], value[2]);
+	CMDQ_ERR(
+		"RSZ_HORIZONTAL_COEFF_STEP: 0x%08x, RSZ_VERTICAL_COEFF_STEP: 0x%08x\n",
+		value[3], value[4]);
+	CMDQ_ERR(
+		"RSZ_DEBUG_1: 0x%08x, RSZ_DEBUG_2: 0x%08x, RSZ_DEBUG_3: 0x%08x\n",
+		value[5], value[6], value[7]);
 
 	/* parse state */
 	/* .valid=1/request=1: upstream module sends data */
 	/* .ready=1: downstream module receives data */
 	state = value[6] & 0xF;
-	request[0] = state & (0x1);	/* out valid */
-	request[1] = (state & (0x1 << 1)) >> 1;	/* out ready */
-	request[2] = (state & (0x1 << 2)) >> 2;	/* in valid */
-	request[3] = (state & (0x1 << 3)) >> 3;	/* in ready */
+	request[0] = state & (0x1);		/* out valid */
+	request[1] = (state & (0x1 << 1)) >> 1; /* out ready */
+	request[2] = (state & (0x1 << 2)) >> 2; /* in valid */
+	request[3] = (state & (0x1 << 3)) >> 3; /* in ready */
+	request[4] = (value[1] & 0x1FFF);       /* input_width */
+	request[5] = (value[1] >> 16) & 0x1FFF; /* input_height */
+	request[6] = (value[2] & 0x1FFF);       /* output_width */
+	request[7] = (value[2] >> 16) & 0x1FFF; /* output_height */
 
 	CMDQ_ERR("RSZ inRdy,inRsq,outRdy,outRsq: %d,%d,%d,%d (%s)\n",
-		 request[3], request[2], request[1], request[0], cmdq_mdp_get_rsz_state(state));
+		 request[3], request[2], request[1], request[0],
+		 cmdq_mdp_get_rsz_state(state));
+	CMDQ_ERR(
+		"RSZ input_width,input_height,output_width,output_height: %d,%d,%d,%d\n",
+		request[4], request[5], request[6], request[7]);
 }
 
 void cmdq_mdp_dump_tdshp_virtual(const unsigned long base, const char *label)
 {
-	uint32_t value[8] = { 0 };
+	uint32_t value[8] = {0};
 
 	value[0] = CMDQ_REG_GET32(base + 0x114);
 	value[1] = CMDQ_REG_GET32(base + 0x11C);
@@ -147,12 +178,15 @@ void cmdq_mdp_dump_tdshp_virtual(const unsigned long base, const char *label)
 	value[6] = CMDQ_REG_GET32(base + 0x128);
 	value[7] = CMDQ_REG_GET32(base + 0x110);
 
-	CMDQ_ERR("=============== [CMDQ] %s Status ====================================\n", label);
-	CMDQ_ERR("TDSHP INPUT_CNT: 0x%08x, OUTPUT_CNT: 0x%08x\n", value[0], value[1]);
-	CMDQ_ERR("TDSHP INTEN: 0x%08x, INTSTA: 0x%08x, 0x10C: 0x%08x\n", value[2], value[3],
-		 value[4]);
-	CMDQ_ERR("TDSHP CFG: 0x%08x, IN_SIZE: 0x%08x, OUT_SIZE: 0x%08x\n", value[7], value[5],
-		 value[6]);
+	CMDQ_ERR(
+		"=============== [CMDQ] %s Status ====================================\n",
+		label);
+	CMDQ_ERR("TDSHP INPUT_CNT: 0x%08x, OUTPUT_CNT: 0x%08x\n", value[0],
+		 value[1]);
+	CMDQ_ERR("TDSHP INTEN: 0x%08x, INTSTA: 0x%08x, 0x10C: 0x%08x\n",
+		 value[2], value[3], value[4]);
+	CMDQ_ERR("TDSHP CFG: 0x%08x, IN_SIZE: 0x%08x, OUT_SIZE: 0x%08x\n",
+		 value[7], value[5], value[6]);
 }
 
 /* MDP callback function */
@@ -176,18 +210,24 @@ int32_t cmdqMdpClockOff_virtual(uint64_t engineFlag)
 	return 0;
 }
 
+/* MDP Initialization setting */
+void cmdqMdpInitialSetting_virtual(void)
+{
+	/* Do Nothing */
+}
+
 /* test MDP clock function */
-const uint32_t cmdq_mdp_rdma_get_reg_offset_src_addr_virtual(void)
+uint32_t cmdq_mdp_rdma_get_reg_offset_src_addr_virtual(void)
 {
 	return 0;
 }
 
-const uint32_t cmdq_mdp_wrot_get_reg_offset_dst_addr_virtual(void)
+uint32_t cmdq_mdp_wrot_get_reg_offset_dst_addr_virtual(void)
 {
 	return 0;
 }
 
-const uint32_t cmdq_mdp_wdma_get_reg_offset_dst_addr_virtual(void)
+uint32_t cmdq_mdp_wdma_get_reg_offset_dst_addr_virtual(void)
 {
 	return 0;
 }
@@ -196,14 +236,66 @@ void testcase_clkmgr_mdp_virtual(void)
 {
 }
 
-/**************************************************************************************/
-/************************                      Common Code                      ************************/
-/**************************************************************************************/
-static cmdqMDPFuncStruct gMDPFunctionPointer;
+const char *cmdq_mdp_dispatch_virtual(uint64_t engineFlag)
+{
+	return "MDP";
+}
+
+void cmdq_mdp_trackTask_virtual(const struct TaskStruct *pTask)
+{
+	memcpy(gCmdqMDPTask[gCmdqMDPTaskIndex].callerName, pTask->callerName,
+	       sizeof(pTask->callerName));
+	if (pTask->userDebugStr)
+		memcpy(gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr,
+		       pTask->userDebugStr,
+		       (uint32_t)strlen(pTask->userDebugStr) + 1);
+	else
+		gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr[0] = '\0';
+
+	CMDQ_MSG("cmdq_mdp_trackTask: caller: %s\n",
+		 gCmdqMDPTask[gCmdqMDPTaskIndex].callerName);
+	CMDQ_MSG("cmdq_mdp_trackTask: DebugStr: %s\n",
+		 gCmdqMDPTask[gCmdqMDPTaskIndex].userDebugStr);
+	CMDQ_MSG("cmdq_mdp_trackTask: Index: %d\n", gCmdqMDPTaskIndex);
+
+	gCmdqMDPTaskIndex = (gCmdqMDPTaskIndex + 1) % MDP_MAX_TASK_NUM;
+}
+
+#if defined(CMDQ_USE_CCF) && defined(CMDQ_USE_LEGACY)
+void cmdq_mdp_init_module_clk_MUTEX_32K_virtual(void)
+{
+	/* Do Nothing */
+}
+
+void cmdq_mdp_smi_larb_enable_clock_virtual(bool enable)
+{
+	/* Do Nothing */
+}
+#endif
+
+#ifdef CMDQ_OF_SUPPORT
+void cmdq_mdp_get_module_pa_virtual(long *startPA, long *endPA)
+{
+	/* Do Nothing */
+}
+#endif
+
+#ifdef CMDQ_USE_LEGACY
+void cmdq_mdp_enable_clock_mutex32k_virtual(bool enable)
+{
+	/* Do Nothing */
+}
+#endif
+
+/****************************
+ * Common Code
+ ****************************
+ */
+static struct cmdqMDPFuncStruct gMDPFunctionPointer;
 
 void cmdq_mdp_virtual_function_setting(void)
 {
-	cmdqMDPFuncStruct *pFunc;
+	struct cmdqMDPFuncStruct *pFunc;
 
 	pFunc = &(gMDPFunctionPointer);
 
@@ -226,18 +318,40 @@ void cmdq_mdp_virtual_function_setting(void)
 	pFunc->mdpResetEng = cmdqMdpResetEng_virtual;
 	pFunc->mdpClockOff = cmdqMdpClockOff_virtual;
 
-	pFunc->rdmaGetRegOffsetSrcAddr = cmdq_mdp_rdma_get_reg_offset_src_addr_virtual;
-	pFunc->wrotGetRegOffsetDstAddr = cmdq_mdp_wrot_get_reg_offset_dst_addr_virtual;
-	pFunc->wdmaGetRegOffsetDstAddr = cmdq_mdp_wdma_get_reg_offset_dst_addr_virtual;
+	pFunc->mdpInitialSet = cmdqMdpInitialSetting_virtual;
+
+	pFunc->rdmaGetRegOffsetSrcAddr =
+		cmdq_mdp_rdma_get_reg_offset_src_addr_virtual;
+	pFunc->wrotGetRegOffsetDstAddr =
+		cmdq_mdp_wrot_get_reg_offset_dst_addr_virtual;
+	pFunc->wdmaGetRegOffsetDstAddr =
+		cmdq_mdp_wdma_get_reg_offset_dst_addr_virtual;
 	pFunc->testcaseClkmgrMdp = testcase_clkmgr_mdp_virtual;
+
+	pFunc->dispatchModule = cmdq_mdp_dispatch_virtual;
+
+	pFunc->trackTask = cmdq_mdp_trackTask_virtual;
+
+#if defined(CMDQ_USE_CCF) && defined(CMDQ_USE_LEGACY)
+	pFunc->mdpInitModuleClkMutex32K =
+		cmdq_mdp_init_module_clk_MUTEX_32K_virtual;
+
+	pFunc->mdpSmiLarbEnableClock = cmdq_mdp_smi_larb_enable_clock_virtual;
+#endif
+#ifdef CMDQ_OF_SUPPORT
+	pFunc->mdpGetModulePa = cmdq_mdp_get_module_pa_virtual;
+#endif
+#ifdef CMDQ_USE_LEGACY
+	pFunc->mdpEnableClockMutex32k = cmdq_mdp_enable_clock_mutex32k_virtual;
+#endif
 }
 
-cmdqMDPFuncStruct *cmdq_mdp_get_func(void)
+struct cmdqMDPFuncStruct *cmdq_mdp_get_func(void)
 {
 	return &gMDPFunctionPointer;
 }
 
-void cmdq_mdp_enable(uint64_t engineFlag, CMDQ_ENG_ENUM engine)
+void cmdq_mdp_enable(uint64_t engineFlag, enum CMDQ_ENG_ENUM engine)
 {
 #ifdef CMDQ_PWR_AWARE
 	CMDQ_VERBOSE("Test for ENG %d\n", engine);
@@ -250,13 +364,15 @@ int cmdq_mdp_loop_reset_impl(const unsigned long resetReg,
 			     const uint32_t resetWriteValue,
 			     const unsigned long resetStateReg,
 			     const uint32_t resetMask,
-			     const uint32_t resetPollingValue, const int32_t maxLoopCount)
+			     const uint32_t resetPollingValue,
+			     const int32_t maxLoopCount)
 {
 	int loop = 0;
 
 	CMDQ_REG_SET32(resetReg, resetWriteValue);
 	while (loop < maxLoopCount) {
-		if (resetPollingValue == (CMDQ_REG_GET32(resetStateReg) & resetMask))
+		if (resetPollingValue ==
+		    (CMDQ_REG_GET32(resetStateReg) & resetMask))
 			break;
 
 		loop++;
@@ -264,21 +380,20 @@ int cmdq_mdp_loop_reset_impl(const unsigned long resetReg,
 
 	/* return polling result */
 	if (loop >= maxLoopCount) {
-		CMDQ_ERR
-		    ("%s failed, Reg:0x%lx, writeValue:0x%08x, stateReg:0x%lx, mask:0x%08x, pollingValue:0x%08x\n",
-		     __func__, resetReg, resetWriteValue, resetStateReg, resetMask,
-		     resetPollingValue);
+		CMDQ_ERR(
+			"%s failed, Reg:0x%lx, writeValue:0x%08x, stateReg:0x%lx, mask:0x%08x, pollingValue:0x%08x\n",
+			__func__, resetReg, resetWriteValue, resetStateReg,
+			resetMask, resetPollingValue);
 		return -EFAULT;
 	}
 
 	return 0;
 }
 
-int cmdq_mdp_loop_reset(CMDQ_ENG_ENUM engine,
-			const unsigned long resetReg,
+int cmdq_mdp_loop_reset(enum CMDQ_ENG_ENUM engine, const unsigned long resetReg,
 			const unsigned long resetStateReg,
-			const uint32_t resetMask,
-			const uint32_t resetValue, const bool pollInitResult)
+			const uint32_t resetMask, const uint32_t resetValue,
+			const bool pollInitResult)
 {
 #ifdef CMDQ_PWR_AWARE
 	int resetStatus = 0;
@@ -289,30 +404,32 @@ int cmdq_mdp_loop_reset(CMDQ_ENG_ENUM engine,
 		CMDQ_PROF_MMP(cmdq_mmp_get_event()->MDP_reset,
 			      MMProfileFlagStart, resetReg, resetStateReg);
 
-
 		/* loop reset */
-		resetStatus = cmdq_mdp_loop_reset_impl(resetReg, 0x1,
-						       resetStateReg, resetMask, resetValue,
-						       CMDQ_MAX_LOOP_COUNT);
+		resetStatus = cmdq_mdp_loop_reset_impl(
+			resetReg, 0x1, resetStateReg, resetMask, resetValue,
+			CMDQ_MAX_LOOP_COUNT);
 
 		if (pollInitResult) {
 			/* loop  init */
-			initStatus = cmdq_mdp_loop_reset_impl(resetReg, 0x0,
-							      resetStateReg, resetMask, 0x0,
-							      CMDQ_MAX_LOOP_COUNT);
+			initStatus = cmdq_mdp_loop_reset_impl(
+				resetReg, 0x0, resetStateReg, resetMask, 0x0,
+				CMDQ_MAX_LOOP_COUNT);
 		} else {
-			/* always clear to init state no matter what polling result */
+			/* always clear to init state no matter what polling
+			 * result
+			 */
 			CMDQ_REG_SET32(resetReg, 0x0);
 		}
 
-		CMDQ_PROF_MMP(cmdq_mmp_get_event()->MDP_reset,
-			      MMProfileFlagEnd, resetReg, resetStateReg);
+		CMDQ_PROF_MMP(cmdq_mmp_get_event()->MDP_reset, MMProfileFlagEnd,
+			      resetReg, resetStateReg);
 		CMDQ_PROF_END(current->pid, __func__);
 
 		/* retrun failed if loop failed */
-		if ((0 > resetStatus) || (0 > initStatus)) {
-			CMDQ_ERR("Reset MDP %ld failed, resetStatus:%d, initStatus:%d\n",
-				 resetReg, resetStatus, initStatus);
+		if ((resetStatus < 0) || (initStatus < 0)) {
+			CMDQ_ERR(
+				"Reset MDP %ld failed, resetStatus:%d, initStatus:%d\n",
+				resetReg, resetStatus, initStatus);
 			return -EFAULT;
 		}
 	}
@@ -321,11 +438,10 @@ int cmdq_mdp_loop_reset(CMDQ_ENG_ENUM engine,
 	return 0;
 };
 
-void cmdq_mdp_loop_off(CMDQ_ENG_ENUM engine,
-		       const unsigned long resetReg,
+void cmdq_mdp_loop_off(enum CMDQ_ENG_ENUM engine, const unsigned long resetReg,
 		       const unsigned long resetStateReg,
-		       const uint32_t resetMask,
-		       const uint32_t resetValue, const bool pollInitResult)
+		       const uint32_t resetMask, const uint32_t resetValue,
+		       const bool pollInitResult)
 {
 #ifdef CMDQ_PWR_AWARE
 	int resetStatus = 0;
@@ -334,25 +450,28 @@ void cmdq_mdp_loop_off(CMDQ_ENG_ENUM engine,
 	if (cmdq_mdp_get_func()->mdpClockIsOn(engine)) {
 
 		/* loop reset */
-		resetStatus = cmdq_mdp_loop_reset_impl(resetReg, 0x1,
-						       resetStateReg, resetMask, resetValue,
-						       CMDQ_MAX_LOOP_COUNT);
+		resetStatus = cmdq_mdp_loop_reset_impl(
+			resetReg, 0x1, resetStateReg, resetMask, resetValue,
+			CMDQ_MAX_LOOP_COUNT);
 
 		if (pollInitResult) {
 			/* loop init */
-			initStatus = cmdq_mdp_loop_reset_impl(resetReg, 0x0,
-							      resetStateReg, resetMask, 0x0,
-							      CMDQ_MAX_LOOP_COUNT);
+			initStatus = cmdq_mdp_loop_reset_impl(
+				resetReg, 0x0, resetStateReg, resetMask, 0x0,
+				CMDQ_MAX_LOOP_COUNT);
 		} else {
-			/* always clear to init state no matter what polling result */
+			/* always clear to init state no matter what polling
+			 * result
+			 */
 			CMDQ_REG_SET32(resetReg, 0x0);
 		}
 
 		/* retrun failed if loop failed */
-		if ((0 > resetStatus) || (0 > initStatus)) {
-			CMDQ_AEE("MDP",
-				 "Disable %ld engine failed, resetStatus:%d, initStatus:%d\n",
-				 resetReg, resetStatus, initStatus);
+		if ((resetStatus < 0) || (initStatus < 0)) {
+			CMDQ_AEE(
+				"MDP",
+				"Disable %d engine failed, resetStatus:%d, initStatus:%d\n",
+				engine, resetStatus, initStatus);
 			return;
 		}
 
@@ -363,11 +482,17 @@ void cmdq_mdp_loop_off(CMDQ_ENG_ENUM engine,
 
 void cmdq_mdp_dump_venc(const unsigned long base, const char *label)
 {
+	if (base == 0L) {
+		/* print error message */
+		CMDQ_ERR("venc base VA [0x%lx] is not correct\n", base);
+		return;
+	}
+
 	CMDQ_ERR("======== cmdq_mdp_dump_venc + ========\n");
 	CMDQ_ERR("[0x%lx] to [0x%lx]\n", base, base + 0x1000 * 4);
 
-	print_hex_dump(KERN_ERR, "[CMDQ][ERR][VENC]", DUMP_PREFIX_ADDRESS, 16, 4,
-		       (void *)base, 0x1000, false);
+	print_hex_dump(KERN_ERR, "[CMDQ][ERR][VENC]", DUMP_PREFIX_ADDRESS, 16,
+		       4, (void *)base, 0x1000, false);
 	CMDQ_ERR("======== cmdq_mdp_dump_venc - ========\n");
 }
 
@@ -403,12 +528,13 @@ const char *cmdq_mdp_get_rdma_state(uint32_t state)
 
 void cmdq_mdp_dump_rdma(const unsigned long base, const char *label)
 {
-	uint32_t value[15] = { 0 };
+	uint32_t value[15] = {0};
 	uint32_t state = 0;
 	uint32_t grep = 0;
 
 	value[0] = CMDQ_REG_GET32(base + 0x030);
-	value[1] = CMDQ_REG_GET32(base + cmdq_mdp_get_func()->rdmaGetRegOffsetSrcAddr());
+	value[1] = CMDQ_REG_GET32(
+		base + cmdq_mdp_get_func()->rdmaGetRegOffsetSrcAddr());
 	value[2] = CMDQ_REG_GET32(base + 0x060);
 	value[3] = CMDQ_REG_GET32(base + 0x070);
 	value[4] = CMDQ_REG_GET32(base + 0x078);
@@ -423,26 +549,34 @@ void cmdq_mdp_dump_rdma(const unsigned long base, const char *label)
 	value[13] = CMDQ_REG_GET32(base + 0x430);
 	value[14] = CMDQ_REG_GET32(base + 0x4D0);
 
-	CMDQ_ERR("=============== [CMDQ] %s Status ====================================\n", label);
-	CMDQ_ERR
-	    ("RDMA_SRC_CON: 0x%08x, RDMA_SRC_BASE_0: 0x%08x, RDMA_MF_BKGD_SIZE_IN_BYTE: 0x%08x\n",
-	     value[0], value[1], value[2]);
-	CMDQ_ERR("RDMA_MF_SRC_SIZE: 0x%08x, RDMA_MF_CLIP_SIZE: 0x%08x, RDMA_MF_OFFSET_1: 0x%08x\n",
-		 value[3], value[4], value[5]);
-	CMDQ_ERR("RDMA_SRC_END_0: 0x%08x, RDMA_SRC_OFFSET_0: 0x%08x, RDMA_SRC_OFFSET_W_0: 0x%08x\n",
-		 value[6], value[7], value[8]);
-	CMDQ_ERR("RDMA_MON_STA_0: 0x%08x, RDMA_MON_STA_1: 0x%08x, RDMA_MON_STA_2: 0x%08x\n",
-		 value[9], value[10], value[11]);
-	CMDQ_ERR("RDMA_MON_STA_4: 0x%08x, RDMA_MON_STA_6: 0x%08x, RDMA_MON_STA_26: 0x%08x\n",
-		 value[12], value[13], value[14]);
+	CMDQ_ERR(
+		"=============== [CMDQ] %s Status ====================================\n",
+		label);
+	CMDQ_ERR(
+		"RDMA_SRC_CON: 0x%08x, RDMA_SRC_BASE_0: 0x%08x, RDMA_MF_BKGD_SIZE_IN_BYTE: 0x%08x\n",
+		value[0], value[1], value[2]);
+	CMDQ_ERR(
+		"RDMA_MF_SRC_SIZE: 0x%08x, RDMA_MF_CLIP_SIZE: 0x%08x, RDMA_MF_OFFSET_1: 0x%08x\n",
+		value[3], value[4], value[5]);
+	CMDQ_ERR(
+		"RDMA_SRC_END_0: 0x%08x, RDMA_SRC_OFFSET_0: 0x%08x, RDMA_SRC_OFFSET_W_0: 0x%08x\n",
+		value[6], value[7], value[8]);
+	CMDQ_ERR(
+		"RDMA_MON_STA_0: 0x%08x, RDMA_MON_STA_1: 0x%08x, RDMA_MON_STA_2: 0x%08x\n",
+		value[9], value[10], value[11]);
+	CMDQ_ERR(
+		"RDMA_MON_STA_4: 0x%08x, RDMA_MON_STA_6: 0x%08x, RDMA_MON_STA_26: 0x%08x\n",
+		value[12], value[13], value[14]);
 
 	/* parse state */
 	CMDQ_ERR("RDMA ack:%d req:%d\n", (value[9] & (1 << 11)) >> 11,
 		 (value[9] & (1 << 10)) >> 10);
 	state = (value[10] >> 8) & 0x7FF;
 	grep = (value[10] >> 20) & 0x1;
-	CMDQ_ERR("RDMA state: 0x%x (%s)\n", state, cmdq_mdp_get_rdma_state(state));
-	CMDQ_ERR("RDMA horz_cnt: %d vert_cnt:%d\n", value[14] & 0xFFF, (value[14] >> 16) & 0xFFF);
+	CMDQ_ERR("RDMA state: 0x%x (%s)\n", state,
+		 cmdq_mdp_get_rdma_state(state));
+	CMDQ_ERR("RDMA horz_cnt: %d vert_cnt:%d\n", value[14] & 0xFFF,
+		 (value[14] >> 16) & 0xFFF);
 
 	CMDQ_ERR("RDMA grep:%d => suggest to ask SMI help:%d\n", grep, grep);
 }
@@ -451,9 +585,9 @@ const char *cmdq_mdp_get_rsz_state(const uint32_t state)
 {
 	switch (state) {
 	case 0x5:
-		return "downstream hang";	/* 0,1,0,1 */
+		return "downstream hang"; /* 0,1,0,1 */
 	case 0xa:
-		return "upstream hang";	/* 1,0,1,0 */
+		return "upstream hang"; /* 1,0,1,0 */
 	default:
 		return "";
 	}
@@ -461,13 +595,14 @@ const char *cmdq_mdp_get_rsz_state(const uint32_t state)
 
 void cmdq_mdp_dump_rot(const unsigned long base, const char *label)
 {
-	uint32_t value[32] = { 0 };
+	uint32_t value[32] = {0};
 
 	value[0] = CMDQ_REG_GET32(base + 0x000);
 	value[1] = CMDQ_REG_GET32(base + 0x008);
 	value[2] = CMDQ_REG_GET32(base + 0x00C);
 	value[3] = CMDQ_REG_GET32(base + 0x024);
-	value[4] = CMDQ_REG_GET32(base + cmdq_mdp_get_func()->wrotGetRegOffsetDstAddr());
+	value[4] = CMDQ_REG_GET32(
+		base + cmdq_mdp_get_func()->wrotGetRegOffsetDstAddr());
 	value[5] = CMDQ_REG_GET32(base + 0x02C);
 	value[6] = CMDQ_REG_GET32(base + 0x004);
 	value[7] = CMDQ_REG_GET32(base + 0x030);
@@ -515,33 +650,44 @@ void cmdq_mdp_dump_rot(const unsigned long base, const char *label)
 	value[29] = CMDQ_REG_GET32(base + 0x0D0);
 	value[30] = CMDQ_REG_GET32(base + 0x01C);
 
-	CMDQ_ERR("=============== [CMDQ] %s Status ====================================\n", label);
-	CMDQ_ERR("ROT_CTRL: 0x%08x, ROT_MAIN_BUF_SIZE: 0x%08x, ROT_SUB_BUF_SIZE: 0x%08x\n",
-		 value[0], value[1], value[2]);
-	CMDQ_ERR("ROT_TAR_SIZE: 0x%08x, ROT_BASE_ADDR: 0x%08x, ROT_OFST_ADDR: 0x%08x\n",
-		 value[3], value[4], value[5]);
-	CMDQ_ERR("ROT_DMA_PERF: 0x%08x, ROT_STRIDE: 0x%08x, ROT_IN_SIZE: 0x%08x\n",
-		 value[6], value[7], value[8]);
+	CMDQ_ERR(
+		"=============== [CMDQ] %s Status ====================================\n",
+		label);
+	CMDQ_ERR(
+		"ROT_CTRL: 0x%08x, ROT_MAIN_BUF_SIZE: 0x%08x, ROT_SUB_BUF_SIZE: 0x%08x\n",
+		value[0], value[1], value[2]);
+	CMDQ_ERR(
+		"ROT_TAR_SIZE: 0x%08x, ROT_BASE_ADDR: 0x%08x, ROT_OFST_ADDR: 0x%08x\n",
+		value[3], value[4], value[5]);
+	CMDQ_ERR(
+		"ROT_DMA_PERF: 0x%08x, ROT_STRIDE: 0x%08x, ROT_IN_SIZE: 0x%08x\n",
+		value[6], value[7], value[8]);
 	CMDQ_ERR("ROT_EOL: 0x%08x, ROT_DBUGG_1: 0x%08x, ROT_DEBUBG_2: 0x%08x\n",
 		 value[9], value[10], value[11]);
-	CMDQ_ERR("ROT_DBUGG_3: 0x%08x, ROT_DBUGG_4: 0x%08x, ROT_DEBUBG_5: 0x%08x\n",
-		 value[12], value[13], value[14]);
-	CMDQ_ERR("ROT_DBUGG_6: 0x%08x, ROT_DBUGG_7: 0x%08x, ROT_DEBUBG_8: 0x%08x\n",
-		 value[15], value[16], value[17]);
-	CMDQ_ERR("ROT_DBUGG_9: 0x%08x, ROT_DBUGG_A: 0x%08x, ROT_DEBUBG_B: 0x%08x\n",
-		 value[18], value[19], value[20]);
-	CMDQ_ERR("ROT_DBUGG_C: 0x%08x, ROT_DBUGG_D: 0x%08x, ROT_DEBUBG_E: 0x%08x\n",
-		 value[21], value[22], value[23]);
-	CMDQ_ERR("ROT_DBUGG_F: 0x%08x, ROT_DBUGG_10: 0x%08x, ROT_DEBUBG_11: 0x%08x\n",
-		 value[24], value[25], value[26]);
-	CMDQ_ERR("ROT_DEBUG_12: 0x%08x, ROT_DBUGG_13: 0x%08x, ROT_DBUGG_14: 0x%08x\n",
-		 value[27], value[28], value[29]);
+	CMDQ_ERR(
+		"ROT_DBUGG_3: 0x%08x, ROT_DBUGG_4: 0x%08x, ROT_DEBUBG_5: 0x%08x\n",
+		value[12], value[13], value[14]);
+	CMDQ_ERR(
+		"ROT_DBUGG_6: 0x%08x, ROT_DBUGG_7: 0x%08x, ROT_DEBUBG_8: 0x%08x\n",
+		value[15], value[16], value[17]);
+	CMDQ_ERR(
+		"ROT_DBUGG_9: 0x%08x, ROT_DBUGG_A: 0x%08x, ROT_DEBUBG_B: 0x%08x\n",
+		value[18], value[19], value[20]);
+	CMDQ_ERR(
+		"ROT_DBUGG_C: 0x%08x, ROT_DBUGG_D: 0x%08x, ROT_DEBUBG_E: 0x%08x\n",
+		value[21], value[22], value[23]);
+	CMDQ_ERR(
+		"ROT_DBUGG_F: 0x%08x, ROT_DBUGG_10: 0x%08x, ROT_DEBUBG_11: 0x%08x\n",
+		value[24], value[25], value[26]);
+	CMDQ_ERR(
+		"ROT_DEBUG_12: 0x%08x, ROT_DBUGG_13: 0x%08x, ROT_DBUGG_14: 0x%08x\n",
+		value[27], value[28], value[29]);
 	CMDQ_ERR("VIDO_INT: 0x%08x\n", value[30]);
 }
 
 void cmdq_mdp_dump_color(const unsigned long base, const char *label)
 {
-	uint32_t value[13] = { 0 };
+	uint32_t value[13] = {0};
 
 	value[0] = CMDQ_REG_GET32(base + 0x400);
 	value[1] = CMDQ_REG_GET32(base + 0x404);
@@ -557,15 +703,22 @@ void cmdq_mdp_dump_color(const unsigned long base, const char *label)
 	value[11] = CMDQ_REG_GET32(base + 0xC50);
 	value[12] = CMDQ_REG_GET32(base + 0xC54);
 
-	CMDQ_ERR("=============== [CMDQ] %s Status ====================================\n", label);
+	CMDQ_ERR(
+		"=============== [CMDQ] %s Status ====================================\n",
+		label);
 	CMDQ_ERR("COLOR CFG_MAIN: 0x%08x\n", value[0]);
-	CMDQ_ERR("COLOR PXL_CNT_MAIN: 0x%08x, LINE_CNT_MAIN: 0x%08x\n", value[1], value[2]);
-	CMDQ_ERR("COLOR WIN_X_MAIN: 0x%08x, WIN_Y_MAIN: 0x%08x, DBG_CFG_MAIN: 0x%08x\n", value[3], value[4],
-		 value[5]);
-	CMDQ_ERR("COLOR START: 0x%08x, INTEN: 0x%08x, INTSTA: 0x%08x\n", value[6], value[7],
-		 value[8]);
-	CMDQ_ERR("COLOR OUT_SEL: 0x%08x, FRAME_DONE_DEL: 0x%08x\n", value[9], value[10]);
-	CMDQ_ERR("COLOR INTERNAL_IP_WIDTH: 0x%08x, INTERNAL_IP_HEIGHT: 0x%08x\n", value[11], value[12]);
+	CMDQ_ERR("COLOR PXL_CNT_MAIN: 0x%08x, LINE_CNT_MAIN: 0x%08x\n",
+		 value[1], value[2]);
+	CMDQ_ERR(
+		"COLOR WIN_X_MAIN: 0x%08x, WIN_Y_MAIN: 0x%08x, DBG_CFG_MAIN: 0x%08x\n",
+		value[3], value[4], value[5]);
+	CMDQ_ERR("COLOR START: 0x%08x, INTEN: 0x%08x, INTSTA: 0x%08x\n",
+		 value[6], value[7], value[8]);
+	CMDQ_ERR("COLOR OUT_SEL: 0x%08x, FRAME_DONE_DEL: 0x%08x\n", value[9],
+		 value[10]);
+	CMDQ_ERR(
+		"COLOR INTERNAL_IP_WIDTH: 0x%08x, INTERNAL_IP_HEIGHT: 0x%08x\n",
+		value[11], value[12]);
 }
 
 const char *cmdq_mdp_get_wdma_state(uint32_t state)
@@ -598,15 +751,19 @@ const char *cmdq_mdp_get_wdma_state(uint32_t state)
 
 void cmdq_mdp_dump_wdma(const unsigned long base, const char *label)
 {
-	uint32_t value[40] = { 0 };
+	uint32_t value[40] = {0};
 	uint32_t state = 0;
-	uint32_t grep = 0;	/* grep bit = 1, WDMA has sent request to SMI, and not receive done yet */
-	uint32_t isFIFOFull = 0;	/* 1 for WDMA FIFO full */
+	/* grep bit = 1, WDMA has sent request to SMI, and
+	 * not receive done yet
+	 */
+	uint32_t grep = 0;
+	uint32_t isFIFOFull = 0; /* 1 for WDMA FIFO full */
 
 	value[0] = CMDQ_REG_GET32(base + 0x014);
 	value[1] = CMDQ_REG_GET32(base + 0x018);
 	value[2] = CMDQ_REG_GET32(base + 0x028);
-	value[3] = CMDQ_REG_GET32(base + cmdq_mdp_get_func()->wdmaGetRegOffsetDstAddr());
+	value[3] = CMDQ_REG_GET32(
+		base + cmdq_mdp_get_func()->wdmaGetRegOffsetDstAddr());
 	value[4] = CMDQ_REG_GET32(base + 0x078);
 	value[5] = CMDQ_REG_GET32(base + 0x080);
 	value[6] = CMDQ_REG_GET32(base + 0x0A0);
@@ -661,44 +818,166 @@ void cmdq_mdp_dump_wdma(const unsigned long base, const char *label)
 	value[38] = CMDQ_REG_GET32(base + 0x014);
 	value[39] = CMDQ_REG_GET32(base + 0x0AC);
 
-	CMDQ_ERR("=============== [CMDQ] %s Status ====================================\n", label);
-	CMDQ_ERR("[CMDQ]WDMA_CFG: 0x%08x, WDMA_SRC_SIZE: 0x%08x, WDMA_DST_W_IN_BYTE = 0x%08x\n",
-		 value[0], value[1], value[2]);
-	CMDQ_ERR
-	    ("[CMDQ]WDMA_DST_ADDR0: 0x%08x, WDMA_DST_UV_PITCH: 0x%08x, WDMA_DST_ADDR_OFFSET0 = 0x%08x\n",
-	     value[3], value[4], value[5]);
-	CMDQ_ERR("[CMDQ]WDMA_STATUS: 0x%08x, WDMA_INPUT_CNT: 0x%08x\n", value[6], value[7]);
+	CMDQ_ERR(
+		"=============== [CMDQ] %s Status ====================================\n",
+		label);
+	CMDQ_ERR(
+		"[CMDQ]WDMA_CFG: 0x%08x, WDMA_SRC_SIZE: 0x%08x, WDMA_DST_W_IN_BYTE = 0x%08x\n",
+		value[0], value[1], value[2]);
+	CMDQ_ERR(
+		"[CMDQ]WDMA_DST_ADDR0: 0x%08x, WDMA_DST_UV_PITCH: 0x%08x, WDMA_DST_ADDR_OFFSET0 = 0x%08x\n",
+		value[3], value[4], value[5]);
+	CMDQ_ERR("[CMDQ]WDMA_STATUS: 0x%08x, WDMA_INPUT_CNT: 0x%08x\n",
+		 value[6], value[7]);
 
 	/* Dump Addtional WDMA debug info */
-	CMDQ_ERR("WDMA_DEBUG_0 +014: 0x%08x , +0ac: 0x%08x\n", value[8], value[9]);
-	CMDQ_ERR("WDMA_DEBUG_1 +014: 0x%08x , +0ac: 0x%08x\n", value[10], value[11]);
-	CMDQ_ERR("WDMA_DEBUG_2 +014: 0x%08x , +0ac: 0x%08x\n", value[12], value[13]);
-	CMDQ_ERR("WDMA_DEBUG_3 +014: 0x%08x , +0ac: 0x%08x\n", value[14], value[15]);
-	CMDQ_ERR("WDMA_DEBUG_4 +014: 0x%08x , +0ac: 0x%08x\n", value[16], value[17]);
-	CMDQ_ERR("WDMA_DEBUG_5 +014: 0x%08x , +0ac: 0x%08x\n", value[18], value[19]);
-	CMDQ_ERR("WDMA_DEBUG_6 +014: 0x%08x , +0ac: 0x%08x\n", value[20], value[21]);
-	CMDQ_ERR("WDMA_DEBUG_7 +014: 0x%08x , +0ac: 0x%08x\n", value[22], value[23]);
-	CMDQ_ERR("WDMA_DEBUG_8 +014: 0x%08x , +0ac: 0x%08x\n", value[24], value[25]);
-	CMDQ_ERR("WDMA_DEBUG_9 +014: 0x%08x , +0ac: 0x%08x\n", value[26], value[27]);
-	CMDQ_ERR("WDMA_DEBUG_A +014: 0x%08x , +0ac: 0x%08x\n", value[28], value[29]);
-	CMDQ_ERR("WDMA_DEBUG_B +014: 0x%08x , +0ac: 0x%08x\n", value[30], value[31]);
-	CMDQ_ERR("WDMA_DEBUG_C +014: 0x%08x , +0ac: 0x%08x\n", value[32], value[33]);
-	CMDQ_ERR("WDMA_DEBUG_D +014: 0x%08x , +0ac: 0x%08x\n", value[34], value[35]);
-	CMDQ_ERR("WDMA_DEBUG_E +014: 0x%08x , +0ac: 0x%08x\n", value[36], value[37]);
-	CMDQ_ERR("WDMA_DEBUG_F +014: 0x%08x , +0ac: 0x%08x\n", value[38], value[39]);
+	CMDQ_ERR("WDMA_DEBUG_0 +014: 0x%08x , +0ac: 0x%08x\n", value[8],
+		 value[9]);
+	CMDQ_ERR("WDMA_DEBUG_1 +014: 0x%08x , +0ac: 0x%08x\n", value[10],
+		 value[11]);
+	CMDQ_ERR("WDMA_DEBUG_2 +014: 0x%08x , +0ac: 0x%08x\n", value[12],
+		 value[13]);
+	CMDQ_ERR("WDMA_DEBUG_3 +014: 0x%08x , +0ac: 0x%08x\n", value[14],
+		 value[15]);
+	CMDQ_ERR("WDMA_DEBUG_4 +014: 0x%08x , +0ac: 0x%08x\n", value[16],
+		 value[17]);
+	CMDQ_ERR("WDMA_DEBUG_5 +014: 0x%08x , +0ac: 0x%08x\n", value[18],
+		 value[19]);
+	CMDQ_ERR("WDMA_DEBUG_6 +014: 0x%08x , +0ac: 0x%08x\n", value[20],
+		 value[21]);
+	CMDQ_ERR("WDMA_DEBUG_7 +014: 0x%08x , +0ac: 0x%08x\n", value[22],
+		 value[23]);
+	CMDQ_ERR("WDMA_DEBUG_8 +014: 0x%08x , +0ac: 0x%08x\n", value[24],
+		 value[25]);
+	CMDQ_ERR("WDMA_DEBUG_9 +014: 0x%08x , +0ac: 0x%08x\n", value[26],
+		 value[27]);
+	CMDQ_ERR("WDMA_DEBUG_A +014: 0x%08x , +0ac: 0x%08x\n", value[28],
+		 value[29]);
+	CMDQ_ERR("WDMA_DEBUG_B +014: 0x%08x , +0ac: 0x%08x\n", value[30],
+		 value[31]);
+	CMDQ_ERR("WDMA_DEBUG_C +014: 0x%08x , +0ac: 0x%08x\n", value[32],
+		 value[33]);
+	CMDQ_ERR("WDMA_DEBUG_D +014: 0x%08x , +0ac: 0x%08x\n", value[34],
+		 value[35]);
+	CMDQ_ERR("WDMA_DEBUG_E +014: 0x%08x , +0ac: 0x%08x\n", value[36],
+		 value[37]);
+	CMDQ_ERR("WDMA_DEBUG_F +014: 0x%08x , +0ac: 0x%08x\n", value[38],
+		 value[39]);
 
 	/* parse WDMA state */
 	state = value[6] & 0x3FF;
 	grep = (value[6] >> 13) & 0x1;
 	isFIFOFull = (value[6] >> 12) & 0x1;
 
-	CMDQ_ERR("WDMA state:0x%x (%s)\n", state, cmdq_mdp_get_wdma_state(state));
-	CMDQ_ERR("WDMA in_req:%d in_ack:%d\n", (value[6] >> 15) & 0x1, (value[6] >> 14) & 0x1);
+	CMDQ_ERR("WDMA state:0x%x (%s)\n", state,
+		 cmdq_mdp_get_wdma_state(state));
+	CMDQ_ERR("WDMA in_req:%d in_ack:%d\n", (value[6] >> 15) & 0x1,
+		 (value[6] >> 14) & 0x1);
 
-	/* note WDMA send request(i.e command) to SMI first, then SMI takes request data from WDMA FIFO */
+	/* note WDMA send request(i.e command) to SMI first, then SMI takes
+	 * request data from WDMA FIFO
+	 */
 	/* if SMI dose not process request and upstream HWs */
 	/* such as MDP_RSZ send data to WDMA, WDMA FIFO will full finally */
 	CMDQ_ERR("WDMA grep:%d, FIFO full:%d\n", grep, isFIFOFull);
-	CMDQ_ERR("WDMA suggest: Need SMI help:%d, Need check WDMA config:%d\n", (grep),
-		 ((0 == grep) && (1 == isFIFOFull)));
+	CMDQ_ERR("WDMA suggest: Need SMI help:%d, Need check WDMA config:%d\n",
+		 (grep), ((grep == 0) && (isFIFOFull == 1)));
+}
+
+void cmdq_mdp_check_TF_address(unsigned int mva, char *module)
+{
+	bool findTFTask = false;
+	char *searchStr = NULL;
+	char bufInfoKey[] = "x";
+	char str2int[MDP_BUF_INFO_STR_LEN + 1] = "";
+	char *callerNameEnd = NULL;
+	char *callerNameStart = NULL;
+	int callerNameLen = TASK_COMM_LEN;
+	int taskIndex = 0;
+	int bufInfoIndex = 0;
+	int tfTaskIndex = -1;
+	int planeIndex = 0;
+	unsigned int bufInfo[MDP_PORT_BUF_INFO_NUM] = {0};
+	unsigned int bufAddrStart = 0;
+	unsigned int bufAddrEnd = 0;
+
+	/* search track task */
+	for (taskIndex = 0; taskIndex < MDP_MAX_TASK_NUM; taskIndex++) {
+		searchStr = strpbrk(gCmdqMDPTask[taskIndex].userDebugStr,
+				    bufInfoKey);
+		bufInfoIndex = 0;
+
+		/* catch buffer info in string and transform to integer */
+		/* bufInfo format: */
+		/* [address1, address2, address3, size1, size2, size3] */
+		while (searchStr != NULL && findTFTask != true) {
+			strncpy(str2int, searchStr + 1, MDP_BUF_INFO_STR_LEN);
+			if (kstrtoint(str2int, 16, &bufInfo[bufInfoIndex]) !=
+			    0) {
+				CMDQ_ERR(
+					"[MDP] buf info transform to integer failed\n");
+				CMDQ_ERR("[MDP] fail string: %s\n", str2int);
+			}
+
+			searchStr =
+				strpbrk(searchStr + MDP_BUF_INFO_STR_LEN + 1,
+					bufInfoKey);
+			bufInfoIndex++;
+
+			/* check TF mva in this port or not */
+			if (bufInfoIndex == MDP_PORT_BUF_INFO_NUM) {
+				for (planeIndex = 0;
+				     planeIndex < MDP_MAX_PLANE_NUM;
+				     planeIndex++) {
+					bufAddrStart = bufInfo[planeIndex];
+					bufAddrEnd = bufAddrStart +
+						     bufInfo[planeIndex +
+							     MDP_MAX_PLANE_NUM];
+					if (mva >= bufAddrStart &&
+					    mva < bufAddrEnd) {
+						findTFTask = true;
+						break;
+					}
+				}
+				bufInfoIndex = 0;
+			}
+		}
+
+		/* find TF task and keep task index */
+		if (findTFTask == true) {
+			tfTaskIndex = taskIndex;
+			break;
+		}
+	}
+
+	/* find TF task caller and return dispatch key */
+	if (findTFTask == true) {
+		CMDQ_ERR("[MDP] TF caller: %s\n",
+			 gCmdqMDPTask[tfTaskIndex].callerName);
+		CMDQ_ERR("%s\n", gCmdqMDPTask[tfTaskIndex].userDebugStr);
+		strncat(module, "_", 1);
+
+		/* catch caller name only before - or _ */
+		callerNameStart = gCmdqMDPTask[tfTaskIndex].callerName;
+		callerNameEnd =
+			strchr(gCmdqMDPTask[tfTaskIndex].callerName, '-');
+		if (callerNameEnd != NULL)
+			callerNameLen = callerNameEnd - callerNameStart;
+		else {
+			callerNameEnd = strchr(
+				gCmdqMDPTask[tfTaskIndex].callerName, '_');
+			if (callerNameEnd != NULL)
+				callerNameLen = callerNameEnd - callerNameStart;
+		}
+		strncat(module, gCmdqMDPTask[tfTaskIndex].callerName,
+			callerNameLen);
+	} else {
+		CMDQ_ERR("[MDP] TF Task not found\n");
+		for (taskIndex = 0; taskIndex < MDP_MAX_TASK_NUM; taskIndex++) {
+			CMDQ_ERR("[MDP] Task%d:\n", taskIndex);
+			CMDQ_ERR("[MDP] Caller: %s\n",
+				 gCmdqMDPTask[taskIndex].callerName);
+			CMDQ_ERR("%s\n", gCmdqMDPTask[taskIndex].userDebugStr);
+		}
+	}
 }

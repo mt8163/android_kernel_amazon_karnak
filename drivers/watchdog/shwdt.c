@@ -252,6 +252,7 @@ static int sh_wdt_probe(struct platform_device *pdev)
 
 	watchdog_set_nowayout(&sh_wdt_dev, nowayout);
 	watchdog_set_drvdata(&sh_wdt_dev, wdt);
+	sh_wdt_dev.parent = &pdev->dev;
 
 	spin_lock_init(&wdt->lock);
 
@@ -274,9 +275,7 @@ static int sh_wdt_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	init_timer(&wdt->timer);
-	wdt->timer.function	= sh_wdt_ping;
-	wdt->timer.data		= (unsigned long)wdt;
+	setup_timer(&wdt->timer, sh_wdt_ping, (unsigned long)wdt);
 	wdt->timer.expires	= next_ping_period(clock_division_ratio);
 
 	dev_info(&pdev->dev, "initialized.\n");
@@ -303,7 +302,6 @@ static void sh_wdt_shutdown(struct platform_device *pdev)
 static struct platform_driver sh_wdt_driver = {
 	.driver		= {
 		.name	= DRV_NAME,
-		.owner	= THIS_MODULE,
 	},
 
 	.probe		= sh_wdt_probe,

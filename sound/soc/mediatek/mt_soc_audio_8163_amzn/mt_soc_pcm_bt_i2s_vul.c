@@ -29,7 +29,7 @@
 #include "mt_soc_pcm_common.h"
 
 /* information about */
-static AFE_MEM_CONTROL_T *pcm_i2s0_vul_Control_context;
+static struct AFE_MEM_CONTROL_T *pcm_i2s0_vul_Control_context;
 static struct snd_dma_buffer *I2S0_Capture_dma_buf;
 
 static DEFINE_SPINLOCK(auddrv_VULInCtl_lock);
@@ -118,14 +118,6 @@ static void StartAudioI2S0VULHardware(struct snd_pcm_substream *substream)
 	EnableAfe(true);
 }
 
-static int mtk_pcm_i2s0_vul_pcm_prepare(struct snd_pcm_substream *substream)
-{
-	pr_debug("%s, substream->rate = %d, substream->channels = %d\n",
-		 __func__, substream->runtime->rate,
-		 substream->runtime->channels);
-	return 0;
-}
-
 static int mtk_pcm_i2s0_vul_alsa_stop(struct snd_pcm_substream *substream)
 {
 	pr_debug("%s\n", __func__);
@@ -136,14 +128,11 @@ static int mtk_pcm_i2s0_vul_alsa_stop(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static kal_int32 Previous_Hw_cur;
 static snd_pcm_uframes_t mtk_is20_vul_pcm_pointer(struct snd_pcm_substream
 						  *substream)
 {
-	kal_int32 HW_memory_index = 0;
-	kal_int32 HW_Cur_ReadIdx = 0;
 	kal_uint32 Frameidx = 0;
-	AFE_BLOCK_T *VUL_Block = &(pcm_i2s0_vul_Control_context->rBlock);
+	struct AFE_BLOCK_T *VUL_Block = &(pcm_i2s0_vul_Control_context->rBlock);
 
 	PRINTK_AUD_UL1("%s, Vul_Block->u4WriteIdx = 0x%x\n", __func__
 		       VUL_Block->u4WriteIdx);
@@ -153,18 +142,6 @@ static snd_pcm_uframes_t mtk_is20_vul_pcm_pointer(struct snd_pcm_substream
 		Frameidx =
 		    bytes_to_frames(substream->runtime, VUL_Block->u4WriteIdx);
 		return Frameidx;
-
-		HW_Cur_ReadIdx = Align64ByteSize(Afe_Get_Reg(AFE_VUL_CUR));
-		if (HW_Cur_ReadIdx == 0) {
-			pr_debug("[Auddrv] %s, HW_Cur_ReadIdx == 0\n",
-				 __func__);
-			HW_Cur_ReadIdx = VUL_Block->pucPhysBufAddr;
-		}
-		HW_memory_index = (HW_Cur_ReadIdx - VUL_Block->pucPhysBufAddr);
-		Previous_Hw_cur = HW_memory_index;
-		PRINTK_AUD_UL1("[Auddrv] %s = 0x%x, HW_memory_index = 0x%x\n",
-			       __func__, HW_Cur_ReadIdx, HW_memory_index);
-		return bytes_to_frames(substream->runtime, Previous_Hw_cur);
 	}
 	return 0;
 }
@@ -173,7 +150,7 @@ static void SetVULBuffer(struct snd_pcm_substream *substream,
 			 struct snd_pcm_hw_params *hw_params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	AFE_BLOCK_T *pblock = &pcm_i2s0_vul_Control_context->rBlock;
+	struct AFE_BLOCK_T *pblock = &pcm_i2s0_vul_Control_context->rBlock;
 
 	pr_debug("%s\n", __func__);
 
@@ -224,18 +201,16 @@ static int mtk_i2s0_vul_pcm_hw_params(struct snd_pcm_substream *substream,
 		ret =
 		    snd_pcm_lib_malloc_pages(substream,
 					     params_buffer_bytes(hw_params));
+		if (ret < 0)
+			return ret;
+
 	}
 	pr_debug("%s dma_bytes = %zu, dma_area = %p, dma_addr = 0x%x\n",
-		 __func__, runtime->dma_bytes, runtime->dma_area,
+		 __func__, runtime->dma_bytes,
+		 runtime->dma_area,
 		 (uint32) runtime->dma_addr);
 
-	pr_debug("runtime->hw.buffer_bytes_max = 0x%zu\n",
-		 runtime->hw.buffer_bytes_max);
 	SetVULBuffer(substream, hw_params);
-
-	pr_debug("dma_bytes = %zu dma_area = %p dma_addr = 0x%lx\n",
-		 substream->runtime->dma_bytes, substream->runtime->dma_area,
-		 (long)substream->runtime->dma_addr);
 	return ret;
 }
 
@@ -245,8 +220,7 @@ static int mtk_fm_i2s_capture_pcm_hw_free(struct snd_pcm_substream *substream)
 
 	if (I2S0_Capture_dma_buf->area)
 		return 0;
-	else
-		return snd_pcm_lib_free_pages(substream);
+	return snd_pcm_lib_free_pages(substream);
 }
 
 static struct snd_pcm_hw_constraint_list
@@ -269,22 +243,30 @@ static int mtk_pcm_i2s0_vul_pcm_open(struct snd_pcm_substream *substream)
 	memcpy((void *)(&(runtime->hw)), (void *)&mtk_capture_hardware,
 	       sizeof(struct snd_pcm_hardware));
 
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
+		pr_debug("%s SNDRV_PCM_STREAM_CAPTURE OK\n", __func__);
+	else
+		return -1;
+
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
 		&pcm_i2s0_vul_constraints_sample_rates);
+
+	if (ret < 0) {
+		pr_warn("snd_pcm_hw_constraint_list failed\n");
+		return ret;
+	}
 	ret =
 	    snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
 
-	if (ret < 0)
+	if (ret < 0) {
 		pr_warn("snd_pcm_hw_constraint_integer failed\n");
+		return ret;
+	}
 
 	pr_debug
 	    ("mtk_pcm_i2s0_vul_pcm_open, runtime->rate = %d, channels = %d\n",
 	     runtime->rate, runtime->channels);
 
-	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-		pr_debug("%s SNDRV_PCM_STREAM_CAPTURE\n", __func__);
-	else
-		return -1;
 
 	/* here open audio clocks */
 	AudDrv_ANA_Clk_On();
@@ -292,13 +274,7 @@ static int mtk_pcm_i2s0_vul_pcm_open(struct snd_pcm_substream *substream)
 	AudDrv_I2S_Clk_On();
 	AudDrv_Emi_Clk_On();
 
-	if (ret < 0) {
-		pr_warn("mtk_pcm_i2s0_vul_pcm_close\n");
-		mtk_pcm_i2s0_vul_pcm_close(substream);
-		return ret;
-	}
-
-	pr_debug("mtk_pcm_i2s0_vul_pcm_open return\n");
+	pr_debug("%s return\n", __func__);
 	return 0;
 }
 
@@ -335,21 +311,12 @@ static int mtk_capture_fm_i2s_pcm_trigger(struct snd_pcm_substream *substream,
 	return -EINVAL;
 }
 
-static bool CheckNullPointer(void *pointer)
-{
-	if (pointer == NULL) {
-		pr_debug("CheckNullPointer pointer = NULL");
-		return true;
-	}
-	return false;
-}
-
 static int mtk_pcm_i2s0_vul_pcm_copy(struct snd_pcm_substream *substream,
 				     int channel, snd_pcm_uframes_t pos,
 				     void __user *dst, snd_pcm_uframes_t count)
 {
-	AFE_MEM_CONTROL_T *pVUL_MEM_ConTrol = NULL;
-	AFE_BLOCK_T *Vul_Block = NULL;
+	struct AFE_MEM_CONTROL_T *pVUL_MEM_ConTrol = NULL;
+	struct AFE_BLOCK_T *Vul_Block = NULL;
 	char *Read_Data_Ptr = (char *)dst;
 	ssize_t DMA_Read_Ptr = 0, read_size = 0, read_count = 0;
 	unsigned long flags;
@@ -365,18 +332,15 @@ static int mtk_pcm_i2s0_vul_pcm_copy(struct snd_pcm_substream *substream,
 
 	if (pVUL_MEM_ConTrol == NULL) {
 		pr_err("cannot find MEM control !!!!!!!\n");
-		msleep(50);
 		return 0;
 	}
 
 	if (Vul_Block->u4BufferSize <= 0) {
-		msleep(50);
 		return 0;
 	}
 
-	if (CheckNullPointer((void *)Vul_Block->pucVirtBufAddr)) {
-		pr_err("CheckNullPointer pucVirtBufAddr = %p\n",
-		       Vul_Block->pucVirtBufAddr);
+	if (NULL == Vul_Block->pucVirtBufAddr) {
+		pr_err("CheckNullPointer pucVirtBufAddr Check Null\n");
 		return 0;
 	}
 
@@ -424,7 +388,7 @@ static int mtk_pcm_i2s0_vul_pcm_copy(struct snd_pcm_substream *substream,
 			    (" u4DMAReadIdx:0x%x, DMA_Read_Ptr:0x%zu,",
 			     Vul_Block->u4DMAReadIdx, DMA_Read_Ptr);
 			pr_err(" read_size:%zu\n",  read_size);
-			return 0;
+			return -1;
 		}
 
 		read_count += read_size;
@@ -466,7 +430,7 @@ static int mtk_pcm_i2s0_vul_pcm_copy(struct snd_pcm_substream *substream,
 			    (" u4DMAReadIdx:0x%x, DMA_Read_Ptr:0x%zu, ",
 			     Vul_Block->u4DMAReadIdx, DMA_Read_Ptr);
 			pr_err("read_size:%zu\n", read_size);
-			return 0;
+			return -1;
 		}
 
 		read_count += size_1;
@@ -501,7 +465,7 @@ static int mtk_pcm_i2s0_vul_pcm_copy(struct snd_pcm_substream *substream,
 			    (" u4DMAReadIdx:0x%x, DMA_Read_Ptr:0x%zu,",
 			     Vul_Block->u4DMAReadIdx, DMA_Read_Ptr);
 			pr_err(" read_size:%zu\n", read_size);
-			return read_count << 2;
+			return -1;
 		}
 
 		read_count += size_2;
@@ -521,27 +485,7 @@ static int mtk_pcm_i2s0_vul_pcm_copy(struct snd_pcm_substream *substream,
 			Vul_Block->u4WriteIdx, Vul_Block->u4DataRemained);
 	}
 
-	return read_count >> 2;
-}
-
-static int mtk_capture_pcm_silence(struct snd_pcm_substream *substream,
-				   int channel, snd_pcm_uframes_t pos,
-				   snd_pcm_uframes_t count)
-{
-	pr_debug("dummy_pcm_silence\n");
-	/* do nothing */
-	return 0;
-}
-
-static void *dummy_page[2];
-
-static struct page *mtk_fm_i2s_capture_pcm_page(struct snd_pcm_substream
-						*substream,
-						unsigned long offset)
-{
-	pr_debug("dummy_pcm_page\n");
-	/* the same page */
-	return virt_to_page(dummy_page[substream->stream]);
+	return read_count;
 }
 
 static struct snd_pcm_ops mtk_pcm_i2s0_vul_ops = {
@@ -551,12 +495,9 @@ static struct snd_pcm_ops mtk_pcm_i2s0_vul_ops = {
 	.ioctl = snd_pcm_lib_ioctl,
 	.hw_params = mtk_i2s0_vul_pcm_hw_params,
 	.hw_free = mtk_fm_i2s_capture_pcm_hw_free,
-	.prepare = mtk_pcm_i2s0_vul_pcm_prepare,
 	.trigger = mtk_capture_fm_i2s_pcm_trigger,
 	.pointer = mtk_is20_vul_pcm_pointer,
 	.copy = mtk_pcm_i2s0_vul_pcm_copy,
-	.silence = mtk_capture_pcm_silence,
-	.page = mtk_fm_i2s_capture_pcm_page,
 };
 
 static struct snd_soc_platform_driver mtk_soc_platform = {

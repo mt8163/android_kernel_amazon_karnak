@@ -3,11 +3,14 @@
 
 #define DOUGH_AUDIO_SAMPLE_WIDTH 3
 
-#ifndef CONFIG_SND_I2S_MCLK
+#if defined CONFIG_SND_SOC_8_MICS
 #define DOUGH_AUDIO_NUM_CHANNELS 9
 #define DOUGH_AUDIO_FRAME_BUF    255
-#else
+#elif defined CONFIG_SND_SOC_4_MICS
 #define DOUGH_AUDIO_NUM_CHANNELS 6
+#define DOUGH_AUDIO_FRAME_BUF    256
+#else
+#define DOUGH_AUDIO_NUM_CHANNELS 4
 #define DOUGH_AUDIO_FRAME_BUF    256
 #endif
 
@@ -28,10 +31,11 @@ struct dough_audio_frame {
 };
 
 struct __attribute__((__packed__)) dough_status_frame {
-#ifndef CONFIG_SND_I2S_MCLK
+#if defined CONFIG_SND_SOC_8_MICS
 	uint8_t rsvd0[15];          /* bytes 12-26 */
-#else
-	uint8_t rsvd0[6];          /* bytes 12-17 */
+	uint8_t rsvd0[6];           /* bytes 12-17 */
+#elif defined CONFIG_SND_SOC_4_MICS
+	uint8_t rsvd0[6];           /* bytes 12-17 */
 #endif
 	uint32_t timestamp_48mhz;   /* bytes 8-11 */
 	uint16_t num_audio_frames;  /* bytes 6-7 */

@@ -107,8 +107,10 @@ static struct usbmix_name_map extigy_map[] = {
  * e.g. no Master and fake PCM volume
  *			Pavel Mihaylov <bin@bash.info>
  */
-static struct usbmix_dB_map mp3plus_dB_1 = {-4781, 0};	/* just guess */
-static struct usbmix_dB_map mp3plus_dB_2 = {-1781, 618}; /* just guess */
+static struct usbmix_dB_map mp3plus_dB_1 = {.min = -4781, .max = 0};
+						/* just guess */
+static struct usbmix_dB_map mp3plus_dB_2 = {.min = -1781, .max = 618};
+						/* just guess */
 
 static struct usbmix_name_map mp3plus_map[] = {
 	/* 1: IT pcm */
@@ -176,6 +178,11 @@ static struct usbmix_name_map audigy2nx_map[] = {
 	{ 29, "Digital Out Source" }, /* SU */
 	{ 30, "Headphone Playback" }, /* FU */
 	{ 31, "Headphone Source" }, /* SU */
+	{ 0 } /* terminator */
+};
+
+static struct usbmix_name_map mbox1_map[] = {
+	{ 1, "Clock" },
 	{ 0 } /* terminator */
 };
 
@@ -441,6 +448,10 @@ static struct usbmix_ctl_map usbmix_ctl_maps[] = {
 	{
 		.id = USB_ID(0x0bda, 0x4014),
 		.map = dell_alc4020_map,
+	},
+	{
+		.id = USB_ID(0x0dba, 0x1000),
+		.map = mbox1_map,
 	},
 	{
 		.id = USB_ID(0x13e5, 0x0001),

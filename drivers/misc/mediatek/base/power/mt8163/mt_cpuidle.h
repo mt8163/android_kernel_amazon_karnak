@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef MT_CPUIDLE_H
 #define MT_CPUIDLE_H
 
@@ -47,18 +60,29 @@
 
 #define CPU_SUSPEND_MODE (DORMANT_ALL_OFF)
 
-#define IS_DORMANT_SKIP_1(a)		(((a) & DORMANT_SKIP_1) == DORMANT_SKIP_1)
-#define IS_DORMANT_SKIP_2(a)		(((a) & DORMANT_SKIP_2) == DORMANT_SKIP_2)
-#define IS_DORMANT_SKIP_3(a)		(((a) & DORMANT_SKIP_3) == DORMANT_SKIP_3)
+#define IS_DORMANT_SKIP_1(a)		(((a) & DORMANT_SKIP_1) == \
+						DORMANT_SKIP_1)
+#define IS_DORMANT_SKIP_2(a)		(((a) & DORMANT_SKIP_2) == \
+						DORMANT_SKIP_2)
+#define IS_DORMANT_SKIP_3(a)		(((a) & DORMANT_SKIP_3) == \
+						DORMANT_SKIP_3)
 
-#define IS_DORMANT_BREAK_CHECK(a)	(((a) & DORMANT_BREAK_CHECK) == DORMANT_BREAK_CHECK)
-#define IS_DORMANT_SNOOP_OFF(a)		(((a) & DORMANT_SNOOP_OFF) == DORMANT_SNOOP_OFF)
-#define IS_DORMANT_INNER_OFF(a)		(((a) & DORMANT_INNER_OFF) == DORMANT_INNER_OFF)
-#define IS_DORMANT_CPUSYS_OFF(a)	(((a) & DORMANT_CPUSYS_OFF) == DORMANT_CPUSYS_OFF)
-#define IS_DORMANT_GIC_OFF(a)		(((a) & DORMANT_GIC_OFF) == DORMANT_GIC_OFF)
-#define IS_DORMANT_CCI400_CLOCK_SW(a)	(((a) & DORMANT_CCI400_CLOCK_SW) == DORMANT_CCI400_CLOCK_SW)
-#define IS_CPU_SHUTDOWN_MODE(a)		(((a) & MODE_MASK) == CPU_SHUTDOWN_MODE)
-#define IS_CPU_DORMANT_MODE(a)		(((a) & MODE_MASK) == CPU_DORMANT_MODE)
+#define IS_DORMANT_BREAK_CHECK(a)	(((a) & DORMANT_BREAK_CHECK) == \
+						DORMANT_BREAK_CHECK)
+#define IS_DORMANT_SNOOP_OFF(a)		(((a) & DORMANT_SNOOP_OFF) == \
+						DORMANT_SNOOP_OFF)
+#define IS_DORMANT_INNER_OFF(a)		(((a) & DORMANT_INNER_OFF) == \
+						DORMANT_INNER_OFF)
+#define IS_DORMANT_CPUSYS_OFF(a)	(((a) & DORMANT_CPUSYS_OFF) == \
+						DORMANT_CPUSYS_OFF)
+#define IS_DORMANT_GIC_OFF(a)		(((a) & DORMANT_GIC_OFF) == \
+						DORMANT_GIC_OFF)
+#define IS_DORMANT_CCI400_CLOCK_SW(a)	(((a) & DORMANT_CCI400_CLOCK_SW) == \
+						DORMANT_CCI400_CLOCK_SW)
+#define IS_CPU_SHUTDOWN_MODE(a)		(((a) & MODE_MASK) == \
+						CPU_SHUTDOWN_MODE)
+#define IS_CPU_DORMANT_MODE(a)		(((a) & MODE_MASK) == \
+						CPU_DORMANT_MODE)
 
 #define _IS_DORMANT_SET(flag, feature)	(((flag) & (feature)) == (feature))
 
@@ -77,7 +101,8 @@
  * return:
  * MT_CPU_DORMANT_RESET: cpu is reset from power-down state.
  * MT_CPU_DORMANT_ABORT: cpu issue WFI and return for a pending interrupt.
- * MT_CPU_DORMANT_BREAK:  cpu dormant flow broken before by validating a SPM interrupt.
+ * MT_CPU_DORMANT_BREAK:  cpu dormant flow broken before by validating a
+ * SPM interrupt.
  * MT_CPU_DORMANT_BYPASS: (for debug only) to bypass all dormant flow.
  */
 
@@ -93,5 +118,8 @@ extern void mt_restore_generic_timer(unsigned int *container, int sw);
 
 extern unsigned long *aee_rr_rec_cpu_dormant(void);
 extern unsigned long *aee_rr_rec_cpu_dormant_pa(void);
+unsigned int *mt_save_dbg_regs(unsigned int *p, unsigned int cpuid);
+void mt_restore_dbg_regs(unsigned int *p, unsigned int cpuid);
+void mt_copy_dbg_regs(int to, int from);
 
 #endif

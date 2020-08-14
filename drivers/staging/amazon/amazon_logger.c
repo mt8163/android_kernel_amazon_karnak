@@ -41,6 +41,7 @@
 #include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/vmalloc.h>
+#include <linux/uio.h>
 
 static int metrics_init;
 #define VITAL_ENTRY_MAX_PAYLOAD 512

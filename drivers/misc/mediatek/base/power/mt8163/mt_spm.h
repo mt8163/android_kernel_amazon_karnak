@@ -1,8 +1,24 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _MT_SPM_
 #define _MT_SPM_
 
 #include <linux/kernel.h>
 #include <linux/io.h>
+#include <linux/irq.h>
+#include <linux/irqdesc.h>
+#include <linux/irqchip/mtk-gic-extend.h>
 
 #ifdef CONFIG_OF
 extern void __iomem *spm_base;
@@ -26,6 +42,7 @@ extern u32 spm_irq_7;
 
 /* #include <mach/mt_irq.h> */
 #include <mt-plat/sync_write.h>
+#include <mt-plat/mtk_io.h>
 
 /**************************************
  * Config and Parameter
@@ -263,14 +280,14 @@ enum SPM_WAKE_SRC_LIST	{
 	WAKE_SRC_APSRC_SLEEP = (1U << 31)
 };
 
-typedef enum {
+enum {
 	WR_NONE = 0,
 	WR_UART_BUSY = 1,
 	WR_PCM_ASSERT = 2,
 	WR_PCM_TIMER = 3,
 	WR_WAKE_SRC = 4,
 	WR_UNKNOWN = 5,
-} wake_reason_t;
+};
 
 struct twam_sig {
 	u32 sig0;		/* signal 0: config or status */
@@ -287,24 +304,21 @@ extern void spm_mainpll_on_unrequest(const char *drv_name);
 
 /* for TWAM in MET */
 extern void spm_twam_register_handler(twam_handler_t handler);
-extern void spm_twam_enable_monitor(const struct twam_sig *twamsig, bool speed_mode);
+extern void spm_twam_enable_monitor
+	(const struct twam_sig *twamsig, bool speed_mode);
 extern void spm_twam_disable_monitor(void);
 
 /* for Vcore DVFS */
 extern int spm_go_to_ddrdfs(u32 spm_flags, u32 spm_data);
 
-
 /**************************************
  * Macro and Inline
  **************************************/
-#define spm_read(addr)			__raw_readl((void __force __iomem *)(addr))
-#define spm_write(addr, val)		mt_reg_sync_writel(val, addr)
+#define spm_read(addr)          __raw_readl(IOMEM(addr))
+#define spm_write(addr, val)    mt_reg_sync_writel(val, addr)
 
 #define is_cpu_pdn(flags)		(!((flags) & SPM_CPU_PDN_DIS))
 #define is_infra_pdn(flags)		(!((flags) & SPM_INFRA_PDN_DIS))
 #define is_ddrphy_pdn(flags)		(!((flags) & SPM_DDRPHY_PDN_DIS))
-
-#define get_high_cnt(sigsta)		((sigsta) & 0x3ff)
-#define get_high_percent(sigsta)	((get_high_cnt(sigsta) * 100 + 511) / 1023)
 
 #endif

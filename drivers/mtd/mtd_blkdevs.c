@@ -87,14 +87,14 @@ static int do_blktrans_request(struct mtd_blktrans_ops *tr,
 	if (req->cmd_type != REQ_TYPE_FS)
 		return -EIO;
 
-	if (req->cmd_flags & REQ_FLUSH)
+	if (req_op(req) == REQ_OP_FLUSH)
 		return tr->flush(dev);
 
 	if (blk_rq_pos(req) + blk_rq_cur_sectors(req) >
 	    get_capacity(req->rq_disk))
 		return -EIO;
 
-	if (req->cmd_flags & REQ_DISCARD)
+	if (req_op(req) == REQ_OP_DISCARD)
 		return tr->discard(dev, block, nsect);
 
 	if (rq_data_dir(req) == READ) {
@@ -166,9 +166,6 @@ static void mtd_blktrans_work(struct work_struct *work)
 
 		background_done = 0;
 	}
-
-	if (req)
-		__blk_end_request_all(req, -EIO);
 
 	spin_unlock_irq(rq->queue_lock);
 }
@@ -277,7 +274,7 @@ static int blktrans_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 	if (!dev->mtd)
 		goto unlock;
 
-	ret = dev->tr->getgeo ? dev->tr->getgeo(dev, geo) : 0;
+	ret = dev->tr->getgeo ? dev->tr->getgeo(dev, geo) : -ENOTTY;
 unlock:
 	mutex_unlock(&dev->lock);
 	blktrans_dev_put(dev);
@@ -402,19 +399,17 @@ int add_mtd_blktrans_dev(struct mtd_blktrans_dev *new)
 		snprintf(gd->disk_name, sizeof(gd->disk_name),
 			 "%s%d", tr->name, new->devnum);
 
-	set_capacity(gd, (new->size * tr->blksize) >> 9);
+	set_capacity(gd, ((u64)new->size * tr->blksize) >> 9);
 
 	/* Create the request queue */
 	spin_lock_init(&new->queue_lock);
 	new->rq = blk_init_queue(mtd_blktrans_request, &new->queue_lock);
-#ifdef CONFIG_MTK_MTD_NAND
-	new->rq->backing_dev_info.ra_pages = 0;
-#endif
+
 	if (!new->rq)
 		goto error3;
 
 	if (tr->flush)
-		blk_queue_flush(new->rq, REQ_FLUSH);
+		blk_queue_write_cache(new->rq, true, false);
 
 	new->rq->queuedata = new;
 	blk_queue_logical_block_size(new->rq, tr->blksize);
@@ -424,7 +419,7 @@ int add_mtd_blktrans_dev(struct mtd_blktrans_dev *new)
 
 	if (tr->discard) {
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, new->rq);
-		new->rq->limits.max_discard_sectors = UINT_MAX;
+		blk_queue_max_discard_sectors(new->rq, UINT_MAX);
 	}
 
 	gd->queue = new->rq;
@@ -436,12 +431,10 @@ int add_mtd_blktrans_dev(struct mtd_blktrans_dev *new)
 		goto error4;
 	INIT_WORK(&new->work, mtd_blktrans_work);
 
-	gd->driverfs_dev = &new->mtd->dev;
-
 	if (new->readonly)
 		set_disk_ro(gd, 1);
 
-	add_disk(gd);
+	device_add_disk(&new->mtd->dev, gd);
 
 	if (new->disk_attributes) {
 		ret = sysfs_create_group(&disk_to_dev(gd)->kobj,

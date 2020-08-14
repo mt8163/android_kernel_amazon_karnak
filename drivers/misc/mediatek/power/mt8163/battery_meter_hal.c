@@ -1,5 +1,17 @@
-#include <linux/platform_device.h>
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
 
+#include <linux/platform_device.h>
 #include <mt-plat/upmu_common.h>
 #include <mt-plat/battery_meter_hal.h>
 #include <mt-plat/battery_meter.h>
@@ -15,10 +27,10 @@
 /*============================================================ */
 /*global variable*/
 /*============================================================ */
-signed int chip_diff_trim_value_4_0 = 0;
-signed int chip_diff_trim_value = 0; /* unit = 0.1*/
+signed int chip_diff_trim_value_4_0;
+signed int chip_diff_trim_value; /* unit = 0.1*/
 
-signed int g_hw_ocv_tune_value = 8;
+signed int g_hw_ocv_tune_value;
 
 /*============================================================ */
 /*function prototype*/
@@ -47,8 +59,8 @@ void get_hw_chip_diff_trim_value(void)
 	chip_diff_trim_value_4_0 = reg_val_1 | (reg_val_2 << 3);
 
 	pr_debug("[Chip_Trim] Reg[0x%x]=0x%x, Reg[0x%x]=0x%x, chip_diff_trim_value_4_0=%d\n",
-		0x01C4, upmu_get_reg_value(0x01C4), 0x01C6, upmu_get_reg_value(0x01C6), chip_diff_trim_value_4_0);
-
+		0x01C4, upmu_get_reg_value(0x01C4), 0x01C6,
+		upmu_get_reg_value(0x01C6), chip_diff_trim_value_4_0);
 #else
 	pr_debug("[Chip_Trim] need check reg number\n");
 #endif
@@ -149,10 +161,12 @@ void get_hw_chip_diff_trim_value(void)
 		chip_diff_trim_value = 925;
 		break;
 	default:
-		pr_debug("[Chip_Trim] Invalid value(%d)\n", chip_diff_trim_value_4_0);
+		pr_debug("[Chip_Trim] Invalid value(%d)\n",
+			chip_diff_trim_value_4_0);
 		break;
 	}
-	pr_debug("[Chip_Trim] %d,%d\n", chip_diff_trim_value_4_0, chip_diff_trim_value);
+	pr_debug("[Chip_Trim] %d,%d\n",
+		chip_diff_trim_value_4_0, chip_diff_trim_value);
 #endif
 }
 
@@ -182,12 +196,16 @@ int get_hw_ocv(void)
 
 	if (batt_meter_cust_data.swchr_power_path) {
 		adc_result_reg = upmu_get_rg_adc_out_wakeup_swchr();
-		adc_result = (adc_result_reg*r_val_temp*VOLTAGE_FULL_RANGE)/ADC_PRECISE;
+		adc_result =
+			(adc_result_reg*r_val_temp*VOLTAGE_FULL_RANGE)
+			/ADC_PRECISE;
 		pr_notice("[oam] get_hw_ocv (swchr) : adc_result_reg=%d, adc_result=%d\n",
 			adc_result_reg, adc_result);
 	} else {
 		adc_result_reg = upmu_get_rg_adc_out_wakeup_pchr();
-		adc_result = (adc_result_reg*r_val_temp*VOLTAGE_FULL_RANGE)/ADC_PRECISE;
+		adc_result =
+			(adc_result_reg*r_val_temp*VOLTAGE_FULL_RANGE)
+			/ADC_PRECISE;
 		pr_notice("[oam] get_hw_ocv (pchr) : adc_result_reg=%d, adc_result=%d\n",
 			adc_result_reg, adc_result);
 	}
@@ -203,7 +221,8 @@ static signed int read_adc_v_bat_sense(void *data)
 	*(signed int *)(data) = 4201;
 #else
 	*(signed int *)(data) = PMIC_IMM_GetOneChannelValue(
-		batt_meter_cust_data.vbat_channel_number, *(signed int *)(data), 1);
+		batt_meter_cust_data.vbat_channel_number,
+		*(signed int *)(data), 1);
 #endif
 
 	return STATUS_OK;
@@ -215,7 +234,8 @@ static signed int read_adc_v_i_sense(void *data)
 	*(signed int *)(data) = 4202;
 #else
 	*(signed int *)(data) = PMIC_IMM_GetOneChannelValue(
-		batt_meter_cust_data.isense_channel_number, *(signed int *)(data), 1);
+		batt_meter_cust_data.isense_channel_number,
+		*(signed int *)(data), 1);
 #endif
 
 	return STATUS_OK;
@@ -223,14 +243,12 @@ static signed int read_adc_v_i_sense(void *data)
 
 static signed int read_adc_v_bat_temp(void *data)
 {
-	int ret = 0;
-
 #if defined(CONFIG_POWER_EXT)
 	*(signed int *)(data) = 0;
 #else
 	#if defined(MTK_PCB_TBAT_FEATURE)
 
-		int data[4], i, ret_value = 0, ret_temp = 0;
+		int ret = 0, data[4], i, ret_value = 0, ret_temp = 0;
 		int Channel = 1;
 
 		if (IMM_IsAdcInitReady() == 0) {
@@ -240,7 +258,9 @@ static signed int read_adc_v_bat_temp(void *data)
 
 		i = times;
 		while (i--) {
-			ret_value = IMM_GetOneChannelValue(Channel, data, &ret_temp);
+			ret_value =
+				IMM_GetOneChannelValue(Channel,
+				data, &ret_temp);
 			ret += ret_temp;
 			pr_debug("[get_tbat_volt] ret_temp=%d\n", ret_temp);
 		}
@@ -253,14 +273,13 @@ static signed int read_adc_v_bat_temp(void *data)
 
 	#else
 		pr_debug("[read_adc_v_charger] return PMIC_IMM_GetOneChannelValue(4,times,1);\n");
-		ret = PMIC_IMM_GetOneChannelValue(
-			batt_meter_cust_data.vbattemp_channel_number, *(signed int *)(data), 1);
-
-		*(signed int *)(data) = (ret > 0) ? ret : 0;
+		*(signed int *)(data) = PMIC_IMM_GetOneChannelValue(
+			batt_meter_cust_data.vbattemp_channel_number,
+			*(signed int *)(data), 1);
 	#endif
 #endif
 
-	return (ret < 0 ? -1 : STATUS_OK);
+	return STATUS_OK;
 }
 
 static signed int read_adc_v_charger(void *data)
@@ -275,7 +294,8 @@ static signed int read_adc_v_charger(void *data)
 	r_charger_2 = batt_meter_cust_data.r_charger_2;
 
 	val = PMIC_IMM_GetOneChannelValue(
-		batt_meter_cust_data.vcharger_channel_number, *(signed int *)(data), 1);
+		batt_meter_cust_data.vcharger_channel_number,
+		*(signed int *)(data), 1);
 	if (r_charger_2 != 0)
 		val = (((r_charger_1+r_charger_2)*100*val)/r_charger_2) / 100;
 	else
@@ -300,16 +320,20 @@ static signed int read_hw_ocv(void *data)
 
 static signed int(*bm_func[BATTERY_METER_CMD_NUMBER]) (void *data);
 
-signed int bm_ctrl_cmd(BATTERY_METER_CTRL_CMD cmd, void *data)
+signed int bm_ctrl_cmd(int cmd, void *data)
 {
 	static signed int init = -1;
 
 	if (init == -1) {
 		init = 0;
-		bm_func[BATTERY_METER_CMD_GET_ADC_V_BAT_SENSE] = read_adc_v_bat_sense;
-		bm_func[BATTERY_METER_CMD_GET_ADC_V_I_SENSE] = read_adc_v_i_sense;
-		bm_func[BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP] = read_adc_v_bat_temp;
-		bm_func[BATTERY_METER_CMD_GET_ADC_V_CHARGER] = read_adc_v_charger;
+		bm_func[BATTERY_METER_CMD_GET_ADC_V_BAT_SENSE]
+			= read_adc_v_bat_sense;
+		bm_func[BATTERY_METER_CMD_GET_ADC_V_I_SENSE]
+			= read_adc_v_i_sense;
+		bm_func[BATTERY_METER_CMD_GET_ADC_V_BAT_TEMP]
+			= read_adc_v_bat_temp;
+		bm_func[BATTERY_METER_CMD_GET_ADC_V_CHARGER]
+			= read_adc_v_charger;
 		bm_func[BATTERY_METER_CMD_GET_HW_OCV] = read_hw_ocv;
 	}
 

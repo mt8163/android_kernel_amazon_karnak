@@ -17,7 +17,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <asm/io.h>
+#include <linux/io.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
@@ -266,7 +266,7 @@ static int phram_setup(const char *val)
 	return ret;
 }
 
-static int phram_param_call(const char *val, struct kernel_param *kp)
+static int phram_param_call(const char *val, const struct kernel_param *kp)
 {
 #ifdef MODULE
 	return phram_setup(val);

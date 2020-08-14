@@ -16,6 +16,7 @@
  *
  */
 
+
 #include <linux/cpu.h>
 #include <linux/cpumask.h>
 #include <linux/cpufreq.h>
@@ -31,12 +32,13 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
-#include <mt_hotplug_strategy.h>
-#include <mt_hotplug_strategy_internal.h>
-#include "mt_cpufreq.h"
+#include "mt_hotplug_strategy.h"
+#include "mt_hotplug_strategy_internal.h"
 #include <linux/input.h>
 #include <linux/workqueue.h>
 #include "dynamic_boost.h"
+#include <linux/notifier.h>
+#include <linux/cpufreq.h>
 
 struct boost_state {
 	int active;
@@ -61,19 +63,20 @@ struct dboost_input_handle {
 };
 
 #define MAX_CORES_NUMBER nr_cpu_ids
-#define MAX_FREQUENCY 1
-#define MAX_DURATION 10000
+#define MAX_DURATION 15000
 
-static ssize_t dynamic_boost_show(struct device *dev, struct device_attribute *attr, char *buf);
-static ssize_t dynamic_boost_store(struct device *dev, struct device_attribute *attr, const char *buf,
-	size_t n);
+static ssize_t dynamic_boost_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+static ssize_t dynamic_boost_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t n);
 static struct device_attribute dynamic_boost_attr = __ATTR(dynamic_boost, 0750,
-	dynamic_boost_show, dynamic_boost_store);
+		dynamic_boost_show, dynamic_boost_store);
 
 static void dboost_disable_work(struct work_struct *work)
 {
 	unsigned long flags;
-	struct boost_state *state = container_of(work, struct boost_state, work.work);
+	struct boost_state *state = container_of(work, struct boost_state,
+			work.work);
 
 	spin_lock_irqsave(&dboost.boost_lock, flags);
 	if (state->active > 0)
@@ -88,18 +91,20 @@ static void dboost_disable_work(struct work_struct *work)
  * Set up performance boost mode with requested duration
  * @duration: How long the user want this mode to keep. Specify with ms.
  * @mode: Request mode.
-*/
+ */
 int set_dynamic_boost(int duration, int prio_mode)
 {
 	unsigned long flags;
 	struct boost_state *state;
 
-	if (duration > MAX_DURATION ||
-	    prio_mode < 0 || prio_mode > PRIO_DEFAULT)
+	if (prio_mode < 0 || prio_mode > PRIO_DEFAULT)
 		return -EINVAL;
 
 	if (prio_mode == PRIO_DEFAULT || !duration)
 		return 0;
+
+	if (duration > MAX_DURATION)
+		duration = MAX_DURATION;
 
 	spin_lock_irqsave(&dboost.boost_lock, flags);
 
@@ -108,7 +113,8 @@ int set_dynamic_boost(int duration, int prio_mode)
 		state->active++;
 	else if (duration == OFF)
 		state->active--;
-	else if (!mod_delayed_work(system_wq, &state->work, msecs_to_jiffies(duration)))
+	else if (!mod_delayed_work(system_wq, &state->work,
+				msecs_to_jiffies(duration)))
 		state->active++;
 	spin_unlock_irqrestore(&dboost.boost_lock, flags);
 
@@ -120,8 +126,18 @@ EXPORT_SYMBOL(set_dynamic_boost);
 
 static int dboost_dvfs_hotplug_thread(void *ptr)
 {
-	int max_freq, cores_to_set_b, cores_to_set_l;
+	int max_freq, cores_to_set_b, cores_to_set_l, cores_to_set_sum;
 	unsigned long flags;
+	struct cpufreq_policy *policy;
+	struct cpufreq_cpuinfo cpuinfo;
+
+	policy = cpufreq_cpu_get(0);
+	if (IS_ERR_OR_NULL(policy))
+		return -EINVAL;
+
+	cpuinfo = policy->cpuinfo;
+	if (IS_ERR_OR_NULL(&cpuinfo))
+		return -EINVAL;
 
 	set_user_nice(current, -10);
 
@@ -141,7 +157,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_MAX_CORES_MAX_FREQ:
 			cores_to_set_b = num_possible_big_cpus();
 			cores_to_set_l = num_possible_little_cpus();
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_MAX_CORES:
 			cores_to_set_b = num_possible_big_cpus();
@@ -151,7 +167,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_FOUR_BIGS_MAX_FREQ:
 			cores_to_set_b = 4;
 			cores_to_set_l = 0;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_FOUR_BIGS:
 			cores_to_set_b = 4;
@@ -161,7 +177,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_TWO_BIGS_TWO_LITTLES_MAX_FREQ:
 			cores_to_set_b = 2;
 			cores_to_set_l = 2;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_TWO_BIGS_TWO_LITTLES:
 			cores_to_set_b = 2;
@@ -171,7 +187,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_FOUR_LITTLES_MAX_FREQ:
 			cores_to_set_b = 0;
 			cores_to_set_l = 4;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_FOUR_LITTLES:
 			cores_to_set_b = 0;
@@ -181,7 +197,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_TWO_BIGS_MAX_FREQ:
 			cores_to_set_b = 2;
 			cores_to_set_l = 0;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_TWO_BIGS:
 			cores_to_set_b = 2;
@@ -191,7 +207,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_ONE_BIG_ONE_LITTLE_MAX_FREQ:
 			cores_to_set_b = 1;
 			cores_to_set_l = 1;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_ONE_BIG_ONE_LITTLE:
 			cores_to_set_b = 1;
@@ -201,7 +217,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_ONE_BIG_MAX_FREQ:
 			cores_to_set_b = 1;
 			cores_to_set_l = 0;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_ONE_BIG:
 			cores_to_set_b = 1;
@@ -211,7 +227,7 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 		case PRIO_TWO_LITTLES_MAX_FREQ:
 			cores_to_set_b = 0;
 			cores_to_set_l = 2;
-			max_freq = MAX_FREQUENCY;
+			max_freq = cpuinfo.max_freq;
 			break;
 		case PRIO_TWO_LITTLES:
 			cores_to_set_b = 0;
@@ -228,12 +244,21 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 			break;
 		}
 
-		interactive_boost_cpu(max_freq);
+		if (!max_freq) {
+			policy->max = cpuinfo.max_freq;
+			policy->min = cpuinfo.min_freq;
+		} else {
+			cpufreq_verify_within_limits(policy, max_freq,
+					cpuinfo.max_freq);
+		}
+
 		if (!cores_to_set_l)
 			cores_to_set_l = 1;
-		hps_set_cpu_num_base(BASE_PERF_SERV, cores_to_set_l, cores_to_set_b);
-		/* printk("dynamic boost: Mode=%d cpu_min_num_big=%d cpu_min_num_little=%d\n",
-					set_mode, cores_to_set_b, cores_to_set_l);*/
+		cores_to_set_sum = cores_to_set_b + cores_to_set_l;
+		if (cores_to_set_sum > num_possible_cpus())
+			cores_to_set_sum = num_possible_cpus();
+
+		hps_set_cpu_num_base(BASE_PERF_SERV, cores_to_set_sum, 0);
 
 		dboost.last_req_mode = set_mode;
 
@@ -242,10 +267,12 @@ static int dboost_dvfs_hotplug_thread(void *ptr)
 
 		atomic_dec(&dboost.event);
 	}
+	cpufreq_cpu_put(0);
 	return 0;
 }
 
-static ssize_t dynamic_boost_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t dynamic_boost_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	int i;
 
@@ -253,7 +280,8 @@ static ssize_t dynamic_boost_show(struct device *dev, struct device_attribute *a
 	return i;
 }
 
-static ssize_t dynamic_boost_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t n)
+static ssize_t dynamic_boost_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t n)
 {
 	int now_req_duration = 0;
 	int now_req_mode = 0;
@@ -318,21 +346,43 @@ static struct platform_driver dynamic_boost_driver = {
 };
 
 #ifdef CONFIG_TOUCH_BOOST
+static bool flag; /* flasg to filter botton event */
 /******************************************************************************
  *                         Handle touch boost                                 *
  ******************************************************************************/
 static void dboost_input_event(struct input_handle *handle, unsigned int type,
-		unsigned int code, int value)
+	unsigned int code, int value)
 {
-	struct dboost_input_handle *in = container_of(handle, struct dboost_input_handle, handle);
+	struct dboost_input_handle *in = container_of(handle,
+			struct dboost_input_handle, handle);
 
-	if ((type == EV_KEY && code == BTN_TOUCH) ||
-				(type == EV_ABS && code == ABS_MT_TRACKING_ID && value != 0))
-		set_dynamic_boost(in->duration, in->prio_mode);
+	if (type == EV_KEY && code == BTN_TOUCH) {
+		flag = true;
+		if (value == 1) /** for touch down */
+			goto boost_on;
+		else
+			goto boost_off;
+	}
+	if (!flag && type == EV_ABS && code == ABS_MT_TRACKING_ID) {
+		if (value != -1)
+			goto boost_on;
+		else
+			goto boost_off;
+	}
+
+	return;
+
+boost_on:
+	set_dynamic_boost(ON, in->prio_mode);
+	return;
+boost_off:
+	set_dynamic_boost(OFF, in->prio_mode);
+	set_dynamic_boost(in->duration, in->prio_mode);
+	return;
 }
 
 static int dboost_input_connect(struct input_handler *handler,
-		struct input_dev *dev, const struct input_device_id *id)
+	struct input_dev *dev, const struct input_device_id *id)
 {
 	struct dboost_input_handle *in;
 	int error;
@@ -345,7 +395,9 @@ static int dboost_input_connect(struct input_handler *handler,
 	in->handle.handler = handler;
 	in->handle.name = "dynamic_boost";
 
-	/* TODO: the following parameters should be configured through platform data */
+	/* TODO: the following parameters should be configured
+	 * via platform data
+	 */
 	in->prio_mode = PRIO_TWO_BIGS_TWO_LITTLES_MAX_FREQ;
 	in->duration = 150;
 
@@ -367,7 +419,8 @@ err2:
 
 static void dboost_input_disconnect(struct input_handle *handle)
 {
-	struct dboost_input_handle *in = container_of(handle, struct dboost_input_handle, handle);
+	struct dboost_input_handle *in = container_of(handle,
+			struct dboost_input_handle, handle);
 
 	input_close_device(handle);
 	input_unregister_handle(handle);
@@ -403,18 +456,24 @@ static int __init dynamic_boost_init(void)
 	dboost.last_req_mode = PRIO_DEFAULT;
 	atomic_set(&dboost.event, 0);
 
+#ifdef CONFIG_MTK_MIN_PERF_CORES
 	for (i = 0; i < ARRAY_SIZE(dboost.state); ++i) {
 		INIT_DELAYED_WORK(&dboost.state[i].work, dboost_disable_work);
-#if 0 /* TODO: should 2 littles default always on? */
 		if (i == PRIO_TWO_LITTLES)
 			dboost.state[i].active = 1;
 		else
-#endif
 			dboost.state[i].active = 0;
 	}
+#else
+	for (i = 0; i < ARRAY_SIZE(dboost.state); ++i) {
+		INIT_DELAYED_WORK(&dboost.state[i].work, dboost_disable_work);
+		dboost.state[i].active = 0;
+	}
+#endif
 	init_waitqueue_head(&dboost.wq);
 
-	dboost.thread = kthread_run(dboost_dvfs_hotplug_thread, &dboost, "dynamic_boost");
+	dboost.thread = kthread_run(dboost_dvfs_hotplug_thread, &dboost,
+					"dynamic_boost");
 	if (IS_ERR(dboost.thread))
 		return -EINVAL;
 
@@ -423,7 +482,6 @@ static int __init dynamic_boost_init(void)
 	if (ret)
 		return ret;
 #endif
-
 
 	return 0;
 }

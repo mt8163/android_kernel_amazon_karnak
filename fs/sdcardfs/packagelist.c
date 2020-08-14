@@ -45,9 +45,9 @@ static DEFINE_HASHTABLE(ext_to_groupid, 8);
 
 static struct kmem_cache *hashtable_entry_cachep;
 
-static unsigned int full_name_case_hash(const unsigned char *name, unsigned int len)
+static unsigned int full_name_case_hash(const void *salt, const unsigned char *name, unsigned int len)
 {
-	unsigned long hash = init_name_hash();
+	unsigned long hash = init_name_hash(salt);
 
 	while (len--)
 		hash = partial_name_hash(tolower(*name++), hash);
@@ -58,7 +58,7 @@ static inline void qstr_init(struct qstr *q, const char *name)
 {
 	q->name = name;
 	q->len = strlen(q->name);
-	q->hash = full_name_case_hash(q->name, q->len);
+	q->hash = full_name_case_hash(0, q->name, q->len);
 }
 
 static inline int qstr_copy(const struct qstr *src, struct qstr *dest)
@@ -141,7 +141,6 @@ static appid_t __is_excluded(const struct qstr *app_name, userid_t user)
 appid_t is_excluded(const char *key, userid_t user)
 {
 	struct qstr q;
-
 	qstr_init(&q, key);
 	return __is_excluded(&q, user);
 }
@@ -174,35 +173,6 @@ int check_caller_access_to_name(struct inode *parent_node, const struct qstr *na
 	/* No extra permissions to enforce */
 	return 1;
 }
-
-#ifdef CONFIG_SDCARD_FS_DIR_WRITER
-int add_app_name_to_list(appid_t appid, char *list, int len)
-{
-	int i, count = 0, free_len = len;
-	struct hashtable_entry *hash_cur_app;
-	char name[64];
-
-	free_len -= strlen(list);
-	rcu_read_lock();
-	hash_for_each_rcu(package_to_appid, i, hash_cur_app, hlist) {
-		if (atomic_read(&hash_cur_app->value) != appid)
-			continue;
-		snprintf(name, sizeof(name), "%s;", hash_cur_app->key.name);
-		name[sizeof(name) - 1] = 0;
-		if (!strnstr(list, name, len)) {
-			free_len -= strlen(name);
-			if (free_len <= 0) {
-				rcu_read_unlock();
-				return -ENOSPC;
-			}
-			strlcat(list, name, len);
-			count++;
-		}
-	}
-	rcu_read_unlock();
-	return count;
-}
-#endif
 
 static struct hashtable_entry *alloc_hashtable_entry(const struct qstr *key,
 		appid_t value)
@@ -491,6 +461,31 @@ static void packagelist_destroy(void)
 	pr_info("sdcardfs: destroyed packagelist pkgld\n");
 }
 
+#define SDCARDFS_CONFIGFS_ATTR(_pfx, _name)			\
+static struct configfs_attribute _pfx##attr_##_name = {	\
+	.ca_name	= __stringify(_name),		\
+	.ca_mode	= S_IRUGO | S_IWUGO,		\
+	.ca_owner	= THIS_MODULE,			\
+	.show		= _pfx##_name##_show,		\
+	.store		= _pfx##_name##_store,		\
+}
+
+#define SDCARDFS_CONFIGFS_ATTR_RO(_pfx, _name)			\
+static struct configfs_attribute _pfx##attr_##_name = {	\
+	.ca_name	= __stringify(_name),		\
+	.ca_mode	= S_IRUGO,			\
+	.ca_owner	= THIS_MODULE,			\
+	.show		= _pfx##_name##_show,		\
+}
+
+#define SDCARDFS_CONFIGFS_ATTR_WO(_pfx, _name)			\
+static struct configfs_attribute _pfx##attr_##_name = {	\
+	.ca_name	= __stringify(_name),		\
+	.ca_mode	= S_IWUGO,			\
+	.ca_owner	= THIS_MODULE,			\
+	.store		= _pfx##_name##_store,		\
+}
+
 struct package_details {
 	struct config_item item;
 	struct qstr name;
@@ -501,18 +496,12 @@ static inline struct package_details *to_package_details(struct config_item *ite
 	return item ? container_of(item, struct package_details, item) : NULL;
 }
 
-CONFIGFS_ATTR_STRUCT(package_details);
-#define PACKAGE_DETAILS_ATTR(_name, _mode, _show, _store)	\
-struct package_details_attribute package_details_attr_##_name = __CONFIGFS_ATTR(_name, _mode, _show, _store)
-#define PACKAGE_DETAILS_ATTRIBUTE(name) (&package_details_attr_##name.attr)
-
-static ssize_t package_details_appid_show(struct package_details *package_details,
-				      char *page)
+static ssize_t package_details_appid_show(struct config_item *item, char *page)
 {
-	return scnprintf(page, PAGE_SIZE, "%u\n", __get_appid(&package_details->name));
+	return scnprintf(page, PAGE_SIZE, "%u\n", __get_appid(&to_package_details(item)->name));
 }
 
-static ssize_t package_details_appid_store(struct package_details *package_details,
+static ssize_t package_details_appid_store(struct config_item *item,
 				       const char *page, size_t count)
 {
 	unsigned int tmp;
@@ -522,7 +511,7 @@ static ssize_t package_details_appid_store(struct package_details *package_detai
 	if (ret)
 		return ret;
 
-	ret = insert_packagelist_entry(&package_details->name, tmp);
+	ret = insert_packagelist_entry(&to_package_details(item)->name, tmp);
 
 	if (ret)
 		return ret;
@@ -530,9 +519,10 @@ static ssize_t package_details_appid_store(struct package_details *package_detai
 	return count;
 }
 
-static ssize_t package_details_excluded_userids_show(struct package_details *package_details,
+static ssize_t package_details_excluded_userids_show(struct config_item *item,
 				      char *page)
 {
+	struct package_details *package_details = to_package_details(item);
 	struct hashtable_entry *hash_cur;
 	unsigned int hash = package_details->name.hash;
 	int count = 0;
@@ -550,7 +540,7 @@ static ssize_t package_details_excluded_userids_show(struct package_details *pac
 	return count;
 }
 
-static ssize_t package_details_excluded_userids_store(struct package_details *package_details,
+static ssize_t package_details_excluded_userids_store(struct config_item *item,
 				       const char *page, size_t count)
 {
 	unsigned int tmp;
@@ -560,7 +550,7 @@ static ssize_t package_details_excluded_userids_store(struct package_details *pa
 	if (ret)
 		return ret;
 
-	ret = insert_userid_exclude_entry(&package_details->name, tmp);
+	ret = insert_userid_exclude_entry(&to_package_details(item)->name, tmp);
 
 	if (ret)
 		return ret;
@@ -568,7 +558,7 @@ static ssize_t package_details_excluded_userids_store(struct package_details *pa
 	return count;
 }
 
-static ssize_t package_details_clear_userid_store(struct package_details *package_details,
+static ssize_t package_details_clear_userid_store(struct config_item *item,
 				       const char *page, size_t count)
 {
 	unsigned int tmp;
@@ -577,7 +567,7 @@ static ssize_t package_details_clear_userid_store(struct package_details *packag
 	ret = kstrtouint(page, 10, &tmp);
 	if (ret)
 		return ret;
-	remove_userid_exclude_entry(&package_details->name, tmp);
+	remove_userid_exclude_entry(&to_package_details(item)->name, tmp);
 	return count;
 }
 
@@ -591,24 +581,19 @@ static void package_details_release(struct config_item *item)
 	kfree(package_details);
 }
 
-PACKAGE_DETAILS_ATTR(appid, S_IRUGO | S_IWUGO, package_details_appid_show, package_details_appid_store);
-PACKAGE_DETAILS_ATTR(excluded_userids, S_IRUGO | S_IWUGO,
-		package_details_excluded_userids_show, package_details_excluded_userids_store);
-PACKAGE_DETAILS_ATTR(clear_userid, S_IWUGO, NULL, package_details_clear_userid_store);
+SDCARDFS_CONFIGFS_ATTR(package_details_, appid);
+SDCARDFS_CONFIGFS_ATTR(package_details_, excluded_userids);
+SDCARDFS_CONFIGFS_ATTR_WO(package_details_, clear_userid);
 
 static struct configfs_attribute *package_details_attrs[] = {
-	PACKAGE_DETAILS_ATTRIBUTE(appid),
-	PACKAGE_DETAILS_ATTRIBUTE(excluded_userids),
-	PACKAGE_DETAILS_ATTRIBUTE(clear_userid),
+	&package_details_attr_appid,
+	&package_details_attr_excluded_userids,
+	&package_details_attr_clear_userid,
 	NULL,
 };
 
-CONFIGFS_ATTR_OPS(package_details);
-
 static struct configfs_item_operations package_details_item_ops = {
 	.release = package_details_release,
-	.show_attribute = package_details_attr_show,
-	.store_attribute = package_details_attr_store,
 };
 
 static struct config_item_type package_appid_type = {
@@ -742,21 +727,6 @@ struct config_group extension_group = {
 	},
 };
 
-struct packages {
-	struct configfs_subsystem subsystem;
-};
-
-static inline struct packages *to_packages(struct config_item *item)
-{
-	return item ? container_of(to_configfs_subsystem(to_config_group(item)), struct packages, subsystem) : NULL;
-}
-
-CONFIGFS_ATTR_STRUCT(packages);
-#define PACKAGES_ATTR(_name, _mode, _show, _store)	\
-struct packages_attribute packages_attr_##_name = __CONFIGFS_ATTR(_name, _mode, _show, _store)
-#define PACKAGES_ATTR_RO(_name, _show)	\
-struct packages_attribute packages_attr_##_name = __CONFIGFS_ATTR_RO(_name, _show)
-
 static struct config_item *packages_make_item(struct config_group *group, const char *name)
 {
 	struct package_details *package_details;
@@ -777,8 +747,7 @@ static struct config_item *packages_make_item(struct config_group *group, const 
 	return &package_details->item;
 }
 
-static ssize_t packages_list_show(struct packages *packages,
-					 char *page)
+static ssize_t packages_list_show(struct config_item *item, char *page)
 {
 	struct hashtable_entry *hash_cur_app;
 	struct hashtable_entry *hash_cur_user;
@@ -810,7 +779,7 @@ static ssize_t packages_list_show(struct packages *packages,
 	return count;
 }
 
-static ssize_t packages_remove_userid_store(struct packages *packages,
+static ssize_t packages_remove_userid_store(struct config_item *item,
 				       const char *page, size_t count)
 {
 	unsigned int tmp;
@@ -823,19 +792,19 @@ static ssize_t packages_remove_userid_store(struct packages *packages,
 	return count;
 }
 
-struct packages_attribute packages_attr_packages_gid_list = __CONFIGFS_ATTR_RO(packages_gid.list, packages_list_show);
-PACKAGES_ATTR(remove_userid, S_IWUGO, NULL, packages_remove_userid_store);
-
-static struct configfs_attribute *packages_attrs[] = {
-	&packages_attr_packages_gid_list.attr,
-	&packages_attr_remove_userid.attr,
-	NULL,
+static struct configfs_attribute packages_attr_packages_gid_list = {
+	.ca_name	= "packages_gid.list",
+	.ca_mode	= S_IRUGO,
+	.ca_owner	= THIS_MODULE,
+	.show		= packages_list_show,
 };
 
-CONFIGFS_ATTR_OPS(packages)
-static struct configfs_item_operations packages_item_ops = {
-	.show_attribute = packages_attr_show,
-	.store_attribute = packages_attr_store,
+SDCARDFS_CONFIGFS_ATTR_WO(packages_, remove_userid);
+
+static struct configfs_attribute *packages_attrs[] = {
+	&packages_attr_packages_gid_list,
+	&packages_attr_remove_userid,
+	NULL,
 };
 
 /*
@@ -847,7 +816,6 @@ static struct configfs_group_operations packages_group_ops = {
 };
 
 static struct config_item_type packages_type = {
-	.ct_item_ops	= &packages_item_ops,
 	.ct_group_ops	= &packages_group_ops,
 	.ct_attrs	= packages_attrs,
 	.ct_owner	= THIS_MODULE,
@@ -858,14 +826,11 @@ struct config_group *sd_default_groups[] = {
 	NULL,
 };
 
-static struct packages sdcardfs_packages = {
-	.subsystem = {
-		.su_group = {
-			.cg_item = {
-				.ci_namebuf = "sdcardfs",
-				.ci_type = &packages_type,
-			},
-			.default_groups = sd_default_groups,
+static struct configfs_subsystem sdcardfs_packages = {
+	.su_group = {
+		.cg_item = {
+			.ci_namebuf = "sdcardfs",
+			.ci_type = &packages_type,
 		},
 	},
 };
@@ -873,11 +838,13 @@ static struct packages sdcardfs_packages = {
 static int configfs_sdcardfs_init(void)
 {
 	int ret, i;
-	struct configfs_subsystem *subsys = &sdcardfs_packages.subsystem;
+	struct configfs_subsystem *subsys = &sdcardfs_packages;
 
-	for (i = 0; sd_default_groups[i]; i++)
-		config_group_init(sd_default_groups[i]);
 	config_group_init(&subsys->su_group);
+	for (i = 0; sd_default_groups[i]; i++) {
+		config_group_init(sd_default_groups[i]);
+		configfs_add_default_group(sd_default_groups[i], &subsys->su_group);
+	}
 	mutex_init(&subsys->su_mutex);
 	ret = configfs_register_subsystem(subsys);
 	if (ret) {
@@ -890,7 +857,7 @@ static int configfs_sdcardfs_init(void)
 
 static void configfs_sdcardfs_exit(void)
 {
-	configfs_unregister_subsystem(&sdcardfs_packages.subsystem);
+	configfs_unregister_subsystem(&sdcardfs_packages);
 }
 
 int packagelist_init(void)

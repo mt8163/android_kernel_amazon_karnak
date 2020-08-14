@@ -234,7 +234,7 @@ static int headset_power_mode(struct snd_soc_codec *codec, int high_perf)
 static int twl6040_hs_dac_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = w->codec;
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	u8 hslctl, hsrctl;
 
 	/*
@@ -261,7 +261,7 @@ static int twl6040_hs_dac_event(struct snd_soc_dapm_widget *w,
 static int twl6040_ep_drv_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = w->codec;
+	struct snd_soc_codec *codec = snd_soc_dapm_to_codec(w->dapm);
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 
@@ -533,7 +533,7 @@ static int twl6040_pll_put_enum(struct snd_kcontrol *kcontrol,
 
 int twl6040_get_dl1_gain(struct snd_soc_codec *codec)
 {
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
+	struct snd_soc_dapm_context *dapm = snd_soc_codec_get_dapm(codec);
 
 	if (snd_soc_dapm_get_pin_status(dapm, "EP"))
 		return -1; /* -1dB */
@@ -824,7 +824,7 @@ static int twl6040_set_bias_level(struct snd_soc_codec *codec,
 {
 	struct twl6040 *twl6040 = codec->control_data;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	int ret;
+	int ret = 0;
 
 	switch (level) {
 	case SND_SOC_BIAS_ON:
@@ -832,12 +832,16 @@ static int twl6040_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		if (priv->codec_powered)
+		if (priv->codec_powered) {
+			/* Select low power PLL in standby */
+			ret = twl6040_set_pll(twl6040, TWL6040_SYSCLK_SEL_LPPLL,
+					      32768, 19200000);
 			break;
+		}
 
 		ret = twl6040_power(twl6040, 1);
 		if (ret)
-			return ret;
+			break;
 
 		priv->codec_powered = 1;
 
@@ -853,9 +857,7 @@ static int twl6040_set_bias_level(struct snd_soc_codec *codec,
 		break;
 	}
 
-	codec->dapm.bias_level = level;
-
-	return 0;
+	return ret;
 }
 
 static int twl6040_startup(struct snd_pcm_substream *substream,
@@ -985,9 +987,9 @@ static void twl6040_mute_path(struct snd_soc_codec *codec, enum twl6040_dai_id i
 		if (mute) {
 			/* Power down drivers and DACs */
 			hflctl &= ~(TWL6040_HFDACENA | TWL6040_HFPGAENA |
-				    TWL6040_HFDRVENA);
+				    TWL6040_HFDRVENA | TWL6040_HFSWENA);
 			hfrctl &= ~(TWL6040_HFDACENA | TWL6040_HFPGAENA |
-				    TWL6040_HFDRVENA);
+				    TWL6040_HFDRVENA | TWL6040_HFSWENA);
 		}
 
 		twl6040_reg_write(twl6040, TWL6040_REG_HFLCTL, hflctl);
@@ -1095,31 +1097,11 @@ static struct snd_soc_dai_driver twl6040_dai[] = {
 },
 };
 
-#ifdef CONFIG_PM
-static int twl6040_suspend(struct snd_soc_codec *codec)
-{
-	twl6040_set_bias_level(codec, SND_SOC_BIAS_OFF);
-
-	return 0;
-}
-
-static int twl6040_resume(struct snd_soc_codec *codec)
-{
-	twl6040_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-
-	return 0;
-}
-#else
-#define twl6040_suspend NULL
-#define twl6040_resume NULL
-#endif
-
 static int twl6040_probe(struct snd_soc_codec *codec)
 {
 	struct twl6040_data *priv;
 	struct twl6040 *twl6040 = dev_get_drvdata(codec->dev->parent);
-	struct platform_device *pdev = container_of(codec->dev,
-						   struct platform_device, dev);
+	struct platform_device *pdev = to_platform_device(codec->dev);
 	int ret = 0;
 
 	priv = devm_kzalloc(codec->dev, sizeof(*priv), GFP_KERNEL);
@@ -1142,14 +1124,15 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 	mutex_init(&priv->mutex);
 
 	ret = request_threaded_irq(priv->plug_irq, NULL,
-					twl6040_audio_handler, IRQF_NO_SUSPEND,
+					twl6040_audio_handler,
+					IRQF_NO_SUSPEND | IRQF_ONESHOT,
 					"twl6040_irq_plug", codec);
 	if (ret) {
 		dev_err(codec->dev, "PLUG IRQ request failed: %d\n", ret);
 		return ret;
 	}
 
-	twl6040_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+	snd_soc_codec_force_bias_level(codec, SND_SOC_BIAS_STANDBY);
 	twl6040_init_chip(codec);
 
 	return 0;
@@ -1160,7 +1143,6 @@ static int twl6040_remove(struct snd_soc_codec *codec)
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
 
 	free_irq(priv->plug_irq, codec);
-	twl6040_set_bias_level(codec, SND_SOC_BIAS_OFF);
 
 	return 0;
 }
@@ -1168,19 +1150,20 @@ static int twl6040_remove(struct snd_soc_codec *codec)
 static struct snd_soc_codec_driver soc_codec_dev_twl6040 = {
 	.probe = twl6040_probe,
 	.remove = twl6040_remove,
-	.suspend = twl6040_suspend,
-	.resume = twl6040_resume,
 	.read = twl6040_read,
 	.write = twl6040_write,
 	.set_bias_level = twl6040_set_bias_level,
+	.suspend_bias_off = true,
 	.ignore_pmdown_time = true,
 
-	.controls = twl6040_snd_controls,
-	.num_controls = ARRAY_SIZE(twl6040_snd_controls),
-	.dapm_widgets = twl6040_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(twl6040_dapm_widgets),
-	.dapm_routes = intercon,
-	.num_dapm_routes = ARRAY_SIZE(intercon),
+	.component_driver = {
+		.controls		= twl6040_snd_controls,
+		.num_controls		= ARRAY_SIZE(twl6040_snd_controls),
+		.dapm_widgets		= twl6040_dapm_widgets,
+		.num_dapm_widgets	= ARRAY_SIZE(twl6040_dapm_widgets),
+		.dapm_routes		= intercon,
+		.num_dapm_routes	= ARRAY_SIZE(intercon),
+	},
 };
 
 static int twl6040_codec_probe(struct platform_device *pdev)
@@ -1198,7 +1181,6 @@ static int twl6040_codec_remove(struct platform_device *pdev)
 static struct platform_driver twl6040_codec_driver = {
 	.driver = {
 		.name = "twl6040-codec",
-		.owner = THIS_MODULE,
 	},
 	.probe = twl6040_codec_probe,
 	.remove = twl6040_codec_remove,

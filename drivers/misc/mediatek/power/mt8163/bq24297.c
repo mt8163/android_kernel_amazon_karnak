@@ -1,60 +1,79 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <linux/types.h>
-#include <linux/init.h>		/* For init/exit macros */
-#include <linux/module.h>	/* For MODULE_ marcros  */
+#include <linux/init.h>
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
-#include <linux/switch.h>
 #include <linux/i2c.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
-#ifdef CONFIG_OF
+#include <linux/irq.h>
 #include <linux/of.h>
-#include <linux/of_irq.h>
-#include <linux/of_address.h>
-#endif
+#include <linux/of_gpio.h>
+#include <linux/platform_device.h>
 #include <mt-plat/charging.h>
 #include "bq24297.h"
 
 /**********************************************************
-  *
-  *   [I2C Slave Setting]
-  *
-  *********************************************************/
+ *
+ *   [I2C Slave Setting]
+ *
+ *********************************************************/
 #define bq24297_SLAVE_ADDR_WRITE   0xD6
 #define bq24297_SLAVE_ADDR_READ    0xD7
 
 static struct i2c_client *new_client;
-static struct switch_dev bq24297_reg09;
 static const struct i2c_device_id bq24297_i2c_id[] = { {"bq24297", 0}, {} };
 
-bool chargin_hw_init_done = false;
-static int bq24297_driver_probe(struct i2c_client *client, const struct i2c_device_id *id);
+bool chargin_hw_init_done;
+static int bq24297_driver_probe(struct i2c_client *client,
+	const struct i2c_device_id *id);
 static unsigned int part_num = 0xF;
 
 #ifdef CONFIG_OF
 static const struct of_device_id bq24297_id[] = {
-		{ .compatible = "ti,bq24297" },
-		{},
+	{.compatible = "ti,bq24297"}, {.compatible = "ti,bq24296"}, {},
 };
 
 MODULE_DEVICE_TABLE(of, bq24297_id);
 #endif
 
-
-static int bq24297_driver_suspend(struct i2c_client *client, pm_message_t mesg)
+static int bq24297_driver_suspend(struct device *pdev)
 {
-	pr_info("[bq24297_driver_suspend] client->irq(%d)\n", client->irq);
-	if (client->irq > 0)
-		disable_irq(client->irq);
+	if (!new_client) {
+		pr_debug("[%s]error: driver not ready\n", __func__);
+		return 0;
+	}
+
+	pr_debug("[bq24297_driver_suspend] client->irq(%d)\n", new_client->irq);
+	if (new_client->irq > 0)
+		disable_irq(new_client->irq);
 
 	return 0;
 }
 
-static int bq24297_driver_resume(struct i2c_client *client)
+static int bq24297_driver_resume(struct device *pdev)
 {
-	pr_info("[bq24297_driver_resume] client->irq(%d)\n", client->irq);
-	if (client->irq > 0)
-		enable_irq(client->irq);
+	if (!new_client) {
+		pr_debug("[%s]error: driver not ready\n", __func__);
+		return 0;
+	}
+
+	pr_debug("[bq24297_driver_resume] client->irq(%d)\n", new_client->irq);
+	if (new_client->irq > 0)
+		enable_irq(new_client->irq);
 
 	return 0;
 }
@@ -64,17 +83,23 @@ static void bq24297_shutdown(struct i2c_client *client)
 	pr_notice("[bq24297_shutdown] driver shutdown\n");
 	bq24297_set_chg_config(0x0);
 }
+#ifdef CONFIG_PM
+static const struct dev_pm_ops bq24297_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(bq24297_driver_suspend, bq24297_driver_resume)
+};
+#endif
 static struct i2c_driver bq24297_driver = {
 		.driver = {
 				.name    = "bq24297",
 #ifdef CONFIG_OF
 				.of_match_table = of_match_ptr(bq24297_id),
 #endif
+#ifdef CONFIG_PM
+				.pm   = &bq24297_pm_ops,
+#endif
 		},
-		.probe       = bq24297_driver_probe,
+		.probe		= bq24297_driver_probe,
 		.id_table    = bq24297_i2c_id,
-		.suspend = bq24297_driver_suspend,
-		.resume = bq24297_driver_resume,
 		.shutdown    = bq24297_shutdown,
 };
 
@@ -142,12 +167,12 @@ int bq24297_write_byte(unsigned char cmd, unsigned char writeData)
 }
 
 /**********************************************************
-  *
-  *   [Read / Write Function]
-  *
-  *********************************************************/
-unsigned int bq24297_read_interface(unsigned char RegNum, unsigned char *val, unsigned char MASK,
-				  unsigned char SHIFT)
+ *
+ *   [Read / Write Function]
+ *
+ *********************************************************/
+unsigned int bq24297_read_interface(unsigned char RegNum,
+	unsigned char *val, unsigned char MASK, unsigned char SHIFT)
 {
 	unsigned char bq24297_reg = 0;
 	int ret = 0;
@@ -156,7 +181,8 @@ unsigned int bq24297_read_interface(unsigned char RegNum, unsigned char *val, un
 
 	ret = bq24297_read_byte(RegNum, &bq24297_reg);
 
-	pr_debug("[bq24297_read_interface] Reg[%x]=0x%x\n", RegNum, bq24297_reg);
+	pr_debug("[bq24297_read_interface] Reg[%x]=0x%x\n",
+		RegNum, bq24297_reg);
 
 	bq24297_reg &= (MASK << SHIFT);
 	*val = (bq24297_reg >> SHIFT);
@@ -166,8 +192,8 @@ unsigned int bq24297_read_interface(unsigned char RegNum, unsigned char *val, un
 	return ret;
 }
 
-unsigned int bq24297_config_interface(unsigned char RegNum, unsigned char val, unsigned char MASK,
-				    unsigned char SHIFT)
+unsigned int bq24297_config_interface(unsigned char RegNum,
+	unsigned char val, unsigned char MASK, unsigned char SHIFT)
 {
 	unsigned char bq24297_reg = 0;
 	int ret = 0;
@@ -175,26 +201,24 @@ unsigned int bq24297_config_interface(unsigned char RegNum, unsigned char val, u
 	pr_debug("--------------------------------------------------\n");
 
 	ret = bq24297_read_byte(RegNum, &bq24297_reg);
-	pr_debug("[bq24297_config_interface] Reg[%x]=0x%x\n", RegNum, bq24297_reg);
+	pr_debug("[bq24297_config_interface] Reg[%x]=0x%x\n",
+		RegNum, bq24297_reg);
 
 	bq24297_reg &= ~(MASK << SHIFT);
 	bq24297_reg |= (val << SHIFT);
 
 	ret = bq24297_write_byte(RegNum, bq24297_reg);
-	pr_debug("[bq24297_config_interface] write Reg[%x]=0x%x\n", RegNum, bq24297_reg);
-
-	/* Check */
-	/* bq24297_read_byte(RegNum, &bq24297_reg); */
-	/* pr_debug("[bq24297_config_interface] Check Reg[%x]=0x%x\n", RegNum, bq24297_reg); */
+	pr_debug("[bq24297_config_interface] write Reg[%x]=0x%x\n",
+		RegNum, bq24297_reg);
 
 	return ret;
 }
 
 /**********************************************************
-  *
-  *   [Internal Function]
-  *
-  *********************************************************/
+ *
+ *   [Internal Function]
+ *
+ *********************************************************/
 /* CON0---------------------------------------------------- */
 
 void bq24297_set_en_hiz(unsigned int val)
@@ -202,10 +226,10 @@ void bq24297_set_en_hiz(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON0),
-				       (unsigned char) (val),
-				       (unsigned char) (CON0_EN_HIZ_MASK),
-				       (unsigned char) (CON0_EN_HIZ_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON0_EN_HIZ_MASK),
+		(unsigned char) (CON0_EN_HIZ_SHIFT)
+	);
 }
 
 void bq24297_set_vindpm(unsigned int val)
@@ -213,10 +237,10 @@ void bq24297_set_vindpm(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON0),
-				       (unsigned char) (val),
-				       (unsigned char) (CON0_VINDPM_MASK),
-				       (unsigned char) (CON0_VINDPM_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON0_VINDPM_MASK),
+		(unsigned char) (CON0_VINDPM_SHIFT)
+	);
 }
 
 void bq24297_set_iinlim(unsigned int val)
@@ -224,10 +248,10 @@ void bq24297_set_iinlim(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON0),
-				       (unsigned char) (val),
-				       (unsigned char) (CON0_IINLIM_MASK),
-				       (unsigned char) (CON0_IINLIM_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON0_IINLIM_MASK),
+		(unsigned char) (CON0_IINLIM_SHIFT)
+	);
 }
 
 unsigned int bq24297_get_iinlim(void)
@@ -236,10 +260,10 @@ unsigned int bq24297_get_iinlim(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON0),
-						(unsigned char *) (&val),
-						(unsigned char) (CON0_IINLIM_MASK),
-						(unsigned char) (CON0_IINLIM_SHIFT)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (CON0_IINLIM_MASK),
+		(unsigned char) (CON0_IINLIM_SHIFT)
+	);
 	return val;
 }
 
@@ -250,10 +274,10 @@ void bq24297_set_reg_rst(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON1),
-				       (unsigned char) (val),
-				       (unsigned char) (CON1_REG_RST_MASK),
-				       (unsigned char) (CON1_REG_RST_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON1_REG_RST_MASK),
+		(unsigned char) (CON1_REG_RST_SHIFT)
+	);
 }
 
 void bq24297_set_wdt_rst(unsigned int val)
@@ -261,10 +285,10 @@ void bq24297_set_wdt_rst(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON1),
-				       (unsigned char) (val),
-				       (unsigned char) (CON1_WDT_RST_MASK),
-				       (unsigned char) (CON1_WDT_RST_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON1_WDT_RST_MASK),
+		(unsigned char) (CON1_WDT_RST_SHIFT)
+	);
 }
 
 void bq24297_set_otg_config(unsigned int val)
@@ -272,10 +296,10 @@ void bq24297_set_otg_config(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON1),
-				       (unsigned char) (val),
-				       (unsigned char) (CON1_OTG_CONFIG_MASK),
-				       (unsigned char) (CON1_OTG_CONFIG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON1_OTG_CONFIG_MASK),
+		(unsigned char) (CON1_OTG_CONFIG_SHIFT)
+	);
 }
 
 void bq24297_set_chg_config(unsigned int val)
@@ -283,10 +307,10 @@ void bq24297_set_chg_config(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON1),
-				       (unsigned char) (val),
-				       (unsigned char) (CON1_CHG_CONFIG_MASK),
-				       (unsigned char) (CON1_CHG_CONFIG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON1_CHG_CONFIG_MASK),
+		(unsigned char) (CON1_CHG_CONFIG_SHIFT)
+	);
 }
 
 void bq24297_set_sys_min(unsigned int val)
@@ -294,10 +318,10 @@ void bq24297_set_sys_min(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON1),
-				       (unsigned char) (val),
-				       (unsigned char) (CON1_SYS_MIN_MASK),
-				       (unsigned char) (CON1_SYS_MIN_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON1_SYS_MIN_MASK),
+		(unsigned char) (CON1_SYS_MIN_SHIFT)
+	);
 }
 
 void bq24297_set_boost_lim(unsigned int val)
@@ -305,10 +329,10 @@ void bq24297_set_boost_lim(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON1),
-				       (unsigned char) (val),
-				       (unsigned char) (CON1_BOOST_LIM_MASK),
-				       (unsigned char) (CON1_BOOST_LIM_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON1_BOOST_LIM_MASK),
+		(unsigned char) (CON1_BOOST_LIM_SHIFT)
+	);
 }
 
 /* CON2---------------------------------------------------- */
@@ -318,9 +342,10 @@ void bq24297_set_ichg(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON2),
-				       (unsigned char) (val),
-				       (unsigned char) (CON2_ICHG_MASK), (unsigned char) (CON2_ICHG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON2_ICHG_MASK),
+		(unsigned char) (CON2_ICHG_SHIFT)
+	);
 }
 
 void bq24297_set_force_20pct(unsigned int val)
@@ -328,10 +353,10 @@ void bq24297_set_force_20pct(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON2),
-				       (unsigned char) (val),
-				       (unsigned char) (CON2_FORCE_20PCT_MASK),
-				       (unsigned char) (CON2_FORCE_20PCT_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON2_FORCE_20PCT_MASK),
+		(unsigned char) (CON2_FORCE_20PCT_SHIFT)
+	);
 }
 
 /* CON3---------------------------------------------------- */
@@ -341,10 +366,10 @@ void bq24297_set_iprechg(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON3),
-				       (unsigned char) (val),
-				       (unsigned char) (CON3_IPRECHG_MASK),
-				       (unsigned char) (CON3_IPRECHG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON3_IPRECHG_MASK),
+		(unsigned char) (CON3_IPRECHG_SHIFT)
+	);
 }
 
 void bq24297_set_iterm(unsigned int val)
@@ -352,9 +377,10 @@ void bq24297_set_iterm(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON3),
-				       (unsigned char) (val),
-				       (unsigned char) (CON3_ITERM_MASK), (unsigned char) (CON3_ITERM_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON3_ITERM_MASK),
+		(unsigned char) (CON3_ITERM_SHIFT)
+	);
 }
 
 /* CON4---------------------------------------------------- */
@@ -364,9 +390,10 @@ void bq24297_set_vreg(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON4),
-				       (unsigned char) (val),
-				       (unsigned char) (CON4_VREG_MASK), (unsigned char) (CON4_VREG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON4_VREG_MASK),
+		(unsigned char) (CON4_VREG_SHIFT)
+	);
 }
 
 void bq24297_set_batlowv(unsigned int val)
@@ -374,10 +401,10 @@ void bq24297_set_batlowv(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON4),
-				       (unsigned char) (val),
-				       (unsigned char) (CON4_BATLOWV_MASK),
-				       (unsigned char) (CON4_BATLOWV_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON4_BATLOWV_MASK),
+		(unsigned char) (CON4_BATLOWV_SHIFT)
+	);
 }
 
 void bq24297_set_vrechg(unsigned int val)
@@ -385,10 +412,10 @@ void bq24297_set_vrechg(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON4),
-				       (unsigned char) (val),
-				       (unsigned char) (CON4_VRECHG_MASK),
-				       (unsigned char) (CON4_VRECHG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON4_VRECHG_MASK),
+		(unsigned char) (CON4_VRECHG_SHIFT)
+	);
 }
 
 /* CON5---------------------------------------------------- */
@@ -398,10 +425,10 @@ void bq24297_set_en_term(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON5),
-				       (unsigned char) (val),
-				       (unsigned char) (CON5_EN_TERM_MASK),
-				       (unsigned char) (CON5_EN_TERM_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON5_EN_TERM_MASK),
+		(unsigned char) (CON5_EN_TERM_SHIFT)
+	);
 }
 
 void bq24297_set_term_stat(unsigned int val)
@@ -409,10 +436,10 @@ void bq24297_set_term_stat(unsigned int val)
 	u32 ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON5),
-						(unsigned char) (val),
-						(unsigned char) (CON5_TERM_STAT_MASK),
-						(unsigned char) (CON5_TERM_STAT_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON5_TERM_STAT_MASK),
+		(unsigned char) (CON5_TERM_STAT_SHIFT)
+	);
 }
 
 void bq24297_set_watchdog(unsigned int val)
@@ -420,10 +447,10 @@ void bq24297_set_watchdog(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON5),
-				       (unsigned char) (val),
-				       (unsigned char) (CON5_WATCHDOG_MASK),
-				       (unsigned char) (CON5_WATCHDOG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON5_WATCHDOG_MASK),
+		(unsigned char) (CON5_WATCHDOG_SHIFT)
+	);
 }
 
 void bq24297_set_en_timer(unsigned int val)
@@ -431,10 +458,10 @@ void bq24297_set_en_timer(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON5),
-				       (unsigned char) (val),
-				       (unsigned char) (CON5_EN_TIMER_MASK),
-				       (unsigned char) (CON5_EN_TIMER_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON5_EN_TIMER_MASK),
+		(unsigned char) (CON5_EN_TIMER_SHIFT)
+	);
 }
 
 void bq24297_set_chg_timer(unsigned int val)
@@ -442,10 +469,10 @@ void bq24297_set_chg_timer(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON5),
-				       (unsigned char) (val),
-				       (unsigned char) (CON5_CHG_TIMER_MASK),
-				       (unsigned char) (CON5_CHG_TIMER_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON5_CHG_TIMER_MASK),
+		(unsigned char) (CON5_CHG_TIMER_SHIFT)
+	);
 }
 
 /* CON6---------------------------------------------------- */
@@ -455,10 +482,10 @@ void bq24297_set_treg(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON6),
-				       (unsigned char) (val),
-				       (unsigned char) (CON6_TREG_MASK),
-				       (unsigned char) (CON6_TREG_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON6_TREG_MASK),
+		(unsigned char) (CON6_TREG_SHIFT)
+	);
 }
 
 /* CON7---------------------------------------------------- */
@@ -469,10 +496,10 @@ unsigned int bq24297_get_dpdm_status(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON7),
-						(unsigned char *) (&val),
-						(unsigned char) (CON7_DPDM_EN_MASK),
-						(unsigned char) (CON7_DPDM_EN_SHIFT)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (CON7_DPDM_EN_MASK),
+		(unsigned char) (CON7_DPDM_EN_SHIFT)
+	);
 	return val;
 }
 
@@ -481,10 +508,10 @@ void bq24297_set_dpdm_en(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON7),
-						(unsigned char) (val),
-						(unsigned char) (CON7_DPDM_EN_MASK),
-						(unsigned char) (CON7_DPDM_EN_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON7_DPDM_EN_MASK),
+		(unsigned char) (CON7_DPDM_EN_SHIFT)
+	);
 }
 
 void bq24297_set_tmr2x_en(unsigned int val)
@@ -492,10 +519,10 @@ void bq24297_set_tmr2x_en(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON7),
-				       (unsigned char) (val),
-				       (unsigned char) (CON7_TMR2X_EN_MASK),
-				       (unsigned char) (CON7_TMR2X_EN_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON7_TMR2X_EN_MASK),
+		(unsigned char) (CON7_TMR2X_EN_SHIFT)
+	);
 }
 
 void bq24297_set_batfet_disable(unsigned int val)
@@ -503,10 +530,10 @@ void bq24297_set_batfet_disable(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON7),
-				       (unsigned char) (val),
-				       (unsigned char) (CON7_BATFET_Disable_MASK),
-				       (unsigned char) (CON7_BATFET_Disable_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON7_BATFET_Disable_MASK),
+		(unsigned char) (CON7_BATFET_Disable_SHIFT)
+	);
 }
 
 void bq24297_set_int_mask(unsigned int val)
@@ -514,10 +541,10 @@ void bq24297_set_int_mask(unsigned int val)
 	unsigned int ret = 0;
 
 	ret = bq24297_config_interface((unsigned char) (bq24297_CON7),
-				       (unsigned char) (val),
-				       (unsigned char) (CON7_INT_MASK_MASK),
-				       (unsigned char) (CON7_INT_MASK_SHIFT)
-	    );
+		(unsigned char) (val),
+		(unsigned char) (CON7_INT_MASK_MASK),
+		(unsigned char) (CON7_INT_MASK_SHIFT)
+	);
 }
 
 /* CON8---------------------------------------------------- */
@@ -528,10 +555,10 @@ unsigned int bq24297_get_system_status(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON8),
-								(unsigned char *) (&val),
-								(unsigned char) (0xFF),
-								(unsigned char) (0x0)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (0xFF),
+		(unsigned char) (0x0)
+	);
 	return val;
 }
 
@@ -541,10 +568,10 @@ unsigned int bq24297_get_vbus_stat(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON8),
-								(unsigned char *) (&val),
-								(unsigned char) (CON8_VBUS_STAT_MASK),
-								(unsigned char) (CON8_VBUS_STAT_SHIFT)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (CON8_VBUS_STAT_MASK),
+		(unsigned char) (CON8_VBUS_STAT_SHIFT)
+	);
 	return val;
 }
 
@@ -554,10 +581,10 @@ unsigned int bq24297_get_chrg_stat(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON8),
-							(&val),
-							(unsigned char) (CON8_CHRG_STAT_MASK),
-							(unsigned char) (CON8_CHRG_STAT_SHIFT)
-	    );
+		(&val),
+		(unsigned char) (CON8_CHRG_STAT_MASK),
+		(unsigned char) (CON8_CHRG_STAT_SHIFT)
+	);
 	return val;
 }
 
@@ -567,10 +594,10 @@ unsigned int bq24297_get_pg_stat(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON8),
-							(unsigned char *) (&val),
-							(unsigned char) (CON8_PG_STAT_MASK),
-							(unsigned char) (CON8_PG_STAT_SHIFT)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (CON8_PG_STAT_MASK),
+		(unsigned char) (CON8_PG_STAT_SHIFT)
+	);
 	return val;
 }
 
@@ -580,10 +607,10 @@ unsigned int bq24297_get_vsys_stat(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON8),
-							(&val),
-							(unsigned char) (CON8_VSYS_STAT_MASK),
-							(unsigned char) (CON8_VSYS_STAT_SHIFT)
-	    );
+		(&val),
+		(unsigned char) (CON8_VSYS_STAT_MASK),
+		(unsigned char) (CON8_VSYS_STAT_SHIFT)
+	);
 	return val;
 }
 
@@ -596,14 +623,14 @@ unsigned int bq24297_get_pn(void)
 
 	if (chargin_hw_init_done)
 		return part_num;
-	else if (0xF == part_num)
+	else if (part_num == 0xF)
 		pr_notice("[%s]BQ24297 driver is NOT ready!!\r\n", __func__);
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON10),
-							(unsigned char *) (&val),
-							(unsigned char) (CON10_PN_MASK),
-							(unsigned char) (CON10_PN_SHIFT)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (CON10_PN_MASK),
+		(unsigned char) (CON10_PN_SHIFT)
+	);
 	return val;
 }
 
@@ -616,18 +643,18 @@ unsigned int bq24297_get_con11(void)
 	unsigned char val = 0;
 
 	ret = bq24297_read_interface((unsigned char) (bq24297_CON11),
-					(unsigned char *) (&val),
-					(unsigned char) (CON11_PN_MASK),
-					(unsigned char) (CON11_PN_SHIFT)
-	    );
+		(unsigned char *) (&val),
+		(unsigned char) (CON11_PN_MASK),
+		(unsigned char) (CON11_PN_SHIFT)
+	);
 	return val;
 }
 #endif
 
 /**********************************************************
-  *
-  *   [Internal Function]
-  *
+ *
+ *   [Internal Function]
+ *
  *********************************************************/
 static unsigned char bq24297_get_reg9_fault_type(unsigned char reg9_fault)
 {
@@ -635,21 +662,31 @@ static unsigned char bq24297_get_reg9_fault_type(unsigned char reg9_fault)
 
 	if ((reg9_fault & (CON9_OTG_FAULT_MASK << CON9_OTG_FAULT_SHIFT)) != 0) {
 		ret = BQ_OTG_FAULT;
-	} else if ((reg9_fault & (CON9_CHRG_FAULT_MASK << CON9_CHRG_FAULT_SHIFT)) != 0) {
-		if ((reg9_fault & (CON9_CHRG_INPUT_FAULT_MASK << CON9_CHRG_FAULT_SHIFT)) != 0)
+	} else if ((reg9_fault &
+		(CON9_CHRG_FAULT_MASK << CON9_CHRG_FAULT_SHIFT)) != 0) {
+		if ((reg9_fault &
+			(CON9_CHRG_INPUT_FAULT_MASK
+			<< CON9_CHRG_FAULT_SHIFT)) != 0)
 			ret = BQ_CHRG_INPUT_FAULT;
 		else if ((reg9_fault &
-			  (CON9_CHRG_THERMAL_SHUTDOWN_FAULT_MASK << CON9_CHRG_FAULT_SHIFT)) != 0)
+			(CON9_CHRG_THERMAL_SHUTDOWN_FAULT_MASK
+			<< CON9_CHRG_FAULT_SHIFT)) != 0)
 			ret = BQ_CHRG_THERMAL_FAULT;
 		else if ((reg9_fault &
-			  (CON9_CHRG_TIMER_EXPIRATION_FAULT_MASK << CON9_CHRG_FAULT_SHIFT)) != 0)
+			(CON9_CHRG_TIMER_EXPIRATION_FAULT_MASK
+			<< CON9_CHRG_FAULT_SHIFT)) != 0)
 			ret = BQ_CHRG_TIMER_EXPIRATION_FAULT;
-	} else if ((reg9_fault & (CON9_BAT_FAULT_MASK << CON9_BAT_FAULT_SHIFT)) != 0)
+	} else if ((reg9_fault &
+		(CON9_BAT_FAULT_MASK << CON9_BAT_FAULT_SHIFT)) != 0)
 		ret = BQ_BAT_FAULT;
-	else if ((reg9_fault & (CON9_NTC_FAULT_MASK << CON9_NTC_FAULT_SHIFT)) != 0) {
-		if ((reg9_fault & (CON9_NTC_COLD_FAULT_MASK << CON9_NTC_FAULT_SHIFT)) != 0)
+	else if ((reg9_fault &
+		(CON9_NTC_FAULT_MASK << CON9_NTC_FAULT_SHIFT)) != 0) {
+		if ((reg9_fault &
+		(CON9_NTC_COLD_FAULT_MASK << CON9_NTC_FAULT_SHIFT))
+		!= 0)
 			ret = BQ_NTC_COLD_FAULT;
-		else if ((reg9_fault & (CON9_NTC_HOT_FAULT_MASK << CON9_NTC_FAULT_SHIFT)) != 0)
+		else if ((reg9_fault &
+			(CON9_NTC_HOT_FAULT_MASK << CON9_NTC_FAULT_SHIFT)) != 0)
 			ret = BQ_NTC_HOT_FAULT;
 	}
 	return ret;
@@ -669,8 +706,10 @@ void bq24297_polling_reg09(void)
 	unsigned char reg1;
 
 	for (i2 = i = 0; i < 4 && i2 < 10; i++, i2++) {
-		bq24297_read_byte((unsigned char) (bq24297_CON9), &bq24297_reg[bq24297_CON9]);
-		if ((bq24297_reg[bq24297_CON9] & 0x40) != 0) {	/* OTG_FAULT bit */
+		bq24297_read_byte((unsigned char) (bq24297_CON9),
+			&bq24297_reg[bq24297_CON9]);
+		if ((bq24297_reg[bq24297_CON9] & 0x40) != 0) {
+			/* OTG_FAULT bit */
 			/* Disable OTG */
 			bq24297_read_byte(1, &reg1);
 			reg1 &= ~0x20;	/* 0 = OTG Disable */
@@ -680,16 +719,9 @@ void bq24297_polling_reg09(void)
 			reg1 |= 0x20;	/* 1 = OTG Enable */
 			bq24297_write_byte(1, reg1);
 		}
-		if (bq24297_reg[bq24297_CON9] != 0) {
-			i = 0;	/* keep on polling if reg9 is not 0. This is to filter noises */
-			/* need filter fault type here */
-			switch_set_state(&bq24297_reg09,
-					 bq24297_get_reg9_fault_type(bq24297_reg[bq24297_CON9]));
-		}
+
 		msleep(20);
 	}
-	/* send normal fault state to UI */
-	switch_set_state(&bq24297_reg09, BQ_NORMAL_FAULT);
 }
 
 static irqreturn_t ops_bq24297_int_handler(int irq, void *dev_id)
@@ -714,14 +746,15 @@ static ssize_t show_dump_register(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	int i = 0;
-	char temp_info[200] = "";
+	ssize_t len = 0;
 
 	for (i = 0; i < bq24297_REG_NUM; i++) {
 		bq24297_read_byte(i, &bq24297_reg[i]);
-		sprintf(temp_info, "reg[%x]=0x%x\n", i, bq24297_reg[i]);
-		strcat(buf, temp_info);
+		len += snprintf(buf + len, PAGE_SIZE - len,
+			"reg[%x]=0x%x\n", i, bq24297_reg[i]);
 	}
-	return strlen(buf);
+
+	return len;
 }
 
 static DEVICE_ATTR(dump_register, 0440, show_dump_register, NULL);
@@ -747,7 +780,8 @@ static void bq24297_parse_customer_setting(void)
 	} else
 		pinctrl_select_state(pinctrl, pinctrl_chg_en);
 
-	pinctrl_interrupt_init = pinctrl_lookup_state(pinctrl, "bq24297_interrupt_init");
+	pinctrl_interrupt_init = pinctrl_lookup_state(pinctrl,
+		"bq24297_interrupt_init");
 	if (IS_ERR(pinctrl_interrupt_init)) {
 		pr_debug("[%s]Cannot find bq24297_interrupt_init state, err=%d\n",
 			__func__, (int)PTR_ERR(pinctrl_interrupt_init));
@@ -759,19 +793,20 @@ static void bq24297_parse_customer_setting(void)
 }
 
 /**********************************************************
-  *
-  *   [platform_driver API]
-  *
-  *********************************************************/
-unsigned char g_reg_value_bq24297 = 0;
-static ssize_t show_bq24297_access(struct device *dev, struct device_attribute *attr, char *buf)
+ *
+ *   [platform_driver API]
+ *
+ *********************************************************/
+unsigned char g_reg_value_bq24297;
+static ssize_t show_bq24297_access(struct device *dev,
+	struct device_attribute *attr, char *buf)
 {
 	pr_notice("[show_bq24297_access] 0x%x\n", g_reg_value_bq24297);
 	return sprintf(buf, "%u\n", g_reg_value_bq24297);
 }
 
-static ssize_t store_bq24297_access(struct device *dev, struct device_attribute *attr,
-				    const char *buf, size_t size)
+static ssize_t store_bq24297_access(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
 {
 	int ret = 0;
 	char *pvalue = NULL, *addr, *val;
@@ -781,7 +816,8 @@ static ssize_t store_bq24297_access(struct device *dev, struct device_attribute 
 	pr_notice("[store_bq24297_access]\n");
 
 	if (buf != NULL && size != 0) {
-		pr_notice("[store_bq24297_access] buf is %s and size is %zu\n", buf, size);
+		pr_notice("[store_bq24297_access] buf is %s and size is %zu\n",
+			buf, size);
 		/*reg_address = kstrtoul(buf, 16, &pvalue);*/
 
 		pvalue = (char *)buf;
@@ -789,7 +825,8 @@ static ssize_t store_bq24297_access(struct device *dev, struct device_attribute 
 			addr = strsep(&pvalue, " ");
 			ret = kstrtou32(addr, 16, (unsigned int *)&reg_address);
 		} else
-			ret = kstrtou32(pvalue, 16, (unsigned int *)&reg_address);
+			ret = kstrtou32(pvalue, 16,
+				(unsigned int *)&reg_address);
 
 		if (size > 3) {
 			val = strsep(&pvalue, " ");
@@ -797,9 +834,11 @@ static ssize_t store_bq24297_access(struct device *dev, struct device_attribute 
 
 			pr_notice("[store_bq24297_access] write bq24297 reg 0x%x with value 0x%x !\n",
 			    reg_address, reg_value);
-			ret = bq24297_config_interface(reg_address, reg_value, 0xFF, 0x0);
+			ret = bq24297_config_interface(
+				reg_address, reg_value, 0xFF, 0x0);
 		} else {
-			ret = bq24297_read_interface(reg_address, &g_reg_value_bq24297, 0xFF, 0x0);
+			ret = bq24297_read_interface(
+				reg_address, &g_reg_value_bq24297, 0xFF, 0x0);
 			pr_notice("[store_bq24297_access] read bq24297 reg 0x%x with value 0x%x !\n",
 			    reg_address, g_reg_value_bq24297);
 			pr_notice(
@@ -809,15 +848,18 @@ static ssize_t store_bq24297_access(struct device *dev, struct device_attribute 
 	return size;
 }
 
-static DEVICE_ATTR(bq24297_access, 0664, show_bq24297_access, store_bq24297_access);	/* 664 */
+static DEVICE_ATTR(bq24297_access, 0664,
+	show_bq24297_access, store_bq24297_access);
 
 static int bq24297_user_space_probe(struct platform_device *dev)
 {
 	int ret_device_file = 0;
 
 	pr_debug("bq24297_user_space_probe!\n");
-	ret_device_file = device_create_file(&(dev->dev), &dev_attr_bq24297_access);
-	ret_device_file = device_create_file(&(dev->dev), &dev_attr_dump_register);
+	ret_device_file =
+		device_create_file(&(dev->dev), &dev_attr_bq24297_access);
+	ret_device_file =
+		device_create_file(&(dev->dev), &dev_attr_dump_register);
 
 	return 0;
 }
@@ -869,7 +911,7 @@ static int bq24297_driver_probe(struct i2c_client *client,
 		return -ENODEV;
 	}
 
-	/*bq24297 user space access interface*/
+	/* bq24297 user space access interface */
 	ret = platform_device_register(&bq24297_user_space_device);
 	if (ret) {
 		pr_notice(
@@ -886,16 +928,6 @@ static int bq24297_driver_probe(struct i2c_client *client,
 	bq24297_dump_register();
 
 	bq24297_parse_customer_setting();
-
-	bq24297_reg09.name = "bq24297_reg09";
-	bq24297_reg09.index = 0;
-	bq24297_reg09.state = 0;
-	ret = switch_dev_register(&bq24297_reg09);
-
-	if (ret < 0)
-		pr_notice(
-		"[bq24297_driver_probe] switch_dev_register() error(%d)\n",
-		ret);
 
 	if (client->irq > 0) {
 

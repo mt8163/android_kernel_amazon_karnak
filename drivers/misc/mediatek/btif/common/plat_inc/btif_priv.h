@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __HAL_BTIF_H_
 #define __HAL_BTIF_H_
 
@@ -61,8 +74,10 @@ struct clk *clk_btif; /*btif  clock*/
 #define BTIF_DMA_EN_RX  (0x1 << 0)	/*Enable Rx DMA */
 #define BTIF_DMA_EN_TX  (0x1 << 1)	/*Enable Tx DMA */
 #define BTIF_DMA_EN_AUTORST_EN  (0x1 << 2)	/*1: timeout counter will be auto reset */
-#define BTIF_DMA_EN_AUTORST_DIS  (0x0 << 2)	/*0: after Rx timeout happens,
-							SW shall reset the interrupt by reading BTIF 0x4C */
+#define BTIF_DMA_EN_AUTORST_DIS  (0x0 << 2)	/*
+						 * 0: after Rx timeout happens,
+						 * SW shall reset the interrupt by reading BTIF 0x4C
+						 */
 
 /*BTIF_TRI_LVL bits*/
 #define BTIF_TRI_LVL_TX_MASK ((0xf) << 0)

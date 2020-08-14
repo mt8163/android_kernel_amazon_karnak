@@ -88,12 +88,9 @@ _SetupMMU:
 	initialize_mmu
 #if defined(CONFIG_MMU) && XCHAL_HAVE_PTP_MMU && XCHAL_HAVE_SPANNING_WAY
 	rsr	a2, excsave1
-	movi	a3, XCHAL_KSEG_PADDR
-	bltu	a2, a3, 1f
-	sub	a2, a2, a3
-	movi	a3, XCHAL_KSEG_SIZE
+	movi	a3, 0x08000000
 	bgeu	a2, a3, 1f
-	movi	a3, XCHAL_KSEG_CACHED_VADDR
+	movi	a3, 0xd0000000
 	add	a2, a2, a3
 	wsr	a2, excsave1
 1:
@@ -114,6 +111,11 @@ ENTRY(_startup)
 	/* Set a0 to 0 for the remaining initialization. */
 
 	movi	a0, 0
+
+#if XCHAL_HAVE_VECBASE
+	movi    a2, VECBASE_VADDR
+	wsr	a2, vecbase
+#endif
 
 	/* Clear debugging registers. */
 
@@ -195,11 +197,6 @@ ENTRY(_startup)
 	wsr	a2, ps			# (enable reg-windows; progmode stack)
 	rsync
 
-	/* Set up EXCSAVE[DEBUGLEVEL] to point to the Debug Exception Handler.*/
-
-	movi	a2, debug_exception
-	wsr	a2, SREG_EXCSAVE + XCHAL_DEBUGLEVEL
-
 #ifdef CONFIG_SMP
 	/*
 	 * Notice that we assume with SMP that cores have PRID
@@ -247,7 +244,7 @@ ENTRY(_startup)
 
 	__loopt	a2, a3, a4, 2
 	s32i	a0, a2, 0
-	__endla	a2, a4, 4
+	__endla	a2, a3, 4
 
 #if XCHAL_DCACHE_IS_WRITEBACK
 
@@ -281,13 +278,12 @@ should_never_return:
 
 	movi	a2, cpu_start_ccount
 1:
-	memw
 	l32i	a3, a2, 0
 	beqi	a3, 0, 1b
 	movi	a3, 0
 	s32i	a3, a2, 0
-1:
 	memw
+1:
 	l32i	a3, a2, 0
 	beqi	a3, 0, 1b
 	wsr	a3, ccount
@@ -324,13 +320,11 @@ ENTRY(cpu_restart)
 	rsr	a0, prid
 	neg	a2, a0
 	movi	a3, cpu_start_id
-	memw
 	s32i	a2, a3, 0
 #if XCHAL_DCACHE_IS_WRITEBACK
 	dhwbi	a3, 0
 #endif
 1:
-	memw
 	l32i	a2, a3, 0
 	dhi	a3, 0
 	bne	a2, a0, 1b

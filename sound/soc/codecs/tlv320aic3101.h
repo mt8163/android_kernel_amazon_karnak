@@ -149,8 +149,10 @@ enum aic3x_micbias_voltage {
 
 #ifdef CONFIG_SND_SOC_8_MICS
 #define NUM_ADC3101             4
-#else
+#elif defined CONFIG_SND_SOC_4_MICS
 #define NUM_ADC3101             2
+#else
+#define NUM_ADC3101             1
 #endif
 
 #define ADC3101_CACHEREGNUM     (128 + 128)

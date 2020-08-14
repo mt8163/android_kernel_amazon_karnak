@@ -22,10 +22,9 @@
 #include "ged_notify_sw_vsync.h"
 #include "ged_dvfs.h"
 #include <linux/module.h>
-
-#ifdef ENABLE_FRR_FOR_MT6XXX_PLATFORM
-#include "ged_vsync.h"
-#endif
+#include "ged_kpi.h"
+#include "ged.h"
+#include "ged_frr.h"
 
 static unsigned int ged_boost_enable = 1;
 //-----------------------------------------------------------------------------
@@ -60,7 +59,9 @@ int ged_bridge_boost_gpu_freq(
 		GED_BRIDGE_OUT_BOOSTGPUFREQ *psBoostGpuFreqOUT)
 {
 #if 1
-	psBoostGpuFreqOUT->eError = mtk_boost_gpu_freq() ? GED_OK : GED_ERROR_FAIL;
+	psBoostGpuFreqOUT->eError = (mtk_set_bottom_gpu_freq(
+		psBoostGpuFreqIN->eGPUFreqLevel) == true) ?
+		GED_OK : GED_ERROR_FAIL;
 #else
 	unsigned int ui32Count;
 	if (mtk_custom_get_gpu_freq_level_count(&ui32Count))
@@ -81,7 +82,8 @@ int ged_bridge_monitor_3D_fence(
 		GED_BRIDGE_IN_MONITOR3DFENCE *psMonitor3DFenceINT,
 		GED_BRIDGE_OUT_MONITOR3DFENCE *psMonitor3DFenceOUT)
 {
-	psMonitor3DFenceOUT->eError = ged_monitor_3D_fence_add(psMonitor3DFenceINT->fd);
+	psMonitor3DFenceOUT->eError =
+		ged_monitor_3D_fence_add(psMonitor3DFenceINT->fd);
 	return 0;
 }
 //-----------------------------------------------------------------------------
@@ -142,12 +144,55 @@ int ged_bridge_event_notify(
 	return 0;
 }
 
-//-----------------------------------------------------------------------------
-#ifdef ENABLE_FRR_FOR_MT6XXX_PLATFORM
-int ged_bridge_vsync_wait(void *IN, void *OUT)
+/* ----------------------------------------------------------------------------- */
+int ged_bridge_gpu_timestamp(
+	GED_BRIDGE_IN_GPU_TIMESTAMP * psGpuBeginINT,
+	GED_BRIDGE_OUT_GPU_TIMESTAMP *psGpuBeginOUT)
 {
-    ged_vsync_wait();
-    return 0;
+	if (ged_kpi_enabled() == 1) {
+		if (psGpuBeginINT->QedBuffer_length == -2)
+			psGpuBeginOUT->eError =
+				ged_kpi_dequeue_buffer_ts(psGpuBeginINT->pid,
+									psGpuBeginINT->ullWnd,
+									psGpuBeginINT->i32FrameID,
+									psGpuBeginINT->fence_fd,
+									psGpuBeginINT->isSF);
+		else if (psGpuBeginINT->QedBuffer_length != -1)
+			psGpuBeginOUT->eError =
+				ged_kpi_queue_buffer_ts(psGpuBeginINT->pid,
+										psGpuBeginINT->ullWnd,
+										psGpuBeginINT->i32FrameID,
+										psGpuBeginINT->fence_fd,
+										psGpuBeginINT->QedBuffer_length);
+		else
+			psGpuBeginOUT->eError =
+				ged_kpi_acquire_buffer_ts(psGpuBeginINT->pid,
+										psGpuBeginINT->ullWnd,
+										psGpuBeginINT->i32FrameID);
+		psGpuBeginOUT->is_ged_kpi_enabled = 1;
+	} else {
+		psGpuBeginOUT->is_ged_kpi_enabled = 0;
+		psGpuBeginOUT->eError = GED_OK;
+	}
+	return 0;
+}
+
+/* ----------------------------------------------------------------------------- */
+#ifdef MTK_FRR20
+int ged_bridge_wait_hw_vsync(void)
+{
+	ged_frr_wait_hw_vsync();
+	return 0;
+}
+
+/* ----------------------------------------------------------------------------- */
+int ged_bridge_query_target_fps(
+	GED_BRIDGE_IN_QUERY_TARGET_FPS * in,
+	GED_BRIDGE_OUT_QUERY_TARGET_FPS *out)
+{
+	ged_frr_fence2context_table_update(in->pid, in->cid, in->fenceFd);
+	out->fps = ged_frr_get_fps(in->pid, in->cid);
+	return 0;
 }
 #endif
 

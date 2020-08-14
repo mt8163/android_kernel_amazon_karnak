@@ -74,13 +74,14 @@ qla24xx_deallocate_vp_id(scsi_qla_host_t *vha)
 	 * ensures no active vp_list traversal while the vport is removed
 	 * from the queue)
 	 */
+	wait_event_timeout(vha->vref_waitq, !atomic_read(&vha->vref_count),
+	    10*HZ);
+
 	spin_lock_irqsave(&ha->vport_slock, flags);
-	while (atomic_read(&vha->vref_count)) {
-		spin_unlock_irqrestore(&ha->vport_slock, flags);
-
-		msleep(500);
-
-		spin_lock_irqsave(&ha->vport_slock, flags);
+	if (atomic_read(&vha->vref_count)) {
+		ql_dbg(ql_dbg_vport, vha, 0xfffa,
+		    "vha->vref_count=%u timeout\n", vha->vref_count.counter);
+		vha->vref_count = (atomic_t)ATOMIC_INIT(0);
 	}
 	list_del(&vha->list);
 	qlt_update_vp_map(vha, RESET_VP_IDX);
@@ -269,6 +270,7 @@ qla2x00_alert_all_vps(struct rsp_que *rsp, uint16_t *mb)
 
 			spin_lock_irqsave(&ha->vport_slock, flags);
 			atomic_dec(&vha->vref_count);
+			wake_up(&vha->vref_waitq);
 		}
 		i++;
 	}
@@ -306,19 +308,25 @@ qla2x00_vp_abort_isp(scsi_qla_host_t *vha)
 static int
 qla2x00_do_dpc_vp(scsi_qla_host_t *vha)
 {
+	struct qla_hw_data *ha = vha->hw;
+	scsi_qla_host_t *base_vha = pci_get_drvdata(ha->pdev);
+
 	ql_dbg(ql_dbg_dpc + ql_dbg_verbose, vha, 0x4012,
 	    "Entering %s vp_flags: 0x%lx.\n", __func__, vha->vp_flags);
 
 	qla2x00_do_work(vha);
 
-	if (test_and_clear_bit(VP_IDX_ACQUIRED, &vha->vp_flags)) {
-		/* VP acquired. complete port configuration */
-		ql_dbg(ql_dbg_dpc, vha, 0x4014,
-		    "Configure VP scheduled.\n");
-		qla24xx_configure_vp(vha);
-		ql_dbg(ql_dbg_dpc, vha, 0x4015,
-		    "Configure VP end.\n");
-		return 0;
+	/* Check if Fw is ready to configure VP first */
+	if (test_bit(VP_CONFIG_OK, &base_vha->vp_flags)) {
+		if (test_and_clear_bit(VP_IDX_ACQUIRED, &vha->vp_flags)) {
+			/* VP acquired. complete port configuration */
+			ql_dbg(ql_dbg_dpc, vha, 0x4014,
+			    "Configure VP scheduled.\n");
+			qla24xx_configure_vp(vha);
+			ql_dbg(ql_dbg_dpc, vha, 0x4015,
+			    "Configure VP end.\n");
+			return 0;
+		}
 	}
 
 	if (test_bit(FCPORT_UPDATE_NEEDED, &vha->dpc_flags)) {
@@ -365,7 +373,6 @@ qla2x00_do_dpc_vp(scsi_qla_host_t *vha)
 void
 qla2x00_do_dpc_all_vps(scsi_qla_host_t *vha)
 {
-	int ret;
 	struct qla_hw_data *ha = vha->hw;
 	scsi_qla_host_t *vp;
 	unsigned long flags = 0;
@@ -386,7 +393,7 @@ qla2x00_do_dpc_all_vps(scsi_qla_host_t *vha)
 			atomic_inc(&vp->vref_count);
 			spin_unlock_irqrestore(&ha->vport_slock, flags);
 
-			ret = qla2x00_do_dpc_vp(vp);
+			qla2x00_do_dpc_vp(vp);
 
 			spin_lock_irqsave(&ha->vport_slock, flags);
 			atomic_dec(&vp->vref_count);
@@ -788,7 +795,7 @@ qla25xx_create_rsp_que(struct qla_hw_data *ha, uint16_t options,
 		rsp->msix = &ha->msix_entries[que_id + 1];
 	else
 		ql_log(ql_log_warn, base_vha, 0x00e3,
-		    "MSIX not enalbled.\n");
+		    "MSIX not enabled.\n");
 
 	ha->rsp_q_map[que_id] = rsp;
 	rsp->rid = rid;

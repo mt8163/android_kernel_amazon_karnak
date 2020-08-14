@@ -74,7 +74,7 @@ typedef enum {
 #define GED_BRIDGE_IO_DVFS_UM_RETURN        GED_IOWR(GED_BRIDGE_COMMAND_DVFS_UM_RETURN)
 #define GED_BRIDGE_IO_EVENT_NOTIFY          GED_IOWR(GED_BRIDGE_COMMAND_EVENT_NOTIFY)
 #define GED_BRIDGE_IO_WAIT_HW_VSYNC         GED_IOWR(GED_BRIDGE_COMMAND_WAIT_HW_VSYNC)
-#define GED_BRIDGE_IO_VSYNC_WAIT            GED_IOWR(GED_BRIDGE_COMMAND_FSYNC_WAIT)
+#define GED_BRIDGE_IO_VSYNC_WAIT        GED_IOWR(GED_BRIDGE_COMMAND_VSYNC_WAIT)
 
 #define GED_BRIDGE_IO_GE_ALLOC              GED_IOWR(GED_BRIDGE_COMMAND_GE_ALLOC)
 #define GED_BRIDGE_IO_GE_GET                GED_IOWR(GED_BRIDGE_COMMAND_GE_GET)
@@ -264,6 +264,7 @@ typedef struct GED_BRIDGE_IN_GPU_TIMESTAMP_TAG {
 /* Bridge out structure for creation */
 typedef struct GED_BRIDGE_OUT_GPU_TIMESTAMP_TAG {
 	GED_ERROR eError;
+	int is_ged_kpi_enabled;
 } GED_BRIDGE_OUT_GPU_TIMESTAMP;
 
 /*****************************************************************************

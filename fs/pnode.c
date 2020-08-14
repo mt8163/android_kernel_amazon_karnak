@@ -24,6 +24,11 @@ static inline struct mount *first_slave(struct mount *p)
 	return list_entry(p->mnt_slave_list.next, struct mount, mnt_slave);
 }
 
+static inline struct mount *last_slave(struct mount *p)
+{
+	return list_entry(p->mnt_slave_list.prev, struct mount, mnt_slave);
+}
+
 static inline struct mount *next_slave(struct mount *p)
 {
 	return list_entry(p->mnt_slave.next, struct mount, mnt_slave);
@@ -164,6 +169,19 @@ static struct mount *propagation_next(struct mount *m,
 	}
 }
 
+static struct mount *skip_propagation_subtree(struct mount *m,
+						struct mount *origin)
+{
+	/*
+	 * Advance m such that propagation_next will not return
+	 * the slaves of m.
+	 */
+	if (!IS_MNT_NEW(m) && !list_empty(&m->mnt_slave_list))
+		m = last_slave(m);
+
+	return m;
+}
+
 static struct mount *next_group(struct mount *m, struct mount *origin)
 {
 	while (1) {
@@ -217,8 +235,7 @@ static int propagate_one(struct mount *m)
 	/* skip if mountpoint isn't covered by it */
 	if (!is_subdir(mp->m_dentry, m->mnt.mnt_root))
 		return 0;
-	if (peers(m, last_dest) ||
-			m->mnt_group_id == last_dest->mnt_group_id) {
+	if (peers(m, last_dest)) {
 		type = CL_MAKE_SHARED;
 	} else {
 		struct mount *n, *p;
@@ -250,6 +267,7 @@ static int propagate_one(struct mount *m)
 	child = copy_tree(last_source, last_source->mnt.mnt_root, type);
 	if (IS_ERR(child))
 		return PTR_ERR(child);
+	child->mnt.mnt_flags &= ~MNT_LOCKED;
 	mnt_set_mountpoint(m, mp, child);
 	last_dest = m;
 	last_source = child;
@@ -259,7 +277,7 @@ static int propagate_one(struct mount *m)
 		read_sequnlock_excl(&mount_lock);
 	}
 	hlist_add_head(&child->mnt_hash, list);
-	return 0;
+	return count_mounts(m->mnt_ns, child);
 }
 
 /*
@@ -324,6 +342,21 @@ out:
 	return ret;
 }
 
+static struct mount *find_topper(struct mount *mnt)
+{
+	/* If there is exactly one mount covering mnt completely return it. */
+	struct mount *child;
+
+	if (!list_is_singular(&mnt->mnt_mounts))
+		return NULL;
+
+	child = list_first_entry(&mnt->mnt_mounts, struct mount, mnt_child);
+	if (child->mnt_mountpoint != mnt->mnt.mnt_root)
+		return NULL;
+
+	return child;
+}
+
 /*
  * return true if the refcount is greater than count
  */
@@ -344,9 +377,8 @@ static inline int do_refcount_check(struct mount *mnt, int count)
  */
 int propagate_mount_busy(struct mount *mnt, int refcnt)
 {
-	struct mount *m, *child;
+	struct mount *m, *child, *topper;
 	struct mount *parent = mnt->mnt_parent;
-	int ret = 0;
 
 	if (mnt == parent)
 		return do_refcount_check(mnt, refcnt);
@@ -361,39 +393,144 @@ int propagate_mount_busy(struct mount *mnt, int refcnt)
 
 	for (m = propagation_next(parent, parent); m;
 	     		m = propagation_next(m, parent)) {
-		child = __lookup_mnt_last(&m->mnt, mnt->mnt_mountpoint);
-		if (child && list_empty(&child->mnt_mounts) &&
-		    (ret = do_refcount_check(child, 1)))
-			break;
+		int count = 1;
+		child = __lookup_mnt(&m->mnt, mnt->mnt_mountpoint);
+		if (!child)
+			continue;
+
+		/* Is there exactly one mount on the child that covers
+		 * it completely whose reference should be ignored?
+		 */
+		topper = find_topper(child);
+		if (topper)
+			count += 1;
+		else if (!list_empty(&child->mnt_mounts))
+			continue;
+
+		if (do_refcount_check(child, count))
+			return 1;
 	}
-	return ret;
+	return 0;
+}
+
+/*
+ * Clear MNT_LOCKED when it can be shown to be safe.
+ *
+ * mount_lock lock must be held for write
+ */
+void propagate_mount_unlock(struct mount *mnt)
+{
+	struct mount *parent = mnt->mnt_parent;
+	struct mount *m, *child;
+
+	BUG_ON(parent == mnt);
+
+	for (m = propagation_next(parent, parent); m;
+			m = propagation_next(m, parent)) {
+		child = __lookup_mnt(&m->mnt, mnt->mnt_mountpoint);
+		if (child)
+			child->mnt.mnt_flags &= ~MNT_LOCKED;
+	}
+}
+
+static void umount_one(struct mount *mnt, struct list_head *to_umount)
+{
+	CLEAR_MNT_MARK(mnt);
+	mnt->mnt.mnt_flags |= MNT_UMOUNT;
+	list_del_init(&mnt->mnt_child);
+	list_del_init(&mnt->mnt_umounting);
+	list_move_tail(&mnt->mnt_list, to_umount);
 }
 
 /*
  * NOTE: unmounting 'mnt' naturally propagates to all other mounts its
  * parent propagates to.
  */
-static void __propagate_umount(struct mount *mnt)
+static bool __propagate_umount(struct mount *mnt,
+			       struct list_head *to_umount,
+			       struct list_head *to_restore)
 {
-	struct mount *parent = mnt->mnt_parent;
-	struct mount *m;
+	bool progress = false;
+	struct mount *child;
 
-	BUG_ON(parent == mnt);
+	/*
+	 * The state of the parent won't change if this mount is
+	 * already unmounted or marked as without children.
+	 */
+	if (mnt->mnt.mnt_flags & (MNT_UMOUNT | MNT_MARKED))
+		goto out;
 
-	for (m = propagation_next(parent, parent); m;
-			m = propagation_next(m, parent)) {
+	/* Verify topper is the only grandchild that has not been
+	 * speculatively unmounted.
+	 */
+	list_for_each_entry(child, &mnt->mnt_mounts, mnt_child) {
+		if (child->mnt_mountpoint == mnt->mnt.mnt_root)
+			continue;
+		if (!list_empty(&child->mnt_umounting) && IS_MNT_MARKED(child))
+			continue;
+		/* Found a mounted child */
+		goto children;
+	}
 
-		struct mount *child = __lookup_mnt_last(&m->mnt,
-						mnt->mnt_mountpoint);
-		/*
-		 * umount the child only if the child has no
-		 * other children
-		 */
-		if (child && list_empty(&child->mnt_mounts)) {
-			list_del_init(&child->mnt_child);
-			hlist_del_init_rcu(&child->mnt_hash);
-			hlist_add_before_rcu(&child->mnt_hash, &mnt->mnt_hash);
+	/* Mark mounts that can be unmounted if not locked */
+	SET_MNT_MARK(mnt);
+	progress = true;
+
+	/* If a mount is without children and not locked umount it. */
+	if (!IS_MNT_LOCKED(mnt)) {
+		umount_one(mnt, to_umount);
+	} else {
+children:
+		list_move_tail(&mnt->mnt_umounting, to_restore);
+	}
+out:
+	return progress;
+}
+
+static void umount_list(struct list_head *to_umount,
+			struct list_head *to_restore)
+{
+	struct mount *mnt, *child, *tmp;
+	list_for_each_entry(mnt, to_umount, mnt_list) {
+		list_for_each_entry_safe(child, tmp, &mnt->mnt_mounts, mnt_child) {
+			/* topper? */
+			if (child->mnt_mountpoint == mnt->mnt.mnt_root)
+				list_move_tail(&child->mnt_umounting, to_restore);
+			else
+				umount_one(child, to_umount);
 		}
+	}
+}
+
+static void restore_mounts(struct list_head *to_restore)
+{
+	/* Restore mounts to a clean working state */
+	while (!list_empty(to_restore)) {
+		struct mount *mnt, *parent;
+		struct mountpoint *mp;
+
+		mnt = list_first_entry(to_restore, struct mount, mnt_umounting);
+		CLEAR_MNT_MARK(mnt);
+		list_del_init(&mnt->mnt_umounting);
+
+		/* Should this mount be reparented? */
+		mp = mnt->mnt_mp;
+		parent = mnt->mnt_parent;
+		while (parent->mnt.mnt_flags & MNT_UMOUNT) {
+			mp = parent->mnt_mp;
+			parent = parent->mnt_parent;
+		}
+		if (parent != mnt->mnt_parent)
+			mnt_change_mountpoint(parent, mp, mnt);
+	}
+}
+
+static void cleanup_umount_visitations(struct list_head *visited)
+{
+	while (!list_empty(visited)) {
+		struct mount *mnt =
+			list_first_entry(visited, struct mount, mnt_umounting);
+		list_del_init(&mnt->mnt_umounting);
 	}
 }
 
@@ -404,25 +541,105 @@ static void __propagate_umount(struct mount *mnt)
  *
  * vfsmount lock must be held for write
  */
-int propagate_umount(struct hlist_head *list)
+int propagate_umount(struct list_head *list)
 {
 	struct mount *mnt;
+	LIST_HEAD(to_restore);
+	LIST_HEAD(to_umount);
+	LIST_HEAD(visited);
 
-	hlist_for_each_entry(mnt, list, mnt_hash)
-		__propagate_umount(mnt);
-	return 0;
-}
+	/* Find candidates for unmounting */
+	list_for_each_entry_reverse(mnt, list, mnt_list) {
+		struct mount *parent = mnt->mnt_parent;
+		struct mount *m;
 
-int propagate_remount(struct mount *mnt) {
-	struct mount *m;
-	struct super_block *sb = mnt->mnt.mnt_sb;
-	int ret = 0;
+		/*
+		 * If this mount has already been visited it is known that it's
+		 * entire peer group and all of their slaves in the propagation
+		 * tree for the mountpoint has already been visited and there is
+		 * no need to visit them again.
+		 */
+		if (!list_empty(&mnt->mnt_umounting))
+			continue;
 
-	if (sb->s_op->copy_mnt_data) {
-		for (m = first_slave(mnt); m->mnt_slave.next != &mnt->mnt_slave_list; m = next_slave(m)) {
-			sb->s_op->copy_mnt_data(m->mnt.data, mnt->mnt.data);
+		list_add_tail(&mnt->mnt_umounting, &visited);
+		for (m = propagation_next(parent, parent); m;
+		     m = propagation_next(m, parent)) {
+			struct mount *child = __lookup_mnt(&m->mnt,
+							   mnt->mnt_mountpoint);
+			if (!child)
+				continue;
+
+			if (!list_empty(&child->mnt_umounting)) {
+				/*
+				 * If the child has already been visited it is
+				 * know that it's entire peer group and all of
+				 * their slaves in the propgation tree for the
+				 * mountpoint has already been visited and there
+				 * is no need to visit this subtree again.
+				 */
+				m = skip_propagation_subtree(m, parent);
+				continue;
+			} else if (child->mnt.mnt_flags & MNT_UMOUNT) {
+				/*
+				 * We have come accross an partially unmounted
+				 * mount in list that has not been visited yet.
+				 * Remember it has been visited and continue
+				 * about our merry way.
+				 */
+				list_add_tail(&child->mnt_umounting, &visited);
+				continue;
+			}
+
+			/* Check the child and parents while progress is made */
+			while (__propagate_umount(child,
+						  &to_umount, &to_restore)) {
+				/* Is the parent a umount candidate? */
+				child = child->mnt_parent;
+				if (list_empty(&child->mnt_umounting))
+					break;
+			}
 		}
 	}
 
-	return ret;
+	umount_list(&to_umount, &to_restore);
+	restore_mounts(&to_restore);
+	cleanup_umount_visitations(&visited);
+	list_splice_tail(&to_umount, list);
+
+	return 0;
+}
+
+/*
+ *  Iterates over all slaves, and slaves of slaves.
+ */
+static struct mount *next_descendent(struct mount *root, struct mount *cur)
+{
+	if (!IS_MNT_NEW(cur) && !list_empty(&cur->mnt_slave_list))
+		return first_slave(cur);
+	do {
+		struct mount *master = cur->mnt_master;
+
+		if (!master || cur->mnt_slave.next != &master->mnt_slave_list) {
+			struct mount *next = next_slave(cur);
+
+			return (next == root) ? NULL : next;
+		}
+		cur = master;
+	} while (cur != root);
+	return NULL;
+}
+
+void propagate_remount(struct mount *mnt)
+{
+	struct mount *m = mnt;
+	struct super_block *sb = mnt->mnt.mnt_sb;
+
+	if (sb->s_op->copy_mnt_data) {
+		m = next_descendent(mnt, m);
+		while (m) {
+			sb->s_op->copy_mnt_data(m->mnt.data, mnt->mnt.data);
+			m = next_descendent(mnt, m);
+		}
+	}
 }

@@ -10,6 +10,7 @@
  *
  */
 
+#include <linux/async.h>
 #include <linux/device.h>
 #include <linux/module.h>
 #include <linux/errno.h>
@@ -32,9 +33,6 @@ static struct kset *system_kset;
 
 #define to_drv_attr(_attr) container_of(_attr, struct driver_attribute, attr)
 
-#define DRIVER_ATTR_IGNORE_LOCKDEP(_name, _mode, _show, _store) \
-	struct driver_attribute driver_attr_##_name =		\
-		__ATTR_IGNORE_LOCKDEP(_name, _mode, _show, _store)
 
 static int __must_check bus_rescan_devices_helper(struct device *dev,
 						void *data);
@@ -151,8 +149,7 @@ EXPORT_SYMBOL_GPL(bus_remove_file);
 
 static void bus_release(struct kobject *kobj)
 {
-	struct subsys_private *priv =
-		container_of(kobj, typeof(*priv), subsys.kobj);
+	struct subsys_private *priv = to_subsys_private(kobj);
 	struct bus_type *bus = priv->bus;
 
 	kfree(priv);
@@ -200,7 +197,7 @@ static ssize_t unbind_store(struct device_driver *drv, const char *buf,
 	bus_put(bus);
 	return err;
 }
-static DRIVER_ATTR_IGNORE_LOCKDEP(unbind, S_IWUSR, NULL, unbind_store);
+static DRIVER_ATTR_WO(unbind);
 
 /*
  * Manually attach a device to a driver.
@@ -236,7 +233,7 @@ static ssize_t bind_store(struct device_driver *drv, const char *buf,
 	bus_put(bus);
 	return err;
 }
-static DRIVER_ATTR_IGNORE_LOCKDEP(bind, S_IWUSR, NULL, bind_store);
+static DRIVER_ATTR_WO(bind);
 
 static ssize_t show_drivers_autoprobe(struct bus_type *bus, char *buf)
 {
@@ -552,15 +549,12 @@ void bus_probe_device(struct device *dev)
 {
 	struct bus_type *bus = dev->bus;
 	struct subsys_interface *sif;
-	int ret;
 
 	if (!bus)
 		return;
 
-	if (bus->p->drivers_autoprobe) {
-		ret = device_attach(dev);
-		WARN_ON(ret < 0);
-	}
+	if (bus->p->drivers_autoprobe)
+		device_initial_probe(dev);
 
 	mutex_lock(&bus->p->mutex);
 	list_for_each_entry(sif, &bus->p->interfaces, node)
@@ -662,6 +656,17 @@ static ssize_t uevent_store(struct device_driver *drv, const char *buf,
 }
 static DRIVER_ATTR_WO(uevent);
 
+static void driver_attach_async(void *_drv, async_cookie_t cookie)
+{
+	struct device_driver *drv = _drv;
+	int ret;
+
+	ret = driver_attach(drv);
+
+	pr_debug("bus: '%s': driver %s async attach completed: %d\n",
+		 drv->bus->name, drv->name, ret);
+}
+
 /**
  * bus_add_driver - Add a driver to the bus.
  * @drv: driver.
@@ -694,9 +699,15 @@ int bus_add_driver(struct device_driver *drv)
 
 	klist_add_tail(&priv->knode_bus, &bus->p->klist_drivers);
 	if (drv->bus->p->drivers_autoprobe) {
-		error = driver_attach(drv);
-		if (error)
-			goto out_unregister;
+		if (driver_allows_async_probing(drv)) {
+			pr_debug("bus: '%s': probing driver %s asynchronously\n",
+				drv->bus->name, drv->name);
+			async_schedule(driver_attach_async, drv);
+		} else {
+			error = driver_attach(drv);
+			if (error)
+				goto out_unregister;
+		}
 	}
 	module_add_driver(drv->owner, drv);
 
@@ -1007,13 +1018,11 @@ static void device_insertion_sort_klist(struct device *a, struct list_head *list
 					int (*compare)(const struct device *a,
 							const struct device *b))
 {
-	struct list_head *pos;
 	struct klist_node *n;
 	struct device_private *dev_prv;
 	struct device *b;
 
-	list_for_each(pos, list) {
-		n = container_of(pos, struct klist_node, n_node);
+	list_for_each_entry(n, list, n_node) {
 		dev_prv = to_device_private_bus(n);
 		b = dev_prv->device;
 		if (compare(a, b) <= 0) {
@@ -1030,8 +1039,7 @@ void bus_sort_breadthfirst(struct bus_type *bus,
 					  const struct device *b))
 {
 	LIST_HEAD(sorted_devices);
-	struct list_head *pos, *tmp;
-	struct klist_node *n;
+	struct klist_node *n, *tmp;
 	struct device_private *dev_prv;
 	struct device *dev;
 	struct klist *device_klist;
@@ -1039,8 +1047,7 @@ void bus_sort_breadthfirst(struct bus_type *bus,
 	device_klist = bus_get_device_klist(bus);
 
 	spin_lock(&device_klist->k_lock);
-	list_for_each_safe(pos, tmp, &device_klist->k_list) {
-		n = container_of(pos, struct klist_node, n_node);
+	list_for_each_entry_safe(n, tmp, &device_klist->k_list, n_node) {
 		dev_prv = to_device_private_bus(n);
 		dev = dev_prv->device;
 		device_insertion_sort_klist(dev, &sorted_devices, compare);
@@ -1095,7 +1102,7 @@ struct device *subsys_dev_iter_next(struct subsys_dev_iter *iter)
 		knode = klist_next(&iter->ki);
 		if (!knode)
 			return NULL;
-		dev = container_of(knode, struct device_private, knode_bus)->device;
+		dev = to_device_private_bus(knode)->device;
 		if (!iter->type || iter->type == dev->type)
 			return dev;
 	}

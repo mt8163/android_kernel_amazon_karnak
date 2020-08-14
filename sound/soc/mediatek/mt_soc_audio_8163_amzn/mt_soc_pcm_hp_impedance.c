@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -34,7 +36,7 @@
 #include "mt_soc_codec_63xx.h"
 
 
-static AFE_MEM_CONTROL_T *pHp_impedance_MemControl;
+static struct AFE_MEM_CONTROL_T *pHp_impedance_MemControl;
 static const int DCoffsetDefault = 1500;
 static const int DCoffsetVariance = 2;
 
@@ -44,8 +46,6 @@ static const int HpImpedancePhase2Step = 400;
 static const int HpImpedancePhase1AdcValue = 1200;
 static const int HpImpedancePhase2AdcValue = 7200;
 static struct snd_dma_buffer *Dl1_Playback_dma_buf;
-
-/* extern int PMIC_IMM_GetOneChannelValue(int dwChannel, int deCount, int trimd); */
 
 /*
  *    function implementation
@@ -88,15 +88,17 @@ static int mtk_pcm_hp_impedance_start(struct snd_pcm_substream *substream)
 }
 #endif
 
-static snd_pcm_uframes_t mtk_pcm_hp_impedance_pointer(struct snd_pcm_substream *substream)
+static snd_pcm_uframes_t mtk_pcm_hp_impedance_pointer(
+	struct snd_pcm_substream *substream)
 {
 	return 0;
 }
 
-static void SetDL1Buffer(struct snd_pcm_substream *substream, struct snd_pcm_hw_params *hw_params)
+static void SetDL1Buffer(struct snd_pcm_substream *substream,
+	struct snd_pcm_hw_params *hw_params)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	AFE_BLOCK_T *pblock = &pHp_impedance_MemControl->rBlock;
+	struct AFE_BLOCK_T *pblock = &pHp_impedance_MemControl->rBlock;
 
 	pblock->pucPhysBufAddr = runtime->dma_addr;
 	pblock->pucVirtBufAddr = runtime->dma_area;
@@ -108,12 +110,16 @@ static void SetDL1Buffer(struct snd_pcm_substream *substream, struct snd_pcm_hw_
 	pblock->u4fsyncflag = false;
 	pblock->uResetFlag = true;
 
-	pr_debug("%s, u4BufferSize = %d, pucVirtBufAddr = %p, pucPhysBufAddr = 0x%x\n",
-		__func__, pblock->u4BufferSize, pblock->pucVirtBufAddr, pblock->pucPhysBufAddr);
+	pr_debug("%s, Size = %d, pucVirtBufAddr = %p, pucPhysBufAddr = 0x%x\n",
+		__func__,
+		pblock->u4BufferSize,
+		pblock->pucVirtBufAddr,
+		pblock->pucPhysBufAddr);
 
 	/* set dram address top hardware */
 	Afe_Set_Reg(AFE_DL1_BASE, pblock->pucPhysBufAddr, 0xffffffff);
-	Afe_Set_Reg(AFE_DL1_END, pblock->pucPhysBufAddr + (pblock->u4BufferSize - 1),
+	Afe_Set_Reg(AFE_DL1_END,
+		pblock->pucPhysBufAddr + (pblock->u4BufferSize - 1),
 		0xffffffff);
 	memset((void *)pblock->pucVirtBufAddr, 0, pblock->u4BufferSize);
 }
@@ -134,8 +140,8 @@ static int mtk_pcm_hp_impedance_params(struct snd_pcm_substream *substream,
 	SetDL1Buffer(substream, hw_params);
 
 	PRINTK_AUDDRV("dma_bytes = %zu, dma_area = %p, dma_addr = 0x%lx\n",
-		      substream->runtime->dma_bytes, substream->runtime->dma_area,
-		      (long)substream->runtime->dma_addr);
+		substream->runtime->dma_bytes, substream->runtime->dma_area,
+		(long)substream->runtime->dma_addr);
 	return ret;
 }
 
@@ -146,7 +152,8 @@ static int mtk_pcm_hp_impedance_hw_free(struct snd_pcm_substream *substream)
 }
 
 
-static struct snd_pcm_hw_constraint_list constraints_hp_impedance_sample_rates = {
+static struct snd_pcm_hw_constraint_list
+	constraints_hp_impedance_sample_rates = {
 
 	.count = ARRAY_SIZE(soc_high_supported_sample_rates),
 	.list = soc_high_supported_sample_rates,
@@ -162,19 +169,20 @@ static int mtk_pcm_hp_impedance_open(struct snd_pcm_substream *substream)
 	AudDrv_ANA_Clk_On();
 	AudDrv_Clk_On();
 	AudDrv_Emi_Clk_On();
-	pHp_impedance_MemControl = Get_Mem_ControlT(Soc_Aud_Digital_Block_MEM_DL1);
+	pHp_impedance_MemControl =
+		Get_Mem_ControlT(Soc_Aud_Digital_Block_MEM_DL1);
 	runtime->hw = mtk_pcm_hp_impedance_hardware;
 	memcpy((void *)(&(runtime->hw)), (void *)&mtk_pcm_hp_impedance_hardware,
 	       sizeof(struct snd_pcm_hardware));
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
-					 &constraints_hp_impedance_sample_rates);
+		&constraints_hp_impedance_sample_rates);
 
 	if (ret < 0)
 		PRINTK_AUDDRV("snd_pcm_hw_constraint_integer failed\n");
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-		PRINTK_AUDDRV("SNDRV_PCM_STREAM_PLAYBACK mtkalsa_playback_constraints\n");
+		PRINTK_AUDDRV("mtkalsa_playback_constraints\n");
 
 	if (ret < 0) {
 		PRINTK_AUDDRV("mtk_soc_pcm_hp_impedance_close\n");
@@ -186,7 +194,7 @@ static int mtk_pcm_hp_impedance_open(struct snd_pcm_substream *substream)
 }
 
 
-bool mPrepareDone = false;
+bool mPrepareDone;
 static int mtk_pcm_hp_impedance_prepare(struct snd_pcm_substream *substream)
 {
 	bool mI2SWLen;
@@ -196,40 +204,48 @@ static int mtk_pcm_hp_impedance_prepare(struct snd_pcm_substream *substream)
 	if (mPrepareDone == false) {
 		if (runtime->format == SNDRV_PCM_FORMAT_S32_LE
 		    || runtime->format == SNDRV_PCM_FORMAT_U32_LE) {
-			SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1,
-						     AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
-			SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2,
-						     AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
+			SetMemIfFetchFormatPerSample(
+				Soc_Aud_Digital_Block_MEM_DL1,
+				AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
+			SetMemIfFetchFormatPerSample(
+				Soc_Aud_Digital_Block_MEM_DL2,
+				AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
 			SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT,
-						  Soc_Aud_InterConnectionOutput_O03);
+				Soc_Aud_InterConnectionOutput_O03);
 			SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT,
-						  Soc_Aud_InterConnectionOutput_O04);
+				Soc_Aud_InterConnectionOutput_O04);
 			mI2SWLen = Soc_Aud_I2S_WLEN_WLEN_32BITS;
 		} else {
-			SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1,
-						     AFE_WLEN_16_BIT);
-			SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2,
-						     AFE_WLEN_16_BIT);
+			SetMemIfFetchFormatPerSample(
+				Soc_Aud_Digital_Block_MEM_DL1, AFE_WLEN_16_BIT);
+			SetMemIfFetchFormatPerSample(
+				Soc_Aud_Digital_Block_MEM_DL2,
+				AFE_WLEN_16_BIT);
 			SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_16BIT,
-						  Soc_Aud_InterConnectionOutput_O03);
+				Soc_Aud_InterConnectionOutput_O03);
 			SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_16BIT,
-						  Soc_Aud_InterConnectionOutput_O04);
+				Soc_Aud_InterConnectionOutput_O04);
 			mI2SWLen = Soc_Aud_I2S_WLEN_WLEN_16BITS;
 		}
 
 		SetSampleRate(Soc_Aud_Digital_Block_MEM_I2S, runtime->rate);
 
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) == false) {
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
+		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) ==
+			false) {
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC,
+				true);
 			SetI2SDacOut(substream->runtime->rate, false, mI2SWLen);
 			SetI2SDacEnable(true);
-		} else
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
-
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I05,
-			      Soc_Aud_InterConnectionOutput_O03);
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I06,
-			      Soc_Aud_InterConnectionOutput_O04);
+		} else {
+			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC,
+				true);
+		}
+		SetConnection(Soc_Aud_InterCon_Connection,
+			Soc_Aud_InterConnectionInput_I05,
+			Soc_Aud_InterConnectionOutput_O03);
+		SetConnection(Soc_Aud_InterCon_Connection,
+			Soc_Aud_InterConnectionInput_I06,
+			Soc_Aud_InterConnectionOutput_O04);
 
 		SetSampleRate(Soc_Aud_Digital_Block_MEM_DL1, runtime->rate);
 		SetChannels(Soc_Aud_Digital_Block_MEM_DL1, runtime->channels);
@@ -260,7 +276,8 @@ static int mtk_soc_pcm_hp_impedance_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static int mtk_pcm_hp_impedance_trigger(struct snd_pcm_substream *substream, int cmd)
+static int mtk_pcm_hp_impedance_trigger(struct snd_pcm_substream *substream,
+	int cmd)
 {
 	PRINTK_AUDDRV("mtk_pcm_hp_impedance_trigger cmd = %d\n", cmd);
 	switch (cmd) {
@@ -274,26 +291,28 @@ static int mtk_pcm_hp_impedance_trigger(struct snd_pcm_substream *substream, int
 }
 
 static int mtk_pcm_hp_impedance_copy(struct snd_pcm_substream *substream,
-				     int channel, snd_pcm_uframes_t pos,
-				     void __user *dst, snd_pcm_uframes_t count)
+	int channel, snd_pcm_uframes_t pos,
+	void __user *dst, snd_pcm_uframes_t count)
 {
 	return 0;
 }
 
 static int mtk_pcm_hp_impedance_silence(struct snd_pcm_substream *substream,
-					int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
+	int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
 {
 	PRINTK_AUDDRV("%s\n", __func__);
-	return 0;		/* do nothing */
+	return 0;/* do nothing */
 }
 
 static void *dummy_page[2];
 
-static struct page *mtk_pcm_hp_impedance_page(struct snd_pcm_substream *substream,
-					      unsigned long offset)
+static struct page *mtk_pcm_hp_impedance_page(
+	struct snd_pcm_substream *substream,
+	unsigned long offset)
 {
 	PRINTK_AUDDRV("%s\n", __func__);
-	return virt_to_page(dummy_page[substream->stream]);	/* the same page */
+	/* the same page */
+	return virt_to_page(dummy_page[substream->stream]);
 }
 
 
@@ -325,18 +344,21 @@ static int Audio_HP_ImpeDance_Set(struct snd_kcontrol *kcontrol,
 		/* msleep(5); */
 		usleep_range(5*1000, 20*1000);
 #ifdef CONFIG_MTK_FPGA
-		mAuxAdc_Offset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, off_counter, 0);
+		mAuxAdc_Offset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+			off_counter, 0);
 #else
 		mAuxAdc_Offset = 0;
 #endif
 		pr_debug("mAuxAdc_Offset = %d\n", mAuxAdc_Offset);
 
 #ifdef AUDIO_MEM_IOREMAP
-		memset((void *)Get_Afe_SramBase_Pointer(), ucontrol->value.integer.value[0],
-		       AFE_INTERNAL_SRAM_SIZE);
+		memset((void *)Get_Afe_SramBase_Pointer(),
+			ucontrol->value.integer.value[0],
+			AFE_INTERNAL_SRAM_SIZE);
 #else
-		memset((void *)Get_Afe_SramBase_Pointer(), ucontrol->value.integer.value[0],
-		       AFE_INTERNAL_SRAM_SIZE);
+		memset((void *)Get_Afe_SramBase_Pointer(),
+		ucontrol->value.integer.value[0],
+		AFE_INTERNAL_SRAM_SIZE);
 #endif
 		msleep(5 * 1000);
 		pr_debug("4 %s\n", __func__);
@@ -353,11 +375,13 @@ static int Audio_HP_ImpeDance_Set(struct snd_kcontrol *kcontrol,
 		EnableTrimbuffer(true);
 		setHpGainZero();
 #ifdef AUDIO_MEM_IOREMAP
-		memset((void *)Get_Afe_SramBase_Pointer(), ucontrol->value.integer.value[0],
-		       AFE_INTERNAL_SRAM_SIZE);
+		memset((void *)Get_Afe_SramBase_Pointer(),
+			ucontrol->value.integer.value[0],
+			AFE_INTERNAL_SRAM_SIZE);
 #else
-		memset((void *)Get_Afe_SramBase_Pointer(), ucontrol->value.integer.value[0],
-		       AFE_INTERNAL_SRAM_SIZE);
+		memset((void *)Get_Afe_SramBase_Pointer(),
+			ucontrol->value.integer.value[0],
+			AFE_INTERNAL_SRAM_SIZE);
 #endif
 		msleep(5 * 1000);
 		pr_debug("5 %s\n", __func__);
@@ -374,7 +398,7 @@ static int Audio_HP_ImpeDance_Set(struct snd_kcontrol *kcontrol,
 			unsigned short temp = value;
 			static unsigned short dcoffset;
 
-			volatile unsigned short *Sramdata;
+			unsigned short *Sramdata;
 			int i = 0;
 
 			pr_debug("set sram to dc value = %d\n", temp);
@@ -387,23 +411,25 @@ static int Audio_HP_ImpeDance_Set(struct snd_kcontrol *kcontrol,
 
 			Sramdata = Get_Afe_SramBase_Pointer();
 			pr_debug("Sramdata = %p\n", Sramdata);
-			pr_debug("Sramdata = 0x%x, Sramdata + 1 = 0x%x,", *Sramdata, *(Sramdata + 1));
-			pr_debug(" Sramdata + 2 = 0x%x, Sramdata + 3 = 0x%x\n", *(Sramdata + 2),
+			pr_debug("Sramdata = 0x%x, Sramdata + 1 = 0x%x,",
+				*Sramdata, *(Sramdata + 1));
+			pr_debug(" Sramdata + 2 = 0x%x, Sramdata + 3 = 0x%x\n",
+				*(Sramdata + 2),
 				*(Sramdata + 3));
 			Sramdata += 4;
 
 			pr_debug("Sramdata = %p\n", Sramdata);
-			pr_debug("Sramdata = 0x%x, Sramdata + 1 = 0x%x,", *Sramdata, *(Sramdata + 1));
-			pr_debug(" Sramdata + 2 = 0x%x, Sramdata + 3 = 0x%x\n", *(Sramdata + 2),
+			pr_debug("Sramdata = 0x%x, Sramdata + 1 = 0x%x,",
+				*Sramdata, *(Sramdata + 1));
+			pr_debug(" Sramdata + 2 = 0x%x, Sramdata + 3 = 0x%x\n",
+				*(Sramdata + 2),
 				*(Sramdata + 3));
-
-			/* memset((void *)Get_Afe_SramBase_Pointer(), ucontrol->value.integer.value[0],
-				AFE_INTERNAL_SRAM_SIZE); */
 
 			msleep(20);
 			dcoffset = 0;
 #ifdef CONFIG_MTK_FPGA
-			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, off_counter, 0);
+			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				off_counter, 0);
 #else
 			dcoffset = 0;
 #endif
@@ -420,7 +446,8 @@ static int Audio_HP_ImpeDance_Set(struct snd_kcontrol *kcontrol,
 
 static int phase1table[] = { 7, 13 };
 
-static unsigned short Phase1Check(unsigned short adcvalue, unsigned int adcoffset)
+static unsigned short Phase1Check(unsigned short adcvalue,
+	unsigned int adcoffset)
 {
 	unsigned int AdcDiff = adcvalue - adcoffset;
 
@@ -439,7 +466,8 @@ static unsigned short Phase1Check(unsigned short adcvalue, unsigned int adcoffse
 
 static int phase2table[] = { 10, 24 };
 
-static unsigned short Phase2Check(unsigned short adcvalue, unsigned int adcoffset)
+static unsigned short Phase2Check(unsigned short adcvalue,
+	unsigned int adcoffset)
 {
 	unsigned int AdcDiff = adcvalue - adcoffset;
 
@@ -454,8 +482,9 @@ static unsigned short Phase2Check(unsigned short adcvalue, unsigned int adcoffse
 		return AUDIO_HP_IMPEDANCE32;
 }
 
-static void FillDatatoDlmemory(volatile unsigned int *memorypointer, unsigned int fillsize,
-			       unsigned short value)
+static void FillDatatoDlmemory(unsigned int *memorypointer,
+	unsigned int fillsize,
+	unsigned short value)
 {
 	int addr = 0;
 	unsigned int tempvalue = value;
@@ -492,11 +521,15 @@ static void ApplyDctoDl(void)
 	pr_debug("%s\n", __func__);
 
 	dcinit_value = DCoffsetDefault;
-	for (value = 0; value <= (HpImpedancePhase2AdcValue + HpImpedancePhase2Step);
-	     value += HpImpedancePhase1Step) {
-		volatile unsigned int *Sramdata = (unsigned int *)(Dl1_Playback_dma_buf->area);
+	for (value = 0;
+		value <= (HpImpedancePhase2AdcValue + HpImpedancePhase2Step);
+		value += HpImpedancePhase1Step) {
+		unsigned int *Sramdata =
+			(unsigned int *)(Dl1_Playback_dma_buf->area);
 
-		FillDatatoDlmemory(Sramdata, Dl1_Playback_dma_buf->bytes, value);
+		FillDatatoDlmemory(Sramdata,
+			Dl1_Playback_dma_buf->bytes,
+			value);
 		/* apply to dram */
 
 		/* add dcvalue for phase boost */
@@ -509,9 +542,12 @@ static void ApplyDctoDl(void)
 			/* msleep(1); */
 			usleep_range(1*1000, 20*1000);
 #ifdef CONFIG_MTK_FPGA
-			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
-			dcoffset2 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
-			dcoffset3 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
+			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
+			dcoffset2 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
+			dcoffset3 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
 #else
 			dcoffset = 0;
 			dcoffset2 = 0;
@@ -520,8 +556,8 @@ static void ApplyDctoDl(void)
 			average = (dcoffset + dcoffset2 + dcoffset3) / 3;
 			dcinit_value = average;
 			CheckDcinitValue();
-			pr_debug("dcinit_value = %d average = %d value = %d\n", dcinit_value, average,
-			       value);
+			pr_debug("dcinit_value = %d average = %d value = %d\n",
+				dcinit_value, average, value);
 		}
 
 		/* start checking */
@@ -530,9 +566,12 @@ static void ApplyDctoDl(void)
 			/* msleep(1); */
 			usleep_range(1*1000, 20*1000);
 #ifdef CONFIG_MTK_FPGA
-			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
-			dcoffset2 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
-			dcoffset3 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
+			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
+			dcoffset2 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
+			dcoffset3 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
 #else
 			dcoffset = 0;
 			dcoffset2 = 0;
@@ -540,7 +579,7 @@ static void ApplyDctoDl(void)
 #endif
 			average = (dcoffset + dcoffset2 + dcoffset3) / 3;
 			mhp_impedance = Phase1Check(average, dcinit_value);
-			pr_debug("value = %d average = %d dcinit_value = %d mhp_impedance = %d\n",
+			pr_debug("val = %d average = %d value = %d imp = %d\n",
 			       value, average, dcinit_value, mhp_impedance);
 
 			if (mhp_impedance)
@@ -551,9 +590,12 @@ static void ApplyDctoDl(void)
 			/* msleep(1); */
 			usleep_range(1*1000, 20*1000);
 #ifdef CONFIG_MTK_FPGA
-			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
-			dcoffset2 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
-			dcoffset3 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9, 5, 0);
+			dcoffset = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
+			dcoffset2 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
+			dcoffset3 = PMIC_IMM_GetOneChannelValue(MT6328_AUX_CH9,
+				5, 0);
 #else
 			dcoffset = 0;
 			dcoffset2 = 0;
@@ -561,8 +603,10 @@ static void ApplyDctoDl(void)
 #endif
 			average = (dcoffset + dcoffset2 + dcoffset3) / 3;
 			mhp_impedance = Phase2Check(average, dcinit_value);
-			pr_debug("value = %d average = %d dcinit_value = %d\n", value,
-				average, dcinit_value);
+			pr_debug("value = %d average = %d dcinit_value = %d\n",
+				value,
+				average,
+				dcinit_value);
 			break;
 		}
 	}
@@ -570,7 +614,7 @@ static void ApplyDctoDl(void)
 }
 
 static int Audio_HP_ImpeDance_Get(struct snd_kcontrol *kcontrol,
-				  struct snd_ctl_elem_value *ucontrol)
+	struct snd_ctl_elem_value *ucontrol)
 {
 	pr_debug("+%s()\n", __func__);
 
@@ -590,9 +634,9 @@ static int Audio_HP_ImpeDance_Get(struct snd_kcontrol *kcontrol,
 		setOffsetTrimMux(AUDIO_OFFSET_TRIM_MUX_GROUND);
 		EnableTrimbuffer(false);
 		SetSdmLevel(AUDIO_SDM_LEVEL_NORMAL);
-	} else
+	} else {
 		pr_debug("Audio_HP_ImpeDance_Get just do nothing\n");
-
+	}
 	AudDrv_Clk_Off();
 	AudDrv_ANA_Clk_Off();
 	ucontrol->value.integer.value[0] = mhp_impedance;
@@ -602,8 +646,9 @@ static int Audio_HP_ImpeDance_Get(struct snd_kcontrol *kcontrol,
 
 static const struct snd_kcontrol_new Audio_snd_hp_impedance_controls[] = {
 
-	SOC_SINGLE_EXT("Audio HP ImpeDance Setting", SND_SOC_NOPM, 0, 65536, 0,
-		       Audio_HP_ImpeDance_Get, Audio_HP_ImpeDance_Set),
+	SOC_SINGLE_EXT("Audio HP ImpeDance Setting",
+		SND_SOC_NOPM, 0, 65536, 0,
+		Audio_HP_ImpeDance_Get, Audio_HP_ImpeDance_Set),
 };
 
 
@@ -659,10 +704,10 @@ static int mtk_asoc_dhp_impedance_probe(struct snd_soc_platform *platform)
 	PRINTK_AUDDRV("mtk_asoc_dhp_impedance_probe\n");
 	/* add  controls */
 	snd_soc_add_platform_controls(platform, Audio_snd_hp_impedance_controls,
-				      ARRAY_SIZE(Audio_snd_hp_impedance_controls));
+		ARRAY_SIZE(Audio_snd_hp_impedance_controls));
 	/* allocate dram */
 	AudDrv_Allocate_mem_Buffer(platform->dev, Soc_Aud_Digital_Block_MEM_DL1,
-				   Dl1_MAX_BUFFER_SIZE);
+		Dl1_MAX_BUFFER_SIZE);
 	Dl1_Playback_dma_buf = Get_Mem_Buffer(Soc_Aud_Digital_Block_MEM_DL1);
 	return 0;
 }
@@ -705,7 +750,8 @@ static int __init mtk_soc_hp_impedance_platform_init(void)
 
 	PRINTK_AUDDRV("%s\n", __func__);
 #ifndef CONFIG_OF
-	soc_mtk_hp_impedance_dev = platform_device_alloc(MT_SOC_HP_IMPEDANCE_PCM, -1);
+	soc_mtk_hp_impedance_dev =
+		platform_device_alloc(MT_SOC_HP_IMPEDANCE_PCM, -1);
 
 	if (!soc_mtk_hp_impedance_dev)
 		return -ENOMEM;

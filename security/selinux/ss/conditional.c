@@ -242,6 +242,8 @@ int cond_read_bool(struct policydb *p, struct hashtab *h, void *fp)
 		goto err;
 
 	len = le32_to_cpu(buf[2]);
+	if (((len == 0) || (len == (u32)-1)))
+		goto err;
 
 	rc = -ENOMEM;
 	key = kmalloc(len + 1, GFP_KERNEL);
@@ -638,7 +640,7 @@ void cond_compute_av(struct avtab *ctab, struct avtab_key *key,
 {
 	struct avtab_node *node;
 
-	if (!ctab || !key || !avd || !xperms)
+	if (!ctab || !key || !avd)
 		return;
 
 	for (node = avtab_search_node(ctab, key); node;

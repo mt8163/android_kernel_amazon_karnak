@@ -3,9 +3,11 @@ obj-y				:= dma-mapping.o extable.o fault.o init.o \
 				   ioremap.o mmap.o pgd.o mmu.o \
 				   context.o proc.o pageattr.o
 obj-$(CONFIG_HUGETLB_PAGE)	+= hugetlbpage.o
+obj-$(CONFIG_ARM64_PTDUMP)	+= dump.o
+obj-$(CONFIG_NUMA)		+= numa.o
 
-MTK_PLATFORM := $(CONFIG_MTK_PLATFORM:"%"=%)
+obj-$(CONFIG_KASAN)		+= kasan_init.o
+KASAN_SANITIZE_kasan_init.o	:= n
 KBUILD_CPPFLAGS += -Werror -I$(srctree)/drivers/misc/mediatek/include
 
-obj-$(CONFIG_MEDIATEK_SOLUTION)	+= mt_cache_v8.o
-obj-$(CONFIG_MEDIATEK_SOLUTION)	+= mt_innercache.o
+obj-$(CONFIG_MEDIATEK_SOLUTION) += cache-mtk-v8.o

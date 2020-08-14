@@ -9,13 +9,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
- *
- * (C) Copyright 2010
- * MediaTek <www.MediaTek.com>
- *
- * MTK GPU Extension Device
- *
  */
 
 #include "ged_base.h"

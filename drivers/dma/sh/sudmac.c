@@ -245,11 +245,8 @@ static int sudmac_chan_probe(struct sudmac_device *su_dev, int id, int irq,
 	int err;
 
 	sc = devm_kzalloc(&pdev->dev, sizeof(struct sudmac_chan), GFP_KERNEL);
-	if (!sc) {
-		dev_err(sdev->dma_dev.dev,
-			"No free memory for allocating dma channels!\n");
+	if (!sc)
 		return -ENOMEM;
-	}
 
 	schan = &sc->shdma_chan;
 	schan->max_xfer_len = 64 * 1024 * 1024 - 1;
@@ -295,7 +292,6 @@ err_no_irq:
 
 static void sudmac_chan_remove(struct sudmac_device *su_dev)
 {
-	struct dma_device *dma_dev = &su_dev->shdma_dev.dma_dev;
 	struct shdma_chan *schan;
 	int i;
 
@@ -304,7 +300,6 @@ static void sudmac_chan_remove(struct sudmac_device *su_dev)
 
 		shdma_chan_remove(schan);
 	}
-	dma_dev->chancnt = 0;
 }
 
 static dma_addr_t sudmac_slave_addr(struct shdma_chan *schan)
@@ -351,10 +346,8 @@ static int sudmac_probe(struct platform_device *pdev)
 	err = -ENOMEM;
 	su_dev = devm_kzalloc(&pdev->dev, sizeof(struct sudmac_device),
 			      GFP_KERNEL);
-	if (!su_dev) {
-		dev_err(&pdev->dev, "Not enough memory\n");
+	if (!su_dev)
 		return err;
-	}
 
 	dma_dev = &su_dev->shdma_dev.dma_dev;
 
@@ -411,7 +404,6 @@ static int sudmac_remove(struct platform_device *pdev)
 
 static struct platform_driver sudmac_driver = {
 	.driver		= {
-		.owner	= THIS_MODULE,
 		.name	= SUDMAC_DRV_NAME,
 	},
 	.probe		= sudmac_probe,

@@ -1,3 +1,22 @@
+/*
+* Copyright(C)2018 MediaTek Inc.
+* Modification based on code covered by the below mentioned copyright
+* and/or permission notice(S).
+*/
+
+/* accdet_amzn.c
+ *
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 #include "accdet_amzn.h"
 
 #include <linux/gpio.h>
@@ -6,6 +25,9 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#endif
 
 #define DEBUG_THREAD 1
 
@@ -70,6 +92,13 @@ char *accdet_status_string[5] = {
 	"Headset_plug_in"
 };
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+static char *accdet_metrics_cable_string[3] = {
+	"NOTHING",
+	"HEADSET",
+	"HEADPHONES"
+};
+#endif
 
 /*******************************************************************************
  * accdet_check_status:
@@ -87,7 +116,7 @@ static bool accdet_check_status(void)
 		return false;
 	}
 
-	current_status = gpio_get_value(gpiopin);
+	current_status = !gpio_get_value(gpiopin);
 	mutex_lock(&accdet_eint_irq_sync_mutex);
 	if (current_status != jack_status) {
 		ACCDET_INFO("[accdet]%s- status switch:[%s]->[%s]\n", __func__,
@@ -110,6 +139,9 @@ static bool accdet_check_status(void)
  * ****************************************************************************/
 static void accdet_report_status(void)
 {
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[128];
+#endif
 	ACCDET_DEBUG("[accdet]%s+\n", __func__);
 
 	/* Update status of connector */
@@ -118,6 +150,18 @@ static void accdet_report_status(void)
 	/* Update reporting status */
 	switch_set_state((struct switch_dev *)&accdet_data,
 		jack_status);
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+		if (jack_status == PLUG_OUT)
+			snprintf(buf, sizeof(buf),
+				"%s:jack:unplugged=1;CT;1:NR", __func__);
+		else
+			snprintf(buf, sizeof(buf),
+			"%s:jack:plugged=1;CT;1,state_%s=1;CT;1:NR", __func__,
+				accdet_metrics_cable_string[jack_status]);
+
+		log_to_metrics(ANDROID_LOG_INFO, "AudioJackEvent", buf);
+#endif
 
 	ACCDET_DEBUG("[accdet]%s-\n", __func__);
 }

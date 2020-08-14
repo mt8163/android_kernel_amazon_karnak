@@ -90,7 +90,7 @@ static ssize_t sysfs_kf_bin_read(struct kernfs_open_file *of, char *buf,
 		return 0;
 
 	if (size) {
-		if (pos > size)
+		if (pos >= size)
 			return 0;
 		if (pos + count > size)
 			count = size - pos;
@@ -100,6 +100,32 @@ static ssize_t sysfs_kf_bin_read(struct kernfs_open_file *of, char *buf,
 		return -EIO;
 
 	return battr->read(of->file, kobj, battr, buf, pos, count);
+}
+
+/* kernfs read callback for regular sysfs files with pre-alloc */
+static ssize_t sysfs_kf_read(struct kernfs_open_file *of, char *buf,
+			     size_t count, loff_t pos)
+{
+	const struct sysfs_ops *ops = sysfs_file_ops(of->kn);
+	struct kobject *kobj = of->kn->parent->priv;
+	ssize_t len;
+
+	/*
+	 * If buf != of->prealloc_buf, we don't know how
+	 * large it is, so cannot safely pass it to ->show
+	 */
+	if (WARN_ON_ONCE(buf != of->prealloc_buf))
+		return 0;
+	len = ops->show(kobj, of->kn->priv, buf);
+	if (len < 0)
+		return len;
+	if (pos) {
+		if (len <= pos)
+			return 0;
+		len -= pos;
+		memmove(buf, buf + pos, len);
+	}
+	return min_t(ssize_t, count, len);
 }
 
 /* kernfs write callback for regular sysfs files */
@@ -125,7 +151,7 @@ static ssize_t sysfs_kf_bin_write(struct kernfs_open_file *of, char *buf,
 
 	if (size) {
 		if (size <= pos)
-			return 0;
+			return -EFBIG;
 		count = min_t(ssize_t, count, size - pos);
 	}
 	if (!count)
@@ -184,6 +210,22 @@ static const struct kernfs_ops sysfs_file_kfops_rw = {
 	.write		= sysfs_kf_write,
 };
 
+static const struct kernfs_ops sysfs_prealloc_kfops_ro = {
+	.read		= sysfs_kf_read,
+	.prealloc	= true,
+};
+
+static const struct kernfs_ops sysfs_prealloc_kfops_wo = {
+	.write		= sysfs_kf_write,
+	.prealloc	= true,
+};
+
+static const struct kernfs_ops sysfs_prealloc_kfops_rw = {
+	.read		= sysfs_kf_read,
+	.write		= sysfs_kf_write,
+	.prealloc	= true,
+};
+
 static const struct kernfs_ops sysfs_bin_kfops_ro = {
 	.read		= sysfs_kf_bin_read,
 };
@@ -222,13 +264,22 @@ int sysfs_add_file_mode_ns(struct kernfs_node *parent,
 			 kobject_name(kobj)))
 			return -EINVAL;
 
-		if (sysfs_ops->show && sysfs_ops->store)
-			ops = &sysfs_file_kfops_rw;
-		else if (sysfs_ops->show)
-			ops = &sysfs_file_kfops_ro;
-		else if (sysfs_ops->store)
-			ops = &sysfs_file_kfops_wo;
-		else
+		if (sysfs_ops->show && sysfs_ops->store) {
+			if (mode & SYSFS_PREALLOC)
+				ops = &sysfs_prealloc_kfops_rw;
+			else
+				ops = &sysfs_file_kfops_rw;
+		} else if (sysfs_ops->show) {
+			if (mode & SYSFS_PREALLOC)
+				ops = &sysfs_prealloc_kfops_ro;
+			else
+				ops = &sysfs_file_kfops_ro;
+		} else if (sysfs_ops->store) {
+			if (mode & SYSFS_PREALLOC)
+				ops = &sysfs_prealloc_kfops_wo;
+			else
+				ops = &sysfs_file_kfops_wo;
+		} else
 			ops = &sysfs_file_kfops_empty;
 
 		size = PAGE_SIZE;
@@ -253,8 +304,8 @@ int sysfs_add_file_mode_ns(struct kernfs_node *parent,
 	if (!attr->ignore_lockdep)
 		key = attr->key ?: (struct lock_class_key *)&attr->skey;
 #endif
-	kn = __kernfs_create_file(parent, attr->name, mode, size, ops,
-				  (void *)attr, ns, true, key);
+	kn = __kernfs_create_file(parent, attr->name, mode & 0777, size, ops,
+				  (void *)attr, ns, key);
 	if (IS_ERR(kn)) {
 		if (PTR_ERR(kn) == -EEXIST)
 			sysfs_warn_dup(parent, attr->name);
@@ -355,50 +406,6 @@ int sysfs_chmod_file(struct kobject *kobj, const struct attribute *attr,
 	return rc;
 }
 EXPORT_SYMBOL_GPL(sysfs_chmod_file);
-
-/**
- * sysfs_break_active_protection - break "active" protection
- * @kobj: The kernel object @attr is associated with.
- * @attr: The attribute to break the "active" protection for.
- *
- * With sysfs, just like kernfs, deletion of an attribute is postponed until
- * all active .show() and .store() callbacks have finished unless this function
- * is called. Hence this function is useful in methods that implement self
- * deletion.
- */
-struct kernfs_node *sysfs_break_active_protection(struct kobject *kobj,
-						  const struct attribute *attr)
-{
-	struct kernfs_node *kn;
-
-	kobject_get(kobj);
-	kn = kernfs_find_and_get(kobj->sd, attr->name);
-	if (kn)
-		kernfs_break_active_protection(kn);
-	return kn;
-}
-EXPORT_SYMBOL_GPL(sysfs_break_active_protection);
-
-/**
- * sysfs_unbreak_active_protection - restore "active" protection
- * @kn: Pointer returned by sysfs_break_active_protection().
- *
- * Undo the effects of sysfs_break_active_protection(). Since this function
- * calls kernfs_put() on the kernfs node that corresponds to the 'attr'
- * argument passed to sysfs_break_active_protection() that attribute may have
- * been removed between the sysfs_break_active_protection() and
- * sysfs_unbreak_active_protection() calls, it is not safe to access @kn after
- * this function has returned.
- */
-void sysfs_unbreak_active_protection(struct kernfs_node *kn)
-{
-	struct kobject *kobj = kn->parent->priv;
-
-	kernfs_unbreak_active_protection(kn);
-	kernfs_put(kn);
-	kobject_put(kobj);
-}
-EXPORT_SYMBOL_GPL(sysfs_unbreak_active_protection);
 
 /**
  * sysfs_remove_file_ns - remove an object attribute with a custom ns tag

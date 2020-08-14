@@ -46,7 +46,6 @@
 #include <linux/mii.h>
 #include <linux/of_device.h>
 #include <linux/of_net.h>
-#include <linux/dmi.h>
 
 #include <asm/irq.h>
 
@@ -94,7 +93,7 @@ static int copybreak __read_mostly = 128;
 module_param(copybreak, int, 0);
 MODULE_PARM_DESC(copybreak, "Receive copy threshold");
 
-static int disable_msi = -1;
+static int disable_msi = 0;
 module_param(disable_msi, int, 0);
 MODULE_PARM_DESC(disable_msi, "Disable Message Signaled Interrupt (MSI)");
 
@@ -1291,14 +1290,6 @@ static void rx_set_checksum(struct sky2_port *sky2)
 		     ? BMU_ENA_RX_CHKSUM : BMU_DIS_RX_CHKSUM);
 }
 
-/*
- * Fixed initial key as seed to RSS.
- */
-static const uint32_t rss_init_key[10] = {
-	0x7c3351da, 0x51c5cf4e,	0x44adbdd1, 0xe8d38d18,	0x48897c43,
-	0xb1d60e7e, 0x6a3dd760, 0x01a2e453, 0x16f46f13, 0x1a0e7b30
-};
-
 /* Enable/disable receive hash calculation (RSS) */
 static void rx_set_rss(struct net_device *dev, netdev_features_t features)
 {
@@ -1314,9 +1305,12 @@ static void rx_set_rss(struct net_device *dev, netdev_features_t features)
 
 	/* Program RSS initial values */
 	if (features & NETIF_F_RXHASH) {
+		u32 rss_key[10];
+
+		netdev_rss_key_fill(rss_key, sizeof(rss_key));
 		for (i = 0; i < nkeys; i++)
 			sky2_write32(hw, SK_REG(sky2->port, RSS_KEY + i * 4),
-				     rss_init_key[i]);
+				     rss_key[i]);
 
 		/* Need to turn on (undocumented) flag to make hashing work  */
 		sky2_write32(hw, SK_REG(sky2->port, RX_GMF_CTRL_T),
@@ -1367,7 +1361,9 @@ static void sky2_rx_clean(struct sky2_port *sky2)
 {
 	unsigned i;
 
-	memset(sky2->rx_le, 0, RX_LE_BYTES);
+	if (sky2->rx_le)
+		memset(sky2->rx_le, 0, RX_LE_BYTES);
+
 	for (i = 0; i < sky2->rx_pending; i++) {
 		struct rx_ring_info *re = sky2->rx_ring + i;
 
@@ -1899,14 +1895,14 @@ static netdev_tx_t sky2_xmit_frame(struct sk_buff *skb,
 	ctrl = 0;
 
 	/* Add VLAN tag, can piggyback on LRGLEN or ADDR64 */
-	if (vlan_tx_tag_present(skb)) {
+	if (skb_vlan_tag_present(skb)) {
 		if (!le) {
 			le = get_tx_le(sky2, &slot);
 			le->addr = 0;
 			le->opcode = OP_VLAN|HW_OWNER;
 		} else
 			le->opcode |= OP_VLAN;
-		le->length = cpu_to_be16(vlan_tx_tag_get(skb));
+		le->length = cpu_to_be16(skb_vlan_tag_get(skb));
 		ctrl |= INS_VLAN;
 	}
 
@@ -2420,8 +2416,9 @@ static int sky2_change_mtu(struct net_device *dev, int new_mtu)
 
 	imask = sky2_read32(hw, B0_IMSK);
 	sky2_write32(hw, B0_IMSK, 0);
+	sky2_read32(hw, B0_IMSK);
 
-	dev->trans_start = jiffies;	/* prevent tx timeout */
+	netif_trans_update(dev);	/* prevent tx timeout */
 	napi_disable(&hw->napi);
 	netif_tx_disable(dev);
 
@@ -2597,7 +2594,7 @@ static struct sk_buff *sky2_receive(struct net_device *dev,
 	sky2->rx_next = (sky2->rx_next + 1) % sky2->rx_pending;
 	prefetch(sky2->rx_ring + sky2->rx_next);
 
-	if (vlan_tx_tag_present(re->skb))
+	if (skb_vlan_tag_present(re->skb))
 		count -= VLAN_HLEN;	/* Account for vlan tag */
 
 	/* This chip has hardware problems that generates bogus status.
@@ -3073,7 +3070,7 @@ static int sky2_poll(struct napi_struct *napi, int work_limit)
 			goto done;
 	}
 
-	napi_complete(napi);
+	napi_complete_done(napi, work_done);
 	sky2_read32(hw, B0_Y2_SP_LISR);
 done:
 
@@ -3488,8 +3485,8 @@ static void sky2_all_down(struct sky2_hw *hw)
 	int i;
 
 	if (hw->flags & SKY2_HW_IRQ_SETUP) {
-		sky2_read32(hw, B0_IMSK);
 		sky2_write32(hw, B0_IMSK, 0);
+		sky2_read32(hw, B0_IMSK);
 
 		synchronize_irq(hw->pdev->irq);
 		napi_disable(&hw->napi);
@@ -4383,7 +4380,7 @@ static netdev_features_t sky2_fix_features(struct net_device *dev,
 	 */
 	if (dev->mtu > ETH_DATA_LEN && hw->chip_id == CHIP_ID_YUKON_EC_U) {
 		netdev_info(dev, "checksum offload not possible with jumbo frames\n");
-		features &= ~(NETIF_F_TSO|NETIF_F_SG|NETIF_F_ALL_CSUM);
+		features &= ~(NETIF_F_TSO | NETIF_F_SG | NETIF_F_CSUM_MASK);
 	}
 
 	/* Some hardware requires receive checksum for RSS to work. */
@@ -4822,6 +4819,18 @@ static struct net_device *sky2_init_netdev(struct sky2_hw *hw, unsigned port,
 		memcpy_fromio(dev->dev_addr, hw->regs + B2_MAC_1 + port * 8,
 			      ETH_ALEN);
 
+	/* if the address is invalid, use a random value */
+	if (!is_valid_ether_addr(dev->dev_addr)) {
+		struct sockaddr sa = { AF_UNSPEC };
+
+		netdev_warn(dev,
+			    "Invalid MAC address, defaulting to random\n");
+		eth_hw_addr_random(dev);
+		memcpy(sa.sa_data, dev->dev_addr, ETH_ALEN);
+		if (sky2_set_mac_address(dev, &sa))
+			netdev_warn(dev, "Failed to set MAC address.\n");
+	}
+
 	return dev;
 }
 
@@ -4913,24 +4922,6 @@ static const char *sky2_name(u8 chipid, char *buf, int sz)
 		snprintf(buf, sz, "(chip %#x)", chipid);
 	return buf;
 }
-
-static const struct dmi_system_id msi_blacklist[] = {
-	{
-		.ident = "Dell Inspiron 1545",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Inspiron 1545"),
-		},
-	},
-	{
-		.ident = "Gateway P-79",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Gateway"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "P-79"),
-		},
-	},
-	{}
-};
 
 static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
@@ -5043,9 +5034,6 @@ static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_out_free_pci;
 	}
 
-	if (disable_msi == -1)
-		disable_msi = !!dmi_check_system(msi_blacklist);
-
 	if (!disable_msi && pci_enable_msi(pdev) == 0) {
 		err = sky2_test_msi(hw);
 		if (err) {
@@ -5091,7 +5079,7 @@ static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_WORK(&hw->restart_work, sky2_restart);
 
 	pci_set_drvdata(pdev, hw);
-	pdev->d3_delay = 300;
+	pdev->d3_delay = 200;
 
 	return 0;
 
@@ -5232,6 +5220,19 @@ static SIMPLE_DEV_PM_OPS(sky2_pm_ops, sky2_suspend, sky2_resume);
 
 static void sky2_shutdown(struct pci_dev *pdev)
 {
+	struct sky2_hw *hw = pci_get_drvdata(pdev);
+	int port;
+
+	for (port = 0; port < hw->ports; port++) {
+		struct net_device *ndev = hw->dev[port];
+
+		rtnl_lock();
+		if (netif_running(ndev)) {
+			dev_close(ndev);
+			netif_device_detach(ndev);
+		}
+		rtnl_unlock();
+	}
 	sky2_suspend(&pdev->dev);
 	pci_wake_from_d3(pdev, device_may_wakeup(&pdev->dev));
 	pci_set_power_state(pdev, PCI_D3hot);

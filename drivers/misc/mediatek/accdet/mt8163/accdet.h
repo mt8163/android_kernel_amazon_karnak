@@ -1,16 +1,3 @@
-/*
- * Copyright (C) 2015 MediaTek Inc.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- */
-
 #ifndef _ACCDEH_H_
 #define _ACCDEH_H_
 #include <linux/kernel.h>
@@ -46,11 +33,11 @@
 #include <linux/time.h>
 
 #include <linux/string.h>
-#include "reg_accdet.h"
+#include <reg_accdet.h>
 
 /*----------------------------------------------------------------------
-IOCTL
-----------------------------------------------------------------------*/
+ * IOCTL
+ *----------------------------------------------------------------------*/
 #define ACCDET_DEVNAME "accdet"
 #define ACCDET_IOC_MAGIC 'A'
 #define ACCDET_INIT _IO(ACCDET_IOC_MAGIC, 0)
@@ -73,7 +60,6 @@ extern struct platform_driver accdet_driver_func(void);	/*from accdet_drv.c*/
 extern struct headset_mode_settings *get_cust_headset_settings(void);
 extern struct headset_key_custom *get_headset_key_custom_setting(void);
 extern void accdet_create_attr_func(void);	/*from accdet_drv.c*/
-extern struct of_device_id accdet_of_match[];
 void mt_accdet_remove(void);
 void mt_accdet_suspend(void);
 void mt_accdet_resume(void);
@@ -83,27 +69,27 @@ int mt_accdet_probe(struct platform_device *dev);
 int accdet_get_cable_type(void);
 
 /****************************************************
-globle ACCDET variables
-****************************************************/
+ *global ACCDET variables
+ ****************************************************/
 
 enum accdet_report_state {
 	NO_DEVICE = 0,
 	HEADSET_MIC = 1,
-	HEADSET_NO_MIC = 2,
-	/*HEADSET_ILEGAL = 3,*/
-	/*DOUBLE_CHECK_TV = 4*/
+	HEADSET_NO_MIC = 2
 };
 
 enum accdet_status {
 	PLUG_OUT = 0,
 	MIC_BIAS = 1,
-	/*DOUBLE_CHECK = 2,*/
 	HOOK_SWITCH = 2,
-	/*MIC_BIAS_ILLEGAL =3,*/
-	/*TV_OUT = 5,*/
 	STAND_BY = 4
 };
 
+enum audio_jack_type {
+	TYPE_UNKNOWN = 0,
+	TYPE_CTIA = 1,
+	TYPE_OMTP = 2
+};
 
 enum hook_switch_result {
 	DO_NOTHING = 0,

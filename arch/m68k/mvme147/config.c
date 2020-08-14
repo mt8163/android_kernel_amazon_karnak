@@ -32,7 +32,6 @@
 #include <asm/setup.h>
 #include <asm/irq.h>
 #include <asm/traps.h>
-#include <asm/rtc.h>
 #include <asm/machdep.h>
 #include <asm/mvme147hw.h>
 
@@ -167,50 +166,4 @@ int mvme147_hwclk(int op, struct rtc_time *t)
 int mvme147_set_clock_mmss (unsigned long nowtime)
 {
 	return 0;
-}
-
-/*-------------------  Serial console stuff ------------------------*/
-
-static void scc_delay (void)
-{
-	int n;
-	volatile int trash;
-
-	for (n = 0; n < 20; n++)
-		trash = n;
-}
-
-static void scc_write (char ch)
-{
-	volatile char *p = (volatile char *)M147_SCC_A_ADDR;
-
-	do {
-		scc_delay();
-	}
-	while (!(*p & 4));
-	scc_delay();
-	*p = 8;
-	scc_delay();
-	*p = ch;
-}
-
-
-void m147_scc_write (struct console *co, const char *str, unsigned count)
-{
-	unsigned long flags;
-
-	local_irq_save(flags);
-
-	while (count--)
-	{
-		if (*str == '\n')
-			scc_write ('\r');
-		scc_write (*str++);
-	}
-	local_irq_restore(flags);
-}
-
-void mvme147_init_console_port (struct console *co, int cflag)
-{
-	co->write    = m147_scc_write;
 }

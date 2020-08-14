@@ -129,10 +129,8 @@ static int tm6000_start_stream(struct tm6000_core *dev)
 	}
 
 	dvb->bulk_urb = usb_alloc_urb(0, GFP_KERNEL);
-	if (dvb->bulk_urb == NULL) {
-		printk(KERN_ERR "tm6000: couldn't allocate urb\n");
+	if (dvb->bulk_urb == NULL)
 		return -ENOMEM;
-	}
 
 	pipe = usb_rcvbulkpipe(dev->udev, dev->bulk_in.endp->desc.bEndpointAddress
 							  & USB_ENDPOINT_NUMBER_MASK);
@@ -275,11 +273,6 @@ static int register_dvb(struct tm6000_core *dev)
 
 	ret = dvb_register_adapter(&dvb->adapter, "Trident TVMaster 6000 DVB-T",
 					THIS_MODULE, &dev->udev->dev, adapter_nr);
-	if (ret < 0) {
-		pr_err("tm6000: couldn't register the adapter!\n");
-		goto err;
-	}
-
 	dvb->adapter.priv = dev;
 
 	if (dvb->frontend) {

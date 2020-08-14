@@ -15,7 +15,6 @@
 #include <linux/romfs_fs.h>
 #include <linux/initrd.h>
 #include <linux/sched.h>
-#include <linux/suspend.h>
 #include <linux/freezer.h>
 #include <linux/kmod.h>
 
@@ -80,10 +79,6 @@ static void __init handle_initrd(void)
 
 	current->flags &= ~PF_FREEZER_SKIP;
 
-	if (!resume_attempted)
-		pr_err("TuxOnIce: No attempt was made to resume from any image that might exist.\n");
-	clear_toi_state(TOI_BOOT_TIME);
-
 	/* move initrd to rootfs' /old */
 	sys_mount("..", ".", NULL, MS_MOVE, NULL);
 	/* switch root and cwd back to / of rootfs */
@@ -121,7 +116,7 @@ static void __init handle_initrd(void)
 	}
 }
 
-int __init initrd_load(void)
+bool __init initrd_load(void)
 {
 	if (mount_initrd) {
 		create_dev("/dev/ram", Root_RAM0);
@@ -134,9 +129,9 @@ int __init initrd_load(void)
 		if (rd_load_image("/initrd.image") && ROOT_DEV != Root_RAM0) {
 			sys_unlink("/initrd.image");
 			handle_initrd();
-			return 1;
+			return true;
 		}
 	}
 	sys_unlink("/initrd.image");
-	return 0;
+	return false;
 }

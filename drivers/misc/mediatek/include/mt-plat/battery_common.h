@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #ifndef BATTERY_COMMON_H
 #define BATTERY_COMMON_H
 
@@ -66,55 +79,53 @@
 /*****************************************************************************
  *  Enum
  ****************************************************************************/
-typedef unsigned int WORD;
-
-typedef enum {
+enum PMU_STATUS {
 	PMU_STATUS_OK = 0,
 	PMU_STATUS_FAIL = 1,
-} PMU_STATUS;
+};
 
-typedef enum {
+enum USB_STATE_ENUM {
 	USB_SUSPEND = 0,
 	USB_UNCONFIGURED,
 	USB_CONFIGURED
-} usb_state_enum;
+};
 
-typedef enum {
+enum BATTERY_AVG_ENUM {
 	BATTERY_AVG_CURRENT = 0,
 	BATTERY_AVG_VOLT = 1,
 	BATTERY_AVG_TEMP = 2,
 	BATTERY_AVG_MAX
-} BATTERY_AVG_ENUM;
+};
 
-typedef enum {
+enum BATTERY_TIME_ENUM {
 	BATTERY_THREAD_TIME = 0,
 	CAR_TIME,
 	SUSPEND_TIME,
 	DURATION_NUM
-} BATTERY_TIME_ENUM;
+};
 
 /*****************************************************************************
-*   JEITA battery temperature standard
-    charging info ,like temperatue, charging current, re-charging voltage, CV threshold would be reconfigurated.
-    Temperature hysteresis default 6C.
-    Reference table:
-    degree    AC Current    USB current    CV threshold    Recharge Vol    hysteresis condition
-    > 60       no charging current,             X                    X                     <54(Down)
-    45~60     600mA         450mA             4.1V               4V                   <39(Down) >60(Up)
-    10~45     600mA         450mA             4.2V               4.1V                <10(Down) >45(Up)
-    0~10       600mA         450mA             4.1V               4V                   <0(Down)  >16(Up)
-    -10~0     200mA         200mA             4V                  3.9V                <-10(Down) >6(Up)
-    <-10      no charging current,              X                    X                    >-10(Up)
-****************************************************************************/
-typedef enum {
+ *  JEITA battery temperature standard
+ *  charging info ,like temperatue, charging current, re-charging voltage,
+ *  CV threshold would be reconfigurated.
+ *  Temperature hysteresis default 6C.
+ *  Reference table:
+ *  degree   AC Current    USB current CV threshold  Recharge  hysteresis cond.
+ *  > 60     no charging current,          X               X     <54
+ *  45~60    600mA         450mA           4.1V            4V    <39 >60
+ *  10~45    600mA         450mA           4.2V            4.1V  <10 >45
+ *  0~10     600mA         450mA           4.1V            4V    <0  >16
+ *  -10~0    200mA         200mA           4V              3.9V  <-10 >6
+ *  <-10     no charging current,          X               X     >-10
+ ****************************************************************************/
+enum temp_state_enum {
 	TEMP_BELOW_NEG_10 = 0,
 	TEMP_NEG_10_TO_POS_0,
 	TEMP_POS_0_TO_POS_10,
 	TEMP_POS_10_TO_POS_45,
 	TEMP_POS_45_TO_POS_60,
 	TEMP_ABOVE_POS_60
-} temp_state_enum;
-
+};
 
 #define TEMP_POS_60_THRESHOLD  60
 #define TEMP_POS_60_THRES_MINUS_X_DEGREE 60
@@ -134,25 +145,24 @@ typedef enum {
 /*****************************************************************************
  *  Normal battery temperature state
  ****************************************************************************/
-typedef enum {
+enum batt_temp_state_enum {
 	TEMP_POS_LOW = 0,
 	TEMP_POS_NORMAL,
 	TEMP_POS_HIGH
-} batt_temp_state_enum;
+};
 
 /*****************************************************************************
  *  structure
  ****************************************************************************/
-typedef struct {
+#define PMU_ChargerStruct struct pmu_chargerstruct
+struct pmu_chargerstruct {
 	bool bat_exist;
 	bool bat_full;
 	signed int bat_charging_state;
 	unsigned int bat_vol;
 	bool bat_in_recharging_state;
-	u32 recharge_cnt;
 	unsigned int Vsense;
 	bool charger_exist;
-	u32 charger_plugin_cnt;
 	unsigned int charger_vol;
 	signed int charger_protect_status;
 	signed int ICharging;
@@ -168,14 +178,15 @@ typedef struct {
 	unsigned int charger_type;
 	signed int SOC;
 	signed int UI_SOC;
-	signed int UI_SOC2;
+	signed int pre_UI_SOC;
 	unsigned int nPercent_ZCV;
 	unsigned int nPrecent_UI_SOC_check_point;
 	unsigned int ZCV;
 	bool aicl_done;
 	bool ap15_charger_detected;
 	int aicl_result;
-} PMU_ChargerStruct;
+	bool force_trigger_charging;
+};
 
 struct battery_custom_data {
 	/* mt_charging.h */
@@ -192,7 +203,6 @@ struct battery_custom_data {
 	int min_charge_temperature_plus_x_degree;
 	int err_charge_temperature;
 
-	/* Charging Time Protection*/
 	int max_charging_time;
 
 	/* Linear Charging Threshold */
@@ -215,11 +225,8 @@ struct battery_custom_data {
 	int apple_0_5a_charger_current;
 	int apple_1_0a_charger_current;
 	int apple_2_1a_charger_current;
+	int charge_current_termination;
 
-	/* Precise Tunning
-	   int battery_average_data_number;
-	   int battery_average_size;
-	 */
 
 	/* charger error check */
 	int bat_low_temp_protect_enable;
@@ -234,13 +241,6 @@ struct battery_custom_data {
 	int v_0percent_tracking;
 	int system_off_voltage;
 
-	/* Battery Notify
-	   int battery_notify_case_0001_vcharger;
-	   int battery_notify_case_0002_vbattemp;
-	   int battery_notify_case_0003_icharging;
-	   int battery_notify_case_0004_vbat;
-	   int battery_notify_case_0005_total_chargingtime;
-	 */
 
 	/* High battery support */
 	int high_battery_voltage_support;
@@ -293,6 +293,8 @@ struct battery_custom_data {
 	/* SW AICL for dock mode */
 	int ap15_dock_input_current_max;
 	int ap15_dock_input_current_min;
+
+	int toggle_charge_enable;
 };
 
 /*****************************************************************************
@@ -309,13 +311,6 @@ extern signed int g_custom_charging_current;
 extern signed int g_custom_charging_cv;
 extern unsigned int g_custom_charging_mode;
 
-#if defined(CONFIG_MTK_PUMP_EXPRESS_SUPPORT) || defined(CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT)
-extern bool ta_check_chr_type;
-extern bool ta_cable_out_occur;
-extern bool is_ta_connect;
-extern struct wake_lock TA_charger_suspend_lock;
-#endif
-
 /*****************************************************************************
  *  Extern Function
  ****************************************************************************/
@@ -329,10 +324,11 @@ extern unsigned int bat_is_recharging_phase(void);
 extern void do_chrdet_int_task(void);
 extern void set_usb_current_unlimited(bool enable);
 extern bool get_usb_current_unlimited(void);
-extern CHARGER_TYPE mt_get_charger_type(void);
+extern unsigned int mt_get_charger_type(void);
 
-extern unsigned int mt_battery_get_duration_time(BATTERY_TIME_ENUM duration_type);
-extern void mt_battery_update_time(struct timespec *pre_time, BATTERY_TIME_ENUM duration_type);
+extern unsigned int mt_battery_get_duration_time(int duration_type);
+extern void mt_battery_update_time(struct timespec *pre_time,
+		unsigned int duration_type);
 extern unsigned int mt_battery_shutdown_check(void);
 extern unsigned char bat_is_kpoc(void);
 
@@ -344,7 +340,7 @@ extern void wake_up_bat3(void);
 extern unsigned long BAT_Get_Battery_Voltage(int polling_mode);
 extern void mt_battery_charging_algorithm(void);
 #if defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
-extern PMU_STATUS do_jeita_state_machine(void);
+extern unsigned int do_jeita_state_machine(void);
 #endif
 
 #else
@@ -363,9 +359,6 @@ extern bool bat_is_ext_power(void);
 
 extern int g_platform_boot_mode;
 extern bool mt_usb_is_device(void);
-#ifdef CONFIG_POGO_PIN_DOCK
-extern bool mt_usb1_is_dock_with_power(void);
-#endif
 #if defined(CONFIG_USB_MTK_HDRC) || defined(CONFIG_USB_MU3D_DRV)
 extern void mt_usb_connect(void);
 extern void mt_usb_disconnect(void);

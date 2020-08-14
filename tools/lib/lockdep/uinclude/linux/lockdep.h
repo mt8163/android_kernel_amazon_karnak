@@ -6,9 +6,9 @@
 #include <string.h>
 #include <limits.h>
 #include <linux/utsname.h>
+#include <linux/compiler.h>
 
-
-#define MAX_LOCK_DEPTH 255UL
+#define MAX_LOCK_DEPTH 63UL
 
 #define asmlinkage
 #define __visible
@@ -54,5 +54,6 @@ static struct new_utsname *init_utsname(void)
 #define static_obj(x) 1
 
 #define debug_show_all_locks()
+extern void debug_check_no_locks_held(void);
 
 #endif

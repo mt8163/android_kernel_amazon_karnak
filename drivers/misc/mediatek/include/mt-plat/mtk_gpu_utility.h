@@ -1,20 +1,22 @@
 /*
-* Copyright (C) 2016 MediaTek Inc.
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-* See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-*/
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 
 #ifndef __MTK_GPU_UTILITY_H__
 #define __MTK_GPU_UTILITY_H__
 
 #include <linux/types.h>
+#include <linux/preempt.h>
+#include <linux/trace_events.h>
 
   #define MTK_GPU_DVFS_TYPE_LIST {\
 MTK_GPU_DVFS_TYPE_ITEM(NONE) \
@@ -28,11 +30,19 @@ MTK_GPU_DVFS_TYPE_ITEM(THERMAL) \
 MTK_GPU_DVFS_TYPE_ITEM(CUSTOMIZATION)}
 
 typedef enum MTK_GPU_DVFS_TYPE_TAG
+
 #define MTK_GPU_DVFS_TYPE_ITEM(type) MTK_GPU_DVFS_TYPE_##type,
 MTK_GPU_DVFS_TYPE_LIST
 #undef MTK_GPU_DVFS_TYPE_ITEM
 MTK_GPU_DVFS_TYPE;
 
+/* gpu info*/
+struct gpu_info {
+	u32 freq;
+	u32 loading;
+	u32 dvfs_type;
+	u32 thermal_limit_freq;
+};
 
 #ifdef __cplusplus
 extern "C"
@@ -47,6 +57,7 @@ bool mtk_get_gpu_page_cache(unsigned int *pPageCache);
 
 /* unit: 0~100 % */
 bool mtk_get_gpu_loading(unsigned int *pLoading);
+bool mtk_get_gpu_loading2(unsigned int *pLoading, int reset);
 bool mtk_get_gpu_block(unsigned int *pBlock);
 bool mtk_get_gpu_idle(unsigned int *pIlde);
 bool mtk_get_gpu_freq(unsigned int *pFreq);
@@ -77,6 +88,36 @@ bool mtk_get_gpu_custom_boost_freq(unsigned long *pulFreq);
 bool mtk_get_gpu_custom_upbound_freq(unsigned long *pulFreq);
 bool mtk_get_vsync_offset_event_status(unsigned int *pui32EventStatus);
 bool mtk_get_vsync_offset_debug_status(unsigned int *pui32DebugStatus);
+
+/* MET */
+bool mtk_enable_gpu_perf_monitor(bool enable);
+
+/* GPU PMU should be implemented by GPU IP-dep code */
+
+typedef struct {
+	int id;
+	const char *name;
+	unsigned int value;
+	int overflow;
+} GPU_PMU;
+
+bool mtk_get_gpu_pmu_init(GPU_PMU *pmus, int pmu_size, int *ret_size);
+bool mtk_get_gpu_pmu_swapnreset(GPU_PMU *pmus, int pmu_size);
+
+typedef void (*gpu_power_change_notify_fp)(int power_on);
+
+bool mtk_register_gpu_power_change(const char *name,
+gpu_power_change_notify_fp callback);
+bool mtk_unregister_gpu_power_change(const char *name);
+
+/* GPU POWER NOTIFY should be called by GPU only */
+void mtk_notify_gpu_power_change(int power_on);
+
+/* ftrace */
+bool mtk_gpu_systrace_c(pid_t pid, int val, const char *fmt, ...);
+
+/*  gpu  info */
+bool mtk_get_gpuinfo(struct gpu_info *info);
 
 #ifdef __cplusplus
 }

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2017 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/module.h>
@@ -31,40 +44,41 @@ MODULE_LICENSE(DRIVER_LICENSE);
 #include "musbfsh_icusb.h"
 
 struct usb_icusb {
-	  char name[128];
+	char name[128];
 };
 struct my_attr power_resume_time_neogo_attr = {
-	  .attr.name = "power_resume_time_neogo",
-	  .attr.mode = 0644,
+	.attr.name = "power_resume_time_neogo",
+	.attr.mode = 0644,
 #ifdef MTK_ICUSB_POWER_AND_RESUME_TIME_NEOGO_SUPPORT
-	  .value = 1
+	.value = 1
 #else
-	  .value = 0
+	.value = 0
 #endif
 };
 
 static struct my_attr my_attr_test = {
-	  .attr.name = "my_attr_test",
-	  .attr.mode = 0644,
-	  .value = 1
+	.attr.name = "my_attr_test",
+	.attr.mode = 0644,
+	.value = 1
 };
 
 
 static struct attribute *myattr[] = {
-	  (struct attribute *)&my_attr_test,
-	  (struct attribute *)&power_resume_time_neogo_attr,
-	  (struct attribute *)&skip_session_req_attr,
-	  (struct attribute *)&skip_enable_session_attr,
-	  (struct attribute *)&skip_mac_init_attr,
-	  (struct attribute *)&resistor_control_attr,
-	  (struct attribute *)&hw_dbg_attr,
-	  (struct attribute *)&skip_port_pm_attr,
-	  NULL
+	(struct attribute *)&my_attr_test,
+	(struct attribute *)&power_resume_time_neogo_attr,
+	(struct attribute *)&skip_session_req_attr,
+	(struct attribute *)&skip_enable_session_attr,
+	(struct attribute *)&skip_mac_init_attr,
+	(struct attribute *)&resistor_control_attr,
+	(struct attribute *)&hw_dbg_attr,
+	(struct attribute *)&skip_port_pm_attr,
+	NULL
 };
 
 
 static struct IC_USB_CMD ic_cmd;
-unsigned int g_ic_usb_status = ((USB_PORT1_DISCONNECT_DONE) << USB_PORT1_STS_SHIFT);
+unsigned int g_ic_usb_status =
+	((USB_PORT1_DISCONNECT_DONE) << USB_PORT1_STS_SHIFT);
 static struct sock *netlink_sock;
 static u_int g_pid;
 static struct proc_dir_entry *proc_drv_icusb_dir_entry;
@@ -83,19 +97,20 @@ static void icusb_resume_time_negotiation(struct usb_device *dev)
 	while (retries-- > 0) {
 		MYDBG("");
 		ret = usb_control_msg(dev, usb_rcvctrlpipe(dev, 0),
-		IC_USB_REQ_GET_INTERFACE_RESUME_TIME,
-		IC_USB_REQ_TYPE_GET_INTERFACE_RESUME_TIME,
-		IC_USB_WVALUE_RESUME_TIME_NEGOTIATION,
-		IC_USB_WINDEX_RESUME_TIME_NEGOTIATION,
-		resume_time_negotiation_data,
-		IC_USB_LEN_RESUME_TIME_NEGOTIATION, USB_CTRL_GET_TIMEOUT);
+				      IC_USB_REQ_GET_INTERFACE_RESUME_TIME,
+				      IC_USB_REQ_TYPE_GET_INTERFACE_RESUME_TIME,
+				      IC_USB_WVALUE_RESUME_TIME_NEGOTIATION,
+				      IC_USB_WINDEX_RESUME_TIME_NEGOTIATION,
+				      resume_time_negotiation_data,
+				      IC_USB_LEN_RESUME_TIME_NEGOTIATION,
+				      USB_CTRL_GET_TIMEOUT);
 		if (ret < 0) {
 			MYDBG("ret : %d\n", ret);
 			continue;
 		} else {
 			MYDBG("");
 			icusb_dump_data(resume_time_negotiation_data,
-			IC_USB_LEN_RESUME_TIME_NEGOTIATION);
+					IC_USB_LEN_RESUME_TIME_NEGOTIATION);
 			break;
 		}
 	}
@@ -114,30 +129,34 @@ void icusb_power_negotiation(struct usb_device *dev)
 		MYDBG("");
 		power_negotiation_done = 0;
 		ret = usb_control_msg(dev, usb_rcvctrlpipe(dev, 0),
-							IC_USB_REQ_GET_INTERFACE_POWER,
-							IC_USB_REQ_TYPE_GET_INTERFACE_POWER,
-							IC_USB_WVALUE_POWER_NEGOTIATION,
-							IC_USB_WINDEX_POWER_NEGOTIATION,
-							get_power_negotiation_data,
-							IC_USB_LEN_POWER_NEGOTIATION, USB_CTRL_GET_TIMEOUT);
+				      IC_USB_REQ_GET_INTERFACE_POWER,
+				      IC_USB_REQ_TYPE_GET_INTERFACE_POWER,
+				      IC_USB_WVALUE_POWER_NEGOTIATION,
+				      IC_USB_WINDEX_POWER_NEGOTIATION,
+				      get_power_negotiation_data,
+				      IC_USB_LEN_POWER_NEGOTIATION,
+				      USB_CTRL_GET_TIMEOUT);
 		if (ret < 0) {
 			MYDBG("ret : %d\n", ret);
 			continue;
 		} else {
 			MYDBG("");
 			icusb_dump_data(get_power_negotiation_data,
-			IC_USB_LEN_POWER_NEGOTIATION);
+					IC_USB_LEN_POWER_NEGOTIATION);
 
 			/* copy the prefer bit from get interface power */
 			set_power_negotiation_data[0] =
-			(get_power_negotiation_data[0] & IC_USB_PREFER_CLASSB_ENABLE_BIT);
+			    (get_power_negotiation_data[0] &
+			     IC_USB_PREFER_CLASSB_ENABLE_BIT);
 
 			/* set our current voltage */
 			phy_volt = get_usb11_phy_voltage();
 			if (phy_volt == VOL_33)
-				set_power_negotiation_data[0] |= (char)IC_USB_CLASSB;
+				set_power_negotiation_data[0] |=
+				    (char)IC_USB_CLASSB;
 			else if (phy_volt == VOL_18)
-				set_power_negotiation_data[0] |= (char)IC_USB_CLASSC;
+				set_power_negotiation_data[0] |=
+				    (char)IC_USB_CLASSC;
 			else
 				MYDBG("");
 
@@ -148,19 +167,22 @@ void icusb_power_negotiation(struct usb_device *dev)
 			} else {
 				MYDBG("");
 				set_power_negotiation_data[1] =
-				get_power_negotiation_data[1];
+				    get_power_negotiation_data[1];
 			}
-			MYDBG("power_negotiation_data[0] : 0x%x ,power_negotiation_data[1] : 0x%x, IC_USB_CURRENT :%d",
-					set_power_negotiation_data[0], set_power_negotiation_data[1], IC_USB_CURRENT);
+			MYDBG("power_negotiation_data[0] : 0x%x ,
+				power_negotiation_data[1] : 0x%x,
+				IC_USB_CURRENT :%d",
+			    set_power_negotiation_data[0],
+			    set_power_negotiation_data[1], IC_USB_CURRENT);
 
 			ret = usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
-							IC_USB_REQ_SET_INTERFACE_POWER,
-							IC_USB_REQ_TYPE_SET_INTERFACE_POWER,
-							IC_USB_WVALUE_POWER_NEGOTIATION,
-							IC_USB_WINDEX_POWER_NEGOTIATION,
-							set_power_negotiation_data,
-							IC_USB_LEN_POWER_NEGOTIATION,
-							USB_CTRL_SET_TIMEOUT);
+				      IC_USB_REQ_SET_INTERFACE_POWER,
+				      IC_USB_REQ_TYPE_SET_INTERFACE_POWER,
+				      IC_USB_WVALUE_POWER_NEGOTIATION,
+				      IC_USB_WINDEX_POWER_NEGOTIATION,
+				      set_power_negotiation_data,
+				      IC_USB_LEN_POWER_NEGOTIATION,
+				      USB_CTRL_SET_TIMEOUT);
 
 			if (ret < 0)
 				MYDBG("ret : %d\n", ret);
@@ -169,7 +191,7 @@ void icusb_power_negotiation(struct usb_device *dev)
 				power_negotiation_done = 1;
 				break;
 			}
-			/*   break;*/
+			/*   break; */
 		}
 	}
 
@@ -177,7 +199,9 @@ void icusb_power_negotiation(struct usb_device *dev)
 	if (!power_negotiation_done)
 		set_icusb_phy_power_negotiation_fail();
 	else {
-		set_icusb_data_of_interface_power_request(*((short *)get_power_negotiation_data));
+		set_icusb_data_of_interface_power_request(*
+				  ((short *)
+				   get_power_negotiation_data));
 		set_icusb_phy_power_negotiation_ok();
 	}
 }
@@ -189,22 +213,26 @@ void usb11_wait_disconnect_done(int value)
 			unsigned int ic_usb_status = g_ic_usb_status;
 
 			MYDBG("ic_usb_status : %x\n", ic_usb_status);
-			ic_usb_status &= (USB_PORT1_STS_MSK << USB_PORT1_STS_SHIFT);
+			ic_usb_status &=
+			    (USB_PORT1_STS_MSK << USB_PORT1_STS_SHIFT);
 			MYDBG("ic_usb_status : %x\n", ic_usb_status);
 
 			if (ic_usb_status ==
-				(USB_PORT1_DISCONNECT_DONE << USB_PORT1_STS_SHIFT)) {
+			    (USB_PORT1_DISCONNECT_DONE <<
+			    USB_PORT1_STS_SHIFT)) {
 				MYDBG("USB_PORT1_DISCONNECT_DONE\n");
 				break;
 			}
 
-			if (ic_usb_status == (USB_PORT1_DISCONNECTING << USB_PORT1_STS_SHIFT))
+			if (ic_usb_status ==
+			    (USB_PORT1_DISCONNECTING << USB_PORT1_STS_SHIFT))
 				MYDBG("USB_PORT1_DISCONNECTING\n");
 
-			msleep(20); /**/
+			msleep(20);
 		}
 	} else
-	MYDBG("usb11 is not enabled, skip usb11_wait_disconnect_done()\n");
+		MYDBG("usb11 is not enabled,
+		skip usb11_wait_disconnect_done()\n");
 }
 
 int check_usb11_sts_disconnect_done(void)
@@ -215,7 +243,8 @@ int check_usb11_sts_disconnect_done(void)
 	ic_usb_status &= (USB_PORT1_STS_MSK << USB_PORT1_STS_SHIFT);
 	MYDBG("ic_usb_status : %x\n", ic_usb_status);
 
-	if (ic_usb_status == (USB_PORT1_DISCONNECT_DONE << USB_PORT1_STS_SHIFT)) {
+	if (ic_usb_status ==
+		(USB_PORT1_DISCONNECT_DONE << USB_PORT1_STS_SHIFT)) {
 		MYDBG("USB_PORT1_DISCONNECT_DONE got\n");
 		return 1;
 	} else
@@ -259,10 +288,10 @@ void reset_usb11_phy_power_negotiation_status(void)
 
 void set_icusb_phy_power_negotiation_fail(void)
 {
-	  MYDBG("...................");
+	MYDBG("...................");
 
-	  g_ic_usb_status &= ~(PREFER_VOL_STS_MSK << PREFER_VOL_STS_SHIFT);
-	  g_ic_usb_status |= ((PREFER_VOL_PWR_NEG_FAIL) << PREFER_VOL_STS_SHIFT);
+	g_ic_usb_status &= ~(PREFER_VOL_STS_MSK << PREFER_VOL_STS_SHIFT);
+	g_ic_usb_status |= ((PREFER_VOL_PWR_NEG_FAIL) << PREFER_VOL_STS_SHIFT);
 
 }
 
@@ -304,13 +333,14 @@ int usb11_session_control(enum SESSION_CONTROL_ACTION action)
 	if (action == START_SESSION)
 		musbfsh_start_session();
 	else if (action == STOP_SESSION) {
-		/*musbfsh_stop_session();*/
+		/*musbfsh_stop_session(); */
 		if (!is_usb11_enabled())
 			mt65xx_usb11_mac_reset_and_phy_stress_set();
 		else
-			MYDBG("usb11 has been enabled, skip mt65xx_usb11_mac_reset_and_phy_stress_set()\n");
+			MYDBG("usb11 has been enabled, skip
+			mt65xx_usb11_mac_reset_and_phy_stress_set()\n");
 	} else
-	MYDBG("unknown action\n");
+		MYDBG("unknown action\n");
 
 
 	return 0;
@@ -328,13 +358,13 @@ static void udp_reply(int pid, int seq, void *payload)
 	skb = alloc_skb(len, GFP_ATOMIC);
 	if (!skb)
 		return;
-	/*3.10 specific*/
+	/*3.10 specific */
 	nlh = __nlmsg_put(skb, pid, seq, 0, size, 0);
 	nlh->nlmsg_flags = 0;
 	data = NLMSG_DATA(nlh);
 	memcpy(data, payload, size);
 
-	/*3.10 specific*/
+	/*3.10 specific */
 	NETLINK_CB(skb).portid = 0;	/* from kernel */
 	NETLINK_CB(skb).dst_group = 0;	/* unicast */
 	ret = netlink_unicast(netlink_sock, skb, pid, MSG_DONTWAIT);
@@ -366,7 +396,8 @@ static void udp_receive(struct sk_buff *skb)
 	uid = NETLINK_CREDS(skb)->uid;
 	seq = nlh->nlmsg_seq;
 	data = NLMSG_DATA(nlh);
-	MYDBG("recv skb from user space uid:%d pid:%d seq:%d\n", uid, g_pid, seq);
+	MYDBG("recv skb from user space uid:%d pid:%d seq:%d\n", uid, g_pid,
+	      seq);
 	MYDBG("data is :%s\n", (char *)data);
 
 
@@ -379,7 +410,8 @@ struct netlink_kernel_cfg nl_cfg = {
 };
 
 
-static ssize_t default_show(struct kobject *kobj, struct attribute *attr, char *buf)
+static ssize_t default_show(struct kobject *kobj, struct attribute *attr,
+			    char *buf)
 {
 	struct my_attr *a = container_of(attr, struct my_attr, attr);
 
@@ -391,7 +423,7 @@ static ssize_t default_store(struct kobject *kobj, struct attribute *attr,
 {
 	struct my_attr *a = container_of(attr, struct my_attr, attr);
 
-	/*sscanf(buf, "%d", &a->value);*/
+	/*sscanf(buf, "%d", &a->value); */
 	kstrtol(buf, 10, (long *)&a->value);
 	return sizeof(int);
 }
@@ -425,7 +457,8 @@ void create_icusb_sysfs_attr(void)
 	}
 }
 
-static ssize_t musbfsh_ic_tmp_proc_entry(struct file *file_ptr, const char __user *user_buffer,
+static ssize_t musbfsh_ic_tmp_proc_entry(struct file *file_ptr,
+					 const char __user *user_buffer,
 					 size_t count, loff_t *position)
 {
 	char cmd[64];
@@ -452,13 +485,13 @@ void create_ic_tmp_entry(void)
 {
 	struct proc_dir_entry *prEntry;
 
-	if (NULL == proc_drv_icusb_dir_entry) {
+	if (proc_drv_icusb_dir_entry == NULL) {
 		MYDBG("[%s]: /proc/driver/icusb not exist\n", __func__);
 		return;
 	}
 
 	prEntry = proc_create("IC_TMP_ENTRY", 0660, proc_drv_icusb_dir_entry,
-				&musbfsh_ic_tmp_proc_fops);
+			      &musbfsh_ic_tmp_proc_fops);
 	if (prEntry)
 		MYDBG("add /proc/IC_TMP_ENTRY ok\n");
 	else
@@ -466,22 +499,26 @@ void create_ic_tmp_entry(void)
 
 }
 
-static ssize_t musbfsh_ic_usb_cmd_proc_status_read(struct file *file_ptr, char __user *user_buffer,
-						   size_t count, loff_t *position)
+static ssize_t musbfsh_ic_usb_cmd_proc_status_read(struct file *file_ptr,
+						   char __user *user_buffer,
+						   size_t count,
+						   loff_t *position)
 {
 	int len;
 
 	MYDBG("");
-	if (copy_to_user(user_buffer, &g_ic_usb_status, sizeof(g_ic_usb_status)) != 0)
+	if (copy_to_user(user_buffer, &g_ic_usb_status, sizeof(g_ic_usb_status))
+	    != 0)
 		return -EFAULT;
 
-	/*      *position += count;*/
+	/*      *position += count; */
 	len = sizeof(g_ic_usb_status);
 	return len;
 }
 
 
-ssize_t musbfsh_ic_usb_cmd_proc_entry(struct file *file_ptr, const char __user *user_buffer,
+ssize_t musbfsh_ic_usb_cmd_proc_entry(struct file *file_ptr,
+				      const char __user *user_buffer,
 				      size_t count, loff_t *position)
 {
 	int ret = copy_from_user((char *)&ic_cmd, user_buffer, count);
@@ -489,7 +526,8 @@ ssize_t musbfsh_ic_usb_cmd_proc_entry(struct file *file_ptr, const char __user *
 	if (ret != 0)
 		return -EFAULT;
 
-	MYDBG("type : %x, length : %x, data[0] : %x\n", ic_cmd.type, ic_cmd.length,	ic_cmd.data[0]);
+	MYDBG("type : %x, length : %x, data[0] : %x\n", ic_cmd.type,
+	      ic_cmd.length, ic_cmd.data[0]);
 
 	switch (ic_cmd.type) {
 	case USB11_SESSION_CONTROL:
@@ -529,16 +567,18 @@ void create_ic_usb_cmd_proc_entry(void)
 	MYDBG("");
 	proc_drv_icusb_dir_entry = proc_mkdir("driver/icusb", NULL);
 
-	if (NULL == proc_drv_icusb_dir_entry) {
+	if (proc_drv_icusb_dir_entry == NULL) {
 		MYDBG("[%s]: mkdir /proc/driver/icusb failed\n", __func__);
 		return;
 	}
 
-	prEntry = proc_create("IC_USB_CMD_ENTRY", 0660, proc_drv_icusb_dir_entry,
-						&musbfsh_ic_usb_cmd_proc_fops);
+	prEntry =
+	    proc_create("IC_USB_CMD_ENTRY", 0660, proc_drv_icusb_dir_entry,
+			&musbfsh_ic_usb_cmd_proc_fops);
 	if (prEntry) {
 		MYDBG("add IC_USB_CMD_ENTRY ok\n");
-		netlink_sock = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &nl_cfg);
+		netlink_sock =
+		    netlink_kernel_create(&init_net, NETLINK_USERSOCK, &nl_cfg);
 	} else
 		MYDBG("add IC_USB_CMD_ENTRY fail\n");
 }
@@ -554,7 +594,8 @@ void set_icusb_phy_power_negotiation(struct usb_device *udev)
 }
 
 #if 0
-static int usb_icusb_probe(struct usb_interface *iface, const struct usb_device_id *id)
+static int usb_icusb_probe(struct usb_interface *iface,
+			   const struct usb_device_id *id)
 {
 	struct usb_device *dev = interface_to_usbdev(iface);
 	struct usb_host_interface *interface;
@@ -579,9 +620,9 @@ static int usb_icusb_probe(struct usb_interface *iface, const struct usb_device_
 
 	if (!strlen(icusb->name))
 		snprintf(icusb->name, sizeof(icusb->name),
-			"USB ICUSB =  %04x:%04x",
-			le16_to_cpu(dev->descriptor.idVendor),
-			le16_to_cpu(dev->descriptor.idProduct));
+			 "USB ICUSB =  %04x:%04x",
+			 le16_to_cpu(dev->descriptor.idVendor),
+			 le16_to_cpu(dev->descriptor.idProduct));
 	MYDBG("icusb_DRIVER = %s\n", icusb->name);
 
 	if (power_resume_time_neogo_attr.value) {
@@ -591,7 +632,7 @@ static int usb_icusb_probe(struct usb_interface *iface, const struct usb_device_
 		set_icusb_phy_power_negotiation_ok();
 
 
-	/*usb_set_intfdata(iface, icusb);*/
+	/*usb_set_intfdata(iface, icusb); */
 
 	return -ENODEV;
 }
@@ -606,7 +647,7 @@ static void usb_icusb_disconnect(struct usb_interface *intf)
 		set_usb11_sts_disconnecting();
 
 	mt65xx_usb11_mac_reset_and_phy_stress_set();
-	/*usb_set_intfdata(intf, NULL);*/
+	/*usb_set_intfdata(intf, NULL); */
 
 	kfree(icusb);
 	set_icusb_sts_disconnect_done();
@@ -620,8 +661,8 @@ static int usb_icusb_suspend(struct usb_interface *intf, pm_message_t message)
 
 static int usb_icusb_resume(struct usb_interface *intf)
 {
-	  MYDBG("usb_icusb_resume\n");
-	  return 0;
+	MYDBG("usb_icusb_resume\n");
+	return 0;
 }
 
 static int usb_icusb_pre_reset(struct usb_interface *intf)
@@ -646,7 +687,7 @@ static int usb_icusb_reset_resume(struct usb_interface *intf)
 
 static struct usb_device_id usb_icusb_id_table[] = {
 	{.match_flags = USB_DEVICE_ID_MATCH_INT_CLASS,
-	.bInterfaceClass = ICCD_INTERFACE_CLASS},
+	 .bInterfaceClass = ICCD_INTERFACE_CLASS},
 	{}			/* Terminating entry */
 };
 
@@ -674,9 +715,10 @@ static int __init icusb_init(void)
 	if (rc != 0)
 		goto err_register;
 	MYDBG("icusb_register done\n");
-	/*create_icusb_cmd_proc_entry();*/
-	/*3.10 specific*/
-	netlink_sock = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &nl_cfg);
+	/*create_icusb_cmd_proc_entry(); */
+	/*3.10 specific */
+	netlink_sock =
+	    netlink_kernel_create(&init_net, NETLINK_USERSOCK, &nl_cfg);
 
 err_register:
 	return rc;

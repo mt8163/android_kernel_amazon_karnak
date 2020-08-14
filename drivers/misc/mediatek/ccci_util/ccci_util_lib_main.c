@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/fs.h>
@@ -23,20 +36,15 @@
 
 #include "ccci_util_lib_main.h"
 
-/*=================================================== */
-/* Dummy function part */
-/*=================================================== */
-int ccci_parse_meta_md_setting(unsigned char args[])
-{
-	return 0;
-}
-
 static int __init ccci_util_init(void)
 {
-	ccci_util_fo_init();
+#ifndef CCCI_LOG_DISABLE
 	ccci_log_init();
+#endif
+	ccci_util_fo_init();
 	ccci_common_sysfs_init();
 	ccci_timer_for_md_init();
+	ccci_util_broadcast_init();
 
 	return 0;
 }

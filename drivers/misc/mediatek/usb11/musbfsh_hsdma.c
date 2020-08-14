@@ -1,30 +1,16 @@
 /*
- * MUSB OTG driver - support for Mentor's DMA controller
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2007 by Texas Instruments
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
+
 #include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
@@ -46,15 +32,17 @@ static void dma_channel_release(struct dma_channel *channel);
 
 static int dma_controller_stop(struct dma_controller *c)
 {
-	struct musbfsh_dma_controller *controller = container_of(c,
-	struct musbfsh_dma_controller, controller);
+	struct musbfsh_dma_controller *controller =
+		container_of(c, struct musbfsh_dma_controller,
+		controller);
 	struct musbfsh *musbfsh = controller->private_data;
 	struct dma_channel *channel;
 	u8 bit;
 
 	INFO("++\n");
 	if (controller->used_channels != 0) {
-		dev_err(musbfsh->controller, "Stopping DMA controller while channel active\n");
+		dev_err(musbfsh->controller,
+			"Stopping DMA controller while channel active\n");
 
 		for (bit = 0; bit < MUSBFSH_HSDMA_CHANNELS; bit++) {
 			if (controller->used_channels & (1 << bit)) {
@@ -71,11 +59,12 @@ static int dma_controller_stop(struct dma_controller *c)
 }
 
 static struct dma_channel *dma_channel_allocate(struct dma_controller *c,
-						struct musbfsh_hw_ep *hw_ep, u8 transmit)
+						struct musbfsh_hw_ep *hw_ep,
+						u8 transmit)
 {
-	struct musbfsh_dma_controller *controller = container_of(c,
-	struct musbfsh_dma_controller,
-	controller);
+	struct musbfsh_dma_controller *controller =
+		container_of(c, struct musbfsh_dma_controller,
+		controller);
 	struct musbfsh_dma_channel *musbfsh_channel = NULL;
 	struct dma_channel *channel = NULL;
 	u8 bit;
@@ -113,13 +102,15 @@ static void dma_channel_release(struct dma_channel *channel)
 	musbfsh_channel->start_addr = 0;
 	musbfsh_channel->len = 0;
 
-	musbfsh_channel->controller->used_channels &= ~(1 << musbfsh_channel->idx);
+	musbfsh_channel->controller->used_channels &=
+	    ~(1 << musbfsh_channel->idx);
 
 	channel->status = MUSBFSH_DMA_STATUS_UNKNOWN;
 }
 
 static void configure_channel(struct dma_channel *channel,
-			      u16 packet_sz, u8 mode, dma_addr_t dma_addr, u32 len)
+			      u16 packet_sz, u8 mode, dma_addr_t dma_addr,
+			      u32 len)
 {
 	struct musbfsh_dma_channel *musbfsh_channel = channel->private_data;
 	struct musbfsh_dma_controller *controller = musbfsh_channel->controller;
@@ -129,39 +120,44 @@ static void configure_channel(struct dma_channel *channel,
 
 	INFO("idx=%d\n", musbfsh_channel->idx);
 	INFO("%p, pkt_sz %d, addr 0x%x, len %d, mode %d\n",
-	channel, packet_sz, (unsigned int)dma_addr, len, mode);
+	     channel, packet_sz, (unsigned int)dma_addr, len, mode);
 
-	if (mode) {		/*mode 1,multi-packet*/
+	if (mode) {		/*mode 1,multi-packet */
 		csr |= 1 << MUSBFSH_HSDMA_MODE1_SHIFT;
-		BUG_ON(len < packet_sz);
+		WARN_ON(len < packet_sz);
 	}
 	csr |= MUSBFSH_HSDMA_BURSTMODE_INCR16 << MUSBFSH_HSDMA_BURSTMODE_SHIFT;
 
 	csr |= (musbfsh_channel->epnum << MUSBFSH_HSDMA_ENDPOINT_SHIFT)
-			| (1 << MUSBFSH_HSDMA_ENABLE_SHIFT)
-			| (1 << MUSBFSH_HSDMA_IRQENABLE_SHIFT)
-			| (musbfsh_channel->transmit ? (1 << MUSBFSH_HSDMA_TRANSMIT_SHIFT) : 0);
+	    | (1 << MUSBFSH_HSDMA_ENABLE_SHIFT)
+	    | (1 << MUSBFSH_HSDMA_IRQENABLE_SHIFT)
+	    | (musbfsh_channel->
+	       transmit ? (1 << MUSBFSH_HSDMA_TRANSMIT_SHIFT) : 0);
 
 	/* address/count */
 	musbfsh_write_hsdma_addr(mbase, bchannel, dma_addr);
 	musbfsh_write_hsdma_count(mbase, bchannel, len);
 
 	/* control (this should start things) */
-	musbfsh_writew(mbase, MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_CONTROL), csr);
+	musbfsh_writew(mbase,
+		       MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel,
+						    MUSBFSH_HSDMA_CONTROL),
+		       csr);
 }
 
 static int dma_channel_program(struct dma_channel *channel,
-			       u16 packet_sz, u8 mode, dma_addr_t dma_addr, u32 len)
+			       u16 packet_sz, u8 mode, dma_addr_t dma_addr,
+			       u32 len)
 {
 	struct musbfsh_dma_channel *musbfsh_channel = channel->private_data;
 
 	INFO("ep%d-%s pkt_sz %d, dma_addr 0x%x length %d, mode %d\n",
-	musbfsh_channel->epnum,
-	musbfsh_channel->transmit ? "Tx" : "Rx",
-	packet_sz, (unsigned int)dma_addr, len, mode);
+	     musbfsh_channel->epnum,
+	     musbfsh_channel->transmit ? "Tx" : "Rx",
+	     packet_sz, (unsigned int)dma_addr, len, mode);
 
-	BUG_ON(channel->status == MUSBFSH_DMA_STATUS_UNKNOWN ||
-	channel->status == MUSBFSH_DMA_STATUS_BUSY);
+	WARN_ON(channel->status == MUSBFSH_DMA_STATUS_UNKNOWN ||
+	       channel->status == MUSBFSH_DMA_STATUS_BUSY);
 
 	channel->actual_len = 0;
 	musbfsh_channel->start_addr = dma_addr;
@@ -187,28 +183,34 @@ static int dma_channel_abort(struct dma_channel *channel)
 
 	if (channel->status == MUSBFSH_DMA_STATUS_BUSY) {
 		if (musbfsh_channel->transmit) {
-			offset = MUSBFSH_EP_OFFSET(musbfsh_channel->epnum, MUSBFSH_TXCSR);
+			offset =
+			    MUSBFSH_EP_OFFSET(musbfsh_channel->epnum,
+					      MUSBFSH_TXCSR);
 
 			/*
-			* The programming guide says that we must clear
-			* the DMAENA bit before the DMAMODE bit...
-			*/
+			 * The programming guide says that we must clear
+			 * the DMAENA bit before the DMAMODE bit...
+			 */
 			csr = musbfsh_readw(mbase, offset);
 			csr &= ~(MUSBFSH_TXCSR_AUTOSET | MUSBFSH_TXCSR_DMAENAB);
 			musbfsh_writew(mbase, offset, csr);
 			csr &= ~MUSBFSH_TXCSR_DMAMODE;
 			musbfsh_writew(mbase, offset, csr);
 		} else {
-			offset = MUSBFSH_EP_OFFSET(musbfsh_channel->epnum, MUSBFSH_RXCSR);
+			offset =
+			    MUSBFSH_EP_OFFSET(musbfsh_channel->epnum,
+					      MUSBFSH_RXCSR);
 
 			csr = musbfsh_readw(mbase, offset);
 			csr &= ~(MUSBFSH_RXCSR_AUTOCLEAR |
-					MUSBFSH_RXCSR_DMAENAB | MUSBFSH_RXCSR_DMAMODE);
+				 MUSBFSH_RXCSR_DMAENAB | MUSBFSH_RXCSR_DMAMODE);
 			musbfsh_writew(mbase, offset, csr);
 		}
 
 		musbfsh_writew(mbase,
-					MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_CONTROL), 0);
+			       MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel,
+			       MUSBFSH_HSDMA_CONTROL),
+			       0);
 		musbfsh_write_hsdma_addr(mbase, bchannel, 0);
 		musbfsh_write_hsdma_count(mbase, bchannel, 0);
 		channel->status = MUSBFSH_DMA_STATUS_FREE;
@@ -235,22 +237,28 @@ irqreturn_t musbfsh_dma_controller_irq(int irq, void *private_data)
 	u16 csr;
 
 	INFO("++\n");
-	/* removed due to now this function is called inside generic_interrupt*/
+	/* removed due to now this function is called inside
+	 * generic_interrupt
+	 */
 	/* spin_lock_irqsave(&musbfsh->lock, flags); */
 
 	int_hsdma = musbfsh->int_dma;
 
-	if (!int_hsdma) {	/*should not to run here!*/
+	if (!int_hsdma) {	/*should not to run here! */
 		WARNING("spurious DMA irq\n");
 
-		for (bchannel = 0; bchannel < MUSBFSH_HSDMA_CHANNELS; bchannel++) {
+		for (bchannel = 0; bchannel < MUSBFSH_HSDMA_CHANNELS;
+		     bchannel++) {
 			musbfsh_channel = (struct musbfsh_dma_channel *)
-				&(controller->channel[bchannel]);
+			    &(controller->channel[bchannel]);
 			channel = &musbfsh_channel->channel;
 			if (channel->status == MUSBFSH_DMA_STATUS_BUSY) {
-				count = musbfsh_read_hsdma_count(mbase, bchannel);
+				count =
+				    musbfsh_read_hsdma_count(mbase, bchannel);
 
-				/*all of the data have been transferred, should notify the CPU to process. */
+				/*all of the data have been transferred,
+				 * should notify the CPU to process.
+				 */
 				if (count == 0)
 					int_hsdma |= (1 << bchannel);
 			}
@@ -265,30 +273,33 @@ irqreturn_t musbfsh_dma_controller_irq(int irq, void *private_data)
 	for (bchannel = 0; bchannel < MUSBFSH_HSDMA_CHANNELS; bchannel++) {
 		if (int_hsdma & (1 << bchannel)) {
 			musbfsh_channel = (struct musbfsh_dma_channel *)
-						&(controller->channel[bchannel]);
+			    &(controller->channel[bchannel]);
 			channel = &musbfsh_channel->channel;
 
 			csr = musbfsh_readw(mbase,
-			MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel,
-			MUSBFSH_HSDMA_CONTROL));
+					    MUSBFSH_HSDMA_CHANNEL_OFFSET
+					    (bchannel, MUSBFSH_HSDMA_CONTROL));
 
 			if (csr & (1 << MUSBFSH_HSDMA_BUSERROR_SHIFT)) {
 				musbfsh_channel->channel.status =
-				MUSBFSH_DMA_STATUS_BUS_ABORT;
+				    MUSBFSH_DMA_STATUS_BUS_ABORT;
 			} else {
 				u8 devctl;
 
-				/*the register of address will increase with the data transfer.*/
+				/*the register of address will increase with
+				 * the data transfer.
+				 */
 				addr = musbfsh_read_hsdma_addr(mbase, bchannel);
-				channel->actual_len = addr - musbfsh_channel->start_addr;
+				channel->actual_len =
+				    addr - musbfsh_channel->start_addr;
 
 				INFO("ch %p, 0x%x -> 0x%x (%zu / %d) %s\n",
-					channel, musbfsh_channel->start_addr,
-					addr, channel->actual_len,
-					musbfsh_channel->len,
-					(channel->actual_len
-					< musbfsh_channel->len) ?
-					"=> reconfig 0" : "=> complete");
+				     channel, musbfsh_channel->start_addr,
+				     addr, channel->actual_len,
+				     musbfsh_channel->len,
+				     (channel->actual_len
+				      < musbfsh_channel->len) ?
+				     "=> reconfig 0" : "=> complete");
 
 				devctl = musbfsh_readb(mbase, MUSBFSH_DEVCTL);
 
@@ -296,46 +307,51 @@ irqreturn_t musbfsh_dma_controller_irq(int irq, void *private_data)
 
 				/* completed */
 				if ((devctl & MUSBFSH_DEVCTL_HM)
-					&& (musbfsh_channel->transmit)	/*Tx*/
-					&& ((channel->desired_mode == 0)
-					|| (channel->actual_len &	/*indicate it is a short packet*/
-					(musbfsh_channel->max_packet_sz - 1)))) {
+				    && (musbfsh_channel->transmit)	/*Tx */
+				    && ((channel->desired_mode == 0)
+				       || (channel->actual_len &
+					   (musbfsh_channel->max_packet_sz -
+					    1)))) {
 					u8 epnum = musbfsh_channel->epnum;
 					int offset = MUSBFSH_EP_OFFSET(epnum,
-					MUSBFSH_TXCSR);
+						       MUSBFSH_TXCSR);
 					u16 txcsr;
 
 					/*
-					* The programming guide says that we
-					* must clear DMAENAB before DMAMODE.
-					*/
+					 * The programming guide says that we
+					 * must clear DMAENAB before DMAMODE.
+					 */
 					musbfsh_ep_select(mbase, epnum);
 					txcsr = musbfsh_readw(mbase, offset);
 					txcsr &= ~(MUSBFSH_TXCSR_DMAENAB
-							| MUSBFSH_TXCSR_AUTOSET);
+						   | MUSBFSH_TXCSR_AUTOSET);
 					musbfsh_writew(mbase, offset, txcsr);
 					/* Send out the packet */
 					txcsr &= ~MUSBFSH_TXCSR_DMAMODE;
-					/*the packet has been in the fifo,only need to set TxPktRdy*/
+					/*the packet has been in the fifo,
+					 * only need to set TxPktRdy
+					 */
 					txcsr |= MUSBFSH_TXCSR_TXPKTRDY;
 					musbfsh_writew(mbase, offset, txcsr);
 				}
-				musbfsh_dma_completion(musbfsh, musbfsh_channel->epnum,
-				musbfsh_channel->transmit);
+				musbfsh_dma_completion(musbfsh,
+						       musbfsh_channel->epnum,
+						       musbfsh_channel->
+						       transmit);
 			}
 		}
 	}
 
 	retval = IRQ_HANDLED;
 done:
-	/* spin_unlock_irqrestore(&musbfsh->lock, flags);*/
+	/* spin_unlock_irqrestore(&musbfsh->lock, flags); */
 	return retval;
 }
 
 void musbfsh_dma_controller_destroy(struct dma_controller *c)
 {
 	struct musbfsh_dma_controller *controller =
-		container_of(c,	struct musbfsh_dma_controller, controller);
+	    container_of(c, struct musbfsh_dma_controller, controller);
 
 	INFO("++\n");
 	if (!controller)
@@ -371,7 +387,7 @@ musbfsh_dma_controller_create(struct musbfsh *musbfsh, void __iomem *base)
 
 	controller->irq = 0;
 	musbfsh->musbfsh_dma_controller = controller;
-	/*enable DMA interrupt for all channels*/
+	/*enable DMA interrupt for all channels */
 
 #ifdef CONFIG_MTK_ICUSB_SUPPORT
 	if (skip_mac_init_attr.value)

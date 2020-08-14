@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <linux/types.h>
 #include <mt-plat/charging.h>
 #include <mt-plat/upmu_common.h>
@@ -12,78 +25,116 @@
 /*============================================================*/
 #define STATUS_OK    0
 #define STATUS_UNSUPPORTED    -1
-#define GETARRAYNUM(array) (sizeof(array)/sizeof(array[0]))
+#define GETARRAYNUM(array) (ARRAY_SIZE(array))
 
 /*============================================================*/
 /*global variable*/
 /*============================================================*/
 static const unsigned int VBAT_CV_VTH[] = {
-	BATTERY_VOLT_04_200000_V,   BATTERY_VOLT_04_212500_V,	BATTERY_VOLT_04_225000_V,
+	BATTERY_VOLT_04_200000_V,
+	BATTERY_VOLT_04_212500_V,
+	BATTERY_VOLT_04_225000_V,
 	BATTERY_VOLT_04_237500_V,
-	BATTERY_VOLT_04_250000_V,   BATTERY_VOLT_04_262500_V,	BATTERY_VOLT_04_275000_V,
+	BATTERY_VOLT_04_250000_V,
+	BATTERY_VOLT_04_262500_V,
+	BATTERY_VOLT_04_275000_V,
 	BATTERY_VOLT_04_300000_V,
-	BATTERY_VOLT_04_325000_V,	BATTERY_VOLT_04_350000_V,	BATTERY_VOLT_04_375000_V,
+	BATTERY_VOLT_04_325000_V,
+	BATTERY_VOLT_04_350000_V,
+	BATTERY_VOLT_04_375000_V,
 	BATTERY_VOLT_04_400000_V,
-	BATTERY_VOLT_04_425000_V,   BATTERY_VOLT_04_162500_V,	BATTERY_VOLT_04_175000_V,
+	BATTERY_VOLT_04_425000_V,
+	BATTERY_VOLT_04_162500_V,
+	BATTERY_VOLT_04_175000_V,
 	BATTERY_VOLT_02_200000_V,
-	BATTERY_VOLT_04_050000_V,   BATTERY_VOLT_04_100000_V,	BATTERY_VOLT_04_125000_V,
+	BATTERY_VOLT_04_050000_V,
+	BATTERY_VOLT_04_100000_V,
+	BATTERY_VOLT_04_125000_V,
 	BATTERY_VOLT_03_775000_V,
-	BATTERY_VOLT_03_800000_V,	BATTERY_VOLT_03_850000_V,	BATTERY_VOLT_03_900000_V,
+	BATTERY_VOLT_03_800000_V,
+	BATTERY_VOLT_03_850000_V,
+	BATTERY_VOLT_03_900000_V,
 	BATTERY_VOLT_04_000000_V,
-	BATTERY_VOLT_04_050000_V,	BATTERY_VOLT_04_100000_V,	BATTERY_VOLT_04_125000_V,
+	BATTERY_VOLT_04_050000_V,
+	BATTERY_VOLT_04_100000_V,
+	BATTERY_VOLT_04_125000_V,
 	BATTERY_VOLT_04_137500_V,
-	BATTERY_VOLT_04_150000_V,	BATTERY_VOLT_04_162500_V,	BATTERY_VOLT_04_175000_V,
+	BATTERY_VOLT_04_150000_V,
+	BATTERY_VOLT_04_162500_V,
+	BATTERY_VOLT_04_175000_V,
 	BATTERY_VOLT_04_187500_V
 
 };
 
 static const unsigned int CS_VTH[] = {
-	CHARGE_CURRENT_1600_00_MA,   CHARGE_CURRENT_1500_00_MA,	CHARGE_CURRENT_1400_00_MA,
+	CHARGE_CURRENT_1600_00_MA,
+	CHARGE_CURRENT_1500_00_MA,
+	CHARGE_CURRENT_1400_00_MA,
 	CHARGE_CURRENT_1300_00_MA,
-	CHARGE_CURRENT_1200_00_MA,   CHARGE_CURRENT_1100_00_MA,	CHARGE_CURRENT_1000_00_MA,
+	CHARGE_CURRENT_1200_00_MA,
+	CHARGE_CURRENT_1100_00_MA,
+	CHARGE_CURRENT_1000_00_MA,
 	CHARGE_CURRENT_900_00_MA,
-	CHARGE_CURRENT_800_00_MA,   CHARGE_CURRENT_700_00_MA,	CHARGE_CURRENT_650_00_MA,
+	CHARGE_CURRENT_800_00_MA,
+	CHARGE_CURRENT_700_00_MA,
+	CHARGE_CURRENT_650_00_MA,
 	CHARGE_CURRENT_550_00_MA,
-	CHARGE_CURRENT_450_00_MA,   CHARGE_CURRENT_300_00_MA,	CHARGE_CURRENT_200_00_MA,
+	CHARGE_CURRENT_450_00_MA,
+	CHARGE_CURRENT_300_00_MA,
+	CHARGE_CURRENT_200_00_MA,
 	CHARGE_CURRENT_70_00_MA
 };
 
 static const unsigned int VCDT_HV_VTH[] = {
-	BATTERY_VOLT_04_200000_V, BATTERY_VOLT_04_250000_V,	 BATTERY_VOLT_04_300000_V,
+	BATTERY_VOLT_04_200000_V,
+	BATTERY_VOLT_04_250000_V,
+	BATTERY_VOLT_04_300000_V,
 	BATTERY_VOLT_04_350000_V,
-	BATTERY_VOLT_04_400000_V, BATTERY_VOLT_04_450000_V,	 BATTERY_VOLT_04_500000_V,
+	BATTERY_VOLT_04_400000_V,
+	BATTERY_VOLT_04_450000_V,
+	BATTERY_VOLT_04_500000_V,
 	BATTERY_VOLT_04_550000_V,
-	BATTERY_VOLT_04_600000_V, BATTERY_VOLT_06_000000_V,	 BATTERY_VOLT_06_500000_V,
+	BATTERY_VOLT_04_600000_V,
+	BATTERY_VOLT_06_000000_V,
+	BATTERY_VOLT_06_500000_V,
 	BATTERY_VOLT_07_000000_V,
-	BATTERY_VOLT_07_500000_V, BATTERY_VOLT_08_500000_V,	 BATTERY_VOLT_09_500000_V,
+	BATTERY_VOLT_07_500000_V,
+	BATTERY_VOLT_08_500000_V,
+	BATTERY_VOLT_09_500000_V,
 	BATTERY_VOLT_10_500000_V
 };
 
-/*============================================================*/
-/*function prototype*/
-/*============================================================*/
+/*============================================================
+ * function prototype
+ *============================================================
+ */
+
 static unsigned int charging_error;
 static unsigned int charging_get_error_state(void);
 static unsigned int charging_set_error_state(void *data);
 static unsigned int charging_status;
-/*============================================================*/
+/* ============================================================ */
 static unsigned int charging_get_csdac_value(void)
 {
 	unsigned int tempA, tempB, tempC;
 	unsigned int sum;
 
 	pmic_config_interface(CHR_CON11, 0xC, 0xF, 0);
-	pmic_read_interface(CHR_CON10, &tempC, 0xF, 0x0);	/*bit 1 and 2 mapping bit 8 and bit9*/
+	/*bit 1 and 2 mapping bit 8 and bit9*/
+	pmic_read_interface(CHR_CON10, &tempC, 0xF, 0x0);
 
 	pmic_config_interface(CHR_CON11, 0xA, 0xF, 0);
-	pmic_read_interface(CHR_CON10, &tempA, 0xF, 0x0);	/*bit 0 ~ 3 mapping bit 4 ~7*/
+	/*bit 0 ~ 3 mapping bit 4 ~7*/
+	pmic_read_interface(CHR_CON10, &tempA, 0xF, 0x0);
 
 	pmic_config_interface(CHR_CON11, 0xB, 0xF, 0);
-	pmic_read_interface(CHR_CON10, &tempB, 0xF, 0x0);	/*bit 0~3 mapping bit 0~3*/
+	/*bit 0~3 mapping bit 0~3*/
+	pmic_read_interface(CHR_CON10, &tempB, 0xF, 0x0);
 
 	sum =  (((tempC & 0x6) >> 1)<<8) | (tempA << 4) | tempB;
 
-	pr_debug("tempC=%d,tempA=%d,tempB=%d, csdac=%d\n", tempC, tempA, tempB, sum);
+	pr_debug("tempC=%d,tempA=%d,tempB=%d, csdac=%d\n",
+		tempC, tempA, tempB, sum);
 
 	return sum;
 }
@@ -117,7 +168,8 @@ const unsigned int val)
 	return 0;
 }
 
-static unsigned int bmt_find_closest_level(const unsigned int *pList, unsigned int number, unsigned int level)
+static unsigned int bmt_find_closest_level(const unsigned int *pList,
+	unsigned int number, unsigned int level)
 {
 	unsigned int i;
 	unsigned int max_value_in_last_element;
@@ -136,18 +188,16 @@ static unsigned int bmt_find_closest_level(const unsigned int *pList, unsigned i
 
 		pr_debug("Can't find closest level, small value first\r\n");
 		return pList[0];
-		/*return CHARGE_CURRENT_0_00_MA;*/
-	} else {
-		/*max value in the first element*/
-		for (i = 0; i < number; i++) {
-			if (pList[i] <= level)
-				return pList[i];
-		}
-
-		pr_debug("Can't find closest level, large value first\r\n");
-		return pList[number - 1];
-		/*return CHARGE_CURRENT_0_00_MA;*/
 	}
+
+	/*max value in the first element*/
+	for (i = 0; i < number; i++) {
+		if (pList[i] <= level)
+			return pList[i];
+	}
+
+	pr_debug("Can't find closest level, large value first\r\n");
+	return pList[number - 1];
 }
 
 static unsigned int charging_hw_init(void *data)
@@ -256,7 +306,8 @@ static unsigned int charging_set_cv_voltage(void *data)
 	unsigned int status = STATUS_OK;
 	unsigned short register_value;
 
-	register_value = charging_parameter_to_value(VBAT_CV_VTH, GETARRAYNUM(VBAT_CV_VTH),
+	register_value = charging_parameter_to_value(
+		VBAT_CV_VTH, GETARRAYNUM(VBAT_CV_VTH),
 	*(unsigned int *)(data));
 	upmu_set_rg_vbat_cv_vth(register_value);
 	return status;
@@ -270,7 +321,8 @@ static unsigned int charging_get_current(void *data)
 
 	array_size = GETARRAYNUM(CS_VTH);
 	reg_value = upmu_get_reg_value(0x8);	/*RG_CS_VTH*/
-	*(unsigned int *)data = charging_value_to_parameter(CS_VTH, array_size, reg_value);
+	*(unsigned int *)data = charging_value_to_parameter(
+		CS_VTH, array_size, reg_value);
 	return status;
 }
 
@@ -282,8 +334,10 @@ static unsigned int charging_set_current(void *data)
 	unsigned int register_value;
 
 	array_size = GETARRAYNUM(CS_VTH);
-	set_chr_current = bmt_find_closest_level(CS_VTH, array_size, *(unsigned int *)data);
-	register_value = charging_parameter_to_value(CS_VTH, array_size, set_chr_current);
+	set_chr_current = bmt_find_closest_level(
+		CS_VTH, array_size, *(unsigned int *)data);
+	register_value = charging_parameter_to_value(
+		CS_VTH, array_size, set_chr_current);
 	upmu_set_rg_cs_vth(register_value);
 	return status;
 }
@@ -324,8 +378,10 @@ static unsigned int charging_set_hv_threshold(void *data)
 	unsigned int voltage = *(unsigned int *)(data);
 
 	array_size = GETARRAYNUM(VCDT_HV_VTH);
-	set_hv_voltage = bmt_find_closest_level(VCDT_HV_VTH, array_size, voltage);
-	register_value = charging_parameter_to_value(VCDT_HV_VTH, array_size, set_hv_voltage);
+	set_hv_voltage = bmt_find_closest_level(
+		VCDT_HV_VTH, array_size, voltage);
+	register_value = charging_parameter_to_value(
+		VCDT_HV_VTH, array_size, set_hv_voltage);
 	upmu_set_rg_vcdt_hv_vth(register_value);
 
 	return status;
@@ -369,10 +425,12 @@ static unsigned int charging_get_charger_det_status(void *data)
 	vchr_val = (((330+39)*100*vchr_val)/39)/100;
 
 	if (vchr_val > 4300) {
-		pr_debug("[CHRDET_SW_WORKAROUND_EN] upmu_is_chr_det=Y (%d)\n", vchr_val);
+		pr_debug("[CHRDET_SW_WORKAROUND_EN] upmu_is_chr_det=Y (%d)\n",
+			vchr_val);
 		*(unsigned int *)data = true;
 	} else {
-		pr_debug("[CHRDET_SW_WORKAROUND_EN] upmu_is_chr_det=N (%d)\n", vchr_val);
+		pr_debug("[CHRDET_SW_WORKAROUND_EN] upmu_is_chr_det=N (%d)\n",
+			vchr_val);
 		*(unsigned int *)data = false;
 	}
 #else
@@ -442,7 +500,8 @@ static unsigned int charging_get_csdac_full_flag(void *data)
 
 	csdac_value = charging_get_csdac_value();
 
-	if (csdac_value > 800)	/*10 bit,  treat as full if csdac more than 800*/
+	/*10 bit,  treat as full if csdac more than 800*/
+	if (csdac_value > 800)
 		*(bool *)data = true;
 	else
 		*(bool *)data = false;
@@ -460,8 +519,10 @@ static unsigned int charging_set_ta_current_pattern(void *data)
 	unsigned int increase = *(unsigned int *)(data);
 
 	array_size = GETARRAYNUM(CS_VTH);
-	set_ta_on_current_reg_value = charging_parameter_to_value(CS_VTH, array_size, ta_on_current);
-	set_ta_off_current_reg_value = charging_parameter_to_value(CS_VTH, array_size, ta_off_current);
+	set_ta_on_current_reg_value = charging_parameter_to_value(
+		CS_VTH, array_size, ta_on_current);
+	set_ta_off_current_reg_value = charging_parameter_to_value(
+		CS_VTH, array_size, ta_off_current);
 
 	if (increase == true) {
 		pr_debug("mtk_ta_increase() start\n");
@@ -589,7 +650,7 @@ static unsigned int charging_set_error_state(void *data)
 
 static unsigned int(*charging_func[CHARGING_CMD_NUMBER]) (void *data);
 
- /*
+/*
  *FUNCTION
  *	Internal_chr_control_handler
  *
@@ -612,26 +673,44 @@ signed int chr_control_interface_internal(CHARGING_CTRL_CMD cmd, void *data)
 
 	if (init == -1) {
 		init = 0;
-		charging_func[CHARGING_CMD_INIT] = charging_hw_init;
-		charging_func[CHARGING_CMD_DUMP_REGISTER] = charging_dump_register;
-		charging_func[CHARGING_CMD_ENABLE] = charging_enable;
-		charging_func[CHARGING_CMD_SET_CV_VOLTAGE] = charging_set_cv_voltage;
-		charging_func[CHARGING_CMD_GET_CURRENT] = charging_get_current;
-		charging_func[CHARGING_CMD_SET_CURRENT] = charging_set_current;
-		charging_func[CHARGING_CMD_GET_CHARGING_STATUS] =
-			charging_get_charging_status;
-		charging_func[CHARGING_CMD_RESET_WATCH_DOG_TIMER] = charging_reset_watch_dog_timer;
-		charging_func[CHARGING_CMD_SET_HV_THRESHOLD] = charging_set_hv_threshold;
-		charging_func[CHARGING_CMD_GET_HV_STATUS] = charging_get_hv_status;
-		charging_func[CHARGING_CMD_GET_BATTERY_STATUS] = charging_get_battery_status;
-		charging_func[CHARGING_CMD_GET_CHARGER_DET_STATUS] = charging_get_charger_det_status;
-		charging_func[CHARGING_CMD_GET_CHARGER_TYPE] = charging_get_charger_type;
-		charging_func[CHARGING_CMD_SET_PLATFORM_RESET] = charging_set_platform_reset;
-		charging_func[CHARGING_CMD_GET_PLATFORM_BOOT_MODE] = charging_get_platform_boot_mode;
-		charging_func[CHARGING_CMD_SET_POWER_OFF] = charging_set_power_off;
-		charging_func[CHARGING_CMD_GET_CSDAC_FALL_FLAG] = charging_get_csdac_full_flag;
-		charging_func[CHARGING_CMD_SET_TA_CURRENT_PATTERN] = charging_set_ta_current_pattern;
-		charging_func[CHARGING_CMD_SET_ERROR_STATE] = charging_set_error_state;
+		charging_func[CHARGING_CMD_INIT]
+			= charging_hw_init;
+		charging_func[CHARGING_CMD_DUMP_REGISTER]
+			= charging_dump_register;
+		charging_func[CHARGING_CMD_ENABLE]
+			= charging_enable;
+		charging_func[CHARGING_CMD_SET_CV_VOLTAGE]
+			= charging_set_cv_voltage;
+		charging_func[CHARGING_CMD_GET_CURRENT]
+			= charging_get_current;
+		charging_func[CHARGING_CMD_SET_CURRENT]
+			= charging_set_current;
+		charging_func[CHARGING_CMD_GET_CHARGING_STATUS]
+			= charging_get_charging_status;
+		charging_func[CHARGING_CMD_RESET_WATCH_DOG_TIMER]
+			= charging_reset_watch_dog_timer;
+		charging_func[CHARGING_CMD_SET_HV_THRESHOLD]
+			= charging_set_hv_threshold;
+		charging_func[CHARGING_CMD_GET_HV_STATUS]
+			= charging_get_hv_status;
+		charging_func[CHARGING_CMD_GET_BATTERY_STATUS]
+			= charging_get_battery_status;
+		charging_func[CHARGING_CMD_GET_CHARGER_DET_STATUS]
+			= charging_get_charger_det_status;
+		charging_func[CHARGING_CMD_GET_CHARGER_TYPE]
+			= charging_get_charger_type;
+		charging_func[CHARGING_CMD_SET_PLATFORM_RESET]
+			= charging_set_platform_reset;
+		charging_func[CHARGING_CMD_GET_PLATFORM_BOOT_MODE]
+			= charging_get_platform_boot_mode;
+		charging_func[CHARGING_CMD_SET_POWER_OFF]
+			= charging_set_power_off;
+		charging_func[CHARGING_CMD_GET_CSDAC_FALL_FLAG]
+			= charging_get_csdac_full_flag;
+		charging_func[CHARGING_CMD_SET_TA_CURRENT_PATTERN]
+			= charging_set_ta_current_pattern;
+		charging_func[CHARGING_CMD_SET_ERROR_STATE]
+			= charging_set_error_state;
 	}
 
 	if (cmd < CHARGING_CMD_NUMBER) {

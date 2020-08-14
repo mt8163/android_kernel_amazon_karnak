@@ -2,11 +2,13 @@
 #define __USBAUDIO_CARD_H
 
 #define MAX_NR_RATES	1024
-#define MAX_PACKS	6		/* per URB */
+#define MAX_PACKS	10		/* per URB */
 #define MAX_PACKS_HS	(MAX_PACKS * 8)	/* in high speed mode */
-#define MAX_URBS	12
+#define MAX_URBS	8
 #define SYNC_URBS	4	/* always four urbs for sync */
-#define MAX_QUEUE	18	/* try not to exceed this queue length, in ms */
+#define MAX_QUEUE	32	/* try not to exceed this queue length, in ms */
+#define MAX_QUEUE_HS	30	/* try not to exceed this queue length, in ms */
+#define LOW_LATENCY_MAX_QUEUE   3 /* for low latency case queue length */
 
 struct audioformat {
 	struct list_head list;
@@ -78,7 +80,10 @@ struct snd_usb_endpoint {
 	unsigned long unlink_mask;	/* bitmask of unlinked urbs */
 	char *syncbuf;			/* sync buffer for all sync URBs */
 	dma_addr_t sync_dma;		/* DMA address of syncbuf */
-
+	int syncbuf_sram;		/* sync buffer on sram */
+	char *databuf;			/* data buffer for all sync URBs */
+	dma_addr_t data_dma;		/* DMA address of data */
+	int databuf_sram;		/* data buffer on sram */
 	unsigned int pipe;		/* the data i/o pipe */
 	unsigned int freqn;		/* nominal sampling rate in fs/fps in Q16.16 format */
 	unsigned int freqm;		/* momentary sampling rate in fs/fps in Q16.16 format */
@@ -92,7 +97,7 @@ struct snd_usb_endpoint {
 	unsigned int curframesize;      /* current packet size in frames (for capture) */
 	unsigned int syncmaxsize;	/* sync endpoint packet size */
 	unsigned int fill_max:1;	/* fill max packet size always */
-	unsigned int udh01_fb_quirk:1;	/* corrupted feedback data */
+	unsigned int tenor_fb_quirk:1;	/* corrupted feedback data */
 	unsigned int datainterval;      /* log_2 of data packet interval */
 	unsigned int syncinterval;	/* P for adaptive mode, 0 otherwise */
 	unsigned char silence_value;
@@ -122,6 +127,7 @@ struct snd_usb_substream {
 	unsigned int buffer_periods;	/* current periods per buffer */
 	unsigned int altset_idx;     /* USB data format: index of alternate setting */
 	unsigned int txfr_quirk:1;	/* allow sub-frame alignment */
+	unsigned int tx_length_quirk:1;	/* add length specifier to transfers */
 	unsigned int fmt_type;		/* USB audio format type (1-3) */
 	unsigned int pkt_offset_adj;	/* Bytes to drop from beginning of packets (for non-compliant devices) */
 
@@ -153,6 +159,8 @@ struct snd_usb_substream {
 		int channel;
 		int byte_idx;
 	} dsd_dop;
+
+	bool trigger_tstamp_pending_update; /* trigger timestamp being updated from initial estimate */
 };
 
 struct snd_usb_stream {

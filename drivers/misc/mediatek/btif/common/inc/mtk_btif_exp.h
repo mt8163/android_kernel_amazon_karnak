@@ -1,23 +1,36 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _MTK_BTIF_EXP_H_
 #define _MTK_BTIF_EXP_H_
 
 /*--------------marco defination---------------*/
 #define BTIF_MAX_LEN_PER_PKT 2048
-
+#define BTIF_RXD_BE_BLOCKED_DETECT 1
 /*--------------Enum Defination---------------*/
-typedef enum _ENUM_BTIF_DPIDLE_ {
+enum _ENUM_BTIF_DPIDLE_ {
 	BTIF_DPIDLE_DISABLE = 0,
 	BTIF_DPIDLE_ENABLE = BTIF_DPIDLE_DISABLE + 1,
 	BTIF_DPIDLE_MAX,
-} ENUM_BTIF_DPIDLE_CTRL;
+};
 
-typedef enum _ENUM_BTIF_LPBK_MODE_ {
+enum _ENUM_BTIF_LPBK_MODE_ {
 	BTIF_LPBK_DISABLE = 0,
 	BTIF_LPBK_ENABLE = BTIF_LPBK_DISABLE + 1,
 	BTIF_LPBK_MAX,
-} ENUM_BTIF_LPBK_MODE;
+};
 
-typedef enum _ENUM_BTIF_DBG_ID_ {
+enum _ENUM_BTIF_DBG_ID_ {
 	BTIF_DISABLE_LOGGER = 0,
 	BTIF_ENABLE_LOGGER = BTIF_DISABLE_LOGGER + 1,
 	BTIF_DUMP_LOG = BTIF_ENABLE_LOGGER + 1,
@@ -25,10 +38,11 @@ typedef enum _ENUM_BTIF_DBG_ID_ {
 	BTIF_DUMP_BTIF_REG = BTIF_CLR_LOG + 1,
 	BTIF_ENABLE_RT_LOG = BTIF_DUMP_BTIF_REG + 1,
 	BTIF_DISABLE_RT_LOG = BTIF_ENABLE_RT_LOG + 1,
+	BTIF_DUMP_BTIF_IRQ = BTIF_DISABLE_RT_LOG + 1,
 	BTIF_DBG_MAX,
-} ENUM_BTIF_DBG_ID;
+};
 
-typedef enum _ENUM_BTIF_OP_ERROR_CODE_ {
+enum _ENUM_BTIF_OP_ERROR_CODE_ {
 	E_BTIF_AGAIN = 0,
 	E_BTIF_FAIL = -1,
 	E_BTIF_BAD_POINTER = -2,
@@ -38,7 +52,7 @@ typedef enum _ENUM_BTIF_OP_ERROR_CODE_ {
 	E_BTIF_ALREADY_OPEN = -6,
 	E_BTIF_NOT_OPEN = -7,
 	E_BTIF_INVAL_STATE = -8,
-} ENUM_BTIF_OP_ERROR_CODE;
+};
 
 /*--------------End of Enum Defination---------------*/
 
@@ -73,7 +87,7 @@ typedef int (*MTK_WCN_BTIF_RX_CB) (const unsigned char *p_buf,
 *      including read/write/dpidle_ctrl/rx_cb_retister
 *      this user id is only an identifier used for owner identification
 *****************************************************************************/
-const int mtk_wcn_btif_open(char *p_owner, unsigned long *p_id);
+int mtk_wcn_btif_open(char *p_owner, unsigned long *p_id);
 
 /*****************************************************************************
 * FUNCTION
@@ -151,11 +165,12 @@ int mtk_wcn_btif_read(unsigned long u_id,
 *  control if BTIF module allow system enter deepidle state or not
 * PARAMETERS
 *  p_btif      [IN] pointer returned by mtk_wcn_btif_open
-*  en_flag    [IN] one of ENUM_BTIF_DPIDLE_CTRL
+*  en_flag    [IN] one of enum _ENUM_BTIF_DPIDLE_
 * RETURNS
 *  int          always return 0
 *****************************************************************************/
-int mtk_wcn_btif_dpidle_ctrl(unsigned long u_id, ENUM_BTIF_DPIDLE_CTRL en_flag);
+int mtk_wcn_btif_dpidle_ctrl(unsigned long u_id,
+			     enum _ENUM_BTIF_DPIDLE_ en_flag);
 
 /*****************************************************************************
 * FUNCTION
@@ -202,12 +217,13 @@ int mtk_wcn_btif_wakeup_consys(unsigned long u_id);
 * PARAMETERS
 *  p_btif      [IN] pointer returned by mtk_wcn_btif_open
 *  enable     [IN] loopback mode control flag, enable or disable,
-*  shou be one of ENUM_BTIF_LPBK_MODE
+*  shou be one of enum _ENUM_BTIF_LPBK_MODE_
 * RETURNS
 *  int          0 = succeed;
 *  others = fail, for detailed information, please see ENUM_BTIF_OP_ERROR_CODE
 *****************************************************************************/
-int mtk_wcn_btif_loopback_ctrl(unsigned long u_id, ENUM_BTIF_LPBK_MODE enable);
+int mtk_wcn_btif_loopback_ctrl(unsigned long u_id,
+			       enum _ENUM_BTIF_LPBK_MODE_ enable);
 
 /*****************************************************************************
 * FUNCTION
@@ -216,7 +232,7 @@ int mtk_wcn_btif_loopback_ctrl(unsigned long u_id, ENUM_BTIF_LPBK_MODE enable);
 *  control BTIF logger function's behavior
 * PARAMETERS
 *  p_btif      [IN] pointer returned by mtk_wcn_btif_open
-*  flag         [IN] should be one of ENUM_BTIF_DBG_ID
+*  flag         [IN] should be one of enum _ENUM_BTIF_DBG_ID_
 *                      BTIF_DISABLE_LOGGER  - disable btif logger
 *                      BTIF_ENABLE_LOGGER   - enable btif logger
 *                      BTIF_DUMP_LOG           - dump log logged by btif
@@ -228,7 +244,7 @@ int mtk_wcn_btif_loopback_ctrl(unsigned long u_id, ENUM_BTIF_LPBK_MODE enable);
 *        others = fail, for detailed information,
 *        please see ENUM_BTIF_OP_ERROR_CODE
 *****************************************************************************/
-int mtk_wcn_btif_dbg_ctrl(unsigned long u_id, ENUM_BTIF_DBG_ID flag);
+int mtk_wcn_btif_dbg_ctrl(unsigned long u_id, enum _ENUM_BTIF_DBG_ID_ flag);
 /*-----------End of Debug Purpose API declearation------------*/
 
 /*****************************************************************************
@@ -247,6 +263,46 @@ int mtk_wcn_btif_dbg_ctrl(unsigned long u_id, ENUM_BTIF_DBG_ID flag);
 bool mtk_wcn_btif_parser_wmt_evt(unsigned long u_id,
 	const char *sub_str, unsigned int str_len);
 
+/*****************************************************************************
+ * FUNCTION
+ *  mtk_btif_exp_rx_has_pending_data
+ * DESCRIPTION
+ *  Check if rx buffer and rx vff have pending data
+ * PARAMETERS
+ *  u_id      [IN] btif index
+ * RETURNS
+ *  positive means has pending data
+ *  zeor means no pending data
+ *  negative means fail
+ *****************************************************************************/
+int mtk_btif_exp_rx_has_pending_data(unsigned long u_id);
+
+/*****************************************************************************
+ * FUNCTION
+ *  mtk_btif_exp_tx_has_pending_data
+ * DESCRIPTION
+ *  Check if tx vff has pending data
+ * PARAMETERS
+ *  u_id      [IN] btif index
+ * RETURNS
+ *  positive means has pending data
+ *  zeor means no pending data
+ *  negative means fail
+ *****************************************************************************/
+int mtk_btif_exp_tx_has_pending_data(unsigned long u_id);
+
+/*****************************************************************************
+ * FUNCTION
+ *  mtk_btif_exp_rx_thread_get
+ * DESCRIPTION
+ *  get btif_rxd thread
+ * PARAMETERS
+ *  u_id      [IN] btif index
+ * RETURNS
+ *  btif_rxd thread task pointer, NULL means fail
+ *****************************************************************************/
+struct task_struct *mtk_btif_exp_rx_thread_get(unsigned long u_id);
+
 int mtk_btif_exp_open_test(void);
 int mtk_btif_exp_close_test(void);
 int mtk_btif_exp_write_test(void);
@@ -259,5 +315,8 @@ int mtk_btif_exp_log_debug_test(int flag);
 int mtk_btif_exp_restore_noirq_test(void);
 int btif_wakeup_consys_no_id(void);
 int mtk_btif_exp_clock_ctrl(int en);
-
+#if BTIF_RXD_BE_BLOCKED_DETECT
+int mtk_btif_rxd_be_blocked_flag_get(void);
+#endif
+void mtk_btif_read_cpu_sw_rst_debug_exp(void);
 #endif /*_MTK_BTIF_EXP_H_*/

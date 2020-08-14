@@ -17,11 +17,10 @@
 #include <linux/cpuidle.h>
 #include <linux/io.h>
 #include <linux/export.h>
-#include <asm/proc-fns.h>
 #include <asm/cpuidle.h>
 
-#include <mach/cpuidle.h>
-#include <mach/ddr2.h>
+#include "cpuidle.h"
+#include "ddr2.h"
 
 #define DAVINCI_CPUIDLE_MAX_STATES	2
 
@@ -91,7 +90,6 @@ static int __init davinci_cpuidle_probe(struct platform_device *pdev)
 static struct platform_driver davinci_cpuidle_driver = {
 	.driver = {
 		.name	= "cpuidle-davinci",
-		.owner	= THIS_MODULE,
 	},
 };
 

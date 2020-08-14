@@ -38,8 +38,8 @@ struct nf_conntrack_l3proto {
 			     const struct nf_conntrack_tuple *orig);
 
 	/* Print out the per-protocol part of the tuple. */
-	int (*print_tuple)(struct seq_file *s,
-			   const struct nf_conntrack_tuple *);
+	void (*print_tuple)(struct seq_file *s,
+			    const struct nf_conntrack_tuple *);
 
 	/*
 	 * Called before tracking. 
@@ -62,10 +62,6 @@ struct nf_conntrack_l3proto {
 	const struct nla_policy *nla_policy;
 
 	size_t nla_size;
-
-#ifdef CONFIG_SYSCTL
-	const char		*ctl_table_path;
-#endif /* CONFIG_SYSCTL */
 
 	/* Init l3proto pernet data */
 	int (*init_net)(struct net *net);

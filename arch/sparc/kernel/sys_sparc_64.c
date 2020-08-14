@@ -264,7 +264,7 @@ static unsigned long mmap_rnd(void)
 	unsigned long rnd = 0UL;
 
 	if (current->flags & PF_RANDOMIZE) {
-		unsigned long val = get_random_int();
+		unsigned long val = get_random_long();
 		if (test_thread_flag(TIF_32BIT))
 			rnd = (val % (1UL << (23UL-PAGE_SHIFT)));
 		else
@@ -337,10 +337,10 @@ SYSCALL_DEFINE6(sparc_ipc, unsigned int, call, int, first, unsigned long, second
 		switch (call) {
 		case SEMOP:
 			err = sys_semtimedop(first, ptr,
-					     (unsigned)second, NULL);
+					     (unsigned int)second, NULL);
 			goto out;
 		case SEMTIMEDOP:
-			err = sys_semtimedop(first, ptr, (unsigned)second,
+			err = sys_semtimedop(first, ptr, (unsigned int)second,
 				(const struct timespec __user *)
 					     (unsigned long) fifth);
 			goto out;
@@ -524,27 +524,23 @@ extern void check_pending(int signum);
 
 SYSCALL_DEFINE2(getdomainname, char __user *, name, int, len)
 {
-	int nlen, err;
-	char tmp[__NEW_UTS_LEN + 1];
+        int nlen, err;
 
 	if (len < 0)
 		return -EINVAL;
 
-	down_read(&uts_sem);
-
+ 	down_read(&uts_sem);
+ 	
 	nlen = strlen(utsname()->domainname) + 1;
 	err = -EINVAL;
 	if (nlen > len)
-		goto out_unlock;
-	memcpy(tmp, utsname()->domainname, nlen);
+		goto out;
 
-	up_read(&uts_sem);
+	err = -EFAULT;
+	if (!copy_to_user(name, utsname()->domainname, nlen))
+		err = 0;
 
-	if (copy_to_user(name, tmp, nlen))
-		return -EFAULT;
-	return 0;
-
-out_unlock:
+out:
 	up_read(&uts_sem);
 	return err;
 }

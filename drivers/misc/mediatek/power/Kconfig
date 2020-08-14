@@ -1,6 +1,22 @@
 # Power Related
 config MTK_PMIC
 	bool "MediaTek PMIC driver"
-	default y
 	---help---
 	  MediaTek PMIC driver
+
+config MTK_PMIC_KPOC_ONETOUCH
+	bool "CONFIG_MTK_PMIC_KPOC_ONETOUCH"
+	default n
+	---help---
+	  One click mute button to leave kpoc mod
+
+choice
+	prompt "Choose KPOC Long Press time"
+	depends on MTK_PMIC && MTK_KERNEL_POWER_OFF_CHARGING
+	config MTK_PMIC_KPOC_LONGPRESS_TIME_500MS
+		bool "500"
+	config MTK_PMIC_KPOC_LONGPRESS_TIME_0MS
+		bool "0"
+	config MTK_PMIC_KPOC_LONGPRESS_TIME_10S
+		bool "10 sec"
+endchoice

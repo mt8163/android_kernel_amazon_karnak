@@ -1030,7 +1030,7 @@ static int atalk_create(struct net *net, struct socket *sock, int protocol,
 	if (sock->type != SOCK_RAW && sock->type != SOCK_DGRAM)
 		goto out;
 	rc = -ENOMEM;
-	sk = sk_alloc(net, PF_APPLETALK, GFP_KERNEL, &ddp_proto);
+	sk = sk_alloc(net, PF_APPLETALK, GFP_KERNEL, &ddp_proto, kern);
 	if (!sk)
 		goto out;
 	rc = 0;
@@ -1278,7 +1278,7 @@ out:
 	return err;
 }
 
-#if defined(CONFIG_IPDDP) || defined(CONFIG_IPDDP_MODULE)
+#if IS_ENABLED(CONFIG_IPDDP)
 static __inline__ int is_ip_over_ddp(struct sk_buff *skb)
 {
 	return skb->data[12] == 22;
@@ -1559,8 +1559,7 @@ freeit:
 	return 0;
 }
 
-static int atalk_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
-			 size_t len)
+static int atalk_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 {
 	struct sock *sk = sock->sk;
 	struct atalk_sock *at = at_sk(sk);
@@ -1626,7 +1625,7 @@ static int atalk_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr 
 
 		rt = atrtr_find(&at_hint);
 	}
-	err = ENETUNREACH;
+	err = -ENETUNREACH;
 	if (!rt)
 		goto out;
 
@@ -1659,7 +1658,7 @@ static int atalk_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr 
 
 	SOCK_DEBUG(sk, "SK %p: Copy user data (%Zd bytes).\n", sk, len);
 
-	err = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
+	err = memcpy_from_msg(skb_put(skb, len), msg, len);
 	if (err) {
 		kfree_skb(skb);
 		err = -EFAULT;
@@ -1728,8 +1727,8 @@ out:
 	return err ? : len;
 }
 
-static int atalk_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
-			 size_t size, int flags)
+static int atalk_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
+			 int flags)
 {
 	struct sock *sk = sock->sk;
 	struct ddpehdr *ddp;
@@ -1758,7 +1757,7 @@ static int atalk_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr 
 		copied = size;
 		msg->msg_flags |= MSG_TRUNC;
 	}
-	err = skb_copy_datagram_iovec(skb, offset, msg->msg_iov, copied);
+	err = skb_copy_datagram_msg(skb, offset, msg, copied);
 
 	if (!err && msg->msg_name) {
 		DECLARE_SOCKADDR(struct sockaddr_at *, sat, msg->msg_name);
@@ -1913,16 +1912,12 @@ static const char atalk_err_snap[] __initconst =
 /* Called by proto.c on kernel start up */
 static int __init atalk_init(void)
 {
-	int rc;
+	int rc = proto_register(&ddp_proto, 0);
 
-	rc = proto_register(&ddp_proto, 0);
-	if (rc)
+	if (rc != 0)
 		goto out;
 
-	rc = sock_register(&atalk_family_ops);
-	if (rc)
-		goto out_proto;
-
+	(void)sock_register(&atalk_family_ops);
 	ddp_dl = register_snap_client(ddp_snap_id, atalk_rcv);
 	if (!ddp_dl)
 		printk(atalk_err_snap);
@@ -1930,33 +1925,12 @@ static int __init atalk_init(void)
 	dev_add_pack(&ltalk_packet_type);
 	dev_add_pack(&ppptalk_packet_type);
 
-	rc = register_netdevice_notifier(&ddp_notifier);
-	if (rc)
-		goto out_sock;
-
+	register_netdevice_notifier(&ddp_notifier);
 	aarp_proto_init();
-	rc = atalk_proc_init();
-	if (rc)
-		goto out_aarp;
-
-	rc = atalk_register_sysctl();
-	if (rc)
-		goto out_proc;
+	atalk_proc_init();
+	atalk_register_sysctl();
 out:
 	return rc;
-out_proc:
-	atalk_proc_exit();
-out_aarp:
-	aarp_cleanup_module();
-	unregister_netdevice_notifier(&ddp_notifier);
-out_sock:
-	dev_remove_pack(&ppptalk_packet_type);
-	dev_remove_pack(&ltalk_packet_type);
-	unregister_snap_client(ddp_dl);
-	sock_unregister(PF_APPLETALK);
-out_proto:
-	proto_unregister(&ddp_proto);
-	goto out;
 }
 module_init(atalk_init);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2014-2018 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -10,7 +10,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -26,8 +25,8 @@
 #include <linux/syscalls.h>
 #include <linux/sched.h>
 #include <linux/writeback.h>
-#include <asm/uaccess.h>
-#include <asm/string.h>
+#include <linux/uaccess.h>
+#include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/uidgid.h>
 #include "mt-plat/mtk_thermal_monitor.h"
@@ -133,7 +132,7 @@ int mtk_mdm_get_md_info(struct md_info **p_inf, int *size)
 	mtk_mdm_dprintk("mtk_mdm_get_md_info+\n");
 
 	*p_inf = g_pinfo_list;
-	*size = sizeof(g_pinfo_list)/sizeof(g_pinfo_list[0]);
+	*size = ARRAY_SIZE(g_pinfo_list);
 
 	mtk_mdm_dprintk("mtk_mdm_get_md_info-\n");
 
@@ -146,7 +145,8 @@ int mtk_mdm_get_mdinfoex(int opcode, int *value)
 	mtk_mdm_dprintk("%s\n", __func__);
 
 #if defined(CONFIG_MTK_THERMAL_PA_VIA_ATCMD)
-	if (opcode >= 0 && opcode < MAX_MDINFOEX_OPCODE && value != NULL)	{
+	if (opcode >= 0 && opcode < MAX_MDINFOEX_OPCODE
+		&& value != NULL)	{
 		*value = mdinfoex[opcode];
 		return 0;
 	}
@@ -175,7 +175,9 @@ EXPORT_SYMBOL(mtk_mdm_set_mdinfoex_threshold);
 
 int mtk_mdm_start_query(void)
 {
-	/*#if  defined(CONFIG_MTK_ENABLE_MD1) || defined(CONFIG_MTK_ENABLE_MD2)*/
+	/*#if  defined(CONFIG_MTK_ENABLE_MD1)
+	 * || defined(CONFIG_MTK_ENABLE_MD2)
+	 */
 	mtk_mdm_dprintk("mtk_mdm_start_query\n");
 
 	mdm_sw = true;
@@ -210,25 +212,28 @@ static void set_mdm_signal_period(void)
 {
 	int new_mdm_signal_period = 0;
 
-	if ((0 == md2_signal_period) && (0 == md1_signal_period))
+	if ((md2_signal_period == 0) && (md1_signal_period == 0))
 		;
-	else if (0 == md2_signal_period)
+	else if (md2_signal_period == 0)
 		new_mdm_signal_period = md1_signal_period;
-	else if (0 == md1_signal_period)
+	else if (md1_signal_period == 0)
 		new_mdm_signal_period = md2_signal_period;
 	else
 		new_mdm_signal_period =
-			(md1_signal_period <= md2_signal_period) ? md1_signal_period : md2_signal_period;
+			(md1_signal_period <= md2_signal_period) ?
+				md1_signal_period : md2_signal_period;
 
 	if (new_mdm_signal_period != mdm_signal_period) {
-		if (0 == new_mdm_signal_period)
+		if (new_mdm_signal_period == 0)
 			mtk_mdm_stop_query();
 		else {
-			if (0 == mdm_signal_period)	{
-				mtk_mdm_set_signal_period(new_mdm_signal_period);
+			if (mdm_signal_period == 0)	{
+				mtk_mdm_set_signal_period(
+					new_mdm_signal_period);
 				mtk_mdm_start_query();
 			}	else
-				mtk_mdm_set_signal_period(new_mdm_signal_period);
+				mtk_mdm_set_signal_period(
+					new_mdm_signal_period);
 		}
 		mdm_signal_period = new_mdm_signal_period;
 	}
@@ -259,11 +264,13 @@ static int send_get_md_all_msg(void)
 		mode[0] = MTK_THERMAL_GET_TX_POWER;
 		/*#ifdef CONFIG_MTK_ENABLE_MD1*/
 		if (get_modem_is_enabled(0))
-			exec_ccci_kern_func_by_md_id(0, ID_GET_TXPOWER, mode, 0);
+			exec_ccci_kern_func_by_md_id(0,
+				ID_GET_TXPOWER, mode, 0);
 		/*#endif*/
 		/*#ifdef CONFIG_MTK_ENABLE_MD2*/
 		if (get_modem_is_enabled(1))
-			exec_ccci_kern_func_by_md_id(1, ID_GET_TXPOWER, mode, 0);
+			exec_ccci_kern_func_by_md_id(1,
+				ID_GET_TXPOWER, mode, 0);
 		/*#endif*/
 	}
 	mode[0] = MTK_THERMAL_GET_RF_TEMP_2G;
@@ -307,11 +314,13 @@ static int mtk_mdm_enable(void)
 {
 #if MTK_TS_PA_THPUT_VIA_CCCI == 1
 	/* Register the data send back function
-	 MD will receive the data by cb
-	#ifdef  CONFIG_MTK_ENABLE_MD1*/
+	 * MD will receive the data by cb
+	 */
+	/*#ifdef  CONFIG_MTK_ENABLE_MD1*/
 	if (get_modem_is_enabled(0)) {
 		if (!(is_meta_mode() | is_advanced_meta_mode()))
-			register_ccci_sys_call_back(0, ID_REG_TXPOWER_CB, MDM_CB(0));
+			register_ccci_sys_call_back(0,
+				ID_REG_TXPOWER_CB, MDM_CB(0));
 		register_ccci_sys_call_back(0, ID_REG_RFTEMP_CB, MDM_CB(2));
 		register_ccci_sys_call_back(0, ID_REG_RFTEMP_3G_CB, MDM_CB(4));
 	}
@@ -319,7 +328,8 @@ static int mtk_mdm_enable(void)
 	/*#ifdef  CONFIG_MTK_ENABLE_MD2*/
 	if (get_modem_is_enabled(1)) {
 		if (!(is_meta_mode() | is_advanced_meta_mode()))
-			register_ccci_sys_call_back(1, ID_REG_TXPOWER_CB, MDM_CB(1));
+			register_ccci_sys_call_back(1,
+				ID_REG_TXPOWER_CB, MDM_CB(1));
 		register_ccci_sys_call_back(1, ID_REG_RFTEMP_CB, MDM_CB(3));
 		register_ccci_sys_call_back(1, ID_REG_RFTEMP_3G_CB, MDM_CB(5));
 	}
@@ -350,9 +360,11 @@ static int mtk_mdm_value_read(struct seq_file *m, void *v)
 	int i;
 
 	mtk_mdm_get_md_info(&p_md, &size);
-	seq_printf(m, "%s:%d %s\n", p_md[0].attribute, p_md[0].value, p_md[0].unit);
+	seq_printf(m, "%s:%d %s\n", p_md[0].attribute,
+		p_md[0].value, p_md[0].unit);
 	for (i = 1; i < size; i++)
-		seq_printf(m, "%s:%d %s\n", p_md[i].attribute, p_md[i].value, p_md[i].unit);
+		seq_printf(m, "%s:%d %s\n", p_md[i].attribute,
+			p_md[i].value, p_md[i].unit);
 
 	return 0;
 }
@@ -377,7 +389,8 @@ static int mtk_mdm_sw_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t mtk_mdm_sw_write(struct file *file, const char __user *buf, size_t len, loff_t *data)
+static ssize_t mtk_mdm_sw_write(struct file *file,
+	const char __user *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = {0};
 	char temp[MAX_LEN] = {0};
@@ -391,10 +404,12 @@ static ssize_t mtk_mdm_sw_write(struct file *file, const char __user *buf, size_
 	if (sscanf(desc, "%s", temp) == 1) {
 		if (strncmp(temp, "on", 2) == 0 || strncmp(temp, "1", 1) == 0)
 			mdm_sw = true;
-		else if (strncmp(temp, "off", 3) == 0 || strncmp(temp, "0", 1) == 0)
+		else if (strncmp(temp, "off", 3) == 0
+			|| strncmp(temp, "0", 1) == 0)
 			mdm_sw = false;
 		else
-			mtk_mdm_dprintk("[%s] bad argument:%s\n", __func__, temp);
+			mtk_mdm_dprintk("[%s] bad argument:%s\n",
+				__func__, temp);
 
 		if (mdm_sw)
 			mtk_mdm_enable();
@@ -429,7 +444,8 @@ static int mtk_mdm_proc_timeout_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t mtk_mdm_proc_timeout_write(struct file *file, const char __user *buf, size_t len, loff_t *data)
+static ssize_t mtk_mdm_proc_timeout_write(struct file *file,
+	const char __user *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = {0};
 	int temp_value;
@@ -479,7 +495,8 @@ static int mtk_mdm_proc_mdinfo_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t mtk_mdm_proc_mdinfo_write(struct file *file, const char *buf, size_t len, loff_t *data)
+static ssize_t mtk_mdm_proc_mdinfo_write(struct file *file,
+	const char *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = {0};
 	int sim;
@@ -493,15 +510,18 @@ static ssize_t mtk_mdm_proc_mdinfo_write(struct file *file, const char *buf, siz
 	if (copy_from_user(desc, buf, len))
 		return -EFAULT;
 
-	if (sscanf(desc, "%d,%d,%d,%d", &sim, &rat, &rf_temp, &tx_power) >= 3) {
-		mtk_mdm_dprintk("[%s] %d,%d,%d,%d\n", __func__, sim, rat, rf_temp, tx_power);
+	if (sscanf(desc, "%d,%d,%d,%d", &sim,
+			&rat, &rf_temp, &tx_power) >= 3) {
+		mtk_mdm_dprintk("[%s] %d,%d,%d,%d\n",
+			__func__, sim, rat, rf_temp, tx_power);
 
-		rf_temp = (rf_temp >= 32767) ? -127 : rf_temp; /* 32767 means invalid temp*/
+		/* 32767 means invalid temp*/
+		rf_temp = (rf_temp >= 32767) ? -127 : rf_temp;
 
 		/* fill into g_pinfo_list */
 		/* MD1*/
-		if (0 == sim) {
-			if (1 == rat)
+		if (sim == 0) {
+			if (rat == 1)
 				g_pinfo_list[2].value = rf_temp*1000;
 			else if (2 == rat || 3 == rat) {
 				g_pinfo_list[4].value = rf_temp*1000;
@@ -509,8 +529,8 @@ static ssize_t mtk_mdm_proc_mdinfo_write(struct file *file, const char *buf, siz
 			}
 		}
 		/* MD2 */
-		else if (1 == sim) {
-			if (1 == rat)
+		else if (sim == 1) {
+			if (rat == 1)
 				g_pinfo_list[3].value = rf_temp*1000;
 			else if (2 == rat || 3 == rat) {
 				g_pinfo_list[5].value = rf_temp*1000;
@@ -520,7 +540,8 @@ static ssize_t mtk_mdm_proc_mdinfo_write(struct file *file, const char *buf, siz
 
 		return len;
 	}
-	mtk_mdm_dprintk("[%s] insufficient input %d,%d,%d,%d\n", __func__, sim, rat, rf_temp, tx_power);
+	mtk_mdm_dprintk("[%s] insufficient input %d,%d,%d,%d\n",
+		__func__, sim, rat, rf_temp, tx_power);
 
 	return -EINVAL;
 }
@@ -550,7 +571,8 @@ static int mtk_mdm_proc_mdinfoex_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-static ssize_t mtk_mdm_proc_mdinfoex_write(struct file *file, const char *buf, size_t len, loff_t *data)
+static ssize_t mtk_mdm_proc_mdinfoex_write(struct file *file,
+	const char *buf, size_t len, loff_t *data)
 {
 
 	char desc[MAX_LEN] = {0};
@@ -570,7 +592,8 @@ static ssize_t mtk_mdm_proc_mdinfoex_write(struct file *file, const char *buf, s
 		if (opcode >= 0 && opcode < MAX_MDINFOEX_OPCODE)
 			mdinfoex[opcode] = value;
 		else
-			mtk_mdm_dprintk("[%s] invalid input %d,%d\n", __func__, opcode, value);
+			mtk_mdm_dprintk("[%s] invalid input %d,%d\n",
+				__func__, opcode, value);
 
 		return len;
 	}
@@ -605,7 +628,8 @@ static int mtk_mdm_proc_mdinfoex_threshold_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-static int mtk_mdm_proc_mdinfoex_threshold_open(struct inode *inode, struct file *file)
+static int mtk_mdm_proc_mdinfoex_threshold_open(struct inode *inode,
+	struct file *file)
 {
 	return single_open(file, mtk_mdm_proc_mdinfoex_threshold_read, NULL);
 }
@@ -628,33 +652,34 @@ static int __init mtk_mdm_txpwr_init(void)
 
 	mdtxpwr_dir = mtk_thermal_get_proc_drv_therm_dir_entry();
 	if (!mdtxpwr_dir) {
-		mtk_mdm_dprintk("[%s]: mkdir /driver/thermal failed\n", __func__);
+		mtk_mdm_dprintk("[%s]: mkdir /driver/thermal failed\n",
+			__func__);
 	} else {
 		entry =
-			proc_create("mdm_sw", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, mdtxpwr_dir,
+			proc_create("mdm_sw", 0660, mdtxpwr_dir,
 					&mtk_mdm_sw_fops);
 		entry =
-			proc_create("mdm_value", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, mdtxpwr_dir,
+			proc_create("mdm_value", 0660, mdtxpwr_dir,
 					&mtk_mdm_value_fops);
 		entry =
-			proc_create("mdm_timeout", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, mdtxpwr_dir,
+			proc_create("mdm_timeout", 0660, mdtxpwr_dir,
 					&mtk_mdm_proc_timeout_fops);
 
 #if MTK_TS_PA_THPUT_VIA_ATCMD == 1
 		entry =
-			proc_create("mdm_mdinfo", S_IRUGO | S_IWUSR | S_IWGRP, mdtxpwr_dir,
+			proc_create("mdm_mdinfo", 0664, mdtxpwr_dir,
 					&mtk_mdm_proc_mdinfo_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
 		entry =
-			proc_create("mdm_mdinfoex", S_IRUGO | S_IWUSR | S_IWGRP, mdtxpwr_dir,
+			proc_create("mdm_mdinfoex", 0664, mdtxpwr_dir,
 					&mtk_mdm_proc_mdinfoex_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
 		entry =
-			proc_create("mdm_mdinfoex_thre", S_IRUGO, mdtxpwr_dir,
+			proc_create("mdm_mdinfoex_thre", 0444, mdtxpwr_dir,
 					&mtk_mdm_proc_mdinfoex_threshold_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);

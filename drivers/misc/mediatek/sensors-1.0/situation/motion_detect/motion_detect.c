@@ -1,15 +1,18 @@
 /* stationary gesture sensor driver
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
+#define pr_fmt(fmt) "[motion_detect] " fmt
 
 #include <linux/interrupt.h>
 #include <linux/i2c.h>
@@ -34,31 +37,20 @@
 #include <linux/notifier.h>
 #include "scp_helper.h"
 
-
-#define MOTIONHUB_TAG                  "[motion_detect] "
-#define MOTIONHUB_FUN(f)               pr_warn(MOTIONHUB_TAG"%s\n", __func__)
-#define MOTIONHUB_ERR(fmt, args...)    pr_warn(MOTIONHUB_TAG"%s %d : "fmt, __func__, __LINE__, ##args)
-#define MOTIONHUB_LOG(fmt, args...)    pr_warn(MOTIONHUB_TAG fmt, ##args)
-
-
 static struct situation_init_info motion_detect_init_info;
 static int motion_detect_get_data(int *probability, int *status)
 {
 	int err = 0;
 	struct data_unit_t data;
 	uint64_t time_stamp = 0;
-	uint64_t time_stamp_gpt = 0;
 
 	err = sensor_get_data_from_hub(ID_MOTION_DETECT, &data);
 	if (err < 0) {
-		MOTIONHUB_ERR("sensor_get_data_from_hub fail!!\n");
+		pr_err("sensor_get_data_from_hub fail!!\n");
 		return -1;
 	}
 	time_stamp		= data.time_stamp;
-	time_stamp_gpt	= data.time_stamp_gpt;
 	*probability	= data.gesture_data_t.probability;
-	MOTIONHUB_LOG("recv ipi: timestamp: %lld, timestamp_gpt: %lld, probability: %d!\n", time_stamp, time_stamp_gpt,
-		*probability);
 	return 0;
 }
 static int motion_detect_open_report_data(int open)
@@ -73,21 +65,27 @@ static int motion_detect_open_report_data(int open)
 #else
 
 #endif
-	MOTIONHUB_LOG("%s : type=%d, open=%d\n", __func__, ID_MOTION_DETECT, open);
+	pr_debug("%s : type=%d, open=%d\n",
+		__func__, ID_MOTION_DETECT, open);
 	ret = sensor_enable_to_hub(ID_MOTION_DETECT, open);
 	return ret;
 }
-static int motion_detect_batch(int flag, int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
+static int motion_detect_batch(int flag,
+	int64_t samplingPeriodNs, int64_t maxBatchReportLatencyNs)
 {
-	return sensor_batch_to_hub(ID_MOTION_DETECT, flag, samplingPeriodNs, maxBatchReportLatencyNs);
+	return sensor_batch_to_hub(ID_MOTION_DETECT,
+		flag, samplingPeriodNs, maxBatchReportLatencyNs);
 }
-static int motion_detect_recv_data(struct data_unit_t *event, void *reserved)
+static int motion_detect_recv_data(struct data_unit_t *event,
+	void *reserved)
 {
+	int err = 0;
+
 	if (event->flush_action == FLUSH_ACTION)
-		MOTIONHUB_ERR("stat do not support flush\n");
+		pr_debug("stat do not support flush\n");
 	else if (event->flush_action == DATA_ACTION)
-		situation_notify(ID_MOTION_DETECT);
-	return 0;
+		err = situation_notify(ID_MOTION_DETECT);
+	return err;
 }
 
 static int motion_detect_local_init(void)
@@ -101,19 +99,20 @@ static int motion_detect_local_init(void)
 	ctl.is_support_wake_lock = true;
 	err = situation_register_control_path(&ctl, ID_MOTION_DETECT);
 	if (err) {
-		MOTIONHUB_ERR("register stationary control path err\n");
+		pr_err("register stationary control path err\n");
 		goto exit;
 	}
 
 	data.get_data = motion_detect_get_data;
 	err = situation_register_data_path(&data, ID_MOTION_DETECT);
 	if (err) {
-		MOTIONHUB_ERR("register stationary data path err\n");
+		pr_err("register stationary data path err\n");
 		goto exit;
 	}
-	err = scp_sensorHub_data_registration(ID_MOTION_DETECT, motion_detect_recv_data);
+	err = scp_sensorHub_data_registration(ID_MOTION_DETECT,
+		motion_detect_recv_data);
 	if (err) {
-		MOTIONHUB_ERR("SCP_sensorHub_data_registration fail!!\n");
+		pr_err("SCP_sensorHub_data_registration fail!!\n");
 		goto exit_create_attr_failed;
 	}
 	return 0;
@@ -140,7 +139,7 @@ static int __init motion_detect_init(void)
 
 static void __exit motion_detect_exit(void)
 {
-	MOTIONHUB_FUN();
+	pr_debug("%s\n", __func__);
 }
 
 module_init(motion_detect_init);

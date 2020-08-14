@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __JPEG_DRV_6589_REG_H__
 #define __JPEG_DRV_6589_REG_H__
 
@@ -58,7 +71,7 @@
 #define REG_JPEG_ENC_CODEC_SEL                      (*(volatile kal_uint32*)(JPEG_ENC_BASE + 0x314))
 #define REG_JPEG_ENC_ULTRA_THRES                    (*(volatile kal_uint32*)(JPEG_ENC_BASE + 0x318))
 
-#define JPEG_ENC_REG_COUNT                          0x314
+#define JPEG_ENC_REG_COUNT                          0x31C
 
 
 /********************************************************************/

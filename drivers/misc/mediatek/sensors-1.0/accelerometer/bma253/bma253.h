@@ -43,6 +43,7 @@
 #define BMA250_RANGE_4G				0x05
 #define BMA250_RANGE_8G				0x08
 #define BMA250_REG_DATAXLOW			0x02
+#define BMA250_LOW_POWER_CTRL_REG	0x12
 #define BMA250_REG_DATA_RESOLUTION	0x14
 #define BMA250_MEASURE_MODE			0xE0
 #define BMA250_SELF_TEST           			0x32
@@ -77,6 +78,7 @@
 #define BMA250_DEV_NAME        "BMA250"
 
 extern int idme_get_sensorcal(s16 *data);
+
 /*----------------------------------------------------------------------------*/
 typedef enum {
     BMA250_CUST_ACTION_SET_CUST = 1,

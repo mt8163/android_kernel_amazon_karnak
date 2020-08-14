@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -91,14 +93,16 @@ void AudDrv_GPIO_probe(void *dev)
 	}
 
 	for (i = 0; i < ARRAY_SIZE(aud_gpios); i++) {
-		aud_gpios[i].gpioctrl = pinctrl_lookup_state(pinctrlaud, aud_gpios[i].name);
+		aud_gpios[i].gpioctrl = pinctrl_lookup_state(pinctrlaud,
+			aud_gpios[i].name);
 		if (IS_ERR(aud_gpios[i].gpioctrl)) {
 			ret = PTR_ERR(aud_gpios[i].gpioctrl);
-			pr_err("%s pinctrl_lookup_state %s fail %d\n", __func__, aud_gpios[i].name,
-			       ret);
+			pr_err("%s pinctrl_lookup_state %s fail %d\n",
+				__func__, aud_gpios[i].name, ret);
 		} else {
 			aud_gpios[i].gpio_prepare = true;
-			pr_debug("%s pinctrl_lookup_state %s success!\n", __func__, aud_gpios[i].name);
+			pr_debug("%s pinctrl_lookup_state %s success!\n",
+				__func__, aud_gpios[i].name);
 		}
 	}
 }
@@ -112,7 +116,8 @@ int AudDrv_GPIO_PMIC_Select(int bEnable)
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_PMIC_MODE1].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_PMIC_MODE1].gpioctrl);
+				pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_PMIC_MODE1].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_PMIC_MODE1] pins\n");
 		} else {
@@ -122,7 +127,8 @@ int AudDrv_GPIO_PMIC_Select(int bEnable)
 	} else {
 		if (aud_gpios[GPIO_PMIC_MODE0].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_PMIC_MODE0].gpioctrl);
+				pinctrl_select_state(pinctrlaud,
+					aud_gpios[GPIO_PMIC_MODE0].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_PMIC_MODE0] pins\n");
 		} else {
@@ -141,8 +147,8 @@ int AudDrv_GPIO_I2S_Select(int bEnable)
 
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_I2S_MODE1].gpio_prepare) {
-			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_I2S_MODE1].gpioctrl);
+			retval = pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_I2S_MODE1].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_I2S_MODE1] pins\n");
 		} else {
@@ -152,7 +158,8 @@ int AudDrv_GPIO_I2S_Select(int bEnable)
 	} else {
 		if (aud_gpios[GPIO_I2S_MODE0].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_I2S_MODE0].gpioctrl);
+			pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_I2S_MODE0].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_I2S_MODE0] pins\n");
 		} else {
@@ -172,7 +179,8 @@ int AudDrv_GPIO_EXTAMP_Select(int bEnable)
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_EXTAMP_HIGH].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_EXTAMP_HIGH].gpioctrl);
+			pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_EXTAMP_HIGH].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_EXTAMP_HIGH] pins\n");
 		} else {
@@ -182,7 +190,8 @@ int AudDrv_GPIO_EXTAMP_Select(int bEnable)
 	} else {
 		if (aud_gpios[GPIO_EXTAMP_LOW].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_EXTAMP_LOW].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_EXTAMP_LOW].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_EXTAMP_LOW] pins\n");
 		} else {
@@ -203,7 +212,8 @@ int AudDrv_GPIO_EXTAMP_Gain_Set(int value)
 	case 3:
 		if (aud_gpios[GPIO_EXTAMP_GAIN3].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_EXTAMP_GAIN3].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+			    aud_gpios[GPIO_EXTAMP_GAIN3].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_EXTAMP_GAIN3] pins\n");
 		} else {
@@ -214,7 +224,8 @@ int AudDrv_GPIO_EXTAMP_Gain_Set(int value)
 	case 2:
 		if (aud_gpios[GPIO_EXTAMP_GAIN2].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_EXTAMP_GAIN2].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+			    aud_gpios[GPIO_EXTAMP_GAIN2].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_EXTAMP_GAIN2] pins\n");
 		} else {
@@ -225,7 +236,8 @@ int AudDrv_GPIO_EXTAMP_Gain_Set(int value)
 	case 1:
 		if (aud_gpios[GPIO_EXTAMP_GAIN1].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_EXTAMP_GAIN1].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+			    aud_gpios[GPIO_EXTAMP_GAIN1].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_EXTAMP_GAIN1] pins\n");
 		} else {
@@ -236,7 +248,8 @@ int AudDrv_GPIO_EXTAMP_Gain_Set(int value)
 	case 0:
 		if (aud_gpios[GPIO_EXTAMP_GAIN0].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_EXTAMP_GAIN0].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+			    aud_gpios[GPIO_EXTAMP_GAIN0].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_EXTAMP_GAIN0] pins\n");
 		} else {
@@ -260,7 +273,8 @@ int AudDrv_GPIO_HP_SPK_Switch_Select(int bEnable)
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_HPSPK_SWITCH_HIGH].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_HPSPK_SWITCH_HIGH].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+			    aud_gpios[GPIO_HPSPK_SWITCH_HIGH].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_HPSPK_SWITCH_HIGH] pins\n");
 		} else {
@@ -270,7 +284,8 @@ int AudDrv_GPIO_HP_SPK_Switch_Select(int bEnable)
 	} else {
 		if (aud_gpios[GPIO_HPSPK_SWITCH_LOW].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_HPSPK_SWITCH_LOW].gpioctrl);
+			    pinctrl_select_state(pinctrlaud,
+			    aud_gpios[GPIO_HPSPK_SWITCH_LOW].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_HPSPK_SWITCH_LOW] pins\n");
 		} else {
@@ -290,7 +305,8 @@ int AudDrv_GPIO_EXTHPAMP_Select(int bEnable)
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_HPAMP_HIGH].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_HPAMP_HIGH].gpioctrl);
+			pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_HPAMP_HIGH].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_HPAMP_HIGH] pins\n");
 		} else {
@@ -300,7 +316,8 @@ int AudDrv_GPIO_EXTHPAMP_Select(int bEnable)
 	} else {
 		if (aud_gpios[GPIO_HPAMP_LOW].gpio_prepare) {
 			retval =
-			    pinctrl_select_state(pinctrlaud, aud_gpios[GPIO_HPAMP_LOW].gpioctrl);
+			pinctrl_select_state(pinctrlaud,
+				aud_gpios[GPIO_HPAMP_LOW].gpioctrl);
 			if (retval)
 				pr_err("could not set aud_gpios[GPIO_HPAMP_LOW] pins\n");
 		} else {

@@ -20,6 +20,7 @@
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/regmap.h>
 #include <dt-bindings/pinctrl/mt65xx.h>
+#include <linux/pinctrl/pinconf-generic.h>
 
 #include "pinctrl-mtk-common.h"
 #include "pinctrl-mtk-mt8163.h"
@@ -403,7 +404,6 @@ static struct platform_driver mtk_pinctrl_driver = {
 	.probe = mt8163_pinctrl_probe,
 	.driver = {
 		.name = "mediatek-mt8163-pinctrl",
-		.owner = THIS_MODULE,
 		.of_match_table = mt8163_pctrl_match,
 		.pm = &mtk_eint_pm_ops,
 	},
@@ -414,8 +414,4 @@ static int __init mtk_pinctrl_init(void)
 	return platform_driver_register(&mtk_pinctrl_driver);
 }
 
-module_init(mtk_pinctrl_init);
-
-MODULE_LICENSE("GPL v2");
-MODULE_DESCRIPTION("MediaTek MT8163 Pinctrl Driver");
-MODULE_AUTHOR("Yingjoe Chen <yingjoe.chen@mediatek.com>");
+arch_initcall(mtk_pinctrl_init);

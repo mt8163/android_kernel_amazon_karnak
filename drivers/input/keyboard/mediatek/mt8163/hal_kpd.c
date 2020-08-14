@@ -1,12 +1,27 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <kpd.h>
 #include <mt-plat/aee.h>
 #include <mt-plat/upmu_common.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#include <linux/io.h>
 #ifdef CONFIG_MTK_TC1_FM_AT_SUSPEND
 #include <mt_soc_afe_control.h>
 #endif
+#include <mt-plat/mtk_boot_common.h>
 
 #ifdef CONFIG_KPD_PWRKEY_USE_EINT
 static u8 kpd_pwrkey_state = !KPD_PWRKEY_POLARITY;
@@ -29,7 +44,8 @@ static void sb_kpd_release_keys(struct input_dev *dev)
 
 	for (code = 0; code <= KEY_MAX; code++) {
 		if (test_bit(code, dev->keybit)) {
-			kpd_print("report release event for sb plug in! keycode:%d\n", code);
+			kpd_print("report release event! keycode:%d\n",
+				code);
 			input_report_key(dev, code, 0);
 			input_sync(dev);
 		}
@@ -81,15 +97,14 @@ void kpd_slide_qwerty_init(void)
 
 void kpd_get_keymap_state(u16 state[])
 {
-	state[0] = *(volatile u16 *)KP_MEM1;
-	state[1] = *(volatile u16 *)KP_MEM2;
-	state[2] = *(volatile u16 *)KP_MEM3;
-	state[3] = *(volatile u16 *)KP_MEM4;
-	state[4] = *(volatile u16 *)KP_MEM5;
-#ifndef CONFIG_MT_SND_SOC_8163_AMZN
-	kpd_print(KPD_SAY "register = %x %x %x %x %x\n", state[0], state[1],
-		state[2], state[3], state[4]);
-#endif
+	state[0] = readw(KP_MEM1);
+	state[1] = readw(KP_MEM2);
+	state[2] = readw(KP_MEM3);
+	state[3] = readw(KP_MEM4);
+	state[4] = readw(KP_MEM5);
+	kpd_print(KPD_SAY "register = %x %x %x %x %x\n",
+		state[0], state[1], state[2], state[3], state[4]);
+
 }
 
 static void kpd_factory_mode_handler(void)
@@ -122,18 +137,22 @@ static void kpd_factory_mode_handler(void)
 			/* bit is 1: not pressed, 0: pressed */
 			pressed = !(new_state[i] & mask);
 			if (kpd_show_hw_keycode) {
-				kpd_print(KPD_SAY "(%s) factory_mode HW keycode = %u\n",
-				       pressed ? "pressed" : "released", hw_keycode);
+				kpd_print(KPD_SAY "(%s) factory_mode\n",
+				       pressed ? "pressed" : "released");
+				kpd_print(KPD_SAY "HW keycode = %u\n",
+				       hw_keycode);
 			}
-			BUG_ON(hw_keycode >= KPD_NUM_KEYS);
-			linux_keycode = kpd_dts_data.kpd_hw_init_map[hw_keycode];
+			WARN_ON(hw_keycode >= KPD_NUM_KEYS);
+			linux_keycode =
+				kpd_dts_data.kpd_hw_init_map[hw_keycode];
 			if (unlikely(linux_keycode == 0)) {
 				kpd_print("Linux keycode = 0\n");
 				continue;
 			}
 			input_report_key(kpd_input_dev, linux_keycode, pressed);
 			input_sync(kpd_input_dev);
-			kpd_print("factory_mode report Linux keycode = %u\n", linux_keycode);
+			kpd_print("factory_mode report Linux keycode = %u\n",
+				linux_keycode);
 		}
 	}
 
@@ -157,7 +176,7 @@ void kpd_auto_test_for_factorymode(void)
 		/*kpd_pwrkey_pmic_handler(0);}*/
 	} else {
 		kpd_print("power key press\n");
-		kpd_pwrkey_pmic_handler(1);
+		/*kpd_pwrkey_pmic_handler(1);*/
 		/*mdelay(time);*/
 		/*kpd_pwrkey_pmic_handler(0);*/
 	}
@@ -285,8 +304,9 @@ void kpd_init_keymap_state(u16 keymap_state[])
 
 	for (i = 0; i < KPD_NUM_MEMS; i++)
 		keymap_state[i] = kpd_keymap_state[i];
-	kpd_info("init_keymap_state done: %x %x %x %x %x!\n", keymap_state[0], keymap_state[1], keymap_state[2],
-		 keymap_state[3], keymap_state[4]);
+	kpd_info("init_keymap_state done: %x %x %x %x %x!\n",
+		keymap_state[0], keymap_state[1], keymap_state[2],
+		keymap_state[3], keymap_state[4]);
 }
 
 /********************************************************************/
@@ -305,12 +325,14 @@ void kpd_pmic_rstkey_hal(unsigned long pressed)
 			u32 linux_kyecode = kpd_get_linux_key_code(kpd_dts_data.kpd_sw_rstkey, pressed);
 			input_report_key(kpd_input_dev, linux_kyecode, pressed);
 #else
-			input_report_key(kpd_input_dev, kpd_dts_data.kpd_sw_rstkey, pressed);
+			input_report_key(kpd_input_dev,kpd_dts_data.kpd_sw_rstkey, pressed);
 #endif
 			input_sync(kpd_input_dev);
 			if (kpd_show_hw_keycode) {
-				kpd_print(KPD_SAY "(%s) HW keycode =%d using PMIC\n",
-				       pressed ? "pressed" : "released", kpd_dts_data.kpd_sw_rstkey);
+				kpd_print(KPD_SAY "(%s) using PMIC\n",
+				       pressed ? "pressed" : "released");
+				kpd_print(KPD_SAY "HW keycode =%d using PMIC\n",
+				       kpd_dts_data.kpd_sw_rstkey);
 			}
 		}
 	}
@@ -320,11 +342,14 @@ void kpd_pmic_pwrkey_hal(unsigned long pressed)
 {
 #ifdef CONFIG_KPD_PWRKEY_USE_PMIC
 	if (!kpd_sb_enable) {
-		input_report_key(kpd_input_dev, kpd_dts_data.kpd_sw_pwrkey, pressed);
+		input_report_key(kpd_input_dev,
+			kpd_dts_data.kpd_sw_pwrkey, pressed);
 		input_sync(kpd_input_dev);
 		if (kpd_show_hw_keycode) {
-			kpd_print(KPD_SAY "(%s) HW keycode =%d using PMIC\n",
-			       pressed ? "pressed" : "released", kpd_dts_data.kpd_sw_pwrkey);
+			kpd_print(KPD_SAY "(%s) using PMIC\n",
+			       pressed ? "pressed" : "released");
+			kpd_print(KPD_SAY "HW keycode =%d using PMIC\n",
+			       kpd_dts_data.kpd_sw_pwrkey);
 		}
 		/*ZH CHEN*/
 		/*aee_powerkey_notify_press(pressed);*/

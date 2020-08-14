@@ -9,6 +9,8 @@
  * version 2 as published by the Free Software Foundation.
  */
 
+#define pr_fmt(fmt)	"OF: resolver: " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -36,12 +38,14 @@ static struct device_node *__of_find_node_by_full_name(struct device_node *node,
 
 	/* check */
 	if (of_node_cmp(node->full_name, full_name) == 0)
-		return node;
+		return of_node_get(node);
 
 	for_each_child_of_node(node, child) {
 		found = __of_find_node_by_full_name(child, full_name);
-		if (found != NULL)
+		if (found != NULL) {
+			of_node_put(child);
 			return found;
+		}
 	}
 
 	return NULL;
@@ -111,7 +115,8 @@ static void __of_adjust_tree_phandles(struct device_node *node,
 		__of_adjust_tree_phandles(child, phandle_delta);
 }
 
-static int __of_adjust_phandle_ref(struct device_node *node, struct property *rprop, int value, bool is_delta)
+static int __of_adjust_phandle_ref(struct device_node *node,
+		struct property *rprop, int value)
 {
 	phandle phandle;
 	struct device_node *refnode;
@@ -173,6 +178,7 @@ static int __of_adjust_phandle_ref(struct device_node *node, struct property *rp
 			if (of_prop_cmp(sprop->name, propstr) == 0)
 				break;
 		}
+		of_node_put(refnode);
 
 		if (!sprop) {
 			pr_err("%s: Could not find property '%s'\n",
@@ -181,7 +187,7 @@ static int __of_adjust_phandle_ref(struct device_node *node, struct property *rp
 			goto err_fail;
 		}
 
-		phandle = is_delta ? be32_to_cpup(sprop->value + offset) + value : value;
+		phandle = value;
 		*(__be32 *)(sprop->value + offset) = cpu_to_be32(phandle);
 	}
 
@@ -190,36 +196,97 @@ err_fail:
 	return err;
 }
 
+/* compare nodes taking into account that 'name' strips out the @ part */
+static int __of_node_name_cmp(const struct device_node *dn1,
+		const struct device_node *dn2)
+{
+	const char *n1 = strrchr(dn1->full_name, '/') ? : "/";
+	const char *n2 = strrchr(dn2->full_name, '/') ? : "/";
+
+	return of_node_cmp(n1, n2);
+}
+
 /*
  * Adjust the local phandle references by the given phandle delta.
- * Assumes the existances of a __local_fixups__ node at the root
- * of the tree. Does not take any devtree locks so make sure you
- * call this on a tree which is at the detached state.
+ * Assumes the existances of a __local_fixups__ node at the root.
+ * Assumes that __of_verify_tree_phandle_references has been called.
+ * Does not take any devtree locks so make sure you call this on a tree
+ * which is at the detached state.
  */
 static int __of_adjust_tree_phandle_references(struct device_node *node,
-		int phandle_delta)
+		struct device_node *target, int phandle_delta)
 {
-	struct device_node *child;
-	struct property *rprop;
-	int err;
+	struct device_node *child, *childtarget;
+	struct property *rprop, *sprop;
+	int err, i, count;
+	unsigned int off;
+	phandle phandle;
 
-	/* locate the symbols & fixups nodes on resolve */
-	for_each_child_of_node(node, child)
-		if (of_node_cmp(child->name, "__local_fixups__") == 0)
-			break;
-
-	/* no local fixups */
-	if (!child)
+	if (node == NULL)
 		return 0;
 
-	/* find the local fixups property */
-	for_each_property_of_node(child, rprop) {
+	for_each_property_of_node(node, rprop) {
+
 		/* skip properties added automatically */
-		if (of_prop_cmp(rprop->name, "name") == 0)
+		if (of_prop_cmp(rprop->name, "name") == 0 ||
+		    of_prop_cmp(rprop->name, "phandle") == 0 ||
+		    of_prop_cmp(rprop->name, "linux,phandle") == 0)
 			continue;
 
-		err = __of_adjust_phandle_ref(node, rprop, phandle_delta, true);
-		if (err)
+		if ((rprop->length % 4) != 0 || rprop->length == 0) {
+			pr_err("%s: Illegal property (size) '%s' @%s\n",
+					__func__, rprop->name, node->full_name);
+			return -EINVAL;
+		}
+		count = rprop->length / sizeof(__be32);
+
+		/* now find the target property */
+		for_each_property_of_node(target, sprop) {
+			if (of_prop_cmp(sprop->name, rprop->name) == 0)
+				break;
+		}
+
+		if (sprop == NULL) {
+			pr_err("%s: Could not find target property '%s' @%s\n",
+					__func__, rprop->name, node->full_name);
+			return -EINVAL;
+		}
+
+		for (i = 0; i < count; i++) {
+			off = be32_to_cpu(((__be32 *)rprop->value)[i]);
+			/* make sure the offset doesn't overstep (even wrap) */
+			if (off >= sprop->length ||
+					(off + 4) > sprop->length) {
+				pr_err("%s: Illegal property '%s' @%s\n",
+						__func__, rprop->name,
+						node->full_name);
+				return -EINVAL;
+			}
+
+			if (phandle_delta) {
+				/* adjust */
+				phandle = be32_to_cpu(*(__be32 *)(sprop->value + off));
+				phandle += phandle_delta;
+				*(__be32 *)(sprop->value + off) = cpu_to_be32(phandle);
+			}
+		}
+	}
+
+	for_each_child_of_node(node, child) {
+
+		for_each_child_of_node(target, childtarget)
+			if (__of_node_name_cmp(child, childtarget) == 0)
+				break;
+
+		if (!childtarget) {
+			pr_err("%s: Could not find target child '%s' @%s\n",
+					__func__, child->name, node->full_name);
+			return -EINVAL;
+		}
+
+		err = __of_adjust_tree_phandle_references(child, childtarget,
+				phandle_delta);
+		if (err != 0)
 			return err;
 	}
 
@@ -241,13 +308,18 @@ static int __of_adjust_tree_phandle_references(struct device_node *node,
  */
 int of_resolve_phandles(struct device_node *resolve)
 {
-	struct device_node *child, *refnode;
+	struct device_node *child, *childroot, *refnode;
 	struct device_node *root_sym, *resolve_sym, *resolve_fix;
 	struct property *rprop;
 	const char *refpath;
 	phandle phandle, phandle_delta;
 	int err;
 
+	if (!resolve)
+		pr_err("%s: null node\n", __func__);
+	if (resolve && !of_node_check_flag(resolve, OF_DETACHED))
+		pr_err("%s: node %s not detached\n", __func__,
+			 resolve->full_name);
 	/* the resolve node must exist, and be detached */
 	if (!resolve || !of_node_check_flag(resolve, OF_DETACHED))
 		return -EINVAL;
@@ -255,9 +327,23 @@ int of_resolve_phandles(struct device_node *resolve)
 	/* first we need to adjust the phandles */
 	phandle_delta = of_get_tree_max_phandle() + 1;
 	__of_adjust_tree_phandles(resolve, phandle_delta);
-	err = __of_adjust_tree_phandle_references(resolve, phandle_delta);
-	if (err != 0)
-		return err;
+
+	/* locate the local fixups */
+	childroot = NULL;
+	for_each_child_of_node(resolve, childroot)
+		if (of_node_cmp(childroot->name, "__local_fixups__") == 0)
+			break;
+
+	if (childroot != NULL) {
+		/* resolve root is guaranteed to be the '/' */
+		err = __of_adjust_tree_phandle_references(childroot,
+				resolve, 0);
+		if (err != 0)
+			return err;
+
+		BUG_ON(__of_adjust_tree_phandle_references(childroot,
+				resolve, phandle_delta));
+	}
 
 	root_sym = NULL;
 	resolve_sym = NULL;
@@ -290,6 +376,7 @@ int of_resolve_phandles(struct device_node *resolve)
 
 	/* we need to fixup, but no root symbols... */
 	if (!root_sym) {
+		pr_err("%s: no symbols in root of device tree.\n", __func__);
 		err = -EINVAL;
 		goto out;
 	}
@@ -322,7 +409,7 @@ int of_resolve_phandles(struct device_node *resolve)
 		pr_debug("%s: %s phandle is 0x%08x\n",
 				__func__, rprop->name, phandle);
 
-		err = __of_adjust_phandle_ref(resolve, rprop, phandle, false);
+		err = __of_adjust_phandle_ref(resolve, rprop, phandle);
 		if (err)
 			break;
 	}

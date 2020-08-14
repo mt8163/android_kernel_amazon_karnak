@@ -1,21 +1,15 @@
-/*****************************************************************************
-*
-* Filename:
-* ---------
-*   bq24297.h
-*
-* Project:
-* --------
-*   Android
-*
-* Description:
-* ------------
-*   bq24297 header file
-*
-* Author:
-* -------
-*
-****************************************************************************/
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
 
 #ifndef _bq24297_SW_H_
 #define _bq24297_SW_H_
@@ -41,10 +35,10 @@
 #define BQ25601_PN		0x2
 #endif
 /**********************************************************
-  *
-  *   [MASK/SHIFT]
-  *
-  *********************************************************/
+ *
+ *   [MASK/SHIFT]
+ *
+ *********************************************************/
 /* CON0 */
 #define CON0_EN_HIZ_MASK   0x01
 #define CON0_EN_HIZ_SHIFT  7
@@ -195,10 +189,10 @@ enum BQ_FAULT {
 };
 
 /**********************************************************
-  *
-  *[Extern Function]
-  *
-  *********************************************************/
+ *
+ * [Extern Function]
+ *
+ *********************************************************/
 /*CON0----------------------------------------------------*/
 extern void bq24297_set_en_hiz(unsigned int val);
 extern void bq24297_set_vindpm(unsigned int val);
@@ -244,10 +238,10 @@ extern unsigned int bq24297_get_vsys_stat(void);
 extern unsigned int bq24297_get_pn(void);
 /*---------------------------------------------------------*/
 extern void bq24297_dump_register(void);
-extern unsigned int bq24297_read_interface(unsigned char RegNum, unsigned char *val,
-	unsigned char MASK, unsigned char SHIFT);
-extern unsigned int bq24297_config_interface(unsigned char RegNum, unsigned char val, unsigned char MASK,
-					   unsigned char SHIFT);
+extern unsigned int bq24297_read_interface(unsigned char RegNum,
+	unsigned char *val, unsigned char MASK, unsigned char SHIFT);
+extern unsigned int bq24297_config_interface(unsigned char RegNum,
+	unsigned char val, unsigned char MASK, unsigned char SHIFT);
 extern u8 bq24297_get_fault_type(void);
 #endif /* _bq24297_SW_H_*/
 

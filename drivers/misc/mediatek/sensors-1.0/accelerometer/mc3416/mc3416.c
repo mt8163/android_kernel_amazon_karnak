@@ -34,12 +34,13 @@
 #include "mc3416.h"
 #include <linux/version.h>
 
+
 /*****************************************************************************
  *** CONFIGURATION
  *****************************************************************************/
 #define _MC34XX_SUPPORT_CONCURRENCY_PROTECTION_
 #define C_MAX_FIR_LENGTH	(32)
-
+#define MC34XX_SUPPORT_ANDROID_O
 /*****************************************************************************
  *** CONSTANT / DEFINITION
  *****************************************************************************/
@@ -58,7 +59,7 @@
 #define MC34XX_AXIS_Z	  2
 #define MC34XX_AXES_NUM	3
 #define MC34XX_DATA_LEN	6
-#define MC34XX_RESOLUTION_LOW	 		1
+#define MC34XX_RESOLUTION_LOW			1
 #define MC34XX_RESOLUTION_HIGH			2
 #define MC34XX_LOW_REOLUTION_DATA_SIZE	 3
 #define MC34XX_HIGH_REOLUTION_DATA_SIZE	6
@@ -144,7 +145,7 @@ static int mc34xx_i2c_probe(struct i2c_client *client,
 							const struct i2c_device_id *id);
 static int mc34xx_i2c_remove(struct i2c_client *client);
 static int mc34xx_i2c_auto_probe(struct i2c_client *client);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 static int mc34xx_suspend(struct device *dev);
 static int mc34xx_resume(struct device *dev);
 #else
@@ -161,10 +162,10 @@ static int mc34xx_motion_local_uninit(void);
 /*****************************************************************************
  *** STATIC VARIBLE & CONTROL BLOCK DECLARATION
  *****************************************************************************/
-static unsigned char s_bResolution = 0x00;
-static unsigned char s_bPCODE = 0x00;
-static unsigned char s_bHWID = 0x00;
-static unsigned char s_bMPOL = 0x00;
+static unsigned char s_bResolution = 0;
+static unsigned char s_bPCODE = 0;
+static unsigned char s_bHWID = 0;
+static unsigned char s_bMPOL = 0;
 static int s_nInitFlag = MC34XX_INIT_FAIL;
 /* Maintain  cust info here */
 struct acc_hw accel_cust_mc34xx;
@@ -185,12 +186,12 @@ static struct acc_init_info mc34xx_init_info = {
 
 #ifdef CONFIG_OF
 static const struct of_device_id accel_of_match[] = {
-	{.compatible = "mediatek,gsensor"},
+	{.compatible = "mediatek,mc3416"},
 	{},
 };
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 #ifdef CONFIG_PM_SLEEP
 static const struct dev_pm_ops mc34xx_i2c_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(mc34xx_suspend, mc34xx_resume)
@@ -208,7 +209,7 @@ static struct i2c_driver mc34xx_i2c_driver = {
 #ifdef CONFIG_OF
 			   .of_match_table = accel_of_match,
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 #ifdef CONFIG_PM_SLEEP
 			   .pm = &mc34xx_i2c_pm_ops,
 #endif
@@ -216,7 +217,7 @@ static struct i2c_driver mc34xx_i2c_driver = {
 			   },
 	.probe = mc34xx_i2c_probe,
 	.remove = mc34xx_i2c_remove,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,4,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
 	.suspend = mc34xx_suspend,
 	.resume = mc34xx_resume,
 #endif
@@ -233,9 +234,9 @@ static s16 accel_xyz_offset[MC34XX_ACC_AXES_NUM] = { 0 };
 
 #define ACCEL_SELF_TEST_MIN_VAL		0
 #define ACCEL_SELF_TEST_MAX_VAL		13000
-
-static int accel_cali_tolerance = 20;	//default tolenrance is 20%
-extern unsigned int idme_get_sensorcal(s16 * data);
+/* default tolenrance is 20% */
+static int accel_cali_tolerance = 20;
+extern unsigned int idme_get_sensorcal(s16 *data);
 
 /* -------------------------------------------------------------------------------------*/
 
@@ -296,7 +297,7 @@ static void mc34xx_mutex_unlock(void)
 
 /**************I2C operate API*****************************/
 
-static int mc34xx_i2c_read_block(struct i2c_client *client, u8 addr, u8 * data,
+static int mc34xx_i2c_read_block(struct i2c_client *client, u8 addr, u8 *data,
 								 u8 len)
 {
 	u8 beg = addr;
@@ -315,19 +316,16 @@ static int mc34xx_i2c_read_block(struct i2c_client *client, u8 addr, u8 * data,
 	msgs[1].len = len;
 	msgs[1].buf = data;
 
-	if (!client)
-	{
+	if (!client) {
 		mutex_unlock(&mc34xx_i2c_mutex);
 		return -EINVAL;
-	} else if (len > C_I2C_FIFO_SIZE)
-	{
+	} else if (len > C_I2C_FIFO_SIZE) {
 		GSE_ERR(" length %d exceeds %d\n", len, C_I2C_FIFO_SIZE);
 		mutex_unlock(&mc34xx_i2c_mutex);
 		return -EINVAL;
 	}
 	err = i2c_transfer(client->adapter, msgs, sizeof(msgs) / sizeof(msgs[0]));
-	if (err != 2)
-	{
+	if (err != 2) {
 		GSE_ERR("i2c_transfer error: (%d %p %d) %d\n", addr, data, len, err);
 		err = -EIO;
 	} else
@@ -338,19 +336,17 @@ static int mc34xx_i2c_read_block(struct i2c_client *client, u8 addr, u8 * data,
 
 }
 
-static int mc34xx_i2c_write_block(struct i2c_client *client, u8 addr, u8 * data, u8 len)
+static int mc34xx_i2c_write_block(struct i2c_client *client, u8 addr, u8 *data, u8 len)
 {	/*because address also occupies one byte, the maximum length for write is 7 bytes */
 	int err, idx, num;
 	char buf[C_I2C_FIFO_SIZE];
 
 	err = 0;
 	mutex_lock(&mc34xx_i2c_mutex);
-	if (!client)
-	{
+	if (!client) {
 		mutex_unlock(&mc34xx_i2c_mutex);
 		return -EINVAL;
-	} else if (len >= C_I2C_FIFO_SIZE)
-	{
+	} else if (len >= C_I2C_FIFO_SIZE) {
 		GSE_ERR(" length %d exceeds %d\n", len, C_I2C_FIFO_SIZE);
 		mutex_unlock(&mc34xx_i2c_mutex);
 		return -EINVAL;
@@ -362,8 +358,7 @@ static int mc34xx_i2c_write_block(struct i2c_client *client, u8 addr, u8 * data,
 		buf[num++] = data[idx];
 
 	err = i2c_master_send(client, buf, num);
-	if (err < 0)
-	{
+	if (err < 0) {
 		GSE_ERR("send command error!!\n");
 		mutex_unlock(&mc34xx_i2c_mutex);
 		return -EFAULT;
@@ -393,8 +388,7 @@ static int mc34xx_motion_c_enable_motion_detect(int en)
 	int err = 0;
 	struct mc34xx_i2c_data *obj = mc34xx_obj_i2c_data;
 
-	if (en == 1)
-	{
+	if (en == 1) {
 		motion_enable_status = true;
 		DataBuf[0] = 0x04;
 
@@ -407,16 +401,14 @@ static int mc34xx_motion_c_enable_motion_detect(int en)
 			return MC34XX_RETCODE_ERROR_I2C;
 		} else
 			GSE_LOG("mc34xx set motion enable ok %d!\n", DataBuf[1]);
-	} else
-	{
+	} else {
 		motion_enable_status = false;
 		DataBuf[0] = 0x04;
 
 		err =
 			mc34xx_i2c_write_block(obj->client, MC34XX_REG_INTERRUPT_ENABLE,
 								   DataBuf, 1);
-		if (err < 0)
-		{
+		if (err < 0) {
 			GSE_LOG("mc34xx set motion enable failed!\n");
 			return MC34XX_RETCODE_ERROR_I2C;
 		} else
@@ -437,17 +429,17 @@ static int mc34xx_motion_d_set_delay(u64 delay)
 	return 0;
 }
 
-static int mc34xx_motion_c_get_data(uint32_t * value, int *status)
+static int mc34xx_motion_c_get_data(uint32_t *value, int *status)
 {
 	return 0;
 }
 
-static int mc34xx_motion_c_get_data_motion_d(uint32_t * value, int *status)
+static int mc34xx_motion_c_get_data_motion_d(uint32_t *value, int *status)
 {
 	return 0;
 }
 
-static int mc34xx_motion_c_get_data_significant(uint32_t * value, int *status)
+static int mc34xx_motion_c_get_data_significant(uint32_t *value, int *status)
 {
 	unsigned char DataBuf[2] = { 0 };
 	int err = 0;
@@ -460,12 +452,10 @@ static int mc34xx_motion_c_get_data_significant(uint32_t * value, int *status)
 		return MC34XX_RETCODE_ERROR_I2C;
 	else
 	{
-		if (DataBuf[0] | 0x04)
-		{
+		if (DataBuf[0] | 0x04) {
 			*value = 1;
 			*status = 1;
-		} else
-		{
+		} else {
 			*value = 0;
 			*status = 0;
 		}
@@ -484,8 +474,7 @@ static int mc34xx_motion_c_enable_significant(int en)
 	err =
 		mc34xx_i2c_write_block(obj->client, MC34XX_REG_INTERRUPT_ENABLE,
 							   DataBuf, 1);
-	if (err < 0)
-	{
+	if (err < 0) {
 		GSE_LOG("mc34xx set motion enable failed!\n");
 		return MC34XX_RETCODE_ERROR_I2C;
 	} else
@@ -512,8 +501,7 @@ static int mc34xx_motion_local_init(void)
 	motion_ctl.enable_significant = mc34xx_motion_c_enable_significant;
 
 	res = step_c_register_control_path(&motion_ctl);
-	if (res)
-	{
+	if (res) {
 		GSE_ERR("register step counter control path err\n");
 		goto mc34xx_motion_c_local_init_failed;
 	}
@@ -524,15 +512,14 @@ static int mc34xx_motion_local_init(void)
 
 	motion_data.vender_div = 1;
 	res = step_c_register_data_path(&motion_data);
-	if (res)
-	{
+	if (res) {
 		GSE_ERR("register step counter data path err= %d\n", res);
 		goto mc34xx_motion_c_local_init_failed;
 	}
 
 	return 0;
 
-  mc34xx_motion_c_local_init_failed:
+	mc34xx_motion_c_local_init_failed:
 
 	GSE_ERR("%s init failed!\n", __FUNCTION__);
 	return res;
@@ -555,12 +542,10 @@ static int MC34XX_ValidateSensorIC(unsigned char *pbPCode, unsigned char *pbHwID
 	*pbPCode = *pbPCode & 0xF1;
 	*pbHwID = *pbHwID & 0xF0;
 
-	if (0xA0 == *pbHwID)
-	{
+	if (0xA0 == *pbHwID) {
 		if ((MC34XX_PCODE_3416 == *pbPCode) || (MC34XX_PCODE_3436 == *pbPCode))
 			return MC34XX_RETCODE_SUCCESS;
-	} else if ((0xC0 == *pbHwID) || (0x40 == *pbHwID) || (0x20 == *pbHwID))
-	{
+	} else if ((0xC0 == *pbHwID) || (0x40 == *pbHwID) || (0x20 == *pbHwID)) {
 		if ((MC34XX_PCODE_3413 == *pbPCode) || (MC34XX_PCODE_3433 == *pbPCode))
 			return MC34XX_RETCODE_SUCCESS;
 	}
@@ -571,7 +556,7 @@ static int MC34XX_ValidateSensorIC(unsigned char *pbPCode, unsigned char *pbHwID
 /*****************************************
  *** MC34XX_ReadRegMap
  *****************************************/
-static int MC34XX_ReadRegMap(struct i2c_client *p_i2c_client, u8 * pbUserBuf)
+static int MC34XX_ReadRegMap(struct i2c_client *p_i2c_client, u8 *pbUserBuf)
 {
 	u8 _baData[MC34XX_REGMAP_LENGTH] = { 0 };
 	int _nIndex = 0;
@@ -598,6 +583,13 @@ static int MC34XX_ReadData(struct i2c_client *pt_i2c_client,
 						   s16 waData[MC34XX_AXES_NUM])
 {
 	u8 _baData[MC34XX_DATA_LEN] = { 0 };
+	struct mc34xx_i2c_data *_pt_i2c_obj =
+		((struct mc34xx_i2c_data *) i2c_get_clientdata(pt_i2c_client));
+
+	if (atomic_read(&_pt_i2c_obj->suspend)) {
+		GSE_ERR("Chip is in suspend mode, skip!!\n");
+		return -EINVAL;
+	}
 
 	if (MC34XX_RESOLUTION_LOW == s_bResolution)
 	{
@@ -612,12 +604,10 @@ static int MC34XX_ReadData(struct i2c_client *pt_i2c_client,
 		waData[MC34XX_AXIS_X] = ((signed char) _baData[0]);
 		waData[MC34XX_AXIS_Y] = ((signed char) _baData[1]);
 		waData[MC34XX_AXIS_Z] = ((signed char) _baData[2]);
-	} else if (MC34XX_RESOLUTION_HIGH == s_bResolution)
-	{
+	} else if (MC34XX_RESOLUTION_HIGH == s_bResolution) {
 		if (mc34xx_i2c_read_block
 			(pt_i2c_client, MC34XX_REG_XOUT_EX_L, _baData,
-			 MC34XX_HIGH_REOLUTION_DATA_SIZE))
-		{
+			 MC34XX_HIGH_REOLUTION_DATA_SIZE)) {
 			GSE_ERR("ERR: fail to read data via I2C!\n");
 
 			return (MC34XX_RETCODE_ERROR_I2C);
@@ -688,38 +678,31 @@ static int MC34XX_CaliConvert(struct SENSOR_DATA *cali_data)
 	local_data.z = GRAVITY_EARTH_1000 - cali_data->z;
 	GSE_LOG("no convert data  %d %d %d \n", local_data.x, local_data.y,
 			local_data.z);
-	if (((local_data.x >= 6807) && (local_data.x <= 12807)))
-	{
+	if (((local_data.x >= 6807) && (local_data.x <= 12807))) {
 		cali_data->x = GRAVITY_EARTH_1000 - local_data.x;
 		cali_data->y = 0 - local_data.y;
 		cali_data->z = 0 - local_data.z;
-	} else if (((0 - local_data.x) > 6807) && (0 - local_data.x) <= 12807)
-	{
+	} else if (((0 - local_data.x) > 6807) && (0 - local_data.x) <= 12807) {
 		cali_data->x = 0 - (GRAVITY_EARTH_1000 + local_data.x);
 		cali_data->y = 0 - local_data.y;
 		cali_data->z = 0 - local_data.z;
-	} else if (((local_data.y >= 6807) && (local_data.y <= 12807)))
-	{
+	} else if (((local_data.y >= 6807) && (local_data.y <= 12807))) {
 		cali_data->x = 0 - local_data.x;
 		cali_data->y = GRAVITY_EARTH_1000 - local_data.y;
 		cali_data->z = 0 - local_data.z;
-	} else if (((0 - local_data.y) > 6807) && (0 - local_data.y) <= 12807)
-	{
+	} else if (((0 - local_data.y) > 6807) && (0 - local_data.y) <= 12807) {
 		cali_data->x = 0 - local_data.x;
 		cali_data->y = 0 - (GRAVITY_EARTH_1000 + local_data.y);
 		cali_data->z = 0 - local_data.z;
-	} else if (((local_data.x >= 6807) && (local_data.x <= 12807)))
-	{
+	} else if (((local_data.x >= 6807) && (local_data.x <= 12807))) {
 		cali_data->x = 0 - local_data.x;
 		cali_data->y = 0 - local_data.y;
 		cali_data->z = GRAVITY_EARTH_1000 - local_data.z;
-	} else if (((0 - local_data.z) > 6807) && (0 - local_data.z) <= 12807)
-	{
+	} else if (((0 - local_data.z) > 6807) && (0 - local_data.z) <= 12807) {
 		cali_data->x = 0 - local_data.x;
 		cali_data->y = 0 - local_data.y;
 		cali_data->z = 0 - (GRAVITY_EARTH_1000 + local_data.z);
-	} else
-	{
+	} else {
 		GSE_LOG("the xyz threshold over:(-300mg ~ +300mg)\n");
 		return -EINVAL;
 	}
@@ -777,28 +760,24 @@ static int MC34XX_SetPowerMode(struct i2c_client *client, bool enable)
 	if (enable == mc34xx_sensor_power)
 		GSE_LOG("Sensor power status should not be set again!!!\n");
 
-	if (mc34xx_i2c_read_block(client, addr, databuf, 1))
-	{
+	if (mc34xx_i2c_read_block(client, addr, databuf, 1)) {
 		GSE_ERR("read power ctl register err!\n");
 		return MC34XX_RETCODE_ERROR_I2C;
 	}
 
 	GSE_LOG("set power read MC34XX_REG_MODE_FEATURE =%02x\n", databuf[0]);
 
-	if (enable)
-	{
+	if (enable) {
 		databuf[0] = 0xC1;
 		res =
 			mc34xx_i2c_write_block(client, MC34XX_REG_MODE_FEATURE, databuf, 1);
-	} else
-	{
+	} else {
 		databuf[0] = 0xC3;
 		res =
 			mc34xx_i2c_write_block(client, MC34XX_REG_MODE_FEATURE, databuf, 1);
 	}
 
-	if (res < 0)
-	{
+	if (res < 0) {
 		GSE_LOG("fwq set power mode failed!\n");
 		return MC34XX_RETCODE_ERROR_I2C;
 	} else if (atomic_read(&obj->trace) & MCUBE_TRC_INFO)
@@ -830,12 +809,10 @@ static void MC34XX_SetResolution(void)
 		GSE_ERR("ERR: no resolution assigned!\n");
 		break;
 	}
-	if (MC34XX_RESOLUTION_HIGH == s_bResolution)
-	{
+	if (MC34XX_RESOLUTION_HIGH == s_bResolution) {
 		GSE_LOG("[%s] s_bResolution: %d(MC34XX_RESOLUTION_HIGH)\n",
 				__FUNCTION__, s_bResolution);
-	} else if (MC34XX_RESOLUTION_LOW == s_bResolution)
-	{
+	} else if (MC34XX_RESOLUTION_LOW == s_bResolution) {
 		GSE_LOG("[%s] s_bResolution: %d(MC34XX_RESOLUTION_LOW)\n", __FUNCTION__,
 				s_bResolution);
 	}
@@ -882,14 +859,12 @@ static void MC34XX_SetSampleRate(struct i2c_client *pt_i2c_client)
 			break;
 		}
 		GSE_LOG("[%s MERAK] REG(0x08) = 0x%02X\n", __func__, _baDataBuf[0]);
-	} else if (IS_MENSA())
-	{
+	} else if (IS_MENSA()) {
 		mc34xx_i2c_read_block(pt_i2c_client, MC34XX_REG_SAMPLE_RATE, _baDataBuf, 1);
 		_baDataBuf[0] = ((_baDataBuf[0] & 0xF8) | 0x05);	/* CLK =2.56MHz,OSR=64,ODR=2048Hz */
 		GSE_LOG("[%s MENSA] REG(0x08) = 0x%02X\n", __func__, _baDataBuf[0]);
 
-	} else
-	{
+	} else {
 		_baDataBuf[0] = 0x00;
 	}
 
@@ -903,8 +878,7 @@ static void MC34XX_LowPassFilter(struct i2c_client *pt_i2c_client)
 {
 	unsigned char _baDataBuf[2] = { 0 };
 	int res = 0;
-	if (IS_MENSA())
-	{
+	if (IS_MENSA()) {
 		res =
 			mc34xx_i2c_read_block(pt_i2c_client, MC34XX_REG_LPF_RANGE_RES,
 								  _baDataBuf, 1);
@@ -919,8 +893,7 @@ static void MC34XX_LowPassFilter(struct i2c_client *pt_i2c_client)
 		else
 			GSE_LOG("[%s] Write REG(0x20) = 0x%02X,MENSA LPF enable success.\n",
 					__func__, _baDataBuf[0]);
-	} else if (IS_MERAK())
-	{
+	} else if (IS_MERAK()) {
 		GSE_LOG("[%s] MERAK not support LPF.\n", __func__);
 	}
 }
@@ -937,14 +910,12 @@ static void MC34XX_ConfigResRange(struct i2c_client *pt_i2c_client)
 						  1);
 	GSE_LOG("[%s] Read REG(0x20) = 0x%02X\n", __func__, _baDataBuf[0]);
 
-	if (IS_MERAK())
-	{
+	if (IS_MERAK()) {
 		if (MC34XX_RESOLUTION_LOW == s_bResolution)
 			_baDataBuf[0] = ((_baDataBuf[0] & 0x88) | 0x02);	/* 8bit,(+2g~-2g) */
 		else
 			_baDataBuf[0] = ((_baDataBuf[0] & 0x88) | 0x25);	/* 14bit,(+8g~-8g) */
-	} else if (IS_MENSA())
-	{
+	} else if (IS_MENSA()) {
 		if (MC34XX_RESOLUTION_LOW == s_bResolution)
 			_baDataBuf[0] = ((_baDataBuf[0] & 0x0F) | 0x80);	/* 8bit,(+2g~-2g) */
 		else
@@ -967,8 +938,7 @@ static void MC34XX_ConfigResRange(struct i2c_client *pt_i2c_client)
 static void MC34XX_SetGain(void)
 {
 
-	if (IS_MERAK())
-	{
+	if (IS_MERAK()) {
 		if (MC34XX_RESOLUTION_LOW == s_bResolution)
 		{
 			gsensor_gain.x = gsensor_gain.y = gsensor_gain.z = (1 << 8) / (1 << 2);
@@ -976,14 +946,10 @@ static void MC34XX_SetGain(void)
 		{
 			gsensor_gain.x = gsensor_gain.y = gsensor_gain.z = (1 << 14) / (1 << 4);
 		}
-	} else if (IS_MENSA())
-	{
-
-		if (MC34XX_RESOLUTION_LOW == s_bResolution)
-		{
+	} else if (IS_MENSA()) {
+		if (MC34XX_RESOLUTION_LOW == s_bResolution) {
 			gsensor_gain.x = gsensor_gain.y = gsensor_gain.z = (1 << 8) / (1 << 2);
-		} else if (MC34XX_RESOLUTION_HIGH == s_bResolution)
-		{
+		} else if (MC34XX_RESOLUTION_HIGH == s_bResolution) {
 			gsensor_gain.x = gsensor_gain.y = gsensor_gain.z = (1 << 16) / (1 << 4);
 		}
 	}
@@ -1016,23 +982,17 @@ static int MC34XX_Init(struct i2c_client *client, int reset_cali)
 	MC34XX_LowPassFilter(client);
 	MC34XX_ConfigResRange(client);
 	MC34XX_SetGain();
-	if (IS_MENSA())
-	{
+	if (IS_MENSA()) {
 		_baDataBuf[0] = 0x04;
 		mc34xx_i2c_write_block(client, MC34X6_REG_MOTION_CTRL, _baDataBuf, 1);
 
 	}
-	if (IS_MERAK())
-	{
+	if (IS_MERAK()) {
 		_baDataBuf[0] = 0x00;
-		mc34xx_i2c_write_block(client, MC34XX_REG_INTERRUPT_ENABLE, _baDataBuf,
-							   1);
-	} else if (IS_MENSA())
-	{
+		mc34xx_i2c_write_block(client, MC34XX_REG_INTERRUPT_ENABLE, _baDataBuf, 1);
+	} else if (IS_MENSA()) {
 		_baDataBuf[0] = 0x00;
-		mc34xx_i2c_write_block(client, MC34XX_REG_INTERRUPT_ENABLE, _baDataBuf,
-							   1);
-
+		mc34xx_i2c_write_block(client, MC34XX_REG_INTERRUPT_ENABLE, _baDataBuf, 1);
 	}
 
 	mc34xx_i2c_read_block(client, MC34XX_REG_MCLK_POLARITY, _baDataBuf, 1);
@@ -1052,14 +1012,11 @@ static int MC34XX_ReadChipInfo(struct i2c_client *client, char *buf,
 	if ((NULL == buf) || (bufsize <= 30))
 		return -1;
 
-	if (IS_MERAK())
-	{
+	if (IS_MERAK()) {
 		sprintf(buf, "MC34X3 Chip");
-	} else if (IS_MENSA())
-	{
+	} else if (IS_MENSA()) {
 		sprintf(buf, "MC34X6 Chip");
-	} else
-	{
+	} else {
 		sprintf(buf, "Unknown Chip");
 	}
 	return 0;
@@ -1075,21 +1032,18 @@ static int MC34XX_ReadSensorData(struct i2c_client *pt_i2c_client, char *pbBuf,
 	struct mc34xx_i2c_data *_pt_i2c_obj =
 		((struct mc34xx_i2c_data *) i2c_get_clientdata(pt_i2c_client));
 
-	if ((NULL == pt_i2c_client) || (NULL == pbBuf))
-	{
+	if ((NULL == pt_i2c_client) || (NULL == pbBuf)) {
 		GSE_ERR("ERR: Null Pointer\n");
 		return MC34XX_RETCODE_ERROR_NULL_POINTER;
 	}
 
-	if (false == mc34xx_sensor_power)
-	{
+	if (false == mc34xx_sensor_power) {
 		if (MC34XX_RETCODE_SUCCESS != MC34XX_SetPowerMode(pt_i2c_client, true))
 			GSE_ERR("ERR: fail to set power mode!\n");
 	}
 
 	if (MC34XX_RETCODE_SUCCESS !=
-		MC34XX_ReadData(pt_i2c_client, _pt_i2c_obj->data))
-	{
+		MC34XX_ReadData(pt_i2c_client, _pt_i2c_obj->data)) {
 		GSE_ERR("ERR: fail to read data!\n");
 
 		return MC34XX_RETCODE_ERROR_I2C;
@@ -1145,22 +1099,27 @@ static int MC34XX_ReadSensorData(struct i2c_client *pt_i2c_client, char *pbBuf,
  *****************************************/
 static int MC34XX_ReadRawData(struct i2c_client *client, char *buf)
 {
+	struct mc34xx_i2c_data *obj = i2c_get_clientdata(client);
 	int res = 0;
 	s16 sensor_data[3] = { 0 };
 
 	if (!buf || !client)
 		return -EINVAL;
 
-	if (mc34xx_sensor_power == false)
-	{
+	if (atomic_read(&obj->suspend)) {
+		GSE_ERR("Chip is in suspend mode, skip!!\n");
+		return -EINVAL;
+	}
+
+
+	if (mc34xx_sensor_power == false) {
 		res = MC34XX_SetPowerMode(client, true);
 		if (res)
 			GSE_ERR("Power on MC34XX error %d!\n", res);
 	}
 
 	res = MC34XX_ReadData(client, sensor_data);
-	if (res)
-	{
+	if (res) {
 		GSE_ERR("I2C error: ret value=%d", res);
 		return -EIO;
 	}
@@ -1177,19 +1136,18 @@ static int MC34XX_JudgeTestResult(struct i2c_client *client)
 {
 	int res = 0;
 	unsigned char _baData1Buf[2] = { 0 };
+
 	res =
-		mc34xx_i2c_read_block(client, MC34XX_REG_PRODUCT_CODE_L, _baData1Buf, 1 );
-	if (res)
-	{
+		mc34xx_i2c_read_block(client, MC34XX_REG_PRODUCT_CODE_L, _baData1Buf, 1);
+	if (res) {
 		GSE_ERR("I2C error: ret value=%d", res);
 		return -EIO;
 	}
 
-	if ((MC34XX_PCODE_3416 == (_baData1Buf[0] & 0xF1)) ||
-		(MC34XX_PCODE_3436 == (_baData1Buf[0] & 0xF1)) ||
-		(MC34XX_PCODE_3413 == (_baData1Buf[0] & 0xF1)) ||
-		(MC34XX_PCODE_3433 == (_baData1Buf[0] & 0xF1)))
-	{
+	if ((MC34XX_PCODE_3416 == (_baData1Buf[0] & 0xF1))
+			|| (MC34XX_PCODE_3436 == (_baData1Buf[0] & 0xF1))
+			|| (MC34XX_PCODE_3413 == (_baData1Buf[0] & 0xF1))
+			|| (MC34XX_PCODE_3433 == (_baData1Buf[0] & 0xF1))) {
 		return MC34XX_RETCODE_SUCCESS;
 	}
 
@@ -1226,15 +1184,14 @@ static ssize_t show_sensordata_value(struct device_driver *ddri, char *buf)
 		return 0;
 	}
 
-	if (false == mc34xx_sensor_power){
+	if (false == mc34xx_sensor_power) {
 		mc34xx_mutex_lock();
 		err = MC34XX_SetPowerMode(client, true);
 		mc34xx_mutex_unlock();
-		if (err){
+		if (err) {
 			GSE_ERR("[Sensor] enable power fail!! err code %d!\n", err);
 			return snprintf(buf, PAGE_SIZE, "[Sensor] enable power fail\n");
 		}
-		//Wait for 200ms to stable
 		msleep(200);
 	}
 
@@ -1260,18 +1217,16 @@ static ssize_t show_selftest_value(struct device_driver *ddri, char *buf)
  *****************************************/
 static ssize_t store_selftest_value(struct device_driver *ddri, const char *buf,
 									size_t count)
-{								/*write anything to this register will trigger the process */
+{			/*write anything to this register will trigger the process */
 	struct i2c_client *client = mc34xx_i2c_client;
 	int num = 0;
 	int ret = 0;
 
 	ret = kstrtoint(buf, 10, &num);
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		GSE_ERR("parse number fail\n");
 		return count;
-	} else if (0 == num)
-	{
+	} else if (0 == num) {
 		GSE_ERR("invalid data count\n");
 		return count;
 	}
@@ -1282,14 +1237,12 @@ static ssize_t store_selftest_value(struct device_driver *ddri, const char *buf,
 	mc34xx_mutex_unlock();
 	GSE_LOG("SELFTEST:\n");
 
-	if (!MC34XX_JudgeTestResult(client))
-	{
+	if (!MC34XX_JudgeTestResult(client)) {
 		GSE_LOG("SELFTEST : PASS\n");
-		strcpy(selftestRes, "y");
-	} else
-	{
+		strncpy(selftestRes, "y", sizeof(selftestRes));
+	} else {
 		GSE_LOG("SELFTEST : FAIL\n");
-		strcpy(selftestRes, "n");
+		strncpy(selftestRes, "n", sizeof(selftestRes));
 	}
 
 	return count;
@@ -1305,8 +1258,7 @@ static ssize_t show_trace_value(struct device_driver *ddri, char *buf)
 
 	GSE_LOG("fwq show_trace_value\n");
 
-	if (obj == NULL)
-	{
+	if (obj == NULL) {
 		GSE_ERR("i2c_data obj is null!!\n");
 		return 0;
 	}
@@ -1326,8 +1278,7 @@ static ssize_t store_trace_value(struct device_driver *ddri, const char *buf,
 
 	GSE_LOG("fwq store_trace_value\n");
 
-	if (obj == NULL)
-	{
+	if (obj == NULL) {
 		GSE_ERR("i2c_data obj is null!!\n");
 		return 0;
 	}
@@ -1374,8 +1325,7 @@ static ssize_t show_regiter_map(struct device_driver *ddri, char *buf)
 
 	struct i2c_client *client = mc34xx_i2c_client;
 
-	if ((0xA5 == buf[0]) && (0x7B == buf[1]) && (0x40 == buf[2]))
-	{
+	if ((0xA5 == buf[0]) && (0x7B == buf[1]) && (0x40 == buf[2])) {
 		mc34xx_mutex_lock();
 		MC34XX_ReadRegMap(client, buf);
 		mc34xx_mutex_unlock();
@@ -1388,8 +1338,7 @@ static ssize_t show_regiter_map(struct device_driver *ddri, char *buf)
 		buf[0x26] = s_baOTP_OffsetData[5];
 
 		_tLength = 64;
-	} else
-	{
+	} else {
 		mc34xx_mutex_lock();
 		MC34XX_ReadRegMap(client, _baRegMap);
 		mc34xx_mutex_unlock();
@@ -1441,8 +1390,7 @@ static ssize_t store_chip_orientation(struct device_driver *ptDevDrv,
 	struct mc34xx_i2c_data *_pt_i2c_obj = mc34xx_obj_i2c_data;
 
 	ret = kstrtoint(pbBuf, 10, &_nDirection);
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		if (hwmsen_get_convert(_nDirection, &_pt_i2c_obj->cvt))
 			GSE_ERR("ERR: fail to set direction\n");
 	}
@@ -1470,14 +1418,12 @@ static ssize_t store_accuracy_status(struct device_driver *ddri,
 	int ret = 0;
 
 	ret = kstrtoint(buf, 10, &_nAccuracyStatus);
-	if (ret != 0)
-	{
+	if (ret != 0) {
 		GSE_ERR("incorrect argument\n");
 		return count;
 	}
 
-	if (SENSOR_STATUS_ACCURACY_HIGH < _nAccuracyStatus)
-	{
+	if (SENSOR_STATUS_ACCURACY_HIGH < _nAccuracyStatus) {
 		GSE_ERR("illegal accuracy status\n");
 		return count;
 	}
@@ -1526,7 +1472,7 @@ static ssize_t store_chip_register(struct device_driver *ptDevDrv,
 
 /******************************* add for calibration ***********************************/
 static int acc_store_offset_in_file(const char *filename,
-									s16 * offset, int data_valid)
+									s16 *offset, int data_valid)
 {
 	struct file *cali_file;
 	char w_buf[MC34XX_DATA_BUF_NUM * sizeof(s16) * 2 + 1] = { 0 };
@@ -1536,32 +1482,29 @@ static int acc_store_offset_in_file(const char *filename,
 	mm_segment_t fs;
 
 	cali_file = filp_open(filename, O_CREAT | O_RDWR, 0777);
-	if (IS_ERR(cali_file))
-	{
+	if (IS_ERR(cali_file)) {
 		GSE_LOG("open error! exit!\n");
 		return -1;
 	}
 	fs = get_fs();
 	set_fs(get_ds());
-	for (i = 0; i < MC34XX_DATA_BUF_NUM; i++)
-	{
+	for (i = 0; i < MC34XX_DATA_BUF_NUM; i++) {
 		sprintf(dest, "%02X", offset[i] & 0x00FF);
 		dest += 2;
 		sprintf(dest, "%02X", (offset[i] >> 8) & 0x00FF);
 		dest += 2;
 	};
 	GSE_LOG("w_buf: %s\n", w_buf);
-	cali_file->f_op->write(cali_file, (void *) w_buf,
+	vfs_write(cali_file, (void *) w_buf,
 						   MC34XX_DATA_BUF_NUM * sizeof(s16) * 2,
 						   &cali_file->f_pos);
 	cali_file->f_pos = 0x00;
-	cali_file->f_op->read(cali_file, (void *) r_buf,
+	vfs_read(cali_file, (void *) r_buf,
 						  MC34XX_DATA_BUF_NUM * sizeof(s16) * 2,
 						  &cali_file->f_pos);
 	for (i = 0; i < MC34XX_DATA_BUF_NUM * sizeof(s16) * 2; i++)
 	{
-		if (r_buf[i] != w_buf[i])
-		{
+		if (r_buf[i] != w_buf[i]) {
 			filp_close(cali_file, NULL);
 			GSE_LOG("read back error! exit!\n");
 			return -1;
@@ -1580,9 +1523,7 @@ static ssize_t set_accel_self_test(struct device_driver *ddri, char *buf)
 	struct mc34xx_i2c_data *obj;
 	char strbuf[MC34XX_BUF_SIZE];
 	int data[3] = { 0, 0, 0 };
-	int avg[3] = { 0 }, out_nost[3] =
-	{
-	0};
+	int avg[3] = { 0 }, out_nost[3] = { 0 };
 	int err = -1, num = 0, count = 5;
 
 	accel_self_test[0] = accel_self_test[1] = accel_self_test[2] = 0;
@@ -1591,30 +1532,26 @@ static ssize_t set_accel_self_test(struct device_driver *ddri, char *buf)
 	mc34xx_mutex_lock();
 	err = MC34XX_SetPowerMode(mc34xx_obj_i2c_data->client, true);
 	mc34xx_mutex_unlock();
-	if (err)
-	{
+	if (err) {
 		GSE_ERR("enable gsensor fail: %d\n", err);
 		goto MC34XX_accel_self_test_exit;
 	}
 
 	msleep(200);
 
-	while (num < count)
-	{
+	while (num < count) {
 
 		/* read gsensor data */
 		err = MC34XX_ReadSensorData(client, strbuf, MC34XX_BUF_SIZE);
 
-		if (err)
-		{
+		if (err) {
 			GSE_ERR("read data fail: %d\n", err);
 			goto MC34XX_accel_self_test_exit;
 		}
 
 		err = sscanf(strbuf, "%x %x %x", &data[MC34XX_AXIS_X],
 					 &data[MC34XX_AXIS_Y], &data[MC34XX_AXIS_Z]);
-		if (3 != err)
-		{
+		if (3 != err) {
 			GSE_ERR("invalid content: '%s'\n", strbuf);
 			goto MC34XX_accel_self_test_exit;
 		}
@@ -1646,7 +1583,7 @@ static ssize_t set_accel_self_test(struct device_driver *ddri, char *buf)
 
 	return snprintf(buf, PAGE_SIZE, "[G Sensor] set_accel_self_test PASS\n");
 
-  MC34XX_accel_self_test_exit:
+MC34XX_accel_self_test_exit:
 	mc34xx_mutex_lock();
 	MC34XX_SetPowerMode(mc34xx_obj_i2c_data->client, false);
 	mc34xx_mutex_unlock();
@@ -1658,15 +1595,15 @@ static ssize_t set_accel_self_test(struct device_driver *ddri, char *buf)
 static ssize_t get_accel_self_test(struct device_driver *ddri, char *buf)
 {
 	if (accel_self_test[0] < ACCEL_SELF_TEST_MIN_VAL ||
-		accel_self_test[0] > ACCEL_SELF_TEST_MAX_VAL)
+			accel_self_test[0] > ACCEL_SELF_TEST_MAX_VAL)
 		return sprintf(buf, "X=%d , out of range\nFail\n", accel_self_test[0]);
 
 	if (accel_self_test[1] < ACCEL_SELF_TEST_MIN_VAL ||
-		accel_self_test[1] > ACCEL_SELF_TEST_MAX_VAL)
+			accel_self_test[1] > ACCEL_SELF_TEST_MAX_VAL)
 		return sprintf(buf, "Y=%d , out of range\nFail\n", accel_self_test[1]);
 
 	if (accel_self_test[2] < ACCEL_SELF_TEST_MIN_VAL ||
-		accel_self_test[2] > ACCEL_SELF_TEST_MAX_VAL)
+			accel_self_test[2] > ACCEL_SELF_TEST_MAX_VAL)
 		return sprintf(buf, "Z=%d , out of range\nFail\n", accel_self_test[2]);
 	else
 		return sprintf(buf, "%d , %d , %d\nPass\n", accel_self_test[0],
@@ -1710,8 +1647,7 @@ static ssize_t set_accel_cali(struct device_driver *ddri, char *buf)
 	int cali_last[3] = { 0, 0, 0 };
 	int err = -1, num = 0, times = 20;
 
-	if (NULL == client)
-	{
+	if (NULL == client) {
 		GSE_ERR("i2c client is null!!\n");
 		return 0;
 	}
@@ -1724,8 +1660,7 @@ static ssize_t set_accel_cali(struct device_driver *ddri, char *buf)
 	mc34xx_mutex_lock();
 	err = MC34XX_SetPowerMode(client, true);
 	mc34xx_mutex_unlock();
-	if (err)
-	{
+	if (err) {
 		GSE_ERR("[Sensor] enable power fail!! err code %d!\n", err);
 		return snprintf(buf, PAGE_SIZE, "[Sensor] enable power fail\n");
 	}
@@ -1737,30 +1672,26 @@ static ssize_t set_accel_cali(struct device_driver *ddri, char *buf)
 	err = MC34XX_ResetCalibration(client);
 	mc34xx_mutex_unlock();
 
-	if (err)
-	{
+	if (err) {
 		GSE_ERR("ResetCalibration Fail: %d\n", err);
 		return snprintf(buf, PAGE_SIZE, "[Sensor] ResetCalibration Fail\n");
 	}
 
-	while (num < times)
-	{
+	while (num < times) {
 		mdelay(20);
 		/* read gsensor data */
 		mc34xx_mutex_lock();
 		err = MC34XX_ReadSensorData(client, strbuf, MC34XX_BUF_SIZE);
 		mc34xx_mutex_unlock();
 
-		if (err)
-		{
+		if (err) {
 			GSE_ERR("read data fail: %d\n", err);
 			return snprintf(buf, PAGE_SIZE, "[Sensor] Read data fail\n");
 		}
 
 		err = sscanf(strbuf, "%x %x %x", &data[MC34XX_AXIS_X],
 					 &data[MC34XX_AXIS_Y], &data[MC34XX_AXIS_Z]);
-		if (3 != err)
-		{
+		if (3 != err) {
 			GSE_ERR("invalid content: '%s'\n", strbuf);
 			return snprintf(buf, PAGE_SIZE, "[Sensor] invalid content\n");
 		}
@@ -1789,11 +1720,10 @@ static ssize_t set_accel_cali(struct device_driver *ddri, char *buf)
 	cali[MC34XX_AXIS_Z] = golden_z - avg[MC34XX_AXIS_Z];
 
 	if ((abs(cali[MC34XX_AXIS_X]) > abs(accel_cali_tolerance * golden_z / 100))
-		|| (abs(cali[MC34XX_AXIS_Y]) >
+			|| (abs(cali[MC34XX_AXIS_Y]) >
 			abs(accel_cali_tolerance * golden_z / 100))
-		|| (abs(cali[MC34XX_AXIS_Z]) >
-			abs(accel_cali_tolerance * golden_z / 100)))
-	{
+			|| (abs(cali[MC34XX_AXIS_Z]) >
+			abs(accel_cali_tolerance * golden_z / 100))) {
 
 		GSE_ERR
 			("X/Y/Z out of range  tolerance:[%d] avg_x:[%d] avg_y:[%d] avg_z:[%d]\n",
@@ -1814,8 +1744,7 @@ static ssize_t set_accel_cali(struct device_driver *ddri, char *buf)
 	err = MC34XX_WriteCalibration(client, cali_last);
 	mc34xx_mutex_unlock();
 
-	if (err)
-	{
+	if (err) {
 		GSE_ERR("MC34XX_WriteCalibration!! err code %d!\n", err);
 		return snprintf(buf, PAGE_SIZE,
 						"[Sensor] MC34XX_WriteCalibration fail\n");
@@ -1829,14 +1758,12 @@ static ssize_t set_accel_cali(struct device_driver *ddri, char *buf)
 	err = MC34XX_SetPowerMode(client, false);
 	mc34xx_mutex_unlock();
 
-	if (err)
-	{
+	if (err) {
 		GSE_ERR("disable power fail!! err code %d!\n", err);
 		return snprintf(buf, PAGE_SIZE, "[Sensor] disable power fail\n");
 	}
 
-	if (acc_store_offset_in_file(MC34XX_ACC_CALI_FILE, accel_xyz_offset, 1))
-	{
+	if (acc_store_offset_in_file(MC34XX_ACC_CALI_FILE, accel_xyz_offset, 1)) {
 		return snprintf(buf, PAGE_SIZE,
 						"[G Sensor] set_accel_cali ERROR %d, %d, %d\n",
 						accel_xyz_offset[0],
@@ -1886,15 +1813,13 @@ static ssize_t store_power_mode(struct device_driver *ptDevDrv,
 
 	power_enable = (power_mode ? true : false);
 
-	if (0 == ret)
-	{
+	if (0 == ret) {
 		mc34xx_mutex_lock();
 		ret = MC34XX_SetPowerMode(client, power_enable);
 		mc34xx_mutex_unlock();
 	}
 
-	if (ret)
-	{
+	if (ret) {
 		GSE_ERR("set power %s failed %d\n", (power_enable ? "on" : "off"), ret);
 		return 0;
 	} else
@@ -1922,8 +1847,7 @@ static ssize_t store_cali_tolerance(struct device_driver *ptDevDrv,
 
 	ret = kstrtoint(pbBuf, 10, &temp_cali_tolerance);
 
-	if (0 == ret)
-	{
+	if (0 == ret) {
 		if (temp_cali_tolerance > 100)
 			temp_cali_tolerance = 100;
 		if (temp_cali_tolerance <= 0)
@@ -1932,8 +1856,7 @@ static ssize_t store_cali_tolerance(struct device_driver *ptDevDrv,
 		accel_cali_tolerance = temp_cali_tolerance;
 	}
 
-	if (ret)
-	{
+	if (ret) {
 		GSE_ERR("set accel_cali_tolerance failed %d\n", ret);
 		return 0;
 	} else
@@ -2006,8 +1929,7 @@ static int mc34xx_create_attr(struct device_driver *driver)
 	for (idx = 0; idx < num; idx++)
 	{
 		err = driver_create_file(driver, mc34xx_attr_list[idx]);
-		if (err)
-		{
+		if (err) {
 			GSE_ERR("driver_create_file (%s) = %d\n",
 					mc34xx_attr_list[idx]->attr.name, err);
 			break;
@@ -2041,8 +1963,7 @@ static int mc34xx_open(struct inode *inode, struct file *file)
 {
 	file->private_data = mc34xx_i2c_client;
 
-	if (file->private_data == NULL)
-	{
+	if (file->private_data == NULL) {
 		GSE_ERR("null pointer!!\n");
 		return -EINVAL;
 	}
@@ -2068,9 +1989,7 @@ static long mc34xx_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		(struct mc34xx_i2c_data *) i2c_get_clientdata(client);
 	char strbuf[MC34XX_BUF_SIZE] = { 0 };
 	void __user *data = NULL;
-	struct SENSOR_DATA driver_cali_data = { 0 }, nvram_cali_data =
-	{
-	0};
+	struct SENSOR_DATA driver_cali_data = { 0 }, nvram_cali_data = { 0 };
 	long err = 0;
 	int cali[3] = { 0 };
 
@@ -2079,8 +1998,7 @@ static long mc34xx_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
 		err = !access_ok(VERIFY_READ, (void __user *) arg, _IOC_SIZE(cmd));
 
-	if (err)
-	{
+	if (err) {
 		GSE_ERR("access error: %08X, (%2d, %2d)\n", cmd, _IOC_DIR(cmd),
 				_IOC_SIZE(cmd));
 		return -EFAULT;
@@ -2088,180 +2006,180 @@ static long mc34xx_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd)
 	{
-	case GSENSOR_IOCTL_INIT:
-		GSE_LOG("fwq GSENSOR_IOCTL_INIT\n");
-		mc34xx_mutex_lock();
-		MC34XX_Init(client, 0);
-		mc34xx_mutex_unlock();
-		break;
+		case GSENSOR_IOCTL_INIT:
+			GSE_LOG("fwq GSENSOR_IOCTL_INIT\n");
+			mc34xx_mutex_lock();
+			MC34XX_Init(client, 0);
+			mc34xx_mutex_unlock();
+			break;
 
-	case GSENSOR_IOCTL_READ_CHIPINFO:
-		GSE_LOG("fwq GSENSOR_IOCTL_READ_CHIPINFO\n");
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
-			break;
-		}
-
-		MC34XX_ReadChipInfo(client, strbuf, MC34XX_BUF_SIZE);
-		if (copy_to_user(data, strbuf, strlen(strbuf) + 1))
-		{
-			err = -EFAULT;
-			break;
-		}
-		break;
-
-	case GSENSOR_IOCTL_READ_SENSORDATA:
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
-			break;
-		}
-		mc34xx_mutex_lock();
-
-		MC34XX_ReadSensorData(client, strbuf, MC34XX_BUF_SIZE);
-
-		mc34xx_mutex_unlock();
-		if (copy_to_user(data, strbuf, strlen(strbuf) + 1))
-		{
-			err = -EFAULT;
-			break;
-		}
-		break;
-
-	case GSENSOR_IOCTL_READ_GAIN:
-		GSE_LOG("fwq GSENSOR_IOCTL_READ_GAIN\n");
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
-			break;
-		}
-
-		if (copy_to_user(data, &gsensor_gain, sizeof(struct GSENSOR_VECTOR3D)))
-		{
-			err = -EFAULT;
-			break;
-		}
-		break;
-
-	case GSENSOR_IOCTL_READ_OFFSET:
-		GSE_LOG("fwq GSENSOR_IOCTL_READ_OFFSET\n");
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
-			break;
-		}
-
-		if (copy_to_user
-			(data, &gsensor_offset, sizeof(struct GSENSOR_VECTOR3D)))
-		{
-			err = -EFAULT;
-			break;
-		}
-		break;
-
-	case GSENSOR_IOCTL_READ_RAW_DATA:
-		GSE_LOG("fwq GSENSOR_IOCTL_READ_RAW_DATA\n");
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
-			break;
-		}
-		mc34xx_mutex_lock();
-		MC34XX_ReadRawData(client, strbuf);
-		mc34xx_mutex_unlock();
-		if (copy_to_user(data, strbuf, strlen(strbuf) + 1))
-		{
-			err = -EFAULT;
-			break;
-		}
-		break;
-
-	case GSENSOR_IOCTL_SET_CALI:
-		GSE_LOG("fwq GSENSOR_IOCTL_SET_CALI!!\n");
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
-			break;
-		}
-		if (copy_from_user(&nvram_cali_data, data, sizeof(nvram_cali_data)))
-		{
-			err = -EFAULT;
-			break;
-		}
-		if (atomic_read(&obj->suspend))
-		{
-			GSE_ERR("Perform calibration in suspend state!!\n");
-			err = -EINVAL;
-		} else
-		{
-			err = MC34XX_CaliConvert(&nvram_cali_data);
-			if (err != 0)
+		case GSENSOR_IOCTL_READ_CHIPINFO:
+			GSE_LOG("fwq GSENSOR_IOCTL_READ_CHIPINFO\n");
+			data = (void __user *) arg;
+			if (data == NULL)
 			{
-				GSE_LOG("the xyz threshold over:(-300mg ~ +300mg)\n");
+				err = -EINVAL;
 				break;
 			}
-			GSE_LOG("Calixyz Calibration %d %d %d \n", nvram_cali_data.x,
-					nvram_cali_data.y, nvram_cali_data.z);
 
-			cali[MC34XX_AXIS_X] =
-				nvram_cali_data.x * gsensor_gain.x / GRAVITY_EARTH_1000;
-			cali[MC34XX_AXIS_Y] =
-				nvram_cali_data.y * gsensor_gain.y / GRAVITY_EARTH_1000;
-			cali[MC34XX_AXIS_Z] =
-				nvram_cali_data.z * gsensor_gain.z / GRAVITY_EARTH_1000;
+			MC34XX_ReadChipInfo(client, strbuf, MC34XX_BUF_SIZE);
+			if (copy_to_user(data, strbuf, strlen(strbuf) + 1))
+			{
+				err = -EFAULT;
+				break;
+			}
+			break;
 
+		case GSENSOR_IOCTL_READ_SENSORDATA:
+			data = (void __user *) arg;
+			if (data == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
 			mc34xx_mutex_lock();
-			err = MC34XX_WriteCalibration(client, cali);
+
+			MC34XX_ReadSensorData(client, strbuf, MC34XX_BUF_SIZE);
+
 			mc34xx_mutex_unlock();
-		}
-		break;
-
-	case GSENSOR_IOCTL_CLR_CALI:
-		GSE_LOG("fwq GSENSOR_IOCTL_CLR_CALI!!\n");
-		mc34xx_mutex_lock();
-		err = MC34XX_ResetCalibration(client);
-		mc34xx_mutex_unlock();
-		break;
-
-	case GSENSOR_IOCTL_GET_CALI:
-		GSE_LOG("fwq MC34XX GSENSOR_IOCTL_GET_CALI\n");
-		data = (void __user *) arg;
-		if (data == NULL)
-		{
-			err = -EINVAL;
+			if (copy_to_user(data, strbuf, strlen(strbuf) + 1))
+			{
+				err = -EFAULT;
+				break;
+			}
 			break;
-		}
-		if ((err = MC34XX_ReadCalibration(client, cali)))
-		{
-			break;
-		}
 
-		driver_cali_data.x =
-			cali[MC34XX_AXIS_X] * GRAVITY_EARTH_1000 / gsensor_gain.x;
-		driver_cali_data.y =
-			cali[MC34XX_AXIS_Y] * GRAVITY_EARTH_1000 / gsensor_gain.y;
-		driver_cali_data.z =
-			cali[MC34XX_AXIS_Z] * GRAVITY_EARTH_1000 / gsensor_gain.z;
-		GSE_LOG("MC34XX_ReadCalibration:sensor_data[x.y.z] %d %d %d \n",
-				driver_cali_data.x, driver_cali_data.y, driver_cali_data.z);
-		if (copy_to_user(data, &driver_cali_data, sizeof(driver_cali_data)))
-		{
-			err = -EFAULT;
-			break;
-		}
-		break;
+		case GSENSOR_IOCTL_READ_GAIN:
+			GSE_LOG("fwq GSENSOR_IOCTL_READ_GAIN\n");
+			data = (void __user *) arg;
+			if (data == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
 
-	default:
-		GSE_ERR("unknown IOCTL: 0x%08x\n", cmd);
-		err = -ENOIOCTLCMD;
-		break;
+			if (copy_to_user(data, &gsensor_gain, sizeof(struct GSENSOR_VECTOR3D)))
+			{
+				err = -EFAULT;
+				break;
+			}
+			break;
+
+		case GSENSOR_IOCTL_READ_OFFSET:
+			GSE_LOG("fwq GSENSOR_IOCTL_READ_OFFSET\n");
+			data = (void __user *) arg;
+			if (data == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
+
+			if (copy_to_user
+				(data, &gsensor_offset, sizeof(struct GSENSOR_VECTOR3D)))
+			{
+				err = -EFAULT;
+				break;
+			}
+			break;
+
+		case GSENSOR_IOCTL_READ_RAW_DATA:
+			GSE_LOG("fwq GSENSOR_IOCTL_READ_RAW_DATA\n");
+			data = (void __user *) arg;
+			if (data == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
+			mc34xx_mutex_lock();
+			MC34XX_ReadRawData(client, strbuf);
+			mc34xx_mutex_unlock();
+			if (copy_to_user(data, strbuf, strlen(strbuf) + 1))
+			{
+				err = -EFAULT;
+				break;
+			}
+			break;
+
+		case GSENSOR_IOCTL_SET_CALI:
+			GSE_LOG("fwq GSENSOR_IOCTL_SET_CALI!!\n");
+			data = (void __user *) arg;
+			if (data == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
+			if (copy_from_user(&nvram_cali_data, data, sizeof(nvram_cali_data)))
+			{
+				err = -EFAULT;
+				break;
+			}
+			if (atomic_read(&obj->suspend))
+			{
+				GSE_ERR("Perform calibration in suspend state!!\n");
+				err = -EINVAL;
+			} else
+			{
+				err = MC34XX_CaliConvert(&nvram_cali_data);
+				if (err != 0)
+				{
+					GSE_LOG("the xyz threshold over:(-300mg ~ +300mg)\n");
+					break;
+				}
+				GSE_LOG("Calixyz Calibration %d %d %d \n", nvram_cali_data.x,
+						nvram_cali_data.y, nvram_cali_data.z);
+
+				cali[MC34XX_AXIS_X] =
+					nvram_cali_data.x * gsensor_gain.x / GRAVITY_EARTH_1000;
+				cali[MC34XX_AXIS_Y] =
+					nvram_cali_data.y * gsensor_gain.y / GRAVITY_EARTH_1000;
+				cali[MC34XX_AXIS_Z] =
+					nvram_cali_data.z * gsensor_gain.z / GRAVITY_EARTH_1000;
+
+				mc34xx_mutex_lock();
+				err = MC34XX_WriteCalibration(client, cali);
+				mc34xx_mutex_unlock();
+			}
+			break;
+
+		case GSENSOR_IOCTL_CLR_CALI:
+			GSE_LOG("fwq GSENSOR_IOCTL_CLR_CALI!!\n");
+			mc34xx_mutex_lock();
+			err = MC34XX_ResetCalibration(client);
+			mc34xx_mutex_unlock();
+			break;
+
+		case GSENSOR_IOCTL_GET_CALI:
+			GSE_LOG("fwq MC34XX GSENSOR_IOCTL_GET_CALI\n");
+			data = (void __user *) arg;
+			if (data == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
+			if ((err = MC34XX_ReadCalibration(client, cali)))
+			{
+				break;
+			}
+
+			driver_cali_data.x =
+				cali[MC34XX_AXIS_X] * GRAVITY_EARTH_1000 / gsensor_gain.x;
+			driver_cali_data.y =
+				cali[MC34XX_AXIS_Y] * GRAVITY_EARTH_1000 / gsensor_gain.y;
+			driver_cali_data.z =
+				cali[MC34XX_AXIS_Z] * GRAVITY_EARTH_1000 / gsensor_gain.z;
+			GSE_LOG("MC34XX_ReadCalibration:sensor_data[x.y.z] %d %d %d \n",
+					driver_cali_data.x, driver_cali_data.y, driver_cali_data.z);
+			if (copy_to_user(data, &driver_cali_data, sizeof(driver_cali_data)))
+			{
+				err = -EFAULT;
+				break;
+			}
+			break;
+
+		default:
+			GSE_ERR("unknown IOCTL: 0x%08x\n", cmd);
+			err = -ENOIOCTLCMD;
+			break;
 
 	}
 
@@ -2281,77 +2199,77 @@ static long mc34xx_compat_ioctl(struct file *file, unsigned int cmd,
 
 	switch (cmd)
 	{
-	case COMPAT_GSENSOR_IOCTL_READ_SENSORDATA:
-		if (arg32 == NULL)
-		{
-			err = -EINVAL;
+		case COMPAT_GSENSOR_IOCTL_READ_SENSORDATA:
+			if (arg32 == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
+
+			err =
+				file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_READ_SENSORDATA,
+										   (unsigned long) arg32);
+			if (err)
+			{
+				GSE_ERR("GSENSOR_IOCTL_READ_SENSORDATA unlocked_ioctl failed.");
+				return err;
+			}
 			break;
-		}
 
-		err =
-			file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_READ_SENSORDATA,
-									   (unsigned long) arg32);
-		if (err)
-		{
-			GSE_ERR("GSENSOR_IOCTL_READ_SENSORDATA unlocked_ioctl failed.");
-			return err;
-		}
-		break;
+		case COMPAT_GSENSOR_IOCTL_SET_CALI:
+			if (arg32 == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
 
-	case COMPAT_GSENSOR_IOCTL_SET_CALI:
-		if (arg32 == NULL)
-		{
-			err = -EINVAL;
+			err =
+				file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_SET_CALI,
+										   (unsigned long) arg32);
+			if (err)
+			{
+				GSE_ERR("GSENSOR_IOCTL_SET_CALI unlocked_ioctl failed.");
+				return err;
+			}
 			break;
-		}
 
-		err =
-			file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_SET_CALI,
-									   (unsigned long) arg32);
-		if (err)
-		{
-			GSE_ERR("GSENSOR_IOCTL_SET_CALI unlocked_ioctl failed.");
-			return err;
-		}
-		break;
+		case COMPAT_GSENSOR_IOCTL_GET_CALI:
+			if (arg32 == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
 
-	case COMPAT_GSENSOR_IOCTL_GET_CALI:
-		if (arg32 == NULL)
-		{
-			err = -EINVAL;
+			err =
+				file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_GET_CALI,
+										   (unsigned long) arg32);
+			if (err)
+			{
+				GSE_ERR("GSENSOR_IOCTL_GET_CALI unlocked_ioctl failed.");
+				return err;
+			}
 			break;
-		}
 
-		err =
-			file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_GET_CALI,
-									   (unsigned long) arg32);
-		if (err)
-		{
-			GSE_ERR("GSENSOR_IOCTL_GET_CALI unlocked_ioctl failed.");
-			return err;
-		}
-		break;
+		case COMPAT_GSENSOR_IOCTL_CLR_CALI:
+			if (arg32 == NULL)
+			{
+				err = -EINVAL;
+				break;
+			}
 
-	case COMPAT_GSENSOR_IOCTL_CLR_CALI:
-		if (arg32 == NULL)
-		{
-			err = -EINVAL;
+			err =
+				file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_CLR_CALI,
+										   (unsigned long) arg32);
+			if (err)
+			{
+				GSE_ERR("GSENSOR_IOCTL_CLR_CALI unlocked_ioctl failed.");
+				return err;
+			}
 			break;
-		}
 
-		err =
-			file->f_op->unlocked_ioctl(file, GSENSOR_IOCTL_CLR_CALI,
-									   (unsigned long) arg32);
-		if (err)
-		{
-			GSE_ERR("GSENSOR_IOCTL_CLR_CALI unlocked_ioctl failed.");
-			return err;
-		}
-		break;
-
-	default:
-		GSE_ERR("unknown IOCTL: 0x%08x\n", cmd);
-		err = -ENOIOCTLCMD;
+		default:
+			GSE_ERR("unknown IOCTL: 0x%08x\n", cmd);
+			err = -ENOIOCTLCMD;
 
 	}
 
@@ -2393,13 +2311,18 @@ static int mc34xx_suspend(struct device *dev)
 	int err = 0;
 
 	GSE_LOG("mc34xx_suspend\n");
-
+	if (!obj) {
+		GSE_ERR("null pointer!!\n");
+		return -EINVAL;
+	}
+	acc_driver_pause_polling(1);
 	atomic_set(&obj->suspend, 1);
 	mc34xx_mutex_lock();
 	err = MC34XX_SetPowerMode(client, false);
 	mc34xx_mutex_unlock();
-	if (err)
-	{
+	if (err) {
+		acc_driver_pause_polling(0);
+		atomic_set(&obj->suspend, 0);
 		GSE_ERR("write power control fail!!\n");
 		return err;
 	}
@@ -2416,21 +2339,22 @@ static int mc34xx_resume(struct device *dev)
 	int err;
 
 	GSE_LOG("mc34xx_resume\n");
-	if (obj == NULL)
-	{
+
+	if (!obj) {
 		GSE_ERR("null pointer!!\n");
 		return -EINVAL;
 	}
-
-	mc34xx_mutex_lock();
-	err = MC34XX_SetPowerMode(client, true);
-	mc34xx_mutex_unlock();
-	if (err)
-	{
+	if (acc_driver_query_polling_state() == 1) {
+		mc34xx_mutex_lock();
+		err = MC34XX_SetPowerMode(client, true);
+		mc34xx_mutex_unlock();
+		if (err) {
 		GSE_ERR("write power control fail!!\n");
 		return err;
+		}
 	}
 	atomic_set(&obj->suspend, 0);
+	acc_driver_pause_polling(0);
 	return 0;
 }
 #else
@@ -2458,6 +2382,7 @@ static int mc34xx_suspend(struct i2c_client *client, pm_message_t msg)
 		mc34xx_mutex_unlock();
 		if (err)
 		{
+			atomic_set(&obj->suspend, 0);
 			GSE_ERR("write power control fail!!\n");
 			return err;
 		}
@@ -2601,7 +2526,7 @@ static int mc34xx_accel_set_delay(u64 ns)
 
 static int mc34xx_accel_get_data(int *x, int *y, int *z, int *status)
 {
-	char buff[MC34XX_BUF_SIZE];
+	char buff[MC34XX_BUF_SIZE] = {0};
 	int ret;
 
 	MC34XX_ReadSensorData(mc34xx_obj_i2c_data->client, buff, MC34XX_BUF_SIZE);
@@ -2618,7 +2543,7 @@ static int mc34xx_accel_batch(int flag, int64_t samplingPeriodNs,
 	int value = 0;
 
 	value = (int) samplingPeriodNs / 1000 / 1000;
-	ACC_LOG("mc34xx_batch (%d), chip only use 1024HZ\n", value);
+	GSE_LOG("mc34xx_batch (%d), chip only use 1024HZ\n", value);
 	return 0;
 }
 
@@ -2635,13 +2560,13 @@ static int mc34xx_factory_enable_sensor(bool enabledisable,
 	err = mc34xx_accel_enable_nodata(enabledisable == true ? 1 : 0);
 	if (err)
 	{
-		ACC_PR_ERR("%s enable sensor failed!\n", __func__);
+		GSE_ERR("%s enable sensor failed!\n", __func__);
 		return -1;
 	}
 	err = mc34xx_accel_batch(0, sample_periods_ms * 1000000, 0);
 	if (err)
 	{
-		ACC_PR_ERR("%s enable set batch failed!\n", __func__);
+		GSE_ERR("%s enable set batch failed!\n", __func__);
 		return -1;
 	}
 	return 0;
@@ -2658,7 +2583,7 @@ static int mc34xx_factory_get_raw_data(int32_t data[3])
 	char strbuf[MC34XX_BUF_SIZE] = { 0 };
 
 	MC34XX_ReadRawData(mc34xx_i2c_client, strbuf);
-	ACC_LOG("support mc34xx_factory_get_raw_data!\n");
+	GSE_LOG("support mc34xx_factory_get_raw_data!\n");
 	return 0;
 }
 
@@ -2674,7 +2599,7 @@ static int mc34xx_factory_clear_cali(void)
 	err = MC34XX_ResetCalibration(mc34xx_i2c_client);
 	if (err)
 	{
-		ACC_PR_ERR("mc34xx_ResetCalibration failed!\n");
+		GSE_ERR("mc34xx_ResetCalibration failed!\n");
 		return -1;
 	}
 	return 0;
@@ -2703,7 +2628,7 @@ static int mc34xx_factory_set_cali(int32_t data[3])
 	err = MC34XX_WriteCalibration(mc34xx_i2c_client, cali);
 	if (err)
 	{
-		ACC_PR_ERR("mc34xx_WriteCalibration failed!\n");
+		GSE_ERR("mc34xx_WriteCalibration failed!\n");
 		return -1;
 	}
 	return 0;

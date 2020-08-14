@@ -55,6 +55,7 @@ struct thermal_dev_node_names {
 	char offset_invert_name[NODE_NAME_MAX];
 	char alpha_name[NODE_NAME_MAX];
 	char weight_name[NODE_NAME_MAX];
+	char weight_invert_name[NODE_NAME_MAX];
 	char select_device_name[NODE_NAME_MAX];
 	char aux_channel_num_name[NODE_NAME_MAX];
 };
@@ -91,8 +92,12 @@ struct thermal_dev {
  * API to register a temperature sensor with a thermal zone
  */
 int thermal_dev_register(struct thermal_dev *tdev);
+int thermal_dev_deregister(struct thermal_dev *tdev);
 void thermal_parse_node_int(const struct device_node *np,
 			const char *node_name, int *cust_val);
 struct thermal_dev_params *thermal_sensor_dt_to_params(struct device *dev,
 			struct thermal_dev_params *params, struct thermal_dev_node_names *name_params);
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+void last_kmsg_thermal_shutdown(void);
+#endif
 #endif /* __LINUX_THERMAL_FRAMEWORK_H__ */

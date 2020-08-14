@@ -47,7 +47,7 @@
 #include <linux/wait.h>
 #include <linux/spinlock.h>
 #include <linux/sched.h>
-#include <linux/wakelock.h>
+//#include <linux/wakelock.h>
 #include <linux/semaphore.h>
 #include <linux/jiffies.h>
 #include <linux/proc_fs.h>
@@ -61,7 +61,7 @@
 #include <asm/io.h>
 #include <asm/div64.h>
 #include <mach/upmu_hw.h>
-#include <mt-plat/mt_gpio.h>
+//#include <mt-plat/mt_gpio.h>
 
 #include <stdarg.h>
 #include <linux/module.h>
@@ -78,9 +78,12 @@
 #include <sound/pcm_params.h>
 #include <sound/jack.h>
 #include <linux/debugfs.h>
+#include <linux/notifier.h>
+#include <misc/gating.h>
 #include "mt_soc_codec_63xx.h"
 #include "mt_amzn_mclk.h"
 #include "../../codecs/tlv320aic3101.h"
+#include "../../codecs/rt5616.h"
 
 static int mt_soc_lowjitter_control;
 static struct dentry *mt_sco_audio_debugfs;
@@ -96,6 +99,23 @@ struct of_device_id mt_machine_of_match[] = {
 	{ .compatible = "mediatek,mt8163-audiosys", },
 	{},
 };
+/* mclk mode enable */
+static int use_mclk_source_en = 0;
+
+/* gating mode enable*/
+static int gating_mode_callback_en = 0;
+
+/* gating mode mic callback function*/
+static int gating_mode_mic_callback(struct notifier_block *nb,
+	unsigned long event,
+	void *v);
+
+/* gating mode callback */
+static struct notifier_block mic_notifier = {
+	.notifier_call = gating_mode_mic_callback,
+	.next = NULL,
+	.priority = 0,
+};
 
 /* IRQ value for gpio pin*/
 static int amp_fault_irq;
@@ -110,6 +130,30 @@ static int amp_fault_enabled;
 static struct delayed_work amp_fault_work;
 /* AMP switch */
 static struct switch_dev amp_fault_switch;
+
+/***********************************************************************
+ * gating_mode_mic_callback
+ * mic callback function for gating mode
+ * *********************************************************************/
+
+static int gating_mode_mic_callback(struct notifier_block *nb, unsigned long event,
+	void *v)
+{
+	if (event == (unsigned long)UNGATED) {
+		/* enable MIC */
+		AudDrv_GPIO_MIC_Enable_Select(true);
+		pr_info("%s: enable MIC with gating mode callback, event=%lu \n", __func__, event);
+	} else if(event == (unsigned long)GATED) {
+		/* disable MIC */
+		AudDrv_GPIO_MIC_Enable_Select(false);
+		pr_info("%s: disable MIC with gating mode callback, event=%lu \n", __func__, event);
+	} else {
+		pr_info("%s do nothing with event:%lu", __func__, event);
+		return NOTIFY_DONE;
+	}
+
+	return NOTIFY_OK;
+}
 
 /***********************************************************************
  * amp_switch_work
@@ -173,7 +217,18 @@ static int mt_soc_get_dts_data(void)
 			pr_warn("%s: No MCLK frequency in dts. Using default\n",
 				__func__);
 		}
-
+		/* get gating Mode enable */
+		if (of_property_read_u32(node, "gating_mode_callback_en",
+			&gating_mode_callback_en)) {
+			pr_warn("%s: No gating callback enable in dts. Disable it\n",
+				__func__);
+		}
+		/* enable mclk source for DAC clock */
+		if (of_property_read_u32(node, "use_mclk_source_en",
+			&use_mclk_source_en)) {
+			pr_warn("%s: No mclk source enable in dts.\n",
+				__func__);
+		}
 		/* Setup Amp fault if gpio is provided */
 		amp_fault_gpiopin = of_get_named_gpio(node, "amp-fault-gpio",
 					0);
@@ -229,9 +284,9 @@ static int mt_soc_get_dts_data(void)
 static int linein_adc_enab = LINEIN_ADC_DIS;
 
 /* To utilize HDMI Buffer for audio transfer
- * This should also be enabled in amzn_mt_spi_pcm.c
+ * This should also be enabled in amzn_mt_spi_pcm.c */
 #define SPI_USES_HDMI_BUFFER
-*/
+
 
 static int mtmachine_startup(struct snd_pcm_substream *substream)
 {
@@ -359,90 +414,33 @@ static int mt_soc_audio_init(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
-static int mt_soc_audio_init_tlv(struct snd_soc_pcm_runtime *rtd)
+static int mt_soc_audio_init_rt(struct snd_soc_pcm_runtime *rtd)
 {
-	int ret = 0;
-
 	pr_info("%s\n", __func__);
-#ifndef CONFIG_SND_I2S_MCLK
-	if (rtd == NULL || rtd->codec_dai == NULL) {
-		pr_err("%s: invalid parameters\n", __func__);
-		return -EINVAL;
-	}
-
-	/* Initialize ISP clocks */
-	ret = isp_clk_init();
-	if (ret) {
-		pr_err("%s: isp_clock_initialize Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-	/* Enable ISP clocks */
-	ret = isp_clk_enable(1);
-	if (ret) {
-		pr_err("%s: isp_clock_enable Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-	/* Turn on MCLK clocks */
-	ret = mclk_enable_reg(1);
-	if (ret) {
-		pr_err("%s: mclk_enable_reg Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-	/* Initialize CCF clocks */
-	ret = ccf_clk_init();
-	if (ret) {
-		pr_err("%s: ccf_clk_initialize Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-	/* Enable CCF clocks */
-	ret = ccf_clk_enable(1);
-	if (ret) {
-		pr_err("%s: ccf_clk_enable Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-	/* Turn on MCLK clocks again */
-	ret = mclk_enable_reg(1);
-	if (ret) {
-		pr_err("%s: mclk_enable_reg Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-	/* Setup clock divider */
-	ret = mclk_divider_reg(AIC31XX_FREQ_9600000);
-	if (ret) {
-		pr_err("%s: mclk_cnt_reg Failed. Error = %d\n",
-		__func__, ret);
-		return ret;
-	}
-
-#ifdef DEBUG_ISP_MMCLK
-	register_dump();
-#endif
-#else
+#ifdef CONFIG_SND_I2S_MCLK
 	AudDrv_ANA_Clk_On();
 	AudDrv_Clk_On();
 	EnableApll(48000, true);
 	EnableApllTuner(48000, true);
-	SetCLkMclk(Soc_Aud_I2S2, 48000);
+	SetCLkMclk(Soc_Aud_I2S1, 48000);
 	EnableI2SDivPower(AUDIO_APLL12_DIV2, true);
+	SetSampleRate(Soc_Aud_Digital_Block_MEM_I2S, 48000);
+	SetI2SDacOut(48000,1, Soc_Aud_I2S_WLEN_WLEN_16BITS);
+	SetI2SDacEnable(true);
 
-	Afe_Set_Reg(AFE_I2S_CON2, 1<<12, 1<<12);
-	Afe_Set_Reg(AFE_I2S_CON2, 1, 1);        /* enable I2S2 port */
+	Afe_Set_Reg(AFE_I2S_CON1, 1<<12, 1<<12);
+	Afe_Set_Reg(AFE_I2S_CON1, 1, 1);        /* enable I2S1 port */
 	EnableAfe(true);
 #endif
-	return ret;
+	return 0;
 }
 
-static int tlv320aic3204_hw_params(struct snd_pcm_substream *substream,
+static int rt5616_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd;
 	struct snd_soc_dai *codec_dai;
+	int ret;
 
 	if (substream == NULL) {
 		pr_err("%s: invalid stream parameter\n", __func__);
@@ -466,18 +464,34 @@ static int tlv320aic3204_hw_params(struct snd_pcm_substream *substream,
 		SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS))
 		pr_err("Failed to set fmt for %s\n", codec_dai->name);
 
-	if (snd_soc_dai_set_sysclk(codec_dai, 0, mt_soc_mclk_freq,
-		SND_SOC_CLOCK_OUT))
-		pr_err("%s: Failed to set sysclk for %s\n", __func__,
-		rtd->codec_dai->name);
-
+	if (use_mclk_source_en) {
+		if (snd_soc_dai_set_sysclk(codec_dai, RT5616_SCLK_S_MCLK, mt_soc_mclk_freq
+			, SND_SOC_CLOCK_OUT))
+			pr_err("%s: Fail to set mclk as sysclk for %s\n", __func__,
+			codec_dai->name);
+	} else {
+		ret = snd_soc_dai_set_pll(codec_dai, 0, RT5616_PLL1_S_BCLK1,
+					  params_rate(params) * RT5616_FREQ_IN_BCK_MULTIPLIER,
+					  params_rate(params) * RT5616_FREQ_OUT_BCK_MULTIPLIER);
+		if (ret < 0) {
+			pr_err("%s: Failed to set pll\n", __func__);
+			return ret;
+		}
+		ret = snd_soc_dai_set_sysclk(codec_dai, RT5616_SCLK_S_PLL1,
+					     params_rate(params) * RT5616_FREQ_OUT_BCK_MULTIPLIER,
+					     SND_SOC_CLOCK_IN);
+		if (ret < 0) {
+			pr_err("%s: Failed to set sysclk\n", __func__);
+			return ret;
+		}
+	}
 	return 0;
 }
 
-static struct snd_soc_ops tlv320aic3204_machine_ops = {
+static struct snd_soc_ops rt5616_machine_ops = {
 	.startup = mtmachine_startup,
 	.prepare = mtmachine_prepare,
-	.hw_params = tlv320aic3204_hw_params,
+	.hw_params = rt5616_hw_params,
 };
 
 static int mt_soc_audio_init2(struct snd_soc_pcm_runtime *rtd)
@@ -787,8 +801,8 @@ static ssize_t mt_soc_debug_read(struct file *file, char __user *buf, size_t cou
 		       Afe_Get_Reg(AFE_ASRC_CON10));
 	n += scnprintf(buffer + n, size - n, "AFE_ASRC_CON11  = 0x%x\n",
 		       Afe_Get_Reg(AFE_ASRC_CON11));
-	n += scnprintf(buffer + n, size - n, "PCM_INTF_CON1  = 0x%x\n",
-				Afe_Get_Reg(PCM_INTF_CON1));
+	n += scnprintf(buffer + n, size - n, "PCM_INTF_CON  = 0x%x\n",
+				Afe_Get_Reg(PCM_INTF_CON));
 	n += scnprintf(buffer + n, size - n, "PCM_INTF_CON2  = 0x%x\n", Afe_Get_Reg(PCM_INTF_CON2));
 	n += scnprintf(buffer + n, size - n, "PCM2_INTF_CON  = 0x%x\n", Afe_Get_Reg(PCM2_INTF_CON));
 
@@ -855,9 +869,9 @@ static ssize_t mt_soc_debug_read(struct file *file, char __user *buf, size_t cou
 		       Afe_Get_Reg(AFE_ADDA4_NEWIF_CFG1));
 
 	n += scnprintf(buffer + n, size - n, "AUDIO_CLK_AUDDIV_0  = 0x%x\n",
-		       GetClkCfg(AUDIO_CLK_AUDDIV_0));
+		       Afe_Get_Reg(AUDIO_CLK_AUDDIV_0));
 	n += scnprintf(buffer + n, size - n, "AUDIO_CLK_AUDDIV_1  = 0x%x\n",
-		       GetClkCfg(AUDIO_CLK_AUDDIV_1));
+		       Afe_Get_Reg(AUDIO_CLK_AUDDIV_1));
 	n += scnprintf(buffer + n, size - n, "AUDIO_CLK_CFG_6      = 0x%x\n",
 		       GetClkCfg(AUDIO_CLK_CFG_6));
 	n += scnprintf(buffer + n, size - n, "AUDIO_CLK_CFG_6_SET  = 0x%x\n",
@@ -871,6 +885,13 @@ static ssize_t mt_soc_debug_read(struct file *file, char __user *buf, size_t cou
 	n += scnprintf(buffer + n, size - n, "AUDIO_CLK_AUD_DIV2   = 0x%x\n",
 		       GetClkCfg(AUDIO_CLK_AUD_DIV2));
 	n += scnprintf(buffer + n, size - n, "AP_PLL_CON5   = 0x%x\n", GetpllCfg(AP_PLL_CON5));
+
+	n += scnprintf(buffer + n, size - n, "AUD2PLL_CON1	= 0x%x\n",
+				GetpllCfg(AUD2PLL_CON1));
+	n += scnprintf(buffer + n, size - n, "AUD2PLL_CON3   = 0x%x\n",
+				GetpllCfg(AUD2PLL_CON3));
+	n += scnprintf(buffer + n, size - n, "AUD2PLL_CON2   = 0x%x\n",
+				GetpllCfg(AUD2PLL_CON2));
 
 	n += scnprintf(buffer + n, size - n, "AFE_HDMI_BASE  = 0x%x\n", Afe_Get_Reg(AFE_HDMI_BASE));
 	n += scnprintf(buffer + n, size - n, "AFE_HDMI_CUR  = 0x%x\n", Afe_Get_Reg(AFE_HDMI_CUR));
@@ -1238,17 +1259,6 @@ static struct snd_soc_dai_link mt_soc_dai_common[] = {
 	 .ops = &mt_machine_audio_ops,
 	 },
 	{
-	 .name = "TI_DAC_Playback",
-	 .stream_name = MT_SOC_TI_PLAY_STREAM_NAME,
-	 .cpu_dai_name = MT_SOC_DL1DAI_NAME,
-	 .platform_name = MT_SOC_I2S0DL1_PCM,
-	 .codec_dai_name = "tlv320aic32x4-hifi",
-	 .codec_name = "tlv320aic32x4.2-0018",
-	 .init = mt_soc_audio_init_tlv,
-	 .ops = &tlv320aic3204_machine_ops,
-	 .ignore_pmdown_time = 1,
-	 },
-	{
 	 .name = "AMZN_SPI_Capture",
 	 .stream_name = MT_SOC_TI_AIC3101_CAPTURE_STREAM_NAME,
 	 .cpu_dai_name = AMZN_MT_SPI_PCM,
@@ -1259,14 +1269,14 @@ static struct snd_soc_dai_link mt_soc_dai_common[] = {
 	 .ignore_pmdown_time = 1,
 	},
 	{
-	 .name = "I2S1_Playback",
-	 .stream_name = MT_SOC_I2S1_PLAYBACK_STREAM_NAME,
+	 .name = "RT5616_Playback",
+	 .stream_name = MT_SOC_RT_PLAYBACK_STREAM_NAME,
 	 .cpu_dai_name = MT_SOC_DL1DAI_NAME,
 	 .platform_name = MT_SOC_I2S0DL1_PCM,
-	 .codec_dai_name = MT_SOC_CODEC_DUMMY_DAI_NAME,
-	 .codec_name = MT_SOC_CODEC_DUMMY_NAME,
-	 .init = mt_soc_audio_init,
-	 .ops = &mt_machine_audio_ops,
+	 .codec_dai_name = "rt5616-aif1",
+	 .codec_name = "rt5616.2-001b",
+	 .init = mt_soc_audio_init_rt,
+	 .ops = &rt5616_machine_ops,
 	 .ignore_pmdown_time = 1,
 	},
 };
@@ -1419,6 +1429,14 @@ static int __init mt_soc_snd_init(void)
 		}
 		switch_set_state((struct switch_dev *)&amp_fault_switch,
 			gpio_get_value(amp_fault_gpiopin));
+	}
+
+	/* register MIC callback for pricavy mode in abc123*/
+	if (gating_mode_callback_en) {
+		int ret = 0;
+		ret = register_gating_state_notifier(&mic_notifier);
+		if (ret != 0)
+			pr_err("%s: register gating mode callback fail\n",__func__);
 	}
 
 	return 0;

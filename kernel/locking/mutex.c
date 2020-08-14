@@ -25,7 +25,7 @@
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #include <linux/debug_locks.h>
-#include "mcs_spinlock.h"
+#include <linux/osq_lock.h>
 
 /*
  * In the DEBUG case we are using the "NULL fastpath" for mutexes,
@@ -34,11 +34,6 @@
 #ifdef CONFIG_DEBUG_MUTEXES
 # include "mutex-debug.h"
 # include <asm-generic/mutex-null.h>
-
-#  ifndef CONFIG_LOCKDEP
-#   define CREATE_TRACE_POINTS
-#  endif
-# include <trace/events/lock.h>
 /*
  * Must be 0 for the debug case so we do not do the unlock outside of the
  * wait_lock region. debug_mutex_unlock() will do the actual unlock in this
@@ -86,7 +81,7 @@ __visible void __sched __mutex_lock_slowpath(atomic_t *lock_count);
  * The mutex must later on be released by the same task that
  * acquired it. Recursive locking is not allowed. The task
  * may not exit without first unlocking the mutex. Also, kernel
- * memory where the mutex resides mutex must not be freed with
+ * memory where the mutex resides must not be freed with
  * the mutex still locked. The mutex must first be initialized
  * (or statically defined) before it can be locked. memset()-ing
  * the mutex to 0 is not allowed.
@@ -152,7 +147,7 @@ static __always_inline void ww_mutex_lock_acquired(struct ww_mutex *ww,
 }
 
 /*
- * after acquiring lock with fastpath or when we lost out in contested
+ * After acquiring lock with fastpath or when we lost out in contested
  * slowpath, set ctx and wake up any waiters so they can recheck.
  *
  * This function is never called when CONFIG_DEBUG_LOCK_ALLOC is set,
@@ -196,57 +191,61 @@ ww_mutex_set_context_fastpath(struct ww_mutex *lock,
 	spin_unlock_mutex(&lock->base.wait_lock, flags);
 }
 
-
-#ifdef CONFIG_MUTEX_SPIN_ON_OWNER
 /*
- * In order to avoid a stampede of mutex spinners from acquiring the mutex
- * more or less simultaneously, the spinners need to acquire a MCS lock
- * first before spinning on the owner field.
+ * After acquiring lock in the slowpath set ctx and wake up any
+ * waiters so they can recheck.
  *
+ * Callers must hold the mutex wait_lock.
  */
-
-/*
- * Mutex spinning code migrated from kernel/sched/core.c
- */
-
-static inline bool owner_running(struct mutex *lock, struct task_struct *owner)
+static __always_inline void
+ww_mutex_set_context_slowpath(struct ww_mutex *lock,
+			      struct ww_acquire_ctx *ctx)
 {
-	if (lock->owner != owner)
-		return false;
+	struct mutex_waiter *cur;
+
+	ww_mutex_lock_acquired(lock, ctx);
+	lock->ctx = ctx;
 
 	/*
-	 * Ensure we emit the owner->on_cpu, dereference _after_ checking
-	 * lock->owner still matches owner, if that fails, owner might
-	 * point to free()d memory, if it still matches, the rcu_read_lock()
-	 * ensures the memory stays valid.
+	 * Give any possible sleeping processes the chance to wake up,
+	 * so they can recheck if they have to back off.
 	 */
-	barrier();
-
-	return owner->on_cpu;
+	list_for_each_entry(cur, &lock->base.wait_list, list) {
+		debug_mutex_wake_waiter(&lock->base, cur);
+		wake_up_process(cur->task);
+	}
 }
 
+#ifdef CONFIG_MUTEX_SPIN_ON_OWNER
 /*
  * Look out! "owner" is an entirely speculative pointer
  * access and not reliable.
  */
 static noinline
-int mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
+bool mutex_spin_on_owner(struct mutex *lock, struct task_struct *owner)
 {
+	bool ret = true;
+
 	rcu_read_lock();
-	while (owner_running(lock, owner)) {
-		if (need_resched())
+	while (lock->owner == owner) {
+		/*
+		 * Ensure we emit the owner->on_cpu, dereference _after_
+		 * checking lock->owner still matches owner. If that fails,
+		 * owner might point to freed memory. If it still matches,
+		 * the rcu_read_lock() ensures the memory stays valid.
+		 */
+		barrier();
+
+		if (!owner->on_cpu || need_resched()) {
+			ret = false;
 			break;
+		}
 
 		cpu_relax_lowlatency();
 	}
 	rcu_read_unlock();
 
-	/*
-	 * We break out the loop above on need_resched() and when the
-	 * owner changed, which is a sign for heavy contention. Return
-	 * success only when lock->owner is NULL.
-	 */
-	return lock->owner == NULL;
+	return ret;
 }
 
 /*
@@ -261,7 +260,7 @@ static inline int mutex_can_spin_on_owner(struct mutex *lock)
 		return 0;
 
 	rcu_read_lock();
-	owner = ACCESS_ONCE(lock->owner);
+	owner = READ_ONCE(lock->owner);
 	if (owner)
 		retval = owner->on_cpu;
 	rcu_read_unlock();
@@ -278,7 +277,7 @@ static inline int mutex_can_spin_on_owner(struct mutex *lock)
 static inline bool mutex_try_to_acquire(struct mutex *lock)
 {
 	return !mutex_is_locked(lock) &&
-		(atomic_cmpxchg(&lock->count, 1, 0) == 1);
+		(atomic_cmpxchg_acquire(&lock->count, 1, 0) == 1);
 }
 
 /*
@@ -312,6 +311,11 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 	if (!mutex_can_spin_on_owner(lock))
 		goto done;
 
+	/*
+	 * In order to avoid a stampede of mutex spinners trying to
+	 * acquire the mutex all at once, the spinners need to take a
+	 * MCS (queued) lock first before spinning on the owner field.
+	 */
 	if (!osq_lock(&lock->osq))
 		goto done;
 
@@ -330,7 +334,7 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 			 * As such, when deadlock detection needs to be
 			 * performed the optimistic spinning cannot be done.
 			 */
-			if (ACCESS_ONCE(ww->ctx))
+			if (READ_ONCE(ww->ctx))
 				break;
 		}
 
@@ -338,7 +342,7 @@ static bool mutex_optimistic_spin(struct mutex *lock,
 		 * If there's an owner, wait for it to either
 		 * release the lock or go to sleep.
 		 */
-		owner = ACCESS_ONCE(lock->owner);
+		owner = READ_ONCE(lock->owner);
 		if (owner && !mutex_spin_on_owner(lock, owner))
 			break;
 
@@ -383,8 +387,14 @@ done:
 	 * reschedule now, before we try-lock the mutex. This avoids getting
 	 * scheduled out right after we obtained the mutex.
 	 */
-	if (need_resched())
+	if (need_resched()) {
+		/*
+		 * We _should_ have TASK_RUNNING here, but just in case
+		 * we do not, make it so, otherwise we might get stuck.
+		 */
+		__set_current_state(TASK_RUNNING);
 		schedule_preempt_disabled();
+	}
 
 	return false;
 }
@@ -468,10 +478,10 @@ void __sched ww_mutex_unlock(struct ww_mutex *lock)
 EXPORT_SYMBOL(ww_mutex_unlock);
 
 static inline int __sched
-__mutex_lock_check_stamp(struct mutex *lock, struct ww_acquire_ctx *ctx)
+__ww_mutex_lock_check_stamp(struct mutex *lock, struct ww_acquire_ctx *ctx)
 {
 	struct ww_mutex *ww = container_of(lock, struct ww_mutex, base);
-	struct ww_acquire_ctx *hold_ctx = ACCESS_ONCE(ww->ctx);
+	struct ww_acquire_ctx *hold_ctx = READ_ONCE(ww->ctx);
 
 	if (!hold_ctx)
 		return 0;
@@ -500,9 +510,6 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	struct mutex_waiter waiter;
 	unsigned long flags;
 	int ret;
-#ifdef CONFIG_DEBUG_MUTEXES
-	bool __mutex_contended = false;
-#endif
 
 	if (use_ww_ctx) {
 		struct ww_mutex *ww = container_of(lock, struct ww_mutex, base);
@@ -525,21 +532,18 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 	 * Once more, try to acquire the lock. Only try-lock the mutex if
 	 * it is unlocked to reduce unnecessary xchg() operations.
 	 */
-	if (!mutex_is_locked(lock) && (atomic_xchg(&lock->count, 0) == 1))
+	if (!mutex_is_locked(lock) &&
+	    (atomic_xchg_acquire(&lock->count, 0) == 1))
 		goto skip_wait;
 
 	debug_mutex_lock_common(lock, &waiter);
-	debug_mutex_add_waiter(lock, &waiter, task_thread_info(task));
+	debug_mutex_add_waiter(lock, &waiter, task);
 
 	/* add waiting tasks to the end of the waitqueue (FIFO): */
 	list_add_tail(&waiter.list, &lock->wait_list);
 	waiter.task = task;
 
 	lock_contended(&lock->dep_map, ip);
-#ifdef CONFIG_DEBUG_MUTEXES
-	trace_mutex_contended(lock, ip);
-	__mutex_contended = true; /* to pair mutex_contended & mutex_acquired */
-#endif
 
 	for (;;) {
 		/*
@@ -553,7 +557,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		 * non-negative in order to avoid unnecessary xchg operations:
 		 */
 		if (atomic_read(&lock->count) >= 0 &&
-		    (atomic_xchg(&lock->count, -1) == 1))
+		    (atomic_xchg_acquire(&lock->count, -1) == 1))
 			break;
 
 		/*
@@ -566,7 +570,7 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		}
 
 		if (use_ww_ctx && ww_ctx->acquired > 0) {
-			ret = __mutex_lock_check_stamp(lock, ww_ctx);
+			ret = __ww_mutex_lock_check_stamp(lock, ww_ctx);
 			if (ret)
 				goto err;
 		}
@@ -578,40 +582,22 @@ __mutex_lock_common(struct mutex *lock, long state, unsigned int subclass,
 		schedule_preempt_disabled();
 		spin_lock_mutex(&lock->wait_lock, flags);
 	}
-	mutex_remove_waiter(lock, &waiter, current_thread_info());
+	__set_task_state(task, TASK_RUNNING);
+
+	mutex_remove_waiter(lock, &waiter, task);
 	/* set it to 0 if there are no waiters left: */
 	if (likely(list_empty(&lock->wait_list)))
 		atomic_set(&lock->count, 0);
 	debug_mutex_free_waiter(&waiter);
 
 skip_wait:
-#ifdef CONFIG_DEBUG_MUTEXES
-	if (unlikely(__mutex_contended))
-		trace_mutex_acquired(lock, ip);
-#endif
 	/* got the lock - cleanup and rejoice! */
 	lock_acquired(&lock->dep_map, ip);
 	mutex_set_owner(lock);
 
 	if (use_ww_ctx) {
 		struct ww_mutex *ww = container_of(lock, struct ww_mutex, base);
-		struct mutex_waiter *cur;
-
-		/*
-		 * This branch gets optimized out for the common case,
-		 * and is only important for ww_mutex_lock.
-		 */
-		ww_mutex_lock_acquired(ww, ww_ctx);
-		ww->ctx = ww_ctx;
-
-		/*
-		 * Give any possible sleeping processes the chance to wake up,
-		 * so they can recheck if they have to back off.
-		 */
-		list_for_each_entry(cur, &lock->wait_list, list) {
-			debug_mutex_wake_waiter(lock, cur);
-			wake_up_process(cur->task);
-		}
+		ww_mutex_set_context_slowpath(ww, ww_ctx);
 	}
 
 	spin_unlock_mutex(&lock->wait_lock, flags);
@@ -619,7 +605,7 @@ skip_wait:
 	return 0;
 
 err:
-	mutex_remove_waiter(lock, &waiter, task_thread_info(task));
+	mutex_remove_waiter(lock, &waiter, task);
 	spin_unlock_mutex(&lock->wait_lock, flags);
 	debug_mutex_free_waiter(&waiter);
 	mutex_release(&lock->dep_map, 1, ip);
@@ -733,6 +719,7 @@ static inline void
 __mutex_unlock_common_slowpath(struct mutex *lock, int nested)
 {
 	unsigned long flags;
+	WAKE_Q(wake_q);
 
 	/*
 	 * As a performance measurement, release the lock before doing other
@@ -760,11 +747,11 @@ __mutex_unlock_common_slowpath(struct mutex *lock, int nested)
 					   struct mutex_waiter, list);
 
 		debug_mutex_wake_waiter(lock, waiter);
-
-		wake_up_process(waiter->task);
+		wake_q_add(&wake_q, waiter->task);
 	}
 
 	spin_unlock_mutex(&lock->wait_lock, flags);
+	wake_up_q(&wake_q);
 }
 
 /*
@@ -885,7 +872,7 @@ static inline int __mutex_trylock_slowpath(atomic_t *lock_count)
 
 	spin_lock_mutex(&lock->wait_lock, flags);
 
-	prev = atomic_xchg(&lock->count, -1);
+	prev = atomic_xchg_acquire(&lock->count, -1);
 	if (likely(prev == 1)) {
 		mutex_set_owner(lock);
 		mutex_acquire(&lock->dep_map, 0, 1, _RET_IP_);

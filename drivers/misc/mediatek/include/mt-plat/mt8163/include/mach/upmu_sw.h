@@ -1,17 +1,22 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _MT_PMIC_UPMU_SW_H_
 #define _MT_PMIC_UPMU_SW_H_
 
 #include <mach/upmu_hw.h>
 
-/*#define SOC_BY_AUXADC*/
-/*fg auxadc*/
-/*#define SOC_BY_HW_FG*/
-#define SOC_BY_SW_FG /*oam*/
-
-#ifdef CONFIG_MTK_DISABLE_POWER_ON_OFF_VOLTAGE_LIMITATION
-#define CONFIG_DIS_CHECK_BATTERY
-#endif
-
+#define BATTERY_DTS_SUPPORT
 /*
  * Low battery level define
  */

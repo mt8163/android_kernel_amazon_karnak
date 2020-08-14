@@ -1,35 +1,36 @@
 /*
-* Copyright (c) 2015 MediaTek Inc.
-* Author: Cheng-En Chung <cheng-en.chung@mediatek.com>
-*
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License version 2 as
-* published by the Free Software Foundation.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-* GNU General Public License for more details.
-*/
+ * Copyright (c) 2015 MediaTek Inc.
+ * Author: Cheng-En Chung <cheng-en.chung@mediatek.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
 
 #include <asm/irqflags.h>
 #include <asm/neon.h>
-#include <asm/psci.h>
 #include <asm/suspend.h>
-/* TODO: remove later, only for test */
+#ifdef CONFIG_ARM64
 #include <asm/cpuidle.h>
+/* TODO: remove later, only for test */
 #include <asm/cpu_ops.h>
-
+#endif
 #include <linux/of_address.h>
 #include <linux/of.h>
 /* TODO: remove later, only for test */
 #include <linux/of_device.h>
+#include <linux/cpuidle.h>
+#include <linux/psci.h>
 
-
-#include <mt-plat/mt_dbg.h>
-#include <mt-plat/mt_io.h>
+/* #include <mt-plat/mt_dbg.h> */
+#include <mt-plat/mtk_io.h>
 #include <mt-plat/sync_write.h>
-#include <mt-plat/mt_chip.h>
+#include <mt-plat/mtk_chip.h>
 
 #include "mt_cpuidle.h"
 #include "mt_spm.h"
@@ -41,16 +42,16 @@
 
 #define TAG "[Power-Dormant] "
 
-#define dormant_err(fmt, args...)	pr_emerg(TAG fmt, ##args)
-#define dormant_warn(fmt, args...)	pr_warn(TAG fmt, ##args)
+#define dormant_err(fmt, args...)	pr_info(TAG fmt, ##args)
+#define dormant_warn(fmt, args...)	pr_info(TAG fmt, ##args)
 #define dormant_dbg(fmt, args...)	pr_debug(TAG fmt, ##args)
 
 
 #ifdef CONFIG_MTK_RAM_CONSOLE
-/*
+#if 0
 unsigned long *sleep_aee_rec_cpu_dormant_pa;
 unsigned long *sleep_aee_rec_cpu_dormant_va;
-*/
+#endif
 #endif
 
 #if defined(CONFIG_ARCH_MT6735) || defined(CONFIG_ARCH_MT6735M)
@@ -58,7 +59,7 @@ static unsigned long biu_base;
 #endif
 static unsigned long gic_id_base;
 
-static unsigned int kp_irq_bit;
+/* static unsigned int kp_irq_bit; */
 /* static unsigned int conn_wdt_irq_bit; */
 /* static unsigned int lowbattery_irq_bit; */
 
@@ -79,7 +80,7 @@ static unsigned int kp_irq_bit;
 #define DMT_BIU_BASE		(biu_base)
 #endif
 #define DMT_GIC_DIST_BASE	(gic_id_base)
-#define DMT_KP_IRQ_BIT		(kp_irq_bit)
+/* #define DMT_KP_IRQ_BIT		(kp_irq_bit) */
 /* #define DMT_CONN_WDT_IRQ_BIT      (conn_wdt_irq_bit) */
 /* #define DMT_LOWBATTERY_IRQ_BIT	(lowbattery_irq_bit) */
 
@@ -97,7 +98,8 @@ static unsigned int kp_irq_bit;
 #define reg_write(addr, val)	mt_reg_sync_writel(val, addr)
 
 struct core_context {
-	volatile u64 timestamp[5];
+	unsigned int banked_regs[32];
+	u64 timestamp[5];
 	unsigned long timer_data[8];
 };
 
@@ -114,13 +116,12 @@ struct system_context dormant_data[1];
 static int mt_dormant_initialized;
 
 #define SPM_CORE_ID() core_idx()
-#define SPM_IS_CPU_IRQ_OCCUR(core_id)						\
-	({									\
-		(!!(spm_read(SPM_SLEEP_WAKEUP_MISC) & ((0x101<<(core_id)))));	\
+#define SPM_IS_CPU_IRQ_OCCUR(core_id) \
+({(!!(spm_read(SPM_SLEEP_WAKEUP_MISC) &\
+		((0x101<<(core_id)))));\
 	})
 
 #ifdef CONFIG_MTK_RAM_CONSOLE
-/* #define DORMANT_LOG(cid, pattern) (sleep_aee_rec_cpu_dormant_va[cid] = pattern) */
 #define DORMANT_LOG(cid, pattern)
 #else
 #define DORMANT_LOG(cid, pattern)
@@ -137,8 +138,10 @@ inline void read_id(int *cpu_id, int *cluster_id)
 	*cluster_id = read_cluster_id();
 }
 
-#define system_cluster(system, clusterid)	(&((struct system_context *)system)->cluster[clusterid])
-#define cluster_core(cluster, cpuid)		(&((struct cluster_context *)cluster)->core[cpuid])
+#define system_cluster(system, clusterid)\
+	(&((struct system_context *)system)->cluster[clusterid])
+#define cluster_core(cluster, cpuid)\
+	(&((struct cluster_context *)cluster)->core[cpuid])
 
 void *_get_data(int core_or_cluster)
 {
@@ -171,35 +174,37 @@ void start_generic_timer(void)
 }
 
 struct set_and_clear_regs {
-	volatile unsigned int set[32], clear[32];
+	unsigned int set[32], clear[32];
 };
 
 struct interrupt_distributor {
-	volatile unsigned int control;	/* 0x000 */
+	unsigned int control;			/* 0x000 */
 	const unsigned int controller_type;
 	const unsigned int implementer;
 	const char padding1[116];
-	volatile unsigned int security[32];	/* 0x080 */
+	unsigned int security[32];		/* 0x080 */
 	struct set_and_clear_regs enable;	/* 0x100 */
 	struct set_and_clear_regs pending;	/* 0x200 */
 	struct set_and_clear_regs active;	/* 0x300 */
-	volatile unsigned int priority[256];	/* 0x400 */
-	volatile unsigned int target[256];	/* 0x800 */
-	volatile unsigned int configuration[64];	/* 0xC00 */
+	unsigned int priority[256];		/* 0x400 */
+	unsigned int target[256];		/* 0x800 */
+	unsigned int configuration[64];	/* 0xC00 */
 	const char padding3[256];	/* 0xD00 */
-	volatile unsigned int non_security_access_control[64];	/* 0xE00 */
-	volatile unsigned int software_interrupt;	/* 0xF00 */
-	volatile unsigned int sgi_clr_pending[4];	/* 0xF10 */
-	volatile unsigned int sgi_set_pending[4];	/* 0xF20 */
+	unsigned int non_security_access_control[64]; /* 0xE00 */
+	unsigned int software_interrupt;	/* 0xF00 */
+	unsigned int sgi_clr_pending[4];	/* 0xF10 */
+	unsigned int sgi_set_pending[4];	/* 0xF20 */
 	const char padding4[176];
 
 	unsigned const int peripheral_id[4];	/* 0xFE0 */
 	unsigned const int primecell_id[4];	/* 0xFF0 */
 };
 
+#if 0
 static void restore_gic_spm_irq(unsigned long gic_distributor_address)
 {
-	struct interrupt_distributor *id = (struct interrupt_distributor *)gic_distributor_address;
+	struct interrupt_distributor *id =
+		(struct interrupt_distributor *) gic_distributor_address;
 	unsigned int backup;
 	int i, j;
 
@@ -228,6 +233,7 @@ static void restore_gic_spm_irq(unsigned long gic_distributor_address)
 #endif
 	id->control = backup;
 }
+#endif
 
 #if defined(CONFIG_ARCH_MT6735) || defined(CONFIG_ARCH_MT6735M)
 static inline void biu_reconfig(void)
@@ -253,27 +259,15 @@ unsigned int __weak *mt_save_dbg_regs(unsigned int *p, unsigned int cpuid)
 {
 	return p;
 }
-
-void __weak mt_restore_dbg_regs(unsigned int *p, unsigned int cpuid)
-{
-}
-
-void __weak mt_copy_dbg_regs(int to, int from)
-{
-}
-
-void __weak mt_save_banked_registers(unsigned int *container)
-{
-}
-
-void __weak mt_restore_banked_registers(unsigned int *container)
-{
-}
+void __weak mt_restore_dbg_regs(unsigned int *p, unsigned int cpuid) { }
+void __weak mt_copy_dbg_regs(int to, int from) { }
+void __weak mt_save_banked_registers(unsigned int *container) { }
+void __weak mt_restore_banked_registers(unsigned int *container) { }
 
 void mt_cpu_save(void)
 {
 	struct core_context *core;
-	struct cluster_context *cluster;
+/*	struct cluster_context *cluster; */
 	unsigned int sleep_sta;
 	int cpuid, clusterid;
 
@@ -289,22 +283,29 @@ void mt_cpu_save(void)
 	else
 		sleep_sta = (spm_read(SPM_SLEEP_TIMER_STA) >> 20) & 0x0f;
 
+#if 0
 	if ((sleep_sta | (1 << cpuid)) == 0x0f) {	/* last core */
 		cluster = GET_CLUSTER_DATA();
-		mt_save_dbg_regs((unsigned int *)cluster->dbg_data, cpuid + (clusterid * 4));
+		mt_save_dbg_regs((unsigned int *)cluster->dbg_data,
+			cpuid + (clusterid * 4));
 	}
+#endif
+
+	mt_save_banked_registers(core->banked_regs);
 }
 
 void mt_cpu_restore(void)
 {
 	struct core_context *core;
-	struct cluster_context *cluster;
+/*	struct cluster_context *cluster; */
 	unsigned int sleep_sta;
 	int cpuid, clusterid;
 
 	read_id(&cpuid, &clusterid);
 
 	core = GET_CORE_DATA();
+
+	mt_restore_banked_registers(core->banked_regs);
 
 	if (clusterid == 0)
 		sleep_sta = (spm_read(SPM_SLEEP_TIMER_STA) >> 16) & 0x0f;
@@ -313,14 +314,18 @@ void mt_cpu_restore(void)
 
 	sleep_sta = (sleep_sta | (1 << cpuid));
 
+#if 0
 	if (sleep_sta == 0x0f) {	/* first core */
 		cluster = GET_CLUSTER_DATA();
-		mt_restore_dbg_regs((unsigned int *)cluster->dbg_data, cpuid + (clusterid * 4));
+		mt_restore_dbg_regs((unsigned int *)cluster->
+			dbg_data, cpuid + (clusterid * 4));
 	} else {
 		int any = __builtin_ffs(~sleep_sta) - 1;
 
-		mt_copy_dbg_regs(cpuid + (clusterid * 4), any + (clusterid * 4));
+		mt_copy_dbg_regs(cpuid + (clusterid * 4),
+			any + (clusterid * 4));
 	}
+#endif
 
 	mt_restore_generic_timer((unsigned int *)core->timer_data, 0x0);
 }
@@ -335,8 +340,10 @@ void mt_platform_restore_context(int flags)
 	mt_cluster_restore(flags);
 	mt_cpu_restore();
 
+#if 0
 	if (IS_DORMANT_GIC_OFF(flags))
 		restore_gic_spm_irq(DMT_GIC_DIST_BASE);
+#endif
 }
 
 #ifndef CONFIG_ARM64
@@ -344,135 +351,49 @@ int mt_cpu_dormant_psci(unsigned long flags)
 {
 	int ret = 1;
 	int cpuid, clusterid;
-
-	struct psci_power_state pps = {
-		.type = PSCI_POWER_STATE_TYPE_POWER_DOWN,
-		.affinity_level = 1,
-	};
+	unsigned int state;
 
 	read_id(&cpuid, &clusterid);
 
+	state = 0x201 << 16;
+
 	if (psci_ops.cpu_suspend) {
-		DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x203);
-		ret = psci_ops.cpu_suspend(pps, virt_to_phys(cpu_resume));
+		ret = psci_ops.cpu_suspend(state, virt_to_phys(cpu_resume));
 	}
 
-	BUG();
+	WARN_ON(1);
 
-	return ret;
-}
-#endif
-
-static int mt_cpu_dormant_abort(unsigned long index)
-{
-#if defined(CONFIG_ARCH_MT6735) || defined(CONFIG_ARCH_MT6735M)
-	biu_reconfig();
-#endif
-
-	start_generic_timer();
-
-	return 0;
-}
-
-#if 0
-/* TODO: remove later, only for test */
-int mt_cpu_init_idle(void)
-{
-	int ret = -EOPNOTSUPP;
-	int cpu = smp_processor_id();
-	struct device_node *cpu_node = of_cpu_device_node_get(cpu);
-
-	if (!cpu_node)
-		return -ENODEV;
-
-	if (cpu_ops[cpu] && cpu_ops[cpu]->cpu_init_idle)
-		ret = cpu_ops[cpu]->cpu_init_idle(cpu_node, cpu);
-
-	of_node_put(cpu_node);
 	return ret;
 }
 #endif
 
 int mt_cpu_dormant(unsigned long flags)
 {
+#ifndef CONFIG_ARM64
 	int ret;
-	int cpuid, clusterid;
+#endif
 
 	if (!mt_dormant_initialized)
 		return MT_CPU_DORMANT_BYPASS;
 
-	read_id(&cpuid, &clusterid);
-
-	DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x101);
-
-	BUG_ON(!irqs_disabled());
-
 	/* to mark as cpu clobs vfp register. */
 	kernel_neon_begin();
 
-	/* dormant break */
-	if (IS_DORMANT_BREAK_CHECK(flags) && SPM_IS_CPU_IRQ_OCCUR(SPM_CORE_ID())) {
-		ret = MT_CPU_DORMANT_BREAK_V(IRQ_PENDING_1);
-		goto dormant_exit;
-	}
-
 	mt_platform_save_context(flags);
 
-	DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x102);
-
-	/* dormant break */
-	if (IS_DORMANT_BREAK_CHECK(flags) && SPM_IS_CPU_IRQ_OCCUR(SPM_CORE_ID())) {
-		mt_cpu_dormant_abort(flags);
-		ret = MT_CPU_DORMANT_BREAK_V(IRQ_PENDING_2);
-		goto dormant_exit;
-	}
-
-	DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x103);
-
-#if 0
-	/* TODO: remove later, only for test */
-	mt_cpu_init_idle();
-#endif
-
 #ifndef CONFIG_ARM64
-	ret = cpu_suspend(flags, mt_cpu_dormant_psci);
+	ret = cpu_suspend(2, mt_cpu_dormant_psci);
 #else
-	ret = cpu_suspend(2);
+	arm_cpuidle_suspend(2);
 #endif
 
-	DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x601);
-
-	switch (ret) {
-	case 0:		/* back from dormant reset */
-		mt_platform_restore_context(flags);
-		ret = MT_CPU_DORMANT_RESET;
-		break;
-
-	case 1:		/* back from dormant abort, */
-		mt_cpu_dormant_abort(flags);
-		ret = MT_CPU_DORMANT_ABORT;
-		break;
-	case 2:
-		mt_cpu_dormant_abort(flags);
-		ret = MT_CPU_DORMANT_BREAK_V(IRQ_PENDING_3);
-		break;
-	default:		/* back from dormant break, do nothing for return */
-		dormant_err("EOPNOTSUPP\n");
-		break;
-	}
-
-	DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x602);
+	mt_platform_restore_context(flags);
 
 	local_fiq_enable();
 
-dormant_exit:
-
 	kernel_neon_end();
 
-	DORMANT_LOG(clusterid * MAX_CORES + cpuid, 0x0);
-
-	return ret & 0x0ff;
-
+	return 0;
 }
 
 static int mt_dormant_dts_map(void)
@@ -481,29 +402,15 @@ static int mt_dormant_dts_map(void)
 /*	u32 kp_interrupt[3]; */
 /*	u32 auxadc_interrupt[3]; */
 
-#if defined(CONFIG_ARCH_MT6735) || defined(CONFIG_ARCH_MT6735M)
-	node = of_find_compatible_node(NULL, NULL, BIU_NODE);
-	if (!node) {
-		dormant_err("error: cannot find node " BIU_NODE);
-		BUG();
-	}
-	biu_base = (unsigned long)of_iomap(node, 0);
-	if (!biu_base) {
-		dormant_err("error: cannot iomap " BIU_NODE);
-		BUG();
-	}
-	of_node_put(node);
-#endif
-
 	node = of_find_compatible_node(NULL, NULL, GIC_NODE);
 	if (!node) {
 		dormant_err("error: cannot find node " GIC_NODE);
-		BUG();
+		WARN_ON(1);
 	}
 	gic_id_base = (unsigned long)of_iomap(node, 0);
 	if (!gic_id_base) {
 		dormant_err("error: cannot iomap " GIC_NODE);
-		BUG();
+		WARN_ON(1);
 	}
 	of_node_put(node);
 
@@ -511,13 +418,15 @@ static int mt_dormant_dts_map(void)
 	node = of_find_compatible_node(NULL, NULL, KP_NODE);
 	if (!node) {
 		dormant_err("error: cannot find node " KP_NODE);
-		BUG();
+		WARN_ON(1);
 	}
-	if (of_property_read_u32_array(node, "interrupts", kp_interrupt, ARRAY_SIZE(kp_interrupt))) {
+	if (of_property_read_u32_array(node, "interrupts",
+		kp_interrupt, ARRAY_SIZE(kp_interrupt))) {
 		dormant_err("error: cannot property_read " KP_NODE);
-		BUG();
+		WARN_ON(1);
 	}
-	kp_irq_bit = ((1 - kp_interrupt[0]) << 5) + kp_interrupt[1];	/* irq[0] = 0 => spi */
+	/* irq[0] = 0 => spi */
+	kp_irq_bit = ((1 - kp_interrupt[0]) << 5) + kp_interrupt[1];
 	of_node_put(node);
 	dormant_dbg("kp_irq_bit = %u\n", kp_irq_bit);
 #endif
@@ -526,14 +435,16 @@ static int mt_dormant_dts_map(void)
 	node = of_find_compatible_node(NULL, NULL, CONSYS_NODE);
 	if (!node) {
 		CPU_DORMANT_INFO("error: cannot find node " CONSYS_NODE);
-		BUG();
+		WARN_ON(1);
 	}
 	if (of_property_read_u32_array(node, "interrupts",
-				       consys_interrupt, ARRAY_SIZE(consys_interrupt))) {
+		consys_interrupt, ARRAY_SIZE(consys_interrupt))) {
 		CPU_DORMANT_INFO("error: cannot property_read " CONSYS_NODE);
-		BUG();
+		WARN_ON(1);
 	}
-	conn_wdt_irq_bit = ((1 - consys_interrupt[3]) << 5) + consys_interrupt[4];	/* irq[0] = 0 => spi */
+	/* irq[0] = 0 => spi */
+	conn_wdt_irq_bit = ((1 - consys_interrupt[3]) << 5) +
+		consys_interrupt[4];
 	of_node_put(node);
 	CPU_DORMANT_INFO("conn_wdt_irq_bit = %u\n", conn_wdt_irq_bit);
 #endif
@@ -541,14 +452,16 @@ static int mt_dormant_dts_map(void)
 	node = of_find_compatible_node(NULL, NULL, AUXADC_NODE);
 	if (!node) {
 		dormant_err("error: cannot find node " AUXADC_NODE);
-		BUG();
+		WARN_ON(1);
 	}
 	if (of_property_read_u32_array(node, "interrupts",
-				       auxadc_interrupt, ARRAY_SIZE(auxadc_interrupt))) {
+		auxadc_interrupt, ARRAY_SIZE(auxadc_interrupt))) {
 		dormant_err("error: cannot property_read " AUXADC_NODE);
-		BUG();
+		WARN_ON(1);
 	}
-	lowbattery_irq_bit = ((1 - auxadc_interrupt[0]) << 5) + auxadc_interrupt[1];	/* irq[0] = 0 => spi */
+	/* irq[0] = 0 => spi */
+	lowbattery_irq_bit = ((1 - auxadc_interrupt[0]) << 5) +
+		auxadc_interrupt[1];
 	of_node_put(node);
 	dormant_dbg("lowbattery_irq_bit = %u\n", lowbattery_irq_bit);
 #endif
@@ -556,7 +469,7 @@ static int mt_dormant_dts_map(void)
 	return 0;
 }
 
-static int __init mt_cpu_dormant_init(void)
+static int mt_cpu_dormant_init(void)
 {
 	int cpuid, clusterid;
 
@@ -567,22 +480,9 @@ static int __init mt_cpu_dormant_init(void)
 
 	mt_dormant_dts_map();
 
-#ifdef CONFIG_MTK_RAM_CONSOLE
-/*
-	sleep_aee_rec_cpu_dormant_va = aee_rr_rec_cpu_dormant();
-	sleep_aee_rec_cpu_dormant_pa = aee_rr_rec_cpu_dormant_pa();
-
-	BUG_ON(!sleep_aee_rec_cpu_dormant_va || !sleep_aee_rec_cpu_dormant_pa);
-
-	kernel_smc_msg(0, 2, (phys_addr_t)sleep_aee_rec_cpu_dormant_pa);
-
-	dormant_dbg("init aee_rec_cpu_dormant: va:%p pa:%p\n",
-		    sleep_aee_rec_cpu_dormant_va, sleep_aee_rec_cpu_dormant_pa);
-*/
-#endif
-
 	mt_dormant_initialized = 1;
 
 	return 0;
 }
+
 postcore_initcall(mt_cpu_dormant_init);

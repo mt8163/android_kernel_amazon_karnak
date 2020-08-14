@@ -1,9 +1,22 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #define LOG_TAG "INFO"
-#include"ddp_info.h"
-#include"ddp_debug.h"
+#include "ddp_info.h"
+#include "ddp_debug.h"
 #include "ddp_log.h"
 
-char *ddp_get_module_name(DISP_MODULE_ENUM module)
+char *ddp_get_module_name(enum DISP_MODULE_ENUM module)
 {
 	switch (module) {
 	case DISP_MODULE_UFOE:
@@ -74,7 +87,7 @@ char *ddp_get_module_name(DISP_MODULE_ENUM module)
 	}
 }
 
-char *ddp_get_reg_module_name(DISP_MODULE_ENUM module)
+char *ddp_get_reg_module_name(enum DISP_MODULE_ENUM module)
 {
 	switch (module) {
 	case DISP_REG_OVL0:
@@ -129,7 +142,7 @@ char *ddp_get_reg_module_name(DISP_MODULE_ENUM module)
 	}
 }
 
-int ddp_get_module_max_irq_bit(DISP_MODULE_ENUM module)
+int ddp_get_module_max_irq_bit(enum DISP_MODULE_ENUM module)
 {
 	switch (module) {
 	case DISP_MODULE_UFOE:
@@ -239,39 +252,39 @@ unsigned int ddp_module_to_idx(int module)
 	return id;
 }
 
-DDP_MODULE_DRIVER *ddp_modules_driver[DISP_MODULE_NUM] = {
-	&ddp_driver_ovl,	/* DISP_MODULE_OVL0  , */
-	&ddp_driver_ovl,	/* DISP_MODULE_OVL1  , */
-	&ddp_driver_rdma,	/* DISP_MODULE_RDMA0 , */
-	&ddp_driver_rdma,	/* DISP_MODULE_RDMA1 , */
-	&ddp_driver_wdma,	/* DISP_MODULE_WDMA0 , */
-	&ddp_driver_color,	/* DISP_MODULE_COLOR0, */
-	&ddp_driver_ccorr,	/* DISP_MODULE_CCORR , */
-	&ddp_driver_aal,	/* DISP_MODULE_AAL   , */
-	&ddp_driver_gamma,	/* DISP_MODULE_GAMMA , */
-	&ddp_driver_dither,	/* DISP_MODULE_DITHER, */
-	&ddp_driver_ufoe,	/* DISP_MODULE_UFOE  , //10 */
-	&ddp_driver_pwm,	/* DISP_MODULE_PWM0   , */
-	&ddp_driver_wdma,	/* DISP_MODULE_WDMA1 , */
-	&ddp_driver_dsi0,	/* DISP_MODULE_DSI0  , */
-	&ddp_driver_dpi0,	/* DISP_MODULE_DPI0   , */
-	&ddp_driver_dpi1,	/* DISP_MODULE_DPI1   , */
-	0,			/* DISP_MODULE_SMI, */
-	0,			/* DISP_MODULE_CONFIG, */
-	0,			/* DISP_MODULE_CMDQ, */
-	0,			/* DISP_MODULE_MUTEX, */
+struct DDP_MODULE_DRIVER *ddp_modules_driver[DISP_MODULE_NUM] = {
+	&ddp_driver_ovl,    /* DISP_MODULE_OVL0  , */
+	&ddp_driver_ovl,    /* DISP_MODULE_OVL1  , */
+	&ddp_driver_rdma,   /* DISP_MODULE_RDMA0 , */
+	&ddp_driver_rdma,   /* DISP_MODULE_RDMA1 , */
+	&ddp_driver_wdma,   /* DISP_MODULE_WDMA0 , */
+	&ddp_driver_color,  /* DISP_MODULE_COLOR0, */
+	&ddp_driver_ccorr,  /* DISP_MODULE_CCORR , */
+	&ddp_driver_aal,    /* DISP_MODULE_AAL   , */
+	&ddp_driver_gamma,  /* DISP_MODULE_GAMMA , */
+	&ddp_driver_dither, /* DISP_MODULE_DITHER, */
+	&ddp_driver_ufoe,   /* DISP_MODULE_UFOE  , //10 */
+	&ddp_driver_pwm,    /* DISP_MODULE_PWM0   , */
+	&ddp_driver_wdma,   /* DISP_MODULE_WDMA1 , */
+	&ddp_driver_dsi0,   /* DISP_MODULE_DSI0  , */
+	&ddp_driver_dpi0,   /* DISP_MODULE_DPI0   , */
+	&ddp_driver_dpi1,   /* DISP_MODULE_DPI1   , */
+	0,		    /* DISP_MODULE_SMI, */
+	0,		    /* DISP_MODULE_CONFIG, */
+	0,		    /* DISP_MODULE_CMDQ, */
+	0,		    /* DISP_MODULE_MUTEX, */
 
-	0,			/* DISP_MODULE_COLOR1, */
-	0,			/* DISP_MODULE_RDMA2, */
-	0,			/* DISP_MODULE_PWM1, */
-	0,			/* DISP_MODULE_OD, */
-	0,			/* DISP_MODULE_MERGE, */
-	0,			/* DISP_MODULE_SPLIT0, */
-	0,			/* DISP_MODULE_SPLIT1, */
-	0,			/* DISP_MODULE_DSI1, */
-	0,			/* DISP_MODULE_DSIDUAL, */
-	0,			/* DISP_MODULE_SMI_LARB0 , */
-	0,			/* DISP_MODULE_SMI_COMMON, */
-	0,			/* DISP_MODULE_UNKNOWN, //20 */
+	0, /* DISP_MODULE_COLOR1, */
+	0, /* DISP_MODULE_RDMA2, */
+	0, /* DISP_MODULE_PWM1, */
+	0, /* DISP_MODULE_OD, */
+	0, /* DISP_MODULE_MERGE, */
+	0, /* DISP_MODULE_SPLIT0, */
+	0, /* DISP_MODULE_SPLIT1, */
+	0, /* DISP_MODULE_DSI1, */
+	0, /* DISP_MODULE_DSIDUAL, */
+	0, /* DISP_MODULE_SMI_LARB0 , */
+	0, /* DISP_MODULE_SMI_COMMON, */
+	0, /* DISP_MODULE_UNKNOWN, //20 */
 
 };

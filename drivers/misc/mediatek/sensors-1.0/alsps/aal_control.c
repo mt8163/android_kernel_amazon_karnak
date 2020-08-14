@@ -1,17 +1,30 @@
-#include <linux/miscdevice.h>
-#include <linux/kernel.h>
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
+#define pr_fmt(fmt) "[ALS/AAL]" fmt
+
 #include <linux/init.h>
-#include <linux/types.h>
 #include <linux/io.h>
+#include <linux/kernel.h>
+#include <linux/miscdevice.h>
+#include <linux/types.h>
 #include <linux/uaccess.h>
 
-#include <hwmsen_dev.h>
-#include <sensors_io.h>
-#include "inc/alsps.h"
 #include "inc/aal_control.h"
+#include "inc/alsps.h"
+#include <sensors_io.h>
 
-
-int aal_use = 0;
+int aal_use /* = 0*/;
 
 static int AAL_open(struct inode *inode, struct file *file)
 {
@@ -24,10 +37,11 @@ static int AAL_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long AAL_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long AAL_unlocked_ioctl(struct file *file, unsigned int cmd,
+			       unsigned long arg)
 {
 	long err = 0;
-	void __user *ptr = (void __user *) arg;
+	void __user *ptr = (void __user *)arg;
 	int dat;
 	uint32_t enable;
 
@@ -45,25 +59,19 @@ static long AAL_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned lon
 			aal_use = 0;
 
 		err = alsps_aal_enable(enable);
-		if (err) {
-			AAL_LOG("als driver don't support new arch, goto execute old arch: %ld\n", err);
-			err = hwmsen_aal_enable(enable);
-			if (err != 0)
-				AAL_ERR("Enable als driver fail %ld\n", err);
-		}
+		if (err)
+			pr_err(
+				"als driver don't support new arch, goto execute old arch: %ld\n",
+				err);
 		break;
 
 	case AAL_GET_ALS_MODE:
-		AAL_LOG("AAL_GET_ALS_MODE do nothing\n");
+		pr_debug("AAL_GET_ALS_MODE do nothing\n");
 		break;
 
 	case AAL_GET_ALS_DATA:
 		dat = alsps_aal_get_data();
-		if (dat < 0) {
-			AAL_LOG("alsps_aal_get_data fail\n");
-			dat = hwmsen_aal_get_data();
-		}
-		AAL_LOG("Get als dat :%d\n", dat);
+		/* pr_debug("Get als dat :%d\n", dat); */
 
 		if (copy_to_user(ptr, &dat, sizeof(dat))) {
 			err = -EFAULT;
@@ -72,17 +80,18 @@ static long AAL_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned lon
 		break;
 
 	default:
-		AAL_ERR("%s not supported = 0x%04x", __func__, cmd);
+		pr_err("%s not supported = 0x%04x", __func__, cmd);
 		err = -ENOIOCTLCMD;
 		break;
 	}
 
 err_out:
-		return err;
+	return err;
 }
 
 #ifdef CONFIG_COMPAT
-static long AAL_compact_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long AAL_compact_ioctl(struct file *file, unsigned int cmd,
+			      unsigned long arg)
 {
 	void __user *data32;
 
@@ -107,7 +116,6 @@ static struct miscdevice AAL_device = {
 	.fops = &AAL_fops,
 };
 
-
 /*----------------------------------------------------------------------------*/
 static int __init AAL_init(void)
 {
@@ -115,24 +123,23 @@ static int __init AAL_init(void)
 
 	err = misc_register(&AAL_device);
 	if (err)
-		AAL_ERR("AAL_device misc_register failed: %d\n", err);
+		pr_err("AAL_device misc_register failed: %d\n", err);
 
-	AAL_LOG("OK!\n");
+	pr_debug("OK!\n");
 	return 0;
 }
 /*----------------------------------------------------------------------------*/
 static void __exit AAL_exit(void)
 {
-	int err;
+	/*int err;*/
 
-	err = misc_deregister(&AAL_device);
+	/*err = */ misc_deregister(&AAL_device);
+#if 0
 	if (err)
-		AAL_ERR("AAL_device misc_deregister fail: %d\n", err);
+		pr_err("AAL_device misc_deregister fail: %d\n", err);
+#endif
 }
-
 late_initcall(AAL_init);
 MODULE_AUTHOR("Mediatek");
 MODULE_DESCRIPTION("AAL driver");
 MODULE_LICENSE("GPL");
-
-

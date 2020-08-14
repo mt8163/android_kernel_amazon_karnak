@@ -26,7 +26,6 @@
 
 #include <linux/fsnotify_backend.h>
 #include "fsnotify.h"
-#include "../mount.h"
 
 /*
  * Clear all of the marks on an inode when it is being evicted from core
@@ -135,9 +134,8 @@ static int send_to_group(struct inode *to_tell,
 			 const unsigned char *file_name)
 {
 	struct fsnotify_group *group = NULL;
-	__u32 test_mask = (mask & ~FS_EVENT_ON_CHILD);
-	__u32 marks_mask = 0;
-	__u32 marks_ignored_mask = 0;
+	__u32 inode_test_mask = 0;
+	__u32 vfsmount_test_mask = 0;
 
 	if (unlikely(!inode_mark && !vfsmount_mark)) {
 		BUG();
@@ -157,25 +155,29 @@ static int send_to_group(struct inode *to_tell,
 	/* does the inode mark tell us to do something? */
 	if (inode_mark) {
 		group = inode_mark->group;
-		marks_mask |= inode_mark->mask;
-		marks_ignored_mask |= inode_mark->ignored_mask;
+		inode_test_mask = (mask & ~FS_EVENT_ON_CHILD);
+		inode_test_mask &= inode_mark->mask;
+		inode_test_mask &= ~inode_mark->ignored_mask;
 	}
 
 	/* does the vfsmount_mark tell us to do something? */
 	if (vfsmount_mark) {
+		vfsmount_test_mask = (mask & ~FS_EVENT_ON_CHILD);
 		group = vfsmount_mark->group;
-		marks_mask |= vfsmount_mark->mask;
-		marks_ignored_mask |= vfsmount_mark->ignored_mask;
+		vfsmount_test_mask &= vfsmount_mark->mask;
+		vfsmount_test_mask &= ~vfsmount_mark->ignored_mask;
+		if (inode_mark)
+			vfsmount_test_mask &= ~inode_mark->ignored_mask;
 	}
 
 	pr_debug("%s: group=%p to_tell=%p mask=%x inode_mark=%p"
-		 " vfsmount_mark=%p marks_mask=%x marks_ignored_mask=%x"
+		 " inode_test_mask=%x vfsmount_mark=%p vfsmount_test_mask=%x"
 		 " data=%p data_is=%d cookie=%d\n",
-		 __func__, group, to_tell, mask, inode_mark, vfsmount_mark,
-		 marks_mask, marks_ignored_mask, data,
+		 __func__, group, to_tell, mask, inode_mark,
+		 inode_test_mask, vfsmount_mark, vfsmount_test_mask, data,
 		 data_is, cookie);
 
-	if (!(test_mask & marks_mask & ~marks_ignored_mask))
+	if (!inode_test_mask && !vfsmount_test_mask)
 		return 0;
 
 	return group->ops->handle_event(group, to_tell, inode_mark,
@@ -205,6 +207,16 @@ int fsnotify(struct inode *to_tell, __u32 mask, void *data, int data_is,
 	else
 		mnt = NULL;
 
+	/*
+	 * Optimization: srcu_read_lock() has a memory barrier which can
+	 * be expensive.  It protects walking the *_fsnotify_marks lists.
+	 * However, if we do not walk the lists, we do not have to do
+	 * SRCU because we have no references to any objects and do not
+	 * need SRCU to keep them "alive".
+	 */
+	if (hlist_empty(&to_tell->i_fsnotify_marks) &&
+	    (!mnt || hlist_empty(&mnt->mnt_fsnotify_marks)))
+		return 0;
 	/*
 	 * if this is a modify event we may need to clear the ignored masks
 	 * otherwise return if neither the inode nor the vfsmount care about
@@ -243,13 +255,13 @@ int fsnotify(struct inode *to_tell, __u32 mask, void *data, int data_is,
 
 		if (inode_node) {
 			inode_mark = hlist_entry(srcu_dereference(inode_node, &fsnotify_mark_srcu),
-						 struct fsnotify_mark, i.i_list);
+						 struct fsnotify_mark, obj_list);
 			inode_group = inode_mark->group;
 		}
 
 		if (vfsmount_node) {
 			vfsmount_mark = hlist_entry(srcu_dereference(vfsmount_node, &fsnotify_mark_srcu),
-							struct fsnotify_mark, m.m_list);
+						    struct fsnotify_mark, obj_list);
 			vfsmount_group = vfsmount_mark->group;
 		}
 

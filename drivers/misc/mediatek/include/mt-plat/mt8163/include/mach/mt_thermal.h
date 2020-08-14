@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 
 #ifndef _MT8163_THERMAL_H
 #define _MT8163_THERMAL_H
@@ -7,8 +20,8 @@
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 
-#include <asm/io.h>
-#include <asm/uaccess.h>
+#include <linux/io.h>
+#include <linux/uaccess.h>
 
 #include "sync_write.h"
 
@@ -26,9 +39,9 @@ extern int apmixed_phy_base;
 
 #define MT6752_EVB_BUILD_PASS /*Jerry fix build error FIX_ME*/
 
-/*******************************************************************************
-* AUXADC Register Definition
-******************************************************************************/
+/*****************************************************************************
+ * AUXADC Register Definition
+ ****************************************************************************/
 /*AUXADC_BASE: 0xF1001000 from Vincent Liang 2014.5.8*/
 
 #define AUXADC_CON0_V       (AUXADC_BASE_2 + 0x000)	/*yes, 0x11003000*/
@@ -73,50 +86,50 @@ extern int apmixed_phy_base;
 #define AUXADC_MISC_P       (auxadc_ts_phy_base + 0x094)
 
 /*
-#define AUXADC_CON0_P       (AUXADC_BASE_2 + 0x000 - 0xE0000000)
-#define AUXADC_CON1_P       (AUXADC_BASE_2 + 0x004 - 0xE0000000)
-#define AUXADC_CON1_SET_P   (AUXADC_BASE_2 + 0x008 - 0xE0000000)
-#define AUXADC_CON1_CLR_P   (AUXADC_BASE_2 + 0x00C - 0xE0000000)
-#define AUXADC_CON2_P       (AUXADC_BASE_2 + 0x010 - 0xE0000000)
-#define AUXADC_CON3_P       (AUXADC_BASE_2 + 0x014 - 0x30000000)
-#define AUXADC_DAT0_P       (AUXADC_BASE_2 + 0x014 - 0xE0000000)
-#define AUXADC_DAT1_P       (AUXADC_BASE_2 + 0x018 - 0xE0000000)
-#define AUXADC_DAT2_P       (AUXADC_BASE_2 + 0x01C - 0xE0000000)
-#define AUXADC_DAT3_P       (AUXADC_BASE_2 + 0x020 - 0xE0000000)
-#define AUXADC_DAT4_P       (AUXADC_BASE_2 + 0x024 - 0xE0000000)
-#define AUXADC_DAT5_P       (AUXADC_BASE_2 + 0x028 - 0xE0000000)
-#define AUXADC_DAT6_P       (AUXADC_BASE_2 + 0x02C - 0xE0000000)
-#define AUXADC_DAT7_P       (AUXADC_BASE_2 + 0x030 - 0xE0000000)
-#define AUXADC_DAT8_P       (AUXADC_BASE_2 + 0x034 - 0xE0000000)
-#define AUXADC_DAT9_P       (AUXADC_BASE_2 + 0x038 - 0xE0000000)
-#define AUXADC_DAT10_P       (AUXADC_BASE_2 + 0x03C - 0xE0000000)
-#define AUXADC_DAT11_P       (AUXADC_BASE_2 + 0x040 - 0xE0000000)
-
-#define AUXADC_MISC_P       (AUXADC_BASE_2 + 0x094 - 0xE0000000)
-*/
-/*******************************************************************************
-* Peripheral Configuration Register Definition
-******************************************************************************/
+ * #define AUXADC_CON0_P       (AUXADC_BASE_2 + 0x000 - 0xE0000000)
+ * #define AUXADC_CON1_P       (AUXADC_BASE_2 + 0x004 - 0xE0000000)
+ * #define AUXADC_CON1_SET_P   (AUXADC_BASE_2 + 0x008 - 0xE0000000)
+ * #define AUXADC_CON1_CLR_P   (AUXADC_BASE_2 + 0x00C - 0xE0000000)
+ * #define AUXADC_CON2_P       (AUXADC_BASE_2 + 0x010 - 0xE0000000)
+ * #define AUXADC_CON3_P       (AUXADC_BASE_2 + 0x014 - 0x30000000)
+ * #define AUXADC_DAT0_P       (AUXADC_BASE_2 + 0x014 - 0xE0000000)
+ * #define AUXADC_DAT1_P       (AUXADC_BASE_2 + 0x018 - 0xE0000000)
+ * #define AUXADC_DAT2_P       (AUXADC_BASE_2 + 0x01C - 0xE0000000)
+ * #define AUXADC_DAT3_P       (AUXADC_BASE_2 + 0x020 - 0xE0000000)
+ * #define AUXADC_DAT4_P       (AUXADC_BASE_2 + 0x024 - 0xE0000000)
+ * #define AUXADC_DAT5_P       (AUXADC_BASE_2 + 0x028 - 0xE0000000)
+ * #define AUXADC_DAT6_P       (AUXADC_BASE_2 + 0x02C - 0xE0000000)
+ * #define AUXADC_DAT7_P       (AUXADC_BASE_2 + 0x030 - 0xE0000000)
+ * #define AUXADC_DAT8_P       (AUXADC_BASE_2 + 0x034 - 0xE0000000)
+ * #define AUXADC_DAT9_P       (AUXADC_BASE_2 + 0x038 - 0xE0000000)
+ * #define AUXADC_DAT10_P       (AUXADC_BASE_2 + 0x03C - 0xE0000000)
+ * #define AUXADC_DAT11_P       (AUXADC_BASE_2 + 0x040 - 0xE0000000)
+ *
+ * #define AUXADC_MISC_P       (AUXADC_BASE_2 + 0x094 - 0xE0000000)
+ */
+/****************************************************************************
+ * Peripheral Configuration Register Definition
+ **************************************************************************/
 
 /* APB Module infracfg_ao*/
 /*#define INFRACFG_AO_BASE (0xF0001000)*/
-#define INFRA_GLOBALCON_RST_0_SET (INFRACFG_AO_BASE_2 + 0x120) /*yes, 0x10001000*/
-#define INFRA_GLOBALCON_RST_0_CLR (INFRACFG_AO_BASE_2 + 0x124) /*yes, 0x10001000*/
-#define INFRA_GLOBALCON_RST_0_STA (INFRACFG_AO_BASE_2 + 0x128) /*yes, 0x10001000*/
-/*******************************************************************************
+#define INFRA_GLOBALCON_RST_0_SET (INFRACFG_AO_BASE_2 + 0x120)
+#define INFRA_GLOBALCON_RST_0_CLR (INFRACFG_AO_BASE_2 + 0x124)
+#define INFRA_GLOBALCON_RST_0_STA (INFRACFG_AO_BASE_2 + 0x128)
+/****************************************************************************
  * APMixedSys Configuration Register Definition
- ******************************************************************************/
+ ***************************************************************************/
 /*APMIXED_BASE: 0x1000C000 from KJ 2014.5.8  TODO: FIXME*/
 #define TS_CON0             (APMIXED_BASE_2 + 0x600) /*yes 0x10209000*/
 #define TS_CON1             (APMIXED_BASE_2 + 0x604)
-#define TS_CON0_TM             (APMIXED_BASE_2 + 0x600)	/* yes 0x10209000 */
+#define TS_CON0_TM             (APMIXED_BASE_2 + 0x600)
 #define TS_CON1_TM             (APMIXED_BASE_2 + 0x604)
 #define TS_CON0_P           (apmixed_phy_base + 0x600)
 #define TS_CON1_P           (apmixed_phy_base + 0x604)
 
-/*******************************************************************************
+/****************************************************************************
  * Thermal Controller Register Definition
- ******************************************************************************/
+ ***************************************************************************/
 #define TEMPMONCTL0         (THERM_CTRL_BASE_2 + 0x000) /*yes 0xF100B000*/
 #define TEMPMONCTL1         (THERM_CTRL_BASE_2 + 0x004)
 #define TEMPMONCTL2         (THERM_CTRL_BASE_2 + 0x008)
@@ -182,7 +195,7 @@ extern int apmixed_phy_base;
 #define THSTAGE1ST          (THERM_CTRL_BASE_2 + 0x410)
 #define THSTAGE2ST          (THERM_CTRL_BASE_2 + 0x414)
 #define THAHBST0            (THERM_CTRL_BASE_2 + 0x418)
-#define THAHBST1            (THERM_CTRL_BASE_2 + 0x41C) /*Only for DE debug*/
+#define THAHBST1            (THERM_CTRL_BASE_2 + 0x41C)
 #define PTPSPARE0           (THERM_CTRL_BASE_2 + 0x420)
 #define PTPSPARE1           (THERM_CTRL_BASE_2 + 0x424)
 #define PTPSPARE2           (THERM_CTRL_BASE_2 + 0x428)
@@ -195,9 +208,9 @@ extern int apmixed_phy_base;
 #define PTPSPARE2_P           (thermal_phy_base + 0x428)
 #define PTPSPARE3_P           (thermal_phy_base + 0x42C)
 
-/*******************************************************************************
+/****************************************************************************
  * Thermal Controller Register Mask Definition
- ******************************************************************************/
+ ***************************************************************************/
 #define THERMAL_ENABLE_SEN0     0x1
 #define THERMAL_ENABLE_SEN1     0x2
 #define THERMAL_ENABLE_SEN2     0x4
@@ -247,13 +260,13 @@ extern int apmixed_phy_base;
 
 
 /* 8163 only 3 TS for each back.
-   all ts in each bank can read temp, but the specific one is highest.
-   no ABB TS according to Thermal simulation.
-
-Bank0 : CPU (TS1) (TS_MCU1)
-Bank1 : GPU (TS2) (TS_MCU2)
-Bank2 : SOC (TS3) (TS_MCU3)
-*/
+ * all ts in each bank can read temp, but the specific one is highest.
+ * no ABB TS according to Thermal simulation.
+ *
+ * Bank0 : CPU (TS1) (TS_MCU1)
+ * Bank1 : GPU (TS2) (TS_MCU2)
+ * Bank2 : SOC (TS3) (TS_MCU3)
+ */
 enum thermal_sensor_name {
 	THERMAL_SENSOR1     = 0,/*TS_MCU1*/
 	THERMAL_SENSOR2     = 1,/*TS_MCU2*/
@@ -275,7 +288,8 @@ struct TS_PTPOD {
 };
 
 
-extern void get_thermal_slope_intercept(struct TS_PTPOD *ts_info, enum thermal_bank_name ts_bank);
+extern void get_thermal_slope_intercept(struct TS_PTPOD *ts_info
+	, enum thermal_bank_name ts_bank);
 extern void set_taklking_flag(bool flag);
 extern int tscpu_get_cpu_temp(void);
 extern int tscpu_get_temp_by_bank(enum thermal_bank_name ts_bank);

@@ -30,6 +30,8 @@
 #include <linux/platform_data/usb-omap.h>
 #include <linux/of.h>
 
+#include "omap-usb.h"
+
 #define USBTLL_DRIVER_NAME	"usbhs_tll"
 
 /* TLL Register Set */
@@ -324,7 +326,6 @@ MODULE_DEVICE_TABLE(of, usbtll_omap_dt_ids);
 static struct platform_driver usbtll_omap_driver = {
 	.driver = {
 		.name		= (char *)usbtll_driver_name,
-		.owner		= THIS_MODULE,
 		.of_match_table = usbtll_omap_dt_ids,
 	},
 	.probe		= usbtll_omap_probe,

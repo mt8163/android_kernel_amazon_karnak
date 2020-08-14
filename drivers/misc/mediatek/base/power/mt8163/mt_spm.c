@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/spinlock.h>
@@ -64,7 +77,8 @@ static irqreturn_t spm_irq0_handler(int irq, void *dev_id)
 	}
 
 	/* clean ISR status */
-	spm_write(SPM_SLEEP_ISR_MASK, spm_read(SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
+	spm_write(SPM_SLEEP_ISR_MASK,
+		spm_read(SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
 	spm_write(SPM_SLEEP_ISR_STATUS, isr);
 	if (isr & ISRS_TWAM)
 		udelay(100);	/* need 3T TWAM clock (32K/26M) */
@@ -167,12 +181,12 @@ static int spm_irq_register(void)
 #endif
 	for (i = 0; i < ARRAY_SIZE(irqdesc); i++) {
 		err = request_irq(irqdesc[i].irq, irqdesc[i].handler,
-				  IRQF_TRIGGER_LOW | IRQF_NO_SUSPEND, "SPM", NULL);
+			IRQF_TRIGGER_LOW | IRQF_NO_SUSPEND, "SPM", NULL);
 		if (err) {
 			spm_err("FAILED TO REQUEST IRQ%d (%d)\n", i, err);
 			r = -EPERM;
 		}
-#ifndef CONFIG_ARM64
+#if 0
 		/* assign each SPM IRQ to each CPU */
 		mt_gic_cfg_irq2cpu(irqdesc[i].irq, 0, 0);
 		mt_gic_cfg_irq2cpu(irqdesc[i].irq, i % num_possible_cpus(), 1);
@@ -245,12 +259,16 @@ static void spm_register_init(void)
 		spm_err("[MCUCFG] base failed\n");
 
 	spm_err("spm_base = %p\n", spm_base);
-	spm_err("spm_irq_0 = %d, spm_irq_1 = %d, spm_irq_2 = %d, spm_irq_3 = %d\n", spm_irq_0,
-		spm_irq_1, spm_irq_2, spm_irq_3);
-	spm_err("spm_irq_4 = %d, spm_irq_5 = %d, spm_irq_6 = %d, spm_irq_7 = %d\n", spm_irq_4,
-		spm_irq_5, spm_irq_6, spm_irq_7);
-	spm_err("cksys_base = %p, infracfg_ao_base = %p, spm_mcucfg = %p\n", spm_cksys_base,
-		spm_infracfg_ao_base, spm_mcucfg);
+	spm_err("spm_irq_0 = %d, spm_irq_1 = %d, spm_irq_2 = %d, ",
+		spm_irq_0, spm_irq_1, spm_irq_2);
+	spm_err("spm_irq_3 = %d, spm_irq_4 = %d, spm_irq_5 = %d, ",
+		spm_irq_3, spm_irq_4, spm_irq_5);
+	spm_err("spm_irq_6 = %d, spm_irq_7 = %d\n",
+		spm_irq_6, spm_irq_7);
+	spm_err("cksys_base = %p, infracfg_ao_base = %p",
+		spm_cksys_base, spm_infracfg_ao_base);
+	spm_err("spm_mcucfg = %p\n", spm_mcucfg);
+
 #endif
 
 	spin_lock_irqsave(&__spm_lock, flags);
@@ -266,7 +284,8 @@ static void spm_register_init(void)
 	/* reset PCM */
 	spm_write(SPM_PCM_CON0, CON0_CFG_KEY | CON0_PCM_SW_RESET);
 	spm_write(SPM_PCM_CON0, CON0_CFG_KEY);
-	BUG_ON(spm_read(SPM_PCM_FSM_STA) != PCM_FSM_STA_DEF);	/* PCM reset failed */
+	/* PCM reset failed */
+	WARN_ON(spm_read(SPM_PCM_FSM_STA) != PCM_FSM_STA_DEF);
 
 	/* init PCM control register */
 	spm_write(SPM_PCM_CON0, CON0_CFG_KEY | CON0_IM_SLEEP_DVS);
@@ -284,11 +303,13 @@ static void spm_register_init(void)
 	 * CLKSQ1_OFF: !MD2_SRCLKENA
 	 */
 	spm_write(SPM_CLK_CON,
-		  CC_SRCLKENA_MASK_0 | CC_SYSCLK1_EN_0 | CC_SYSCLK1_EN_1 | CC_MD32_DCM_EN);
+		  CC_SRCLKENA_MASK_0 | CC_SYSCLK1_EN_0 |
+		  CC_SYSCLK1_EN_1 | CC_MD32_DCM_EN);
 	spm_write(SPM_PCM_SRC_REQ,
-		  SR_CCIF0_TO_AP_MASK_B | SR_CCIF0_TO_MD_MASK_B | SR_CCIF1_TO_AP_MASK_B |
-		  SR_CCIF1_TO_MD_MASK_B);
-	spm_write(SPM_AP_STANBY_CON, spm_read(SPM_AP_STANBY_CON) | ASC_SRCCLKENI_MASK);
+		  SR_CCIF0_TO_AP_MASK_B | SR_CCIF0_TO_MD_MASK_B |
+		  SR_CCIF1_TO_AP_MASK_B | SR_CCIF1_TO_MD_MASK_B);
+	spm_write(SPM_AP_STANBY_CON,
+		spm_read(SPM_AP_STANBY_CON) | ASC_SRCCLKENI_MASK);
 
 #if 0
 	/* clean wakeup event raw status */
@@ -312,7 +333,9 @@ static void spm_register_init(void)
 static int __init spm_module_init(void)
 {
 	int r = 0;
-/* This following setting is moved to LK by WDT init, because of DTS init level issue */
+/* This following setting is moved to LK by WDT init,
+ * because of DTS init level issue
+ */
 #if 0
 	struct wd_api *wd_api;
 #endif
@@ -327,7 +350,9 @@ static int __init spm_module_init(void)
 		r = -EPERM;
 #endif
 
-/* This following setting is moved to LK by WDT init, because of DTS init level issue */
+/* This following setting is moved to LK by WDT init,
+ * because of DTS init level issue
+ */
 #if 0
 	get_wd_api(&wd_api);
 	if (wd_api->wd_spmwdt_mode_config) {
@@ -337,6 +362,9 @@ static int __init spm_module_init(void)
 		r = -ENODEV;
 	}
 #endif
+
+	spm_sodi_init();
+
 	return r;
 }
 
@@ -386,10 +414,12 @@ void spm_twam_enable_monitor(const struct twam_sig *twamsig, bool speed_mode)
 	}
 
 	spin_lock_irqsave(&__spm_lock, flags);
-	spm_write(SPM_SLEEP_ISR_MASK, spm_read(SPM_SLEEP_ISR_MASK) & ~ISRM_TWAM);
+	spm_write(SPM_SLEEP_ISR_MASK,
+		spm_read(SPM_SLEEP_ISR_MASK) & ~ISRM_TWAM);
 	spm_write(SPM_SLEEP_TWAM_CON, (sig3 << 27) |
-		  (sig2 << 22) |
-		  (sig1 << 17) | (sig0 << 12) | (speed_mode ? TWAM_CON_SPEED_EN : 0) | TWAM_CON_EN);
+		  (sig2 << 22) | (sig1 << 17) | (sig0 << 12) |
+		  (speed_mode ? TWAM_CON_SPEED_EN : 0) |
+		  TWAM_CON_EN);
 	spin_unlock_irqrestore(&__spm_lock, flags);
 
 	spm_debug("enable TWAM for signal %u, %u, %u, %u (%u)\n",
@@ -402,8 +432,10 @@ void spm_twam_disable_monitor(void)
 	unsigned long flags;
 
 	spin_lock_irqsave(&__spm_lock, flags);
-	spm_write(SPM_SLEEP_TWAM_CON, spm_read(SPM_SLEEP_TWAM_CON) & ~TWAM_CON_EN);
-	spm_write(SPM_SLEEP_ISR_MASK, spm_read(SPM_SLEEP_ISR_MASK) | ISRM_TWAM);
+	spm_write(SPM_SLEEP_TWAM_CON,
+		spm_read(SPM_SLEEP_TWAM_CON) & ~TWAM_CON_EN);
+	spm_write(SPM_SLEEP_ISR_MASK,
+		spm_read(SPM_SLEEP_ISR_MASK) | ISRM_TWAM);
 	spm_write(SPM_SLEEP_ISR_STATUS, ISRC_TWAM);
 	spin_unlock_irqrestore(&__spm_lock, flags);
 

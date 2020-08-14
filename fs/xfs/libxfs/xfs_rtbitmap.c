@@ -22,8 +22,6 @@
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_bit.h"
-#include "xfs_sb.h"
-#include "xfs_ag.h"
 #include "xfs_mount.h"
 #include "xfs_inode.h"
 #include "xfs_bmap.h"
@@ -36,7 +34,6 @@
 #include "xfs_trace.h"
 #include "xfs_buf.h"
 #include "xfs_icache.h"
-#include "xfs_dinode.h"
 #include "xfs_rtalloc.h"
 
 
@@ -45,10 +42,35 @@
  */
 
 /*
+ * Real time buffers need verifiers to avoid runtime warnings during IO.
+ * We don't have anything to verify, however, so these are just dummy
+ * operations.
+ */
+static void
+xfs_rtbuf_verify_read(
+	struct xfs_buf	*bp)
+{
+	return;
+}
+
+static void
+xfs_rtbuf_verify_write(
+	struct xfs_buf	*bp)
+{
+	return;
+}
+
+const struct xfs_buf_ops xfs_rtbuf_ops = {
+	.name = "rtbuf",
+	.verify_read = xfs_rtbuf_verify_read,
+	.verify_write = xfs_rtbuf_verify_write,
+};
+
+/*
  * Get a buffer for the bitmap or summary file block specified.
  * The buffer is returned read and locked.
  */
-int
+static int
 xfs_rtbuf_get(
 	xfs_mount_t	*mp,		/* file system mount structure */
 	xfs_trans_t	*tp,		/* transaction pointer */
@@ -71,9 +93,12 @@ xfs_rtbuf_get(
 	ASSERT(map.br_startblock != NULLFSBLOCK);
 	error = xfs_trans_read_buf(mp, tp, mp->m_ddev_targp,
 				   XFS_FSB_TO_DADDR(mp, map.br_startblock),
-				   mp->m_bsize, 0, &bp, NULL);
+				   mp->m_bsize, 0, &bp, &xfs_rtbuf_ops);
 	if (error)
 		return error;
+
+	xfs_trans_buf_set_type(tp, bp, issum ? XFS_BLFT_RTSUMMARY_BUF
+					     : XFS_BLFT_RTBITMAP_BUF);
 	*bpp = bp;
 	return 0;
 }
@@ -986,7 +1011,7 @@ xfs_rtfree_extent(
 	    mp->m_sb.sb_rextents) {
 		if (!(mp->m_rbmip->i_d.di_flags & XFS_DIFLAG_NEWRTBM))
 			mp->m_rbmip->i_d.di_flags |= XFS_DIFLAG_NEWRTBM;
-		*(__uint64_t *)&mp->m_rbmip->i_d.di_atime = 0;
+		*(__uint64_t *)&VFS_I(mp->m_rbmip)->i_atime = 0;
 		xfs_trans_log_inode(tp, mp->m_rbmip, XFS_ILOG_CORE);
 	}
 	return 0;

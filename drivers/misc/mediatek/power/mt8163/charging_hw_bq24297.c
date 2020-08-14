@@ -1,8 +1,21 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
 #include <linux/types.h>
 #include <mt-plat/upmu_common.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
-#include <mt-plat/mt_boot.h>
+#include <mt-plat/mtk_boot.h>
 #include <mt-plat/battery_common.h>
 
 #include "bq24297.h"
@@ -12,7 +25,7 @@
 /* ============================================================*/
 #define STATUS_OK	0
 #define STATUS_UNSUPPORTED	-1
-#define GETARRAYNUM(array) (sizeof(array)/sizeof(array[0]))
+#define GETARRAYNUM(array) (ARRAY_SIZE(array))
 
 /*============================================================*/
 /*global variable*/
@@ -47,20 +60,32 @@ static const unsigned int CS_VTH[] = {
 };
 
 static const unsigned int INPUT_CS_VTH[] = {
-	CHARGE_CURRENT_100_00_MA,  CHARGE_CURRENT_150_00_MA,	CHARGE_CURRENT_500_00_MA,
+	CHARGE_CURRENT_100_00_MA,
+	CHARGE_CURRENT_150_00_MA,
+	CHARGE_CURRENT_500_00_MA,
 	CHARGE_CURRENT_900_00_MA,
-	CHARGE_CURRENT_1000_00_MA, CHARGE_CURRENT_1500_00_MA,  CHARGE_CURRENT_2000_00_MA,
+	CHARGE_CURRENT_1000_00_MA,
+	CHARGE_CURRENT_1500_00_MA,
+	CHARGE_CURRENT_2000_00_MA,
 	CHARGE_CURRENT_MAX
 };
 
 static const unsigned int VCDT_HV_VTH[] = {
-	BATTERY_VOLT_04_200000_V, BATTERY_VOLT_04_250000_V,	  BATTERY_VOLT_04_300000_V,
+	BATTERY_VOLT_04_200000_V,
+	BATTERY_VOLT_04_250000_V,
+	BATTERY_VOLT_04_300000_V,
 	BATTERY_VOLT_04_350000_V,
-	BATTERY_VOLT_04_400000_V, BATTERY_VOLT_04_450000_V,	  BATTERY_VOLT_04_500000_V,
+	BATTERY_VOLT_04_400000_V,
+	BATTERY_VOLT_04_450000_V,
+	BATTERY_VOLT_04_500000_V,
 	BATTERY_VOLT_04_550000_V,
-	BATTERY_VOLT_04_600000_V, BATTERY_VOLT_06_000000_V,	  BATTERY_VOLT_06_500000_V,
+	BATTERY_VOLT_04_600000_V,
+	BATTERY_VOLT_06_000000_V,
+	BATTERY_VOLT_06_500000_V,
 	BATTERY_VOLT_07_000000_V,
-	BATTERY_VOLT_07_500000_V, BATTERY_VOLT_08_500000_V,	  BATTERY_VOLT_09_500000_V,
+	BATTERY_VOLT_07_500000_V,
+	BATTERY_VOLT_08_500000_V,
+	BATTERY_VOLT_09_500000_V,
 	BATTERY_VOLT_10_500000_V
 };
 
@@ -89,7 +114,8 @@ const unsigned int val)
 	return 0;
 }
 
-static unsigned int bmt_find_closest_level(const unsigned int *pList, unsigned int number, unsigned int level)
+static unsigned int bmt_find_closest_level(const unsigned int *pList,
+		unsigned int number, unsigned int level)
 {
 	unsigned int i;
 	unsigned int max_value_in_last_element;
@@ -155,7 +181,6 @@ static unsigned int charging_hw_init(void *data)
 	bq24297_set_iprechg(0x3);	/* Precharge current 512mA */
 #endif
 	bq24297_set_iterm(0x1);		/* Termination current 256mA (C/20) */
-	pr_notice("Kernel:bq24297_set_iterm(0x1); 256mA\n");
 
 #if !defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
 	bq24297_set_vreg(0x2C);	/* VREG 4.208V */
@@ -209,6 +234,7 @@ static unsigned int charging_boost_enable(void *data)
 {
 	unsigned int status = STATUS_OK;
 	unsigned int enable = *(unsigned int *)(data);
+
 	pr_debug("%s: enable: %d\n", __func__, enable);
 	if (enable) {
 		bq24297_set_otg_config(0x1);    /* OTG */
@@ -233,9 +259,11 @@ static unsigned int charging_set_cv_voltage(void *data)
 		/* use nearest value */
 		cv_value = 4352000;
 	} else
-		cv_value = bmt_find_closest_level(VBAT_CV_VTH, GETARRAYNUM(VBAT_CV_VTH), *(unsigned int *)(data));
+		cv_value = bmt_find_closest_level(VBAT_CV_VTH,
+			GETARRAYNUM(VBAT_CV_VTH), *(unsigned int *)(data));
 
-	register_value = charging_parameter_to_value(VBAT_CV_VTH, GETARRAYNUM(VBAT_CV_VTH), cv_value);
+	register_value = charging_parameter_to_value(VBAT_CV_VTH,
+		GETARRAYNUM(VBAT_CV_VTH), cv_value);
 	bq24297_set_vreg(register_value);
 
 	return status;
@@ -249,10 +277,12 @@ static unsigned int charging_get_current(void *data)
 	unsigned char ret_force_20pct = 0;
 
 	/*Get current level*/
-	bq24297_read_interface(bq24297_CON2, &ret_val, CON2_ICHG_MASK, CON2_ICHG_SHIFT);
+	bq24297_read_interface(bq24297_CON2,
+		&ret_val, CON2_ICHG_MASK, CON2_ICHG_SHIFT);
 
 	/*Get Force 20% option*/
-	bq24297_read_interface(bq24297_CON2, &ret_force_20pct, CON2_FORCE_20PCT_MASK, CON2_FORCE_20PCT_SHIFT);
+	bq24297_read_interface(bq24297_CON2, &ret_force_20pct,
+		CON2_FORCE_20PCT_MASK, CON2_FORCE_20PCT_SHIFT);
 
 	/*Parsing*/
 	ret_val = (ret_val*64) + 512;
@@ -280,8 +310,10 @@ static unsigned int charging_set_current(void *data)
 	bq24297_set_force_20pct(0x0);
 
 	array_size = GETARRAYNUM(CS_VTH);
-	set_chr_current = bmt_find_closest_level(CS_VTH, array_size, current_value);
-	register_value = charging_parameter_to_value(CS_VTH, array_size, set_chr_current);
+	set_chr_current = bmt_find_closest_level(CS_VTH,
+		array_size, current_value);
+	register_value = charging_parameter_to_value(CS_VTH,
+		array_size, set_chr_current);
 	bq24297_set_ichg(register_value);
 
 	return status;
@@ -295,23 +327,14 @@ static unsigned int charging_set_input_current(void *data)
 	unsigned int register_value;
 
 	array_size = GETARRAYNUM(INPUT_CS_VTH);
-	set_chr_current = bmt_find_closest_level(INPUT_CS_VTH, array_size, *(unsigned int *)data);
-	register_value = charging_parameter_to_value(INPUT_CS_VTH, array_size, set_chr_current);
+	set_chr_current = bmt_find_closest_level(INPUT_CS_VTH,
+		array_size, *(unsigned int *)data);
+	register_value = charging_parameter_to_value(INPUT_CS_VTH,
+		array_size, set_chr_current);
 
 	bq24297_set_iinlim(register_value);
 	return status;
 }
-
-#if 0
-static unsigned int charging_get_input_current(void *data)
-{
-	unsigned int register_value;
-
-	register_value = bq24297_get_iinlim();
-	*(unsigned int *) data = INPUT_CS_VTH[register_value];
-	return STATUS_OK;
-}
-#endif
 
 static unsigned int charging_get_charging_status(void *data)
 {
@@ -348,8 +371,10 @@ static unsigned int charging_set_hv_threshold(void *data)
 	unsigned int voltage = *(unsigned int *)(data);
 
 	array_size = GETARRAYNUM(VCDT_HV_VTH);
-	set_hv_voltage = bmt_find_closest_level(VCDT_HV_VTH, array_size, voltage);
-	register_value = charging_parameter_to_value(VCDT_HV_VTH, array_size, set_hv_voltage);
+	set_hv_voltage = bmt_find_closest_level(VCDT_HV_VTH,
+		array_size, voltage);
+	register_value = charging_parameter_to_value(VCDT_HV_VTH,
+		array_size, set_hv_voltage);
 	upmu_set_rg_vcdt_hv_vth(register_value);
 
 	return status;
@@ -392,9 +417,9 @@ static unsigned int charging_get_charger_det_status(void *data)
 static unsigned int charging_get_charger_type(void *data)
 {
 #if defined(CONFIG_POWER_EXT) || defined(CONFIG_MTK_FPGA)
-	*(CHARGER_TYPE *) (data) = STANDARD_HOST;
+	*(unsigned int *) (data) = STANDARD_HOST;
 #else
-	CHARGER_TYPE charger_type = CHARGER_UNKNOWN;
+	unsigned int charger_type = CHARGER_UNKNOWN;
 	unsigned int ret_val;
 	unsigned int vbus_state;
 	unsigned char reg_val = 0;
@@ -404,7 +429,7 @@ static unsigned int charging_get_charger_type(void *data)
 
 	if (bq24297_get_pn() == 0x1) {
 		pr_debug("[BQ24296] use pmic charger detection\r\n");
-		*(CHARGER_TYPE *) (data) = hw_charger_type_detection();
+		*(unsigned int *) (data) = hw_charger_type_detection();
 		charging_type_det_done = true;
 		return STATUS_OK;
 	}
@@ -464,7 +489,8 @@ static unsigned int charging_get_charger_type(void *data)
 	ret_val = bq24297_get_vbus_stat();
 
 	if (ret_val != vbus_state)
-		pr_warn("Update VBUS state from %d to %d!\n", vbus_state, ret_val);
+		pr_warn("Update VBUS state from %d to %d!\n",
+		vbus_state, ret_val);
 
 	switch (ret_val) {
 	case 0x1:
@@ -479,15 +505,18 @@ static unsigned int charging_get_charger_type(void *data)
 	}
 
 	if (charger_type == STANDARD_CHARGER) {
-		bq24297_read_interface(bq24297_CON0, &reg_val, CON0_IINLIM_MASK, CON0_IINLIM_SHIFT);
+		bq24297_read_interface(bq24297_CON0,
+			&reg_val, CON0_IINLIM_MASK, CON0_IINLIM_SHIFT);
 		if (reg_val < 0x4) {
 			pr_debug(
 				    "Set to Non-standard charger due to 1A input limit.\r\n");
 			charger_type = NONSTANDARD_CHARGER;
-		} else if (reg_val == 0x4) {	/* APPLE_1_0A_CHARGER - 1A apple charger */
+		} else if (reg_val == 0x4) {
+			/* APPLE_1_0A_CHARGER - 1A apple charger */
 			pr_debug("Set to APPLE_1_0A_CHARGER.\r\n");
 			charger_type = APPLE_1_0A_CHARGER;
-		} else if (reg_val == 0x6) {	/* APPLE_2_1A_CHARGER,  2.1A apple charger */
+		} else if (reg_val == 0x6) {
+			/* APPLE_2_1A_CHARGER,  2.1A apple charger */
 			pr_debug("Set to APPLE_2_1A_CHARGER.\r\n");
 			charger_type = APPLE_2_1A_CHARGER;
 		}
@@ -497,10 +526,10 @@ static unsigned int charging_get_charger_type(void *data)
 
 	pr_notice("charging_get_charger_type = %d\n", charger_type);
 
-	*(CHARGER_TYPE *)(data) = charger_type;
+	*(unsigned int *)(data) = charger_type;
 
 	charging_type_det_done = true;
-	pr_debug("charging_get_charger_type = %d\r\n", *(CHARGER_TYPE *)(data));
+	pr_debug("charging_get_charger_type = %d\r\n", *(unsigned int *)(data));
 #endif
 	return STATUS_OK;
 }
@@ -512,7 +541,7 @@ static unsigned int charging_set_platform_reset(void *data)
 #if defined(CONFIG_POWER_EXT) || defined(CONFIG_MTK_FPGA)
 #else
 	pr_notice("charging_set_platform_reset\n");
-	orderly_reboot(true);
+	orderly_reboot();
 #endif
 	return status;
 }
@@ -545,9 +574,9 @@ static unsigned int charging_set_ta_current_pattern(void *data)
 	unsigned int charging_status = false;
 
 	#if defined(HIGH_BATTERY_VOLTAGE_SUPPORT)
-	BATTERY_VOLTAGE_ENUM cv_voltage = BATTERY_VOLT_04_340000_V;
+	unsigned int cv_voltage = BATTERY_VOLT_04_340000_V;
 	#else
-	BATTERY_VOLTAGE_ENUM cv_voltage = BATTERY_VOLT_04_200000_V;
+	unsigned int cv_voltage = BATTERY_VOLT_04_200000_V;
 	#endif
 
 	charging_get_charging_status(&charging_status);
@@ -690,54 +719,16 @@ static unsigned int charging_set_error_state(void *data)
 static unsigned int charging_get_fault_type(void *data)
 {
 	unsigned int status = STATUS_OK;
-
 	u8 type = 0;
+
 	type = bq24297_get_fault_type();
 	*(unsigned int *)data = type;
 	return status;
 }
 
-#if 0
-static unsigned int charging_enable_powerpath(void *data)
-{
-	unsigned int status = STATUS_OK;
-	unsigned int enable = *(unsigned int *) (data);
-
-	if (true == enable)
-		bq24297_set_en_hiz(0x0);
-	else
-		bq24297_set_en_hiz(0x1);
-
-	return status;
-}
-
-static unsigned int charging_boost_enable(void *data)
-{
-	unsigned int status = STATUS_OK;
-	unsigned int enable = *(unsigned int *) (data);
-
-	if (true == enable) {
-		bq24297_set_boost_lim(0x1);	/* 1.5A on VBUS */
-		bq24297_set_en_hiz(0x0);
-		bq24297_set_chg_config(0);	/* Charge disabled */
-		bq24297_set_otg_config(0x1);	/* OTG */
-#ifdef CONFIG_POWER_EXT
-		bq24297_set_watchdog(0);
-#endif
-	} else {
-		bq24297_set_otg_config(0x0);	/* OTG & Charge disabled */
-#ifdef CONFIG_POWER_EXT
-		bq24297_set_watchdog(1);
-#endif
-	}
-
-	return status;
-}
-#endif
-
 static unsigned int(*charging_func[CHARGING_CMD_NUMBER]) (void *data);
 
- /*
+/*
  *FUNCTION
  *		Internal_chr_control_handler
  *
@@ -754,33 +745,54 @@ static unsigned int(*charging_func[CHARGING_CMD_NUMBER]) (void *data);
  * GLOBALS AFFECTED
  *	   None
  */
-signed int chr_control_interface(CHARGING_CTRL_CMD cmd, void *data)
+signed int chr_control_interface(int cmd, void *data)
 {
 	static signed int init = -1;
 
 	if (init == -1) {
 		init = 0;
-		charging_func[CHARGING_CMD_INIT] = charging_hw_init;
-		charging_func[CHARGING_CMD_DUMP_REGISTER] = charging_dump_register;
-		charging_func[CHARGING_CMD_ENABLE] = charging_enable;
-		charging_func[CHARGING_CMD_SET_CV_VOLTAGE] = charging_set_cv_voltage;
-		charging_func[CHARGING_CMD_GET_CURRENT] = charging_get_current;
-		charging_func[CHARGING_CMD_SET_CURRENT] = charging_set_current;
-		charging_func[CHARGING_CMD_SET_INPUT_CURRENT] = charging_set_input_current;
-		charging_func[CHARGING_CMD_GET_CHARGING_STATUS] =  charging_get_charging_status;
-		charging_func[CHARGING_CMD_RESET_WATCH_DOG_TIMER] = charging_reset_watch_dog_timer;
-		charging_func[CHARGING_CMD_SET_HV_THRESHOLD] = charging_set_hv_threshold;
-		charging_func[CHARGING_CMD_GET_HV_STATUS] = charging_get_hv_status;
-		charging_func[CHARGING_CMD_GET_BATTERY_STATUS] = charging_get_battery_status;
-		charging_func[CHARGING_CMD_GET_CHARGER_DET_STATUS] = charging_get_charger_det_status;
-		charging_func[CHARGING_CMD_GET_CHARGER_TYPE] = charging_get_charger_type;
-		charging_func[CHARGING_CMD_SET_PLATFORM_RESET] = charging_set_platform_reset;
-		charging_func[CHARGING_CMD_GET_PLATFORM_BOOT_MODE] = charging_get_platform_boot_mode;
-		charging_func[CHARGING_CMD_SET_POWER_OFF] = charging_set_power_off;
-		charging_func[CHARGING_CMD_SET_TA_CURRENT_PATTERN] = charging_set_ta_current_pattern;
-		charging_func[CHARGING_CMD_SET_ERROR_STATE] = charging_set_error_state;
-		charging_func[CHARGING_CMD_BOOST_ENABLE] = charging_boost_enable;
-		charging_func[CHARGING_CMD_GET_FAULT_TYPE] = charging_get_fault_type;
+		charging_func[CHARGING_CMD_INIT]
+			= charging_hw_init;
+		charging_func[CHARGING_CMD_DUMP_REGISTER]
+			= charging_dump_register;
+		charging_func[CHARGING_CMD_ENABLE]
+			= charging_enable;
+		charging_func[CHARGING_CMD_SET_CV_VOLTAGE]
+			= charging_set_cv_voltage;
+		charging_func[CHARGING_CMD_GET_CURRENT]
+			= charging_get_current;
+		charging_func[CHARGING_CMD_SET_CURRENT]
+			= charging_set_current;
+		charging_func[CHARGING_CMD_SET_INPUT_CURRENT]
+			= charging_set_input_current;
+		charging_func[CHARGING_CMD_GET_CHARGING_STATUS]
+			=  charging_get_charging_status;
+		charging_func[CHARGING_CMD_RESET_WATCH_DOG_TIMER]
+			= charging_reset_watch_dog_timer;
+		charging_func[CHARGING_CMD_SET_HV_THRESHOLD]
+			= charging_set_hv_threshold;
+		charging_func[CHARGING_CMD_GET_HV_STATUS]
+			= charging_get_hv_status;
+		charging_func[CHARGING_CMD_GET_BATTERY_STATUS]
+			= charging_get_battery_status;
+		charging_func[CHARGING_CMD_GET_CHARGER_DET_STATUS]
+			= charging_get_charger_det_status;
+		charging_func[CHARGING_CMD_GET_CHARGER_TYPE]
+			= charging_get_charger_type;
+		charging_func[CHARGING_CMD_SET_PLATFORM_RESET]
+			= charging_set_platform_reset;
+		charging_func[CHARGING_CMD_GET_PLATFORM_BOOT_MODE]
+			= charging_get_platform_boot_mode;
+		charging_func[CHARGING_CMD_SET_POWER_OFF]
+			= charging_set_power_off;
+		charging_func[CHARGING_CMD_SET_TA_CURRENT_PATTERN]
+			= charging_set_ta_current_pattern;
+		charging_func[CHARGING_CMD_SET_ERROR_STATE]
+			= charging_set_error_state;
+		charging_func[CHARGING_CMD_BOOST_ENABLE]
+			= charging_boost_enable;
+		charging_func[CHARGING_CMD_GET_FAULT_TYPE]
+			= charging_get_fault_type;
 	}
 
 	if (cmd < CHARGING_CMD_NUMBER) {

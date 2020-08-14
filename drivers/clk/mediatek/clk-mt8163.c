@@ -12,6 +12,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
@@ -767,7 +768,7 @@ static struct mtk_gate venc_clks[] __initdata = {
 
 static int mtk_cg_bit_is_cleared(struct clk_hw *hw)
 {
-	struct mtk_clk_gate *cg = to_clk_gate(hw);
+	struct mtk_clk_gate *cg = to_mtk_clk_gate(hw);
 	u32 val;
 
 	regmap_read(cg->regmap, cg->sta_ofs, &val);
@@ -779,7 +780,7 @@ static int mtk_cg_bit_is_cleared(struct clk_hw *hw)
 
 static int mtk_cg_bit_is_set(struct clk_hw *hw)
 {
-	struct mtk_clk_gate *cg = to_clk_gate(hw);
+	struct mtk_clk_gate *cg = to_mtk_clk_gate(hw);
 	u32 val;
 
 	regmap_read(cg->regmap, cg->sta_ofs, &val);
@@ -791,14 +792,14 @@ static int mtk_cg_bit_is_set(struct clk_hw *hw)
 
 static void mtk_cg_set_bit(struct clk_hw *hw)
 {
-	struct mtk_clk_gate *cg = to_clk_gate(hw);
+	struct mtk_clk_gate *cg = to_mtk_clk_gate(hw);
 
 	regmap_update_bits(cg->regmap, cg->sta_ofs, BIT(cg->bit), BIT(cg->bit));
 }
 
 static void mtk_cg_clr_bit(struct clk_hw *hw)
 {
-	struct mtk_clk_gate *cg = to_clk_gate(hw);
+	struct mtk_clk_gate *cg = to_mtk_clk_gate(hw);
 
 	regmap_update_bits(cg->regmap, cg->sta_ofs, BIT(cg->bit), 0);
 }
@@ -1020,8 +1021,8 @@ static const struct mtk_pll_data plls[] = {
 	PLL(CLK_APMIXED_VENCPLL, "vencpll", 0x260, 0x26c, 0x1, 0, 21, 0x260, 4, 0x0, 0x264, 0),
 	PLL(CLK_APMIXED_TVDPLL, "tvdpll", 0x270, 0x27c, 0x1, 0, 21, 0x270, 4, 0x0, 0x274, 0),
 	PLL(CLK_APMIXED_MPLL, "mpll", 0x280, 0x28c, 0x1, 0, 21, 0x280, 4, 0x0, 0x284, 0),
-	PLL(CLK_APMIXED_AUD1PLL, "aud1pll", 0x2a0, 0x2b0, 0x1, 0, 31, 0x2a0, 4, 0x300, 0x2a4, 0),
-	PLL(CLK_APMIXED_AUD2PLL, "aud2pll", 0x2b4, 0x2c4, 0x1, 0, 31, 0x2b4, 4, 0x304, 0x2b8, 0),
+	PLL(CLK_APMIXED_AUD1PLL, "aud1pll", 0x2a0, 0x2ac, 0x1, 0, 31, 0x2a0, 4, 0x300, 0x2a4, 0),
+	PLL(CLK_APMIXED_AUD2PLL, "aud2pll", 0x2b0, 0x2bc, 0x1, 0, 31, 0x2b0, 4, 0x304, 0x2b4, 0),
 	PLL(CLK_APMIXED_LVDSPLL, "lvdspll", 0x2c0, 0x2cc, 0x1, 0, 21, 0x2c0, 4, 0x0, 0x2c4, 0),
 };
 

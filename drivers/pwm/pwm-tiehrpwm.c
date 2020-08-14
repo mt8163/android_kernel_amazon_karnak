@@ -27,8 +27,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/of_device.h>
 
-#include "pwm-tipwmss.h"
-
 /* EHRPWM registers and bits definitions */
 
 /* Time base module registers */
@@ -384,8 +382,6 @@ static void ehrpwm_pwm_disable(struct pwm_chip *chip, struct pwm_device *pwm)
 		aqcsfrc_mask = AQCSFRC_CSFA_MASK;
 	}
 
-	/* Update shadow register first before modifying active register */
-	ehrpwm_modify(pc->mmio_base, AQCSFRC, aqcsfrc_mask, aqcsfrc_val);
 	/*
 	 * Changes to immediate action on Action Qualifier. This puts
 	 * Action Qualifier control on PWM output from next TBCLK
@@ -409,7 +405,7 @@ static void ehrpwm_pwm_free(struct pwm_chip *chip, struct pwm_device *pwm)
 {
 	struct ehrpwm_pwm_chip *pc = to_ehrpwm_pwm_chip(chip);
 
-	if (test_bit(PWMF_ENABLED, &pwm->flags)) {
+	if (pwm_is_enabled(pwm)) {
 		dev_warn(chip->dev, "Removing PWM device without disabling\n");
 		pm_runtime_put_sync(chip->dev);
 	}
@@ -428,6 +424,7 @@ static const struct pwm_ops ehrpwm_pwm_ops = {
 };
 
 static const struct of_device_id ehrpwm_of_match[] = {
+	{ .compatible	= "ti,am3352-ehrpwm" },
 	{ .compatible	= "ti,am33xx-ehrpwm" },
 	{},
 };
@@ -435,17 +432,24 @@ MODULE_DEVICE_TABLE(of, ehrpwm_of_match);
 
 static int ehrpwm_pwm_probe(struct platform_device *pdev)
 {
+	struct device_node *np = pdev->dev.of_node;
 	int ret;
 	struct resource *r;
 	struct clk *clk;
 	struct ehrpwm_pwm_chip *pc;
-	u16 status;
 
 	pc = devm_kzalloc(&pdev->dev, sizeof(*pc), GFP_KERNEL);
 	if (!pc)
 		return -ENOMEM;
 
 	clk = devm_clk_get(&pdev->dev, "fck");
+	if (IS_ERR(clk)) {
+		if (of_device_is_compatible(np, "ti,am33xx-ecap")) {
+			dev_warn(&pdev->dev, "Binding is obsolete.\n");
+			clk = devm_clk_get(pdev->dev.parent, "fck");
+		}
+	}
+
 	if (IS_ERR(clk)) {
 		dev_err(&pdev->dev, "failed to get clock\n");
 		return PTR_ERR(clk);
@@ -489,27 +493,9 @@ static int ehrpwm_pwm_probe(struct platform_device *pdev)
 	}
 
 	pm_runtime_enable(&pdev->dev);
-	pm_runtime_get_sync(&pdev->dev);
-
-	status = pwmss_submodule_state_change(pdev->dev.parent,
-			PWMSS_EPWMCLK_EN);
-	if (!(status & PWMSS_EPWMCLK_EN_ACK)) {
-		dev_err(&pdev->dev, "PWMSS config space clock enable failed\n");
-		ret = -EINVAL;
-		goto pwmss_clk_failure;
-	}
-
-	pm_runtime_put_sync(&pdev->dev);
 
 	platform_set_drvdata(pdev, pc);
 	return 0;
-
-pwmss_clk_failure:
-	pm_runtime_put_sync(&pdev->dev);
-	pm_runtime_disable(&pdev->dev);
-	pwmchip_remove(&pc->chip);
-	clk_unprepare(pc->tbclk);
-	return ret;
 }
 
 static int ehrpwm_pwm_remove(struct platform_device *pdev)
@@ -517,14 +503,6 @@ static int ehrpwm_pwm_remove(struct platform_device *pdev)
 	struct ehrpwm_pwm_chip *pc = platform_get_drvdata(pdev);
 
 	clk_unprepare(pc->tbclk);
-
-	pm_runtime_get_sync(&pdev->dev);
-	/*
-	 * Due to hardware misbehaviour, acknowledge of the stop_req
-	 * is missing. Hence checking of the status bit skipped.
-	 */
-	pwmss_submodule_state_change(pdev->dev.parent, PWMSS_EPWMCLK_STOP_REQ);
-	pm_runtime_put_sync(&pdev->dev);
 
 	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
@@ -567,7 +545,7 @@ static int ehrpwm_pwm_suspend(struct device *dev)
 	for (i = 0; i < pc->chip.npwm; i++) {
 		struct pwm_device *pwm = &pc->chip.pwms[i];
 
-		if (!test_bit(PWMF_ENABLED, &pwm->flags))
+		if (!pwm_is_enabled(pwm))
 			continue;
 
 		/* Disable explicitly if PWM is running */
@@ -584,7 +562,7 @@ static int ehrpwm_pwm_resume(struct device *dev)
 	for (i = 0; i < pc->chip.npwm; i++) {
 		struct pwm_device *pwm = &pc->chip.pwms[i];
 
-		if (!test_bit(PWMF_ENABLED, &pwm->flags))
+		if (!pwm_is_enabled(pwm))
 			continue;
 
 		/* Enable explicitly if PWM was running */
@@ -601,7 +579,6 @@ static SIMPLE_DEV_PM_OPS(ehrpwm_pwm_pm_ops, ehrpwm_pwm_suspend,
 static struct platform_driver ehrpwm_pwm_driver = {
 	.driver = {
 		.name	= "ehrpwm",
-		.owner	= THIS_MODULE,
 		.of_match_table = ehrpwm_of_match,
 		.pm	= &ehrpwm_pwm_pm_ops,
 	},

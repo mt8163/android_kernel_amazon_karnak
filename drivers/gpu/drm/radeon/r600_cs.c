@@ -969,7 +969,7 @@ static int r600_cs_parse_packet0(struct radeon_cs_parser *p,
 static int r600_cs_check_reg(struct radeon_cs_parser *p, u32 reg, u32 idx)
 {
 	struct r600_cs_track *track = (struct r600_cs_track *)p->track;
-	struct radeon_cs_reloc *reloc;
+	struct radeon_bo_list *reloc;
 	u32 m, i, tmp, *ib;
 	int r;
 
@@ -1626,7 +1626,7 @@ static bool r600_is_safe_reg(struct radeon_cs_parser *p, u32 reg, u32 idx)
 static int r600_packet3_check(struct radeon_cs_parser *p,
 				struct radeon_cs_packet *pkt)
 {
-	struct radeon_cs_reloc *reloc;
+	struct radeon_bo_list *reloc;
 	struct r600_cs_track *track;
 	volatile u32 *ib;
 	unsigned idx;
@@ -1671,8 +1671,8 @@ static int r600_packet3_check(struct radeon_cs_parser *p,
 		}
 
 		offset = reloc->gpu_offset +
-		         (idx_value & 0xfffffff0) +
-		         ((u64)(tmp & 0xff) << 32);
+			 (idx_value & 0xfffffff0) +
+			 ((u64)(tmp & 0xff) << 32);
 
 		ib[idx + 0] = offset;
 		ib[idx + 1] = (tmp & 0xffffff00) | (upper_32_bits(offset) & 0xff);
@@ -1712,8 +1712,8 @@ static int r600_packet3_check(struct radeon_cs_parser *p,
 		}
 
 		offset = reloc->gpu_offset +
-		         idx_value +
-		         ((u64)(radeon_get_ib_value(p, idx+1) & 0xff) << 32);
+			 idx_value +
+			 ((u64)(radeon_get_ib_value(p, idx+1) & 0xff) << 32);
 
 		ib[idx+0] = offset;
 		ib[idx+1] = upper_32_bits(offset) & 0xff;
@@ -1764,8 +1764,8 @@ static int r600_packet3_check(struct radeon_cs_parser *p,
 			}
 
 			offset = reloc->gpu_offset +
-			         (radeon_get_ib_value(p, idx+1) & 0xfffffff0) +
-			         ((u64)(radeon_get_ib_value(p, idx+2) & 0xff) << 32);
+				 (radeon_get_ib_value(p, idx+1) & 0xfffffff0) +
+				 ((u64)(radeon_get_ib_value(p, idx+2) & 0xff) << 32);
 
 			ib[idx+1] = (ib[idx+1] & 0x3) | (offset & 0xfffffff0);
 			ib[idx+2] = upper_32_bits(offset) & 0xff;
@@ -1876,8 +1876,8 @@ static int r600_packet3_check(struct radeon_cs_parser *p,
 				return -EINVAL;
 			}
 			offset = reloc->gpu_offset +
-			         (radeon_get_ib_value(p, idx+1) & 0xfffffff8) +
-			         ((u64)(radeon_get_ib_value(p, idx+2) & 0xff) << 32);
+				 (radeon_get_ib_value(p, idx+1) & 0xfffffff8) +
+				 ((u64)(radeon_get_ib_value(p, idx+2) & 0xff) << 32);
 
 			ib[idx+1] = offset & 0xfffffff8;
 			ib[idx+2] = upper_32_bits(offset) & 0xff;
@@ -1898,8 +1898,8 @@ static int r600_packet3_check(struct radeon_cs_parser *p,
 		}
 
 		offset = reloc->gpu_offset +
-		         (radeon_get_ib_value(p, idx+1) & 0xfffffffc) +
-		         ((u64)(radeon_get_ib_value(p, idx+2) & 0xff) << 32);
+			 (radeon_get_ib_value(p, idx+1) & 0xfffffffc) +
+			 ((u64)(radeon_get_ib_value(p, idx+2) & 0xff) << 32);
 
 		ib[idx+1] = offset & 0xfffffffc;
 		ib[idx+2] = (ib[idx+2] & 0xffffff00) | (upper_32_bits(offset) & 0xff);
@@ -2316,7 +2316,7 @@ int r600_cs_parse(struct radeon_cs_parser *p)
 			p->track = NULL;
 			return r;
 		}
-	} while (p->idx < p->chunks[p->chunk_ib_idx].length_dw);
+	} while (p->idx < p->chunk_ib->length_dw);
 #if 0
 	for (r = 0; r < p->ib.length_dw; r++) {
 		printk(KERN_INFO "%05d  0x%08X\n", r, p->ib.ptr[r]);
@@ -2327,101 +2327,6 @@ int r600_cs_parse(struct radeon_cs_parser *p)
 	p->track = NULL;
 	return 0;
 }
-
-#ifdef CONFIG_DRM_RADEON_UMS
-
-/**
- * cs_parser_fini() - clean parser states
- * @parser:	parser structure holding parsing context.
- * @error:	error number
- *
- * If error is set than unvalidate buffer, otherwise just free memory
- * used by parsing context.
- **/
-static void r600_cs_parser_fini(struct radeon_cs_parser *parser, int error)
-{
-	unsigned i;
-
-	kfree(parser->relocs);
-	for (i = 0; i < parser->nchunks; i++)
-		drm_free_large(parser->chunks[i].kdata);
-	kfree(parser->chunks);
-	kfree(parser->chunks_array);
-}
-
-static int r600_cs_parser_relocs_legacy(struct radeon_cs_parser *p)
-{
-	if (p->chunk_relocs_idx == -1) {
-		return 0;
-	}
-	p->relocs = kzalloc(sizeof(struct radeon_cs_reloc), GFP_KERNEL);
-	if (p->relocs == NULL) {
-		return -ENOMEM;
-	}
-	return 0;
-}
-
-int r600_cs_legacy(struct drm_device *dev, void *data, struct drm_file *filp,
-			unsigned family, u32 *ib, int *l)
-{
-	struct radeon_cs_parser parser;
-	struct radeon_cs_chunk *ib_chunk;
-	struct r600_cs_track *track;
-	int r;
-
-	/* initialize tracker */
-	track = kzalloc(sizeof(*track), GFP_KERNEL);
-	if (track == NULL)
-		return -ENOMEM;
-	r600_cs_track_init(track);
-	r600_cs_legacy_get_tiling_conf(dev, &track->npipes, &track->nbanks, &track->group_size);
-	/* initialize parser */
-	memset(&parser, 0, sizeof(struct radeon_cs_parser));
-	parser.filp = filp;
-	parser.dev = &dev->pdev->dev;
-	parser.rdev = NULL;
-	parser.family = family;
-	parser.track = track;
-	parser.ib.ptr = ib;
-	r = radeon_cs_parser_init(&parser, data);
-	if (r) {
-		DRM_ERROR("Failed to initialize parser !\n");
-		r600_cs_parser_fini(&parser, r);
-		return r;
-	}
-	r = r600_cs_parser_relocs_legacy(&parser);
-	if (r) {
-		DRM_ERROR("Failed to parse relocation !\n");
-		r600_cs_parser_fini(&parser, r);
-		return r;
-	}
-	/* Copy the packet into the IB, the parser will read from the
-	 * input memory (cached) and write to the IB (which can be
-	 * uncached). */
-	ib_chunk = &parser.chunks[parser.chunk_ib_idx];
-	parser.ib.length_dw = ib_chunk->length_dw;
-	*l = parser.ib.length_dw;
-	if (copy_from_user(ib, ib_chunk->user_ptr, ib_chunk->length_dw * 4)) {
-		r = -EFAULT;
-		r600_cs_parser_fini(&parser, r);
-		return r;
-	}
-	r = r600_cs_parse(&parser);
-	if (r) {
-		DRM_ERROR("Invalid command stream !\n");
-		r600_cs_parser_fini(&parser, r);
-		return r;
-	}
-	r600_cs_parser_fini(&parser, r);
-	return r;
-}
-
-void r600_cs_legacy_init(void)
-{
-	r600_nomm = 1;
-}
-
-#endif
 
 /*
  *  DMA
@@ -2435,24 +2340,24 @@ void r600_cs_legacy_init(void)
  * GPU offset using the provided start.
  **/
 int r600_dma_cs_next_reloc(struct radeon_cs_parser *p,
-			   struct radeon_cs_reloc **cs_reloc)
+			   struct radeon_bo_list **cs_reloc)
 {
 	struct radeon_cs_chunk *relocs_chunk;
 	unsigned idx;
 
 	*cs_reloc = NULL;
-	if (p->chunk_relocs_idx == -1) {
+	if (p->chunk_relocs == NULL) {
 		DRM_ERROR("No relocation chunk !\n");
 		return -EINVAL;
 	}
-	relocs_chunk = &p->chunks[p->chunk_relocs_idx];
+	relocs_chunk = p->chunk_relocs;
 	idx = p->dma_reloc_idx;
 	if (idx >= p->nrelocs) {
 		DRM_ERROR("Relocs at %d after relocations chunk end %d !\n",
 			  idx, p->nrelocs);
 		return -EINVAL;
 	}
-	*cs_reloc = p->relocs_ptr[idx];
+	*cs_reloc = &p->relocs[idx];
 	p->dma_reloc_idx++;
 	return 0;
 }
@@ -2472,8 +2377,8 @@ int r600_dma_cs_next_reloc(struct radeon_cs_parser *p,
  **/
 int r600_dma_cs_parse(struct radeon_cs_parser *p)
 {
-	struct radeon_cs_chunk *ib_chunk = &p->chunks[p->chunk_ib_idx];
-	struct radeon_cs_reloc *src_reloc, *dst_reloc;
+	struct radeon_cs_chunk *ib_chunk = p->chunk_ib;
+	struct radeon_bo_list *src_reloc, *dst_reloc;
 	u32 header, cmd, count, tiled;
 	volatile u32 *ib = p->ib.ptr;
 	u32 idx, idx_value;
@@ -2619,7 +2524,7 @@ int r600_dma_cs_parse(struct radeon_cs_parser *p)
 			DRM_ERROR("Unknown packet type %d at %d !\n", cmd, idx);
 			return -EINVAL;
 		}
-	} while (p->idx < p->chunks[p->chunk_ib_idx].length_dw);
+	} while (p->idx < p->chunk_ib->length_dw);
 #if 0
 	for (r = 0; r < p->ib->length_dw; r++) {
 		printk(KERN_INFO "%05d  0x%08X\n", r, p->ib.ptr[r]);

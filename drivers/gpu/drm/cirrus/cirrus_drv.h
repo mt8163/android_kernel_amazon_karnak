@@ -153,7 +153,6 @@ struct cirrus_device {
 struct cirrus_fbdev {
 	struct drm_fb_helper helper;
 	struct cirrus_framebuffer gfb;
-	struct list_head fbdev_list;
 	void *sysram;
 	int size;
 	int x1, y1, x2, y2; /* dirty rect */
@@ -207,8 +206,11 @@ int cirrus_dumb_create(struct drm_file *file,
 
 int cirrus_framebuffer_init(struct drm_device *dev,
 			   struct cirrus_framebuffer *gfb,
-			    struct drm_mode_fb_cmd2 *mode_cmd,
+			    const struct drm_mode_fb_cmd2 *mode_cmd,
 			    struct drm_gem_object *obj);
+
+bool cirrus_check_framebuffer(struct cirrus_device *cdev, int width, int height,
+			      int bpp, int pitch);
 
 				/* cirrus_display.c */
 int cirrus_modeset_init(struct cirrus_device *cdev);
@@ -243,7 +245,7 @@ static inline int cirrus_bo_reserve(struct cirrus_bo *bo, bool no_wait)
 {
 	int ret;
 
-	ret = ttm_bo_reserve(&bo->bo, true, no_wait, false, NULL);
+	ret = ttm_bo_reserve(&bo->bo, true, no_wait, NULL);
 	if (ret) {
 		if (ret != -ERESTARTSYS && ret != -EBUSY)
 			DRM_ERROR("reserve failed %p\n", bo);
@@ -259,4 +261,7 @@ static inline void cirrus_bo_unreserve(struct cirrus_bo *bo)
 
 int cirrus_bo_push_sysram(struct cirrus_bo *bo);
 int cirrus_bo_pin(struct cirrus_bo *bo, u32 pl_flag, u64 *gpu_addr);
+
+extern int cirrus_bpp;
+
 #endif				/* __CIRRUS_DRV_H__ */

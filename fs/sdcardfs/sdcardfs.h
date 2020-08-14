@@ -150,14 +150,6 @@ extern struct inode *sdcardfs_iget(struct super_block *sb,
 				 struct inode *lower_inode, userid_t id);
 extern int sdcardfs_interpose(struct dentry *dentry, struct super_block *sb,
 			    struct path *lower_path, userid_t id);
-#ifdef CONFIG_SDCARD_FS_PARTIAL_RELATIME
-extern void sdcardfs_update_relatime_flag(struct file *lower_file,
-	struct inode *lower_inode);
-#endif
-#ifdef CONFIG_SDCARD_FS_DIR_WRITER
-extern void sdcardfs_update_xattr_dirwriter(struct dentry *lower_dentry,
-	uid_t writer_uid);
-#endif
 
 /* file private data */
 struct sdcardfs_file_info {
@@ -205,9 +197,7 @@ struct sdcardfs_mount_options {
 	bool multiuser;
 	bool gid_derivation;
 	bool default_normal;
-	bool unshared_obb;
 	unsigned int reserved_mb;
-	bool nocache;
 };
 
 struct sdcardfs_vfsmount_options {
@@ -491,38 +481,6 @@ static inline void sdcardfs_put_real_lower(const struct dentry *dent,
 		sdcardfs_put_lower_path(dent, real_lower);
 }
 
-#if defined(CONFIG_SDCARD_FS_DIR_WRITER) || defined(CONFIG_SDCARD_FS_PARTIAL_RELATIME)
-static inline int wildcard_path_match(char *wildcard_name,
-	const char **dir_name, int name_count) {
-	int i, len = strlen(wildcard_name), depth = 0;
-	const char *dname;
-	char *wname;
-
-	for (i = 0; i < len; i++) {
-		if (wildcard_name[i] == '/')
-			continue;
-		depth++;
-		if (i == 0)
-			return -EINVAL;
-		if (name_count < depth)
-			return 0;
-
-		dname = dir_name[depth - 1];
-		wname = &wildcard_name[i];
-		while (wildcard_name[i] != '/' && i < len)
-			i++;
-		wildcard_name[i] = 0;
-		if (!strncmp(wname, "%s", 2) ||
-			(strlen(wname) == strlen(dname) &&
-			 !strncmp(wname, dname, strlen(dname))))
-			continue;
-		return 0;
-	}
-	return depth;
-}
-#endif
-
-
 extern struct mutex sdcardfs_super_list_lock;
 extern struct list_head sdcardfs_super_list;
 
@@ -531,9 +489,6 @@ extern appid_t get_appid(const char *app_name);
 extern appid_t get_ext_gid(const char *app_name);
 extern appid_t is_excluded(const char *app_name, userid_t userid);
 extern int check_caller_access_to_name(struct inode *parent_node, const struct qstr *name);
-#ifdef CONFIG_SDCARD_FS_DIR_WRITER
-extern int add_app_name_to_list(appid_t appid, char *list, int len);
-#endif
 extern int packagelist_init(void);
 extern void packagelist_exit(void);
 
@@ -564,13 +519,13 @@ static inline struct dentry *lock_parent(struct dentry *dentry)
 {
 	struct dentry *dir = dget_parent(dentry);
 
-	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 	return dir;
 }
 
 static inline void unlock_dir(struct dentry *dir)
 {
-	mutex_unlock(&dir->d_inode->i_mutex);
+	inode_unlock(d_inode(dir));
 	dput(dir);
 }
 
@@ -589,7 +544,7 @@ static inline int prepare_dir(const char *path_s, uid_t uid, gid_t gid, mode_t m
 		goto out_unlock;
 	}
 
-	err = vfs_mkdir2(parent.mnt, parent.dentry->d_inode, dent, mode);
+	err = vfs_mkdir2(parent.mnt, d_inode(parent.dentry), dent, mode);
 	if (err) {
 		if (err == -EEXIST)
 			err = 0;
@@ -599,16 +554,16 @@ static inline int prepare_dir(const char *path_s, uid_t uid, gid_t gid, mode_t m
 	attrs.ia_uid = make_kuid(&init_user_ns, uid);
 	attrs.ia_gid = make_kgid(&init_user_ns, gid);
 	attrs.ia_valid = ATTR_UID | ATTR_GID;
-	mutex_lock(&dent->d_inode->i_mutex);
+	inode_lock(d_inode(dent));
 	notify_change2(parent.mnt, dent, &attrs, NULL);
-	mutex_unlock(&dent->d_inode->i_mutex);
+	inode_unlock(d_inode(dent));
 
 out_dput:
 	dput(dent);
 
 out_unlock:
 	/* parent dentry locked by lookup_create */
-	mutex_unlock(&parent.dentry->d_inode->i_mutex);
+	inode_unlock(d_inode(parent.dentry));
 	path_put(&parent);
 	return err;
 }
@@ -692,7 +647,6 @@ static inline bool qstr_case_eq(const struct qstr *q1, const struct qstr *q2)
 	return q1->len == q2->len && str_n_case_eq(q1->name, q2->name, q2->len);
 }
 
-/* */
 #define QSTR_LITERAL(string) QSTR_INIT(string, sizeof(string)-1)
 
 #endif	/* not _SDCARDFS_H_ */

@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef __M4U_PGTABLE_H__
 #define __M4U_PGTABLE_H__
 
@@ -13,21 +26,21 @@
 #define F_PTE_TYPE_SMALL        (0x2)
 #define F_PTE_B_BIT             F_BIT_SET(2)
 #define F_PTE_C_BIT             F_BIT_SET(3)
-#define F_PTE_AP_MSK            F_MSK(5, 4)
-#define F_PTE_AP_SET(val)       F_VAL(val, 5, 4)
-#define F_PTE_AP_GET(regval)    F_MSK_SHIFT(regval, 5, 4)
+#define F_PTE_BIT33_BIT		F_BIT_SET(4)
 #define F_PTE_TEX_MSK            F_MSK(8, 6)
 #define F_PTE_TEX_SET(val)       F_VAL(val, 8, 6)
 #define F_PTE_TEX_GET(regval)    F_MSK_SHIFT(regval, 8, 6)
 #define F_PTE_BIT32_BIT         F_BIT_SET(9)
 #define F_PTE_S_BIT             F_BIT_SET(10)
 #define F_PTE_NG_BIT            F_BIT_SET(11)
+
 #define F_PTE_PA_LARGE_MSK            F_MSK(31, 16)
 #define F_PTE_PA_LARGE_SET(val)       F_VAL(val, 31, 16)
 #define F_PTE_PA_LARGE_GET(regval)    F_MSK_SHIFT(regval, 31, 16)
 #define F_PTE_PA_SMALL_MSK            F_MSK(31, 12)
 #define F_PTE_PA_SMALL_SET(val)       F_VAL(val, 31, 12)
 #define F_PTE_PA_SMALL_GET(regval)    F_MSK_SHIFT(regval, 31, 12)
+
 #define F_PTE_TYPE_IS_LARGE_PAGE(pte) ((imu_pte_val(pte)&0x3) == F_PTE_TYPE_LARGE)
 #define F_PTE_TYPE_IS_SMALL_PAGE(pte)   ((imu_pte_val(pte)&0x3) == F_PTE_TYPE_SMALL)
 
@@ -45,6 +58,7 @@
 
 #define F_PGD_B_BIT             F_BIT_SET(2)
 #define F_PGD_C_BIT             F_BIT_SET(3)
+#define F_PGD_BIT33_BIT		F_BIT_SET(4)
 #define F_PGD_AP_MSK            F_MSK(11, 10)
 #define F_PGD_AP_SET(val)       F_VAL(val, 11, 10)
 #define F_PGD_AP_GET(regval)    F_MSK_SHIFT(regval, 11, 10)
@@ -101,9 +115,20 @@ typedef struct {imu_pteval_t imu_pgd; } imu_pgd_t;
 #define imu_pte_index(addr)		(((addr)>>IMU_PAGE_SHIFT)&(IMU_PTRS_PER_PTE - 1))
 #define imu_pte_offset_map(pgd, addr) (imu_pte_map(pgd) + imu_pte_index(addr))
 
+extern int gM4U_4G_DRAM_Mode;
+
 static inline imu_pte_t *imu_pte_map(imu_pgd_t *pgd)
 {
-	return (imu_pte_t *) __va(imu_pgd_val(*pgd) & F_PGD_PA_PAGETABLE_MSK);
+	imu_pteval_t pte_pa = imu_pgd_val(*pgd);
+
+	if (gM4U_4G_DRAM_Mode) {
+		if (pte_pa < 0x40000000)
+			return (imu_pte_t *)(__va((pte_pa & F_PGD_PA_PAGETABLE_MSK) + 0x100000000L));
+		else
+			return (imu_pte_t *)(__va(pte_pa & F_PGD_PA_PAGETABLE_MSK));
+	} else
+		return (imu_pte_t *)(__va(pte_pa & F_PGD_PA_PAGETABLE_MSK));
+
 }
 
 static inline int imu_pte_unmap(imu_pte_t *pte)
@@ -132,15 +157,13 @@ static inline imu_pte_t *imu_largepage_start(imu_pte_t *pte)
 	return (imu_pte_t *) (round_down((unsigned long)pte, (16 * 4)));
 }
 
-static inline unsigned int m4u_calc_next_mva(unsigned int addr, unsigned int end, unsigned int size)
+static inline unsigned long long m4u_calc_next_mva(unsigned long long addr, unsigned long long end, unsigned int size)
 {
-	/* addr + size may equal 0x100000000 */
-	unsigned long long __boundary = ((unsigned long long)addr
-									+(unsigned long long)size)
-									&(~((unsigned long long)size-1));
-	unsigned long long min = min_t(unsigned long long, __boundary, (unsigned long long)end);
+	/* addr + size may equal 0x100000000*/
+	unsigned long long __boundary = (addr + (unsigned long long)size) & (~((unsigned long long)size-1));
+	unsigned long long min = min_t(unsigned long long, __boundary, end);
 
-	return (unsigned int)min;
+	return min;
 }
 
 #endif

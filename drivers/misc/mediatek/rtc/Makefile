@@ -1,37 +1,38 @@
-MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
-
-#ifneq (,$(filter $(strip $(CONFIG_MTK_PLATFORM)), mt6735 mt6735m mt6753 mt6580 mt6572 mt6582 mt6592 mt6752 mt6795 mt6755))
+#
+# Copyright (C) 2015 MediaTek Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
 
 #set IP folder name
-ifneq (,$(filter y,$(CONFIG_ARCH_MT6735) $(CONFIG_ARCH_MT6735M) $(CONFIG_ARCH_MT6753)))
-    MDI_IP_FOLDER:=mt6328
-else
-    ifneq (,$(filter y,$(CONFIG_ARCH_MT6795)))
-	    MDI_IP_FOLDER:=mt6331
-    else
-        ifneq (,$(filter y,$(CONFIG_ARCH_MT6572) $(CONFIG_ARCH_MT6582) $(CONFIG_ARCH_MT6592) $(CONFIG_ARCH_MT8163)))
-	        MDI_IP_FOLDER:=mt6323
-        else
-            ifneq (,$(filter y,$(CONFIG_ARCH_MT6752)))
-	            MDI_IP_FOLDER:=mt6325
-            else
-              ifneq (,$(filter y,$(CONFIG_ARCH_MT6580)))
-	              MDI_IP_FOLDER:=mt6350
-              else
-                ifneq (,$(filter y,$(CONFIG_ARCH_MT6755)))
-	                MDI_IP_FOLDER:=mt6351
-	              else
-	                ifneq (,$(filter y,$(CONFIG_ARCH_MT8173)))
-	                MDI_IP_FOLDER:=mt6391
-	                endif
-                endif
-              endif
-            endif
-        endif
-    endif
+
+ifneq (,$(filter y,$(CONFIG_MTK_PMIC_CHIP_MT6355)))
+  MDI_IP_FOLDER:=mt6355
+endif
+
+ifneq (,$(filter y,$(CONFIG_MTK_PMIC_CHIP_MT6356)))
+  MDI_IP_FOLDER:=mt6356
+endif
+
+ifneq (,$(filter y,$(CONFIG_MTK_PMIC_CHIP_MT6357)))
+  MDI_IP_FOLDER:=mt6357
+endif
+
+ifeq (mt8163, $(MTK_PLATFORM))
+  MDI_IP_FOLDER:=mt6323
 endif
 
 MDP_COMMON_FOLDER:= ./
+
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/rtc/$(MDI_IP_FOLDER)
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/rtc/include
 
 #Top level common code
 obj-$(CONFIG_MTK_RTC) += mtk_rtc_common.o mtk_rtc_hal_common.o

@@ -76,9 +76,6 @@ struct lp55xx_platform_data {
 
 	/* LP8501 specific */
 	enum lp8501_pwr_sel pwr_sel;
-
-	/* LP5523 specific */
-	u8 gpo_enable;
 };
 
 #endif /* _LEDS_LP55XX_H */

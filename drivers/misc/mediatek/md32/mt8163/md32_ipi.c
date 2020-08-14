@@ -69,10 +69,10 @@ void md32_ipi_init(void)
 }
 
 /*
-  @param id:       IPI ID
-  @param handler:  IPI handler
-  @param name:     IPI name
-*/
+ * @param id:       IPI ID
+ * @param handler:  IPI handler
+ * @param name:     IPI name
+ */
 enum ipi_status md32_ipi_registration(enum ipi_id id, ipi_handler_t handler,
 				      const char *name)
 {

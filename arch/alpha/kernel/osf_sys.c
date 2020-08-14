@@ -104,11 +104,12 @@ struct osf_dirent_callback {
 };
 
 static int
-osf_filldir(void *__buf, const char *name, int namlen, loff_t offset,
-	    u64 ino, unsigned int d_type)
+osf_filldir(struct dir_context *ctx, const char *name, int namlen,
+	    loff_t offset, u64 ino, unsigned int d_type)
 {
 	struct osf_dirent __user *dirent;
-	struct osf_dirent_callback *buf = (struct osf_dirent_callback *) __buf;
+	struct osf_dirent_callback *buf =
+		container_of(ctx, struct osf_dirent_callback, ctx);
 	unsigned int reclen = ALIGN(NAME_OFFSET + namlen + 1, sizeof(u32));
 	unsigned int d_ino;
 
@@ -146,7 +147,7 @@ SYSCALL_DEFINE4(osf_getdirentries, unsigned int, fd,
 		long __user *, basep)
 {
 	int error;
-	struct fd arg = fdget(fd);
+	struct fd arg = fdget_pos(fd);
 	struct osf_dirent_callback buf = {
 		.ctx.actor = osf_filldir,
 		.dirent = dirent,
@@ -163,7 +164,7 @@ SYSCALL_DEFINE4(osf_getdirentries, unsigned int, fd,
 	if (count != buf.count)
 		error = count - buf.count;
 
-	fdput(arg);
+	fdput_pos(arg);
 	return error;
 }
 
@@ -525,19 +526,24 @@ SYSCALL_DEFINE4(osf_mount, unsigned long, typenr, const char __user *, path,
 SYSCALL_DEFINE1(osf_utsname, char __user *, name)
 {
 	int error;
-	char tmp[5 * 32];
 
 	down_read(&uts_sem);
-	memcpy(tmp + 0 * 32, utsname()->sysname, 32);
-	memcpy(tmp + 1 * 32, utsname()->nodename, 32);
-	memcpy(tmp + 2 * 32, utsname()->release, 32);
-	memcpy(tmp + 3 * 32, utsname()->version, 32);
-	memcpy(tmp + 4 * 32, utsname()->machine, 32);
-	up_read(&uts_sem);
+	error = -EFAULT;
+	if (copy_to_user(name + 0, utsname()->sysname, 32))
+		goto out;
+	if (copy_to_user(name + 32, utsname()->nodename, 32))
+		goto out;
+	if (copy_to_user(name + 64, utsname()->release, 32))
+		goto out;
+	if (copy_to_user(name + 96, utsname()->version, 32))
+		goto out;
+	if (copy_to_user(name + 128, utsname()->machine, 32))
+		goto out;
 
-	if (copy_to_user(name, tmp, sizeof(tmp)))
-		return -EFAULT;
-	return 0;
+	error = 0;
+ out:
+	up_read(&uts_sem);	
+	return error;
 }
 
 SYSCALL_DEFINE0(getpagesize)
@@ -555,22 +561,24 @@ SYSCALL_DEFINE0(getdtablesize)
  */
 SYSCALL_DEFINE2(osf_getdomainname, char __user *, name, int, namelen)
 {
-	int len, err = 0;
-	char *kname;
-	char tmp[32];
+	unsigned len;
+	int i;
 
-	if (namelen < 0 || namelen > 32)
-		namelen = 32;
+	if (!access_ok(VERIFY_WRITE, name, namelen))
+		return -EFAULT;
+
+	len = namelen;
+	if (len > 32)
+		len = 32;
 
 	down_read(&uts_sem);
-	kname = utsname()->domainname;
-	len = strnlen(kname, namelen);
-	len = min(len + 1, namelen);
-	memcpy(tmp, kname, len);
+	for (i = 0; i < len; ++i) {
+		__put_user(utsname()->domainname[i], name + i);
+		if (utsname()->domainname[i] == '\0')
+			break;
+	}
 	up_read(&uts_sem);
 
-	if (copy_to_user(name, tmp, len))
-		return -EFAULT;
 	return 0;
 }
 
@@ -733,14 +741,13 @@ SYSCALL_DEFINE3(osf_sysinfo, int, command, char __user *, buf, long, count)
 	};
 	unsigned long offset;
 	const char *res;
-	long len;
-	char tmp[__NEW_UTS_LEN + 1];
+	long len, err = -EINVAL;
 
 	offset = command-1;
 	if (offset >= ARRAY_SIZE(sysinfo_table)) {
 		/* Digital UNIX has a few unpublished interfaces here */
 		printk("sysinfo(%d)", command);
-		return -EINVAL;
+		goto out;
 	}
 
 	down_read(&uts_sem);
@@ -748,11 +755,13 @@ SYSCALL_DEFINE3(osf_sysinfo, int, command, char __user *, buf, long, count)
 	len = strlen(res)+1;
 	if ((unsigned long)len > (unsigned long)count)
 		len = count;
-	memcpy(tmp, res, len);
+	if (copy_to_user(buf, res, len))
+		err = -EFAULT;
+	else
+		err = 0;
 	up_read(&uts_sem);
-	if (copy_to_user(buf, tmp, len))
-		return -EFAULT;
-	return 0;
+ out:
+	return err;
 }
 
 SYSCALL_DEFINE5(osf_getsysinfo, unsigned long, op, void __user *, buffer,
@@ -1010,13 +1019,12 @@ SYSCALL_DEFINE2(osf_settimeofday, struct timeval32 __user *, tv,
  	if (tv) {
 		if (get_tv32((struct timeval *)&kts, tv))
 			return -EFAULT;
+		kts.tv_nsec *= 1000;
 	}
 	if (tz) {
 		if (copy_from_user(&ktz, tz, sizeof(*tz)))
 			return -EFAULT;
 	}
-
-	kts.tv_nsec *= 1000;
 
 	return do_sys_settimeofday(tv ? &kts : NULL, tz ? &ktz : NULL);
 }
@@ -1130,6 +1138,7 @@ SYSCALL_DEFINE2(osf_getrusage, int, who, struct rusage32 __user *, ru)
 {
 	struct rusage32 r;
 	cputime_t utime, stime;
+	unsigned long utime_jiffies, stime_jiffies;
 
 	if (who != RUSAGE_SELF && who != RUSAGE_CHILDREN)
 		return -EINVAL;
@@ -1138,14 +1147,18 @@ SYSCALL_DEFINE2(osf_getrusage, int, who, struct rusage32 __user *, ru)
 	switch (who) {
 	case RUSAGE_SELF:
 		task_cputime(current, &utime, &stime);
-		jiffies_to_timeval32(utime, &r.ru_utime);
-		jiffies_to_timeval32(stime, &r.ru_stime);
+		utime_jiffies = cputime_to_jiffies(utime);
+		stime_jiffies = cputime_to_jiffies(stime);
+		jiffies_to_timeval32(utime_jiffies, &r.ru_utime);
+		jiffies_to_timeval32(stime_jiffies, &r.ru_stime);
 		r.ru_minflt = current->min_flt;
 		r.ru_majflt = current->maj_flt;
 		break;
 	case RUSAGE_CHILDREN:
-		jiffies_to_timeval32(current->signal->cutime, &r.ru_utime);
-		jiffies_to_timeval32(current->signal->cstime, &r.ru_stime);
+		utime_jiffies = cputime_to_jiffies(current->signal->cutime);
+		stime_jiffies = cputime_to_jiffies(current->signal->cstime);
+		jiffies_to_timeval32(utime_jiffies, &r.ru_utime);
+		jiffies_to_timeval32(stime_jiffies, &r.ru_stime);
 		r.ru_minflt = current->signal->cmin_flt;
 		r.ru_majflt = current->signal->cmaj_flt;
 		break;

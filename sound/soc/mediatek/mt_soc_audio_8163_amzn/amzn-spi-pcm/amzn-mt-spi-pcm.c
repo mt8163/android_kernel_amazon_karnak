@@ -1,4 +1,4 @@
-/*
+ /*
  * ALSA PCM platform driver to capture audio through SPI Interface
  *
  * Author: Amazon Lab126 2016
@@ -24,6 +24,16 @@
 #include <linux/ktime.h>
 #include <linux/spinlock.h>
 #include <linux/thread_info.h>
+#include <linux/cpumask.h>
+#include <linux/regulator/consumer.h>
+#include <linux/of_device.h>
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#define OVERRUN_METRICS_STR_LEN 128
+/* 16ms */
+#define METRIC_DELAY_JIFFIES msecs_to_jiffies(16)
+#endif
 
 #include "dough.h"
 #include "amzn-mt-spi-pcm.h"
@@ -50,14 +60,22 @@
 */
 
 /* To utilize HDMI Buffer for audio transfer
- * This should also be enabled in mt-soc-machine.c
+ * This should also be enabled in mt-soc-machine.c */
 #define SPI_USES_HDMI_BUFFER
-*/
+
 #define SPI_SETUP_BUF_SIZE 32
+#define FPGA_VCC_DELAY_MS 10
 /* Module data structure */
 struct amzn_spi_priv {
 	struct workqueue_struct *spi_wq;
 	struct work_struct spi_work;
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	struct workqueue_struct *metrics_wq;
+	struct delayed_work metrics_kernel_work;
+	struct delayed_work metrics_fpga_work;
+	size_t kernel_overruns;
+	size_t fpga_overruns;
+#endif
 	struct snd_pcm_substream *substream;
 	uint8_t *dma_vaddr;
 	dma_addr_t dma_paddr;
@@ -67,11 +85,17 @@ struct amzn_spi_priv {
 	size_t elapsed;
 	bool run_thread;
 	bool keep_copying;
+	uint32_t min_spi_wait_usec;
+	uint32_t max_spi_wait_usec;
+#if defined SPI_USES_LOCAL_DMA || defined SPI_USES_HDMI_BUFFER
+	struct snd_dma_buffer *capture_dma_buf;
+#endif
 };
 
 static void spi_data_read(struct work_struct *work);
 
-static int transfer_timestamps_enab = SPI_HEADER;
+/* Disable timestamp transfer by default */
+static int transfer_timestamps_enab = SPI_HEADER_DISABLE;
 
 /* TODO(DEE-30199): Remove global decalartaion */
 static struct amzn_spi_priv spi_data;
@@ -101,7 +125,7 @@ static int transfer_timestamps_set(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 	}
 
-	/* TODO(DEE-30200): Don't set this if capture is active */
+	/* Don't set this if capture is active */
 	transfer_timestamps_enab = ucontrol->value.integer.value[0];
 
 	return 0;
@@ -155,68 +179,43 @@ static struct snd_soc_dai_driver amzn_mt_spi_cpu_dai[] = {
 	},
 };
 
-#ifdef SPI_DUMMY_CODEC
-static struct snd_soc_dai_driver amzn_mt_spi_codec_dummy_dai[] = {
-	{
-		.name = "amzn-mt-spi-codec-dummy-dai",
-		.capture = {
-			.rates = SNDRV_PCM_RATE_16000,
-			.formats = SNDRV_PCM_FMTBIT_S24_3LE,
-			.channels_min = SPI_N_CHANNELS,
-			.channels_max = SPI_N_CHANNELS,
-		},
-		.ops = NULL,
-	},
-};
-
-static int dummy_codec_probe(struct snd_soc_codec *codec)
-{
-	pr_warn("%s()\n", __func__);
-	return 0;
-}
-
-static int dummy_codec_remove(struct snd_soc_codec *codec)
-{
-	pr_warn("%s()\n", __func__);
-	return 0;
-}
-
-static struct snd_soc_codec_driver soc_dummy_codec_drv = {
-	.probe = dummy_codec_probe,
-	.remove = dummy_codec_remove,
-};
-
-static int dummy_codec_plat_probe(struct platform_device *pdev)
-{
-	pr_warn("%s: name %s\n", __func__, dev_name(&pdev->dev));
-	return snd_soc_register_codec(&pdev->dev, &soc_dummy_codec_drv,
-		amzn_mt_spi_codec_dummy_dai,
-		ARRAY_SIZE(amzn_mt_spi_codec_dummy_dai));
-}
-
-static int dummy_codec_plat_remove(struct platform_device *pdev)
-{
-	pr_warn("%s: name %s\n", __func__, dev_name(&pdev->dev));
-	snd_soc_unregister_codec(&pdev->dev);
-	return 0;
-}
-
-static struct platform_driver codec_dummy_driver = {
-	.driver = {
-
-		.name = "amzn-spi-codec-dummy-dai",
-		.owner = THIS_MODULE,
-	},
-	.probe = dummy_codec_plat_probe,
-	.remove = dummy_codec_plat_remove,
-};
-#endif
-
 static struct snd_pcm_hw_constraint_list constraints_sample_rates = {
 
 	.count = ARRAY_SIZE(soc_normal_supported_sample_rates),
 	.list = soc_normal_supported_sample_rates,
 };
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+static void kernel_overrun_metrics(struct work_struct *work)
+{
+	char buf[OVERRUN_METRICS_STR_LEN];
+
+	/* No need of logging 0 overruns */
+	if (spi_data.kernel_overruns) {
+		snprintf(buf, OVERRUN_METRICS_STR_LEN,
+			"amzn-mt-spi-pcm:KernelOverrun:num=%zu;CT;1:NR",
+			 spi_data.kernel_overruns);
+
+		log_to_metrics(ANDROID_LOG_WARN, "AudioRecordOverrun", buf);
+		spi_data.kernel_overruns = 0;
+	}
+}
+
+static void fpga_overrun_metrics(struct work_struct *work)
+{
+	char buf[OVERRUN_METRICS_STR_LEN];
+
+	/* No need of logging 0 overruns */
+	if (spi_data.fpga_overruns) {
+		snprintf(buf, OVERRUN_METRICS_STR_LEN,
+			"amzn-mt-spi-pcm:FPGAOverrun:num=%zu;CT;1:NR",
+			 spi_data.fpga_overruns);
+
+		log_to_metrics(ANDROID_LOG_WARN, "AudioRecordOverrun", buf);
+		spi_data.fpga_overruns = 0;
+	}
+}
+#endif
 
 /*
  * ASoC Platform driver
@@ -225,15 +224,13 @@ static int amzn_mt_spi_pcm_hw_params(struct snd_pcm_substream *ss,
 				struct snd_pcm_hw_params *hw_params)
 {
 
-	int ret = 0;
+	int ret = 0, rate;
 	struct snd_pcm_runtime *runtime = ss->runtime;
-/*	struct snd_soc_pcm_runtime *soc_runtime = ss->private_data; */
 
 	pr_info("%s: Allocating buffer_size = %d\n", __func__,
 		params_buffer_bytes(hw_params));
 
 	if (spi_data.dma_vaddr == NULL) {
-
 #if defined SPI_USES_HDMI_BUFFER || defined SPI_USES_LOCAL_DMA
 		runtime->dma_bytes = params_buffer_bytes(hw_params);
 		runtime->dma_area = spi_data.capture_dma_buf->area;
@@ -251,7 +248,24 @@ static int amzn_mt_spi_pcm_hw_params(struct snd_pcm_substream *ss,
 		spi_data.dma_paddr = runtime->dma_addr;
 	}
 
-	pr_info("%s: alloc dma_area=%p, dma_addr=%p, size=%lu, ret %d\n",
+	rate = params_rate(hw_params);
+	switch (rate) {
+	case 48000:
+			spi_data.min_spi_wait_usec = SPI_READ_WAIT_MIN_48K_USEC;
+			spi_data.max_spi_wait_usec = SPI_READ_WAIT_MAX_48K_USEC;
+			break;
+
+	case 96000:
+			spi_data.min_spi_wait_usec = SPI_READ_WAIT_MIN_96K_USEC;
+			spi_data.max_spi_wait_usec = SPI_READ_WAIT_MAX_96K_USEC;
+			break;
+
+	default:
+			spi_data.min_spi_wait_usec = SPI_READ_WAIT_MIN_USEC;
+			spi_data.max_spi_wait_usec = SPI_READ_WAIT_MAX_USEC;
+	}
+
+	pr_info("%s: alloc dma_area=%p, dma_addr=%p, size=%zu, ret %d\n",
 			 __func__, runtime->dma_area, (void *)runtime->dma_addr,
 			runtime->dma_bytes, ret);
 
@@ -311,6 +325,18 @@ static int amzn_mt_spi_pcm_open(struct snd_pcm_substream *substream)
 		pr_err("%s:Couldn't create_singlethread_workqueue\n", __func__);
 		return -ENOMEM;
 	}
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	spi_data.metrics_wq = alloc_workqueue("audio_overrun_metrics",
+					WQ_MEM_RECLAIM, 0);
+	if (spi_data.metrics_wq == NULL) {
+		pr_err("%s:Couldn't alloc_workqueue\n", __func__);
+		destroy_workqueue(spi_data.spi_wq);
+		spi_data.spi_wq = NULL;
+		return -ENOMEM;
+	}
+#endif
+
 	spi_data.cur_write_offset = 0;
 	spi_data.elapsed = 0;
 
@@ -318,6 +344,12 @@ static int amzn_mt_spi_pcm_open(struct snd_pcm_substream *substream)
 	spin_lock_init(&(spi_data.write_spinlock));
 	spi_data.substream = substream;
 	INIT_WORK(&(spi_data.spi_work), spi_data_read);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	INIT_DELAYED_WORK(&(spi_data.metrics_kernel_work),
+		kernel_overrun_metrics);
+	INIT_DELAYED_WORK(&(spi_data.metrics_fpga_work),
+		fpga_overrun_metrics);
+#endif
 	return 0;
 }
 
@@ -328,6 +360,14 @@ static int amzn_mt_spi_pcm_close(struct snd_pcm_substream *substream)
 		destroy_workqueue(spi_data.spi_wq);
 		spi_data.spi_wq = NULL;
 	}
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (spi_data.metrics_wq) {
+		destroy_workqueue(spi_data.metrics_wq);
+		spi_data.metrics_wq = NULL;
+	}
+#endif
+
 	pr_info("%s: End\n", __func__);
 
 	return 0;
@@ -335,14 +375,15 @@ static int amzn_mt_spi_pcm_close(struct snd_pcm_substream *substream)
 
 static int amzn_mt_spi_pcm_hw_free(struct snd_pcm_substream *ss)
 {
-	/* struct snd_soc_pcm_runtime *soc_runtime = ss->private_data;
-	struct device *dev = soc_runtime->platform->dev; */
-
-	pr_info("%s: Free buffer = %lu, dma_bytes %lu dma_addr %p\n",
+	pr_info("%s: Free buffer = %lu, dma_bytes %zu dma_addr %p\n",
 		__func__, ss->runtime->buffer_size, ss->runtime->dma_bytes,
 		(void *)ss->runtime->dma_addr);
 
 	flush_workqueue(spi_data.spi_wq);
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	flush_workqueue(spi_data.metrics_wq);
+#endif
 
 	if (spi_data.dma_vaddr) {
 #if !defined SPI_USES_HDMI_BUFFER && !defined SPI_USES_LOCAL_DMA
@@ -429,7 +470,7 @@ static unsigned long ktime_diff(ktime_t *lhs, ktime_t *rhs)
 		pr_info("%s: Timestamp Error lhs=%lld rhs=%lld diff=%ld\n",
 			__func__, lhs->tv64, rhs->tv64, diff_usec);
 		/* Return enough delay so thread wont sleep */
-		return SPI_READ_WAIT_MIN_USEC;
+		return spi_data.min_spi_wait_usec;
 	}
 
 	diff_ktime = ktime_sub(*lhs, *rhs);
@@ -493,6 +534,8 @@ static void spi_data_read(struct work_struct *work)
 	spi_priv_data->cur_write_offset = 0;
 	spi_priv_data->keep_copying = true;
 	elapsed_threshold = SPI_BYTES_PER_PERIOD;
+	spi_priv_data->fpga_overruns = 0;
+	spi_priv_data->kernel_overruns = 0;
 	set_run_thread(true);
 	kworker_info = current_thread_info();
 	if (kworker_info == NULL) {
@@ -505,8 +548,9 @@ static void spi_data_read(struct work_struct *work)
 		goto fail;
 	}
 	sched_setscheduler(kworker_task, SCHED_FIFO, &param);
+
 	cur_ktime = ktime_get_raw();
-	/* Initialize with the same value*/
+	/* Initialize with the same value */
 	prev_ktime = cur_ktime;
 
 	while (get_run_thread()) {
@@ -553,7 +597,7 @@ static void spi_data_read(struct work_struct *work)
 			slept_duration = ktime_diff(&prev_ktime, &sleep_ktime);
 			/* Time spent in last spi transaction */
 			spi_duration =  ktime_diff(&cur_ktime, &prev_ktime);
-			pr_err("%s: FPGA_OVERRUN mode=%d dacOff=%d adcOff=%d frames=%d Wroff=%lu new_ts=%u diff_ts=%u prev_cycle_us=%lu curr_cycle_us=%lu slept_us=%lu spi_trx_us=%lu\n",
+			pr_err("%s: FPGA_OVERRUN mode=%d dacOff=%d adcOff=%d frames=%d Wroff=%zu new_ts=%u diff_ts=%u prev_cycle_us=%lu curr_cycle_us=%lu slept_us=%lu spi_trx_us=%lu overruns=%zu\n",
 				__func__, rx_df->dsf.mode,
 				rx_df->dsf.dac_inactive,
 				rx_df->dsf.i2s_inactive,
@@ -562,12 +606,27 @@ static void spi_data_read(struct work_struct *work)
 				rx_df->dsf.timestamp_48mhz,
 				(rx_df->dsf.timestamp_48mhz - prev_fpga_ts),
 				time_diff_usec, overrun_duration,
-				slept_duration, spi_duration);
+				slept_duration, spi_duration,
+				++spi_priv_data->fpga_overruns);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+			 /* All overruns occurring within METRIC_DELAY_JIFFIES
+			  * will log once since this doesn't queue same work
+			  */
+			 queue_delayed_work(spi_priv_data->metrics_wq,
+			    &(spi_priv_data->metrics_fpga_work),
+				METRIC_DELAY_JIFFIES);
+#endif
 		}
 
 		if (!get_run_thread()) {
 			pr_err("%s: Exiting Thread\n", __func__);
 			break;
+		}
+
+		if (rx_df->dsf.num_audio_frames > DOUGH_AUDIO_FRAME_BUF) {
+			pr_err("%s: FPGA_FRAMES are not correct %d\n", __func__,
+				rx_df->dsf.num_audio_frames);
+			goto delay;
 		}
 
 		prev_fpga_ts = rx_df->dsf.timestamp_48mhz;
@@ -585,10 +644,11 @@ static void spi_data_read(struct work_struct *work)
 		while (n_bytes > 0) {
 			bytes = min((ss->runtime->dma_bytes -
 				spi_priv_data->cur_write_offset), n_bytes);
+#ifdef SPI_DATA_DEBUG
 			if (bytes % SPI_BYTES_PER_FRAME)
 				pr_err("%s: bytes calculation invalid\n",
 				__func__);
-
+#endif
 			dst_ptr = ss->runtime->dma_area +
 				spi_priv_data->cur_write_offset;
 			src_ptr += copied;
@@ -639,11 +699,11 @@ delay:
 		/* Calculate time spent since last iteration */
 		time_diff_usec = ktime_diff(&cur_ktime, &prev_ktime);
 		/* Sleep if iteration completed in less time and no overun */
-		if (time_diff_usec < (SPI_READ_WAIT_MIN_USEC - MARGIN_USEC) &&
+		if (time_diff_usec < (spi_data.min_spi_wait_usec - MARGIN_USEC) &&
 			rx_df->dsf.overrun == 0) {
-			min_sleep_usec = SPI_READ_WAIT_MIN_USEC -
+			min_sleep_usec = spi_data.min_spi_wait_usec -
 					time_diff_usec;
-			max_sleep_usec = SPI_READ_WAIT_MAX_USEC -
+			max_sleep_usec = spi_data.max_spi_wait_usec -
 					time_diff_usec;
 			usleep_range(min_sleep_usec, max_sleep_usec);
 			prev_ktime = ktime_get_raw();
@@ -659,7 +719,9 @@ delay:
 	}
 
 fail:
+#ifndef SPI_USES_LOCAL_DMA
 	kfree(rx_df);
+#endif
 	kfree(tx_df);
 
 	pr_info("%s: wakeup_minlat=%lu, wakeup_maxlat=%lu\n", __func__,
@@ -672,7 +734,11 @@ static int amzn_mt_spi_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
+#ifdef CONFIG_MTK_SPI_AFFINITY
+		queue_work_on(1, spi_data.spi_wq, &(spi_data.spi_work));
+#else
 		queue_work(spi_data.spi_wq, &(spi_data.spi_work));
+#endif
 		break;
 
 	case SNDRV_PCM_TRIGGER_STOP:
@@ -731,10 +797,17 @@ static int amzn_mt_spi_pcm_copy(struct snd_pcm_substream *substream,
 
 	if ((spi_data.cur_write_offset < end) &&
 	(spi_data.cur_write_offset > src_offset)) {
-		pr_err("%s: KERNEL_OVERRUN: pos=%lu count=%lu elasped=%lu src_offset(%lu)+bytes_to_cpy(%lu)= end(%lu) while: WrOff=%lu\n",
+		pr_err("%s: KERNEL_OVERRUN: pos=%lu count=%lu elasped=%zu src_offset(%zu)+bytes_to_cpy(%zu)= end(%zu) while: WrOff=%zu overruns=%zu\n",
 			__func__, pos, count, spi_data.elapsed,
 			src_offset, bytes_to_cpy, end,
-			spi_data.cur_write_offset);
+			spi_data.cur_write_offset, ++spi_data.kernel_overruns);
+#ifdef CONFIG_AMAZON_METRICS_LOG
+		/* All overruns occurring within METRIC_DELAY_JIFFIES will
+		* log once since queue_delayed_work() doesn't queue same work
+		*/
+		queue_delayed_work(spi_data.metrics_wq,
+			&(spi_data.metrics_kernel_work), METRIC_DELAY_JIFFIES);
+#endif
 	}
 #ifdef SPI_DATA_DEBUG
 	else {
@@ -761,10 +834,17 @@ static int amzn_asoc_capt_probe(struct snd_soc_platform *platform)
 	error = snd_soc_add_platform_controls(platform, amzn_mt_spi_controls,
 					ARRAY_SIZE(amzn_mt_spi_controls));
 	if (error) {
-		pr_err("%s: failed to add %lu controls\n", __func__,
+		pr_err("%s: failed to add %u controls\n", __func__,
 				ARRAY_SIZE(amzn_mt_spi_controls));
 		return error;
 	}
+
+	of_dma_configure(platform->dev, platform->dev->of_node);
+
+
+	platform->dev->coherent_dma_mask = DMA_BIT_MASK(64);
+	if (!platform->dev->dma_mask)
+		platform->dev->dma_mask = &platform->dev->coherent_dma_mask;
 
 #if defined SPI_USES_HDMI_BUFFER
 	AudDrv_Allocate_mem_Buffer(platform->dev,
@@ -807,13 +887,6 @@ static struct snd_soc_platform_driver amzn_mt_spi_pltfm_drv = {
 	.probe = amzn_asoc_capt_probe,
 };
 
-#ifdef SPI_DUMMY_CODEC
-static const struct snd_soc_component_driver
-	amzn_mt_spi_codec_dummy_dai_component = {
-	.name = "amzn-mt-spi-codec-dummy-dai",
-};
-#endif
-
 static const struct snd_soc_component_driver amzn_mt_spi_cpu_dai_component = {
 	.name = "amzn-mt-spi-cpu-dai",
 };
@@ -827,12 +900,56 @@ static int amzn_mt_spi_probe(struct spi_device *spi)
 	struct dough_frame *tx_df, *rx_df;
 	size_t bytes;
 	void *fw_buf;
-
-#ifdef SPI_DUMMY_CODEC
-	struct platform_device *codec_pdev;
+	/* TODO: Enable it for all products */
+#if defined CONFIG_rbc123 || defined CONFIG_FPGA_POWER_SEQUENCE
+	struct regulator *reg = NULL;
+	int volt, reg_status_before = 0, reg_status_after;
 #endif
 
 	pr_info("%s\n", __func__);
+
+#if defined CONFIG_rbc123 || defined CONFIG_FPGA_POWER_SEQUENCE
+	/* VCCIO2 Enabled */
+	reg = devm_regulator_get(&spi->dev, "vcamaf");
+	if (IS_ERR(reg)) {
+		pr_info("%s vcamaf not found\n", __func__);
+		return -EINVAL;
+	}
+	reg_status_before = regulator_is_enabled(reg);
+	rc = regulator_enable(reg);
+	if (rc != 0) {
+		pr_err("Fails to enable vcamaf, ret = 0x%x", rc);
+		return -EINVAL;
+	}
+	reg_status_after = regulator_is_enabled(reg);
+	volt = regulator_get_voltage(reg);
+	pr_info("%s: vcamaf enable = %d:%d voltage = %d\n", __func__,
+		reg_status_before, reg_status_after, volt);
+
+	msleep(FPGA_VCC_DELAY_MS);
+
+	/* VCCIO0 Enabled */
+#ifdef CONFIG_rbc123
+	reg = devm_regulator_get(&spi->dev, "vgp3");
+#elif defined CONFIG_FPGA_POWER_SEQUENCE
+	reg = devm_regulator_get(&spi->dev, "vcn18");
+#endif
+	if (IS_ERR(reg)) {
+		pr_info("%s vgp3 not found\n", __func__);
+		return -EINVAL;
+	}
+
+	reg_status_before = regulator_is_enabled(reg);
+	rc = regulator_enable(reg);
+	if (rc != 0) {
+		pr_err("Fails to enable vgp3, ret = 0x%x", rc);
+		return -EINVAL;
+	}
+	reg_status_after = regulator_is_enabled(reg);
+	volt = regulator_get_voltage(reg);
+	pr_info("%s: vgp3 enable = %d:%d voltage = %d\n", __func__,
+		reg_status_before, reg_status_after, volt);
+#endif
 
 	/* TODO(DEE-30199): Fix with global decalration
 	spi_data = devm_kzalloc(&spi->dev, sizeof(struct amzn_spi_priv),
@@ -1005,32 +1122,6 @@ static int amzn_mt_spi_probe(struct spi_device *spi)
 		goto free_gpio;
 	}
 
-#ifdef SPI_DUMMY_CODEC
-	/*
-	 * Register the Codec dummy DAI
-	 */
-	codec_pdev = platform_device_alloc("amzn-spi-codec-dummy-dai", -1);
-	if (!codec_pdev) {
-		pr_err("%s: couldn't alloc codec_pdev\n", __func__);
-		rc = -ENOMEM;
-		goto free_gpio;
-	}
-
-	rc = platform_device_add(codec_pdev);
-	if (rc) {
-		platform_device_put(codec_pdev);
-		pr_err("%s: platform_device_add of codec_pdev failed\n",
-			__func__);
-		goto free_gpio;
-	}
-
-	rc = platform_driver_register(&codec_dummy_driver);
-	if (rc) {
-		pr_err("%s: Failed to register dummy codec driver\n", __func__);
-		goto free_gpio;
-	}
-#endif
-
 	/*
 	 * Register the ASoC platform driver, this adds it to the platform list
 	 * and makes it available in "platform_name" for the machine driver.
@@ -1053,12 +1144,7 @@ free_tx_df:
 static int amzn_mt_spi_remove(struct spi_device *spi)
 {
 	struct snd_soc_platform *platform = snd_soc_lookup_platform(&spi->dev);
-/*	struct amzn_spi_priv *spi_data_priv;
-	spi_data_priv = spi_get_drvdata(spi);
-	if (spi_data_priv == NULL) {
-		pr_err("%s: Null priv data\n", __func__);
-	}
-*/
+
 	snd_soc_remove_platform(platform);
 
 	return 0;

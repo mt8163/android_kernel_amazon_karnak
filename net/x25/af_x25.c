@@ -352,15 +352,17 @@ static unsigned int x25_new_lci(struct x25_neigh *nb)
 	unsigned int lci = 1;
 	struct sock *sk;
 
-	while ((sk = x25_find_socket(lci, nb)) != NULL) {
+	read_lock_bh(&x25_list_lock);
+
+	while ((sk = __x25_find_socket(lci, nb)) != NULL) {
 		sock_put(sk);
 		if (++lci == 4096) {
 			lci = 0;
 			break;
 		}
-		cond_resched();
 	}
 
+	read_unlock_bh(&x25_list_lock);
 	return lci;
 }
 
@@ -513,10 +515,10 @@ static struct proto x25_proto = {
 	.obj_size = sizeof(struct x25_sock),
 };
 
-static struct sock *x25_alloc_socket(struct net *net)
+static struct sock *x25_alloc_socket(struct net *net, int kern)
 {
 	struct x25_sock *x25;
-	struct sock *sk = sk_alloc(net, AF_X25, GFP_ATOMIC, &x25_proto);
+	struct sock *sk = sk_alloc(net, AF_X25, GFP_ATOMIC, &x25_proto, kern);
 
 	if (!sk)
 		goto out;
@@ -551,7 +553,7 @@ static int x25_create(struct net *net, struct socket *sock, int protocol,
 		goto out;
 
 	rc = -ENOBUFS;
-	if ((sk = x25_alloc_socket(net)) == NULL)
+	if ((sk = x25_alloc_socket(net, kern)) == NULL)
 		goto out;
 
 	x25 = x25_sk(sk);
@@ -600,7 +602,7 @@ static struct sock *x25_make_new(struct sock *osk)
 	if (osk->sk_type != SOCK_SEQPACKET)
 		goto out;
 
-	if ((sk = x25_alloc_socket(sock_net(osk))) == NULL)
+	if ((sk = x25_alloc_socket(sock_net(osk), 0)) == NULL)
 		goto out;
 
 	x25 = x25_sk(sk);
@@ -678,7 +680,8 @@ static int x25_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	struct sockaddr_x25 *addr = (struct sockaddr_x25 *)uaddr;
 	int len, i, rc = 0;
 
-	if (addr_len != sizeof(struct sockaddr_x25) ||
+	if (!sock_flag(sk, SOCK_ZAPPED) ||
+	    addr_len != sizeof(struct sockaddr_x25) ||
 	    addr->sx25_family != AF_X25) {
 		rc = -EINVAL;
 		goto out;
@@ -693,13 +696,9 @@ static int x25_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	}
 
 	lock_sock(sk);
-	if (sock_flag(sk, SOCK_ZAPPED)) {
-		x25_sk(sk)->source_addr = addr->sx25_addr;
-		x25_insert_socket(sk);
-		sock_reset_flag(sk, SOCK_ZAPPED);
-	} else {
-		rc = -EINVAL;
-	}
+	x25_sk(sk)->source_addr = addr->sx25_addr;
+	x25_insert_socket(sk);
+	sock_reset_flag(sk, SOCK_ZAPPED);
 	release_sock(sk);
 	SOCK_DEBUG(sk, "x25_bind: socket is bound\n");
 out:
@@ -815,13 +814,8 @@ static int x25_connect(struct socket *sock, struct sockaddr *uaddr,
 	sock->state = SS_CONNECTED;
 	rc = 0;
 out_put_neigh:
-	if (rc) {
-		read_lock_bh(&x25_list_lock);
+	if (rc)
 		x25_neigh_put(x25->neighbour);
-		x25->neighbour = NULL;
-		read_unlock_bh(&x25_list_lock);
-		x25->state = X25_STATE_0;
-	}
 out_put_route:
 	x25_route_put(rt);
 out:
@@ -1083,8 +1077,7 @@ out_clear_request:
 	goto out;
 }
 
-static int x25_sendmsg(struct kiocb *iocb, struct socket *sock,
-		       struct msghdr *msg, size_t len)
+static int x25_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 {
 	struct sock *sk = sock->sk;
 	struct x25_sock *x25 = x25_sk(sk);
@@ -1176,7 +1169,7 @@ static int x25_sendmsg(struct kiocb *iocb, struct socket *sock,
 	skb_reset_transport_header(skb);
 	skb_put(skb, len);
 
-	rc = memcpy_fromiovec(skb_transport_header(skb), msg->msg_iov, len);
+	rc = memcpy_from_msg(skb_transport_header(skb), msg, len);
 	if (rc)
 		goto out_kfree_skb;
 
@@ -1258,8 +1251,7 @@ out_kfree_skb:
 }
 
 
-static int x25_recvmsg(struct kiocb *iocb, struct socket *sock,
-		       struct msghdr *msg, size_t size,
+static int x25_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
 		       int flags)
 {
 	struct sock *sk = sock->sk;
@@ -1341,7 +1333,7 @@ static int x25_recvmsg(struct kiocb *iocb, struct socket *sock,
 	/* Currently, each datagram always contains a complete record */
 	msg->msg_flags |= MSG_EOR;
 
-	rc = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	rc = skb_copy_datagram_msg(skb, 0, msg, copied);
 	if (rc)
 		goto out_free_dgram;
 
@@ -1508,11 +1500,7 @@ out_fac_release:
 			goto out_dtefac_release;
 		if (dtefacs.calling_len > X25_MAX_AE_LEN)
 			goto out_dtefac_release;
-		if (dtefacs.calling_ae == NULL)
-			goto out_dtefac_release;
 		if (dtefacs.called_len > X25_MAX_AE_LEN)
-			goto out_dtefac_release;
-		if (dtefacs.called_ae == NULL)
 			goto out_dtefac_release;
 		x25->dte_facilities = dtefacs;
 		rc = 0;

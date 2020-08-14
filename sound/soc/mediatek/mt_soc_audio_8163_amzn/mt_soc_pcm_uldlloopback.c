@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -45,42 +47,52 @@ struct mt_pcm_uldlloopback_priv {
 	uint32_t ap_loopback_type;
 };
 
-static int ap_loopback_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+static int ap_loopback_get(struct snd_kcontrol *kcontrol,
+	 struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	/* struct mt_pcm_uldlloopback_priv *priv = snd_soc_component_get_drvdata(component); */
-	struct mt_pcm_uldlloopback_priv *priv = dev_get_drvdata(component->dev);
+	/* struct mt_pcm_uldlloopback_priv *priv = */
+	/* snd_soc_component_get_drvdata(component); */
+	struct mt_pcm_uldlloopback_priv *priv =
+		 dev_get_drvdata(component->dev);
 
 	ucontrol->value.integer.value[0] = priv->ap_loopback_type;
 	return 0;
 }
 
-static int ap_loopback_set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+static int ap_loopback_set(struct snd_kcontrol *kcontrol,
+	 struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
-	/* struct mt_pcm_uldlloopback_priv *priv = snd_soc_component_get_drvdata(component); */
-	struct mt_pcm_uldlloopback_priv *priv = dev_get_drvdata(component->dev);
+	/* struct mt_pcm_uldlloopback_priv *priv = */
+	/* snd_soc_component_get_drvdata(component); */
+	struct mt_pcm_uldlloopback_priv *priv =
+		 dev_get_drvdata(component->dev);
 	uint32_t sample_rate = 48000;
 	long set_value = ucontrol->value.integer.value[0];
 
 	if (priv->ap_loopback_type == set_value) {
-		pr_debug("%s dummy operation for %u", __func__, priv->ap_loopback_type);
+		pr_debug("%s dummy operation for %u",
+			 __func__, priv->ap_loopback_type);
 		return 0;
 	}
 
 	if (priv->ap_loopback_type != AP_LOOPBACK_NONE) {
 
 		SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_ADC, false);
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_ADC) == false)
+		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_ADC)
+			== false)
 			SetI2SAdcEnable(false);
 
 		SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, false);
 		if (GetI2SDacEnable() == false)
 			SetI2SDacEnable(false);
 
-		SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I03,
+		SetConnection(Soc_Aud_InterCon_DisConnect,
+			 Soc_Aud_InterConnectionInput_I03,
 			Soc_Aud_InterConnectionOutput_O03);
-		SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I04,
+		SetConnection(Soc_Aud_InterCon_DisConnect,
+			 Soc_Aud_InterConnectionInput_I04,
 			Soc_Aud_InterConnectionOutput_O04);
 
 		EnableAfe(false);
@@ -95,7 +107,7 @@ static int ap_loopback_set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_va
 	    set_value == AP_LOOPBACK_HEADSET_MIC_TO_SPK ||
 	    set_value == AP_LOOPBACK_HEADSET_MIC_TO_HP) {
 
-		AudioDigtalI2S AudI2SConfig;
+		struct AudioDigtalI2S AudI2SConfig;
 
 		AudI2SConfig.mLR_SWAP = Soc_Aud_LR_SWAP_NO_SWAP;
 		AudI2SConfig.mBuffer_Update_word = 8;
@@ -111,32 +123,48 @@ static int ap_loopback_set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_va
 		AudDrv_Clk_On();
 		AudDrv_ADC_Clk_On();
 
-		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1, AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
-		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2, AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
-		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT, Soc_Aud_InterConnectionOutput_O03);
-		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT, Soc_Aud_InterConnectionOutput_O04);
+		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1,
+			 AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
+		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2,
+			 AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
+		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT,
+			 Soc_Aud_InterConnectionOutput_O03);
+		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT,
+			 Soc_Aud_InterConnectionOutput_O04);
 
 		SetSampleRate(Soc_Aud_Digital_Block_MEM_I2S,  sample_rate);
 
 		/* configure downlink */
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) == false) {
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
-			SetI2SDacOut(sample_rate, false, OUTPUT_DATA_FORMAT_24BIT);
+		if (GetMemoryPathEnable(
+			Soc_Aud_Digital_Block_I2S_OUT_DAC) == false) {
+			SetMemoryPathEnable(
+			Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
+			SetI2SDacOut(sample_rate, false,
+				OUTPUT_DATA_FORMAT_24BIT);
 			SetI2SDacEnable(true);
-		} else
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
+		} else {
+			SetMemoryPathEnable(
+			Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
+		}
+
 
 		/* configure uplink */
-		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_ADC) == false) {
+		if (GetMemoryPathEnable(
+			Soc_Aud_Digital_Block_I2S_IN_ADC) == false) {
 			SetI2SAdcIn(&AudI2SConfig);
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_ADC, true);
+			SetMemoryPathEnable(
+			Soc_Aud_Digital_Block_I2S_IN_ADC, true);
 			SetI2SAdcEnable(true);
 		} else
-			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_IN_ADC, true);
+			SetMemoryPathEnable(
+				Soc_Aud_Digital_Block_I2S_IN_ADC,
+				 true);
 
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I03,
+		SetConnection(Soc_Aud_InterCon_Connection,
+			 Soc_Aud_InterConnectionInput_I03,
 			Soc_Aud_InterConnectionOutput_O03);
-		SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I04,
+		SetConnection(Soc_Aud_InterCon_Connection,
+			 Soc_Aud_InterConnectionInput_I04,
 			Soc_Aud_InterConnectionOutput_O04);
 
 		EnableAfe(true);
@@ -156,11 +184,13 @@ static const char *const ap_loopback_function[] = {
 };
 
 static const struct soc_enum mt_pcm_loopback_control_enum[] = {
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(ap_loopback_function), ap_loopback_function),
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(ap_loopback_function),
+		 ap_loopback_function),
 };
 
 static const struct snd_kcontrol_new mt_pcm_loopback_controls[] = {
-	SOC_ENUM_EXT("AP_Loopback_Select", mt_pcm_loopback_control_enum[0], ap_loopback_get,
+	SOC_ENUM_EXT("AP_Loopback_Select",
+		 mt_pcm_loopback_control_enum[0], ap_loopback_get,
 		     ap_loopback_set),
 };
 
@@ -215,9 +245,11 @@ static int mtk_uldlloopback_open(struct snd_pcm_substream *substream)
 	memcpy((void *)(&(runtime->hw)), (void *)&mtk_uldlloopback_hardware,
 	       sizeof(struct snd_pcm_hardware));
 
-	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
-					 &constraints_sample_rates);
-	ret = snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
+	ret = snd_pcm_hw_constraint_list(runtime, 0,
+		 SNDRV_PCM_HW_PARAM_RATE,
+	 &constraints_sample_rates);
+	ret = snd_pcm_hw_constraint_integer(runtime,
+		 SNDRV_PCM_HW_PARAM_PERIODS);
 
 	if (ret < 0)
 		pr_err("snd_pcm_hw_constraint_integer failed\n");
@@ -250,13 +282,17 @@ static int mtk_uldlloopbackpcm_close(struct snd_pcm_substream *substream)
 	}
 
 	/* interconnection setting */
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I03,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I03,
 		      Soc_Aud_InterConnectionOutput_O00);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I04,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I04,
 		      Soc_Aud_InterConnectionOutput_O01);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I03,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I03,
 		      Soc_Aud_InterConnectionOutput_O03);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I04,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I04,
 		      Soc_Aud_InterConnectionOutput_O04);
 
 
@@ -284,7 +320,8 @@ static int mtk_uldlloopbackpcm_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static int mtk_uldlloopbackpcm_trigger(struct snd_pcm_substream *substream, int cmd)
+static int mtk_uldlloopbackpcm_trigger(struct snd_pcm_substream *substream,
+	 int cmd)
 {
 	pr_debug("%s cmd = %d\n", __func__, cmd);
 
@@ -307,7 +344,7 @@ static int mtk_uldlloopback_pcm_copy(struct snd_pcm_substream *substream,
 }
 
 static int mtk_uldlloopback_silence(struct snd_pcm_substream *substream,
-				    int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
+	int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
 {
 	pr_debug("dummy_pcm_silence\n");
 	return 0;		/* do nothing */
@@ -316,13 +353,14 @@ static int mtk_uldlloopback_silence(struct snd_pcm_substream *substream,
 
 static void *dummy_page[2];
 
-static struct page *mtk_uldlloopback_page(struct snd_pcm_substream *substream, unsigned long offset)
+static struct page *mtk_uldlloopback_page(struct snd_pcm_substream *substream,
+	 unsigned long offset)
 {
 	pr_debug("dummy_pcm_page\n");
-	return virt_to_page(dummy_page[substream->stream]);	/* the same page */
+	return virt_to_page(dummy_page[substream->stream]);
 }
 
-static AudioDigtalI2S mAudioDigitalI2S;
+static struct AudioDigtalI2S mAudioDigitalI2S;
 static void ConfigAdcI2S(struct snd_pcm_substream *substream)
 {
 	mAudioDigitalI2S.mLR_SWAP = Soc_Aud_LR_SWAP_NO_SWAP;
@@ -355,16 +393,18 @@ static int mtk_uldlloopback_pcm_prepare(struct snd_pcm_substream *substream)
 	if (runtime->format == SNDRV_PCM_FORMAT_S32_LE
 	    || runtime->format == SNDRV_PCM_FORMAT_U32_LE) {
 		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1,
-					     AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
+			AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
 		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2,
-					     AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
+			AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA);
 		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT,
 					  Soc_Aud_InterConnectionOutput_O03);
 		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_24BIT,
 					  Soc_Aud_InterConnectionOutput_O04);
 	} else {
-		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1, AFE_WLEN_16_BIT);
-		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2, AFE_WLEN_16_BIT);
+		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL1,
+			 AFE_WLEN_16_BIT);
+		SetMemIfFetchFormatPerSample(Soc_Aud_Digital_Block_MEM_DL2,
+			 AFE_WLEN_16_BIT);
 		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_16BIT,
 					  Soc_Aud_InterConnectionOutput_O03);
 		SetoutputConnectionFormat(OUTPUT_DATA_FORMAT_16BIT,
@@ -372,13 +412,17 @@ static int mtk_uldlloopback_pcm_prepare(struct snd_pcm_substream *substream)
 	}
 
 	/* interconnection setting */
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I03,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I03,
 		      Soc_Aud_InterConnectionOutput_O00);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I04,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I04,
 		      Soc_Aud_InterConnectionOutput_O01);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I03,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I03,
 		      Soc_Aud_InterConnectionOutput_O03);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I04,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I04,
 		      Soc_Aud_InterConnectionOutput_O04);
 
 	Afe_Set_Reg(AFE_ADDA_TOP_CON0, 0, 0x1);	/* Using Internal ADC */
@@ -394,7 +438,8 @@ static int mtk_uldlloopback_pcm_prepare(struct snd_pcm_substream *substream)
 	/* start I2S DAC out */
 	if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) == false) {
 		SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
-		SetI2SDacOut(substream->runtime->rate, false, Soc_Aud_I2S_WLEN_WLEN_32BITS);
+		SetI2SDacOut(substream->runtime->rate,
+			 false, Soc_Aud_I2S_WLEN_WLEN_32BITS);
 		SetI2SDacEnable(true);
 	} else
 		SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
@@ -463,7 +508,8 @@ static int mtk_uldlloopback_probe(struct platform_device *pdev)
 	if (pdev->dev.of_node)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_ULDLLOOPBACK_PCM);
 
-	priv = devm_kzalloc(dev, sizeof(struct mt_pcm_uldlloopback_priv), GFP_KERNEL);
+	priv = devm_kzalloc(dev, sizeof(struct mt_pcm_uldlloopback_priv),
+		 GFP_KERNEL);
 	if (unlikely(!priv)) {
 		pr_err("%s failed to allocate private data\n", __func__);
 		return -ENOMEM;
@@ -533,7 +579,8 @@ static int __init mtk_soc_uldlloopback_platform_init(void)
 
 	pr_debug("%s\n", __func__);
 #ifndef CONFIG_OF
-	soc_mtkafe_uldlloopback_dev = platform_device_alloc(MT_SOC_ULDLLOOPBACK_PCM, -1);
+	soc_mtkafe_uldlloopback_dev =
+		 platform_device_alloc(MT_SOC_ULDLLOOPBACK_PCM, -1);
 
 	if (!soc_mtkafe_uldlloopback_dev)
 		return -ENOMEM;

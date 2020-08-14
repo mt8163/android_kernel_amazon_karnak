@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 #ifndef _AUDDRV_GPIO_H_
 #define _AUDDRV_GPIO_H_
@@ -54,8 +56,7 @@ int AudDrv_GPIO_EXTAMP_Gain_Set(int value);
 int AudDrv_GPIO_HP_SPK_Switch_Select(int bEnable);
 int AudDrv_GPIO_EXTHPAMP_Select(int bEnable);
 int AudDrv_GPIO_MCLK_Select(void);
-int AudDrv_GPIO_DACMUX_Select(int bEnable);
-int AudDrv_GPIO_LineOut_Select(int bEnable);
+int AudDrv_GPIO_MIC_Enable_Select(int bEnable);
 #endif
 
 

@@ -1,69 +1,83 @@
+/*
+ * Copyright (C) 2018 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
+#include <linux/io.h>
+#include <asm/page.h>
+#include <generated/autoconf.h>
+#include <linux/cdev.h>
+#include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/dma-mapping.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/ioport.h>
+#include <linux/kdev_t.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/mm_types.h>
 #include <linux/module.h>
-#include <generated/autoconf.h>
-#include <linux/init.h>
-#include <linux/types.h>
-#include <linux/cdev.h>
-#include <linux/kdev_t.h>
-#include <linux/delay.h>
-#include <linux/ioport.h>
-#include <linux/platform_device.h>
-#include <linux/dma-mapping.h>
-#include <linux/device.h>
-#include <linux/fs.h>
-#include <linux/interrupt.h>
-#include <linux/wait.h>
-#include <linux/spinlock.h>
 #include <linux/param.h>
-#include <linux/uaccess.h>
+#include <linux/platform_device.h>
 #include <linux/sched.h>
-#include <asm/io.h>
-#include <asm/page.h>
+#include <linux/spinlock.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+#include <linux/wait.h>
 
-#include <linux/workqueue.h>
 #include <linux/semaphore.h>
 #include <linux/slab.h>
-#include <linux/rtpm_prio.h>	/*definition of RTPM_PRIO_SCRN_UPDATE */
+#include <linux/workqueue.h>
+/* #include <linux/rtpm_prio.h> */ /*definition of RTPM_PRIO_SCRN_UPDATE */
 
-#include <linux/delay.h>
-#include <linux/sched.h>
-#include <linux/semaphore.h>
-#include <linux/module.h>
-#include <linux/wait.h>
-#include <linux/kthread.h>
-#include <linux/mutex.h>
 #include "debug.h"
 #include "disp_drv_log.h"
 #include "disp_lcm.h"
 #include "disp_utils.h"
+#include <linux/delay.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
+#include <linux/mutex.h>
+#include <linux/sched.h>
+#include <linux/semaphore.h>
+#include <linux/wait.h>
 
-#include "ddp_hal.h"
-#include "ddp_dump.h"
-#include "ddp_path.h"
 #include "ddp_drv.h"
+#include "ddp_dump.h"
+#include "ddp_hal.h"
 #include "ddp_info.h"
 #include "ddp_ovl.h"
+#include "ddp_path.h"
 
-#include "m4u.h"
-#include "primary_display.h"
+#include "cmdq_core.h"
 #include "cmdq_def.h"
 #include "cmdq_record.h"
 #include "cmdq_reg.h"
-#include "cmdq_core.h"
+#include "m4u.h"
+#include "primary_display.h"
 
 #include "ddp_manager.h"
 #include "disp_drv_platform.h"
 #include "display_recorder.h"
 
 #include "mtk_disp_mgr.h"
+#include "mtk_sync.h"
+#include "mtkfb_fence.h"
 
+#include "compat_mtk_disp_mgr.h"
+#include "ddp_mmp.h"
 #include "disp_session.h"
 #include "mtk_ovl.h"
-#include "ddp_mmp.h"
-#include "compat_mtk_disp_mgr.h"
-
 
 #define DISP_DISABLE_X_CHANNEL_ALPHA
 
@@ -74,23 +88,14 @@
 /* TODO: revise this later @xuecheng */
 #include "mtkfb_fence.h"
 
-
-
 static dev_t mtk_disp_mgr_devno;
 static struct cdev *mtk_disp_mgr_cdev;
 static struct class *mtk_disp_mgr_class;
 
-#ifdef CONFIG_MTK_VIDEOX_CYNGN_LIVEDISPLAY
-static struct mtk_rgb_work_queue {
-        struct work_struct work;
-	struct mutex lock;
-} mtk_rgb_work_queue;
-#endif
+static struct SWITCH_MODE_INFO_STRUCT path_info;
 
-static SWITCH_MODE_INFO_STRUCT path_info;
-
-int ovl1_remove = 0;
-struct task_struct *disp_switch_mode_task = NULL;
+int ovl1_remove;
+struct task_struct *disp_switch_mode_task;
 wait_queue_head_t switch_mode_wq;
 atomic_t switch_mode_event = ATOMIC_INIT(0);
 
@@ -99,7 +104,8 @@ static int mtk_disp_mgr_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static ssize_t mtk_disp_mgr_read(struct file *file, char __user *data, size_t len, loff_t *ppos)
+static ssize_t mtk_disp_mgr_read(struct file *file, char __user *data,
+				 size_t len, loff_t *ppos)
 {
 	return 0;
 }
@@ -132,9 +138,8 @@ static int mtk_disp_mgr_mmap(struct file *file, struct vm_area_struct *vma)
 		DISPERR("mmap size range over flow!!\n");
 		return -EAGAIN;
 	}
-	if (remap_pfn_range(vma,
-			    vma->vm_start,
-			    vma->vm_pgoff, (vma->vm_end - vma->vm_start), vma->vm_page_prot)) {
+	if (remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+			    (vma->vm_end - vma->vm_start), vma->vm_page_prot)) {
 		DISPERR("display mmap failed!!\n");
 		return -EAGAIN;
 	}
@@ -161,42 +166,26 @@ int disp_get_session_number(void)
 }
 
 #ifdef OVL_CASCADE_SUPPORT
-OVL_CONFIG_STRUCT ovl2mem_in_cached_config[DDP_OVL_LAYER_MUN] = {
-	{.layer = 0, .isDirty = 1}
-	,
-	{.layer = 1, .isDirty = 1}
-	,
-	{.layer = 2, .isDirty = 1}
-	,
-	{.layer = 3, .isDirty = 1}
-	,
-	{.layer = 4, .isDirty = 1}
-	,
-	{.layer = 5, .isDirty = 1}
-	,
-	{.layer = 6, .isDirty = 1}
-	,
-	{.layer = 7, .isDirty = 1}
-};
+struct OVL_CONFIG_STRUCT ovl2mem_in_cached_config[DDP_OVL_LAYER_MUN] = {
+	{.layer = 0, .isDirty = 1}, {.layer = 1, .isDirty = 1},
+	{.layer = 2, .isDirty = 1}, {.layer = 3, .isDirty = 1},
+	{.layer = 4, .isDirty = 1}, {.layer = 5, .isDirty = 1},
+	{.layer = 6, .isDirty = 1}, {.layer = 7, .isDirty = 1} };
 #else
-OVL_CONFIG_STRUCT ovl2mem_in_cached_config[DDP_OVL_LAYER_MUN] = {
-	{.layer = 0, .isDirty = 1}
-	,
-	{.layer = 1, .isDirty = 1}
-	,
-	{.layer = 2, .isDirty = 1}
-	,
-	{.layer = 3, .isDirty = 1}
-};
+struct OVL_CONFIG_STRUCT ovl2mem_in_cached_config[DDP_OVL_LAYER_MUN] = {
+	{.layer = 0, .isDirty = 1},
+	{.layer = 1, .isDirty = 1},
+	{.layer = 2, .isDirty = 1},
+	{.layer = 3, .isDirty = 1} };
 #endif
 
-disp_mem_output_config _ovl2mem_out_cached_config = {
+struct disp_mem_output_config _ovl2mem_out_cached_config = {
 
 };
 
-int _session_inited(disp_session_config config)
+int _session_inited(struct disp_session_config config)
 {
-	/* TODO: */
+/* TODO: */
 #if 0
 	int i, idx = -1;
 
@@ -216,11 +205,12 @@ int _session_inited(disp_session_config config)
 
 wait_queue_head_t ovl1_wait_queue;
 static int g_enable_clock;
-int disp_create_session(disp_session_config *config)
+int disp_create_session(struct disp_session_config *config)
 {
 	int ret = 0;
 	int is_session_inited = 0;
-	unsigned int session = MAKE_DISP_SESSION(config->type, config->device_id);
+	unsigned int session =
+		MAKE_DISP_SESSION(config->type, config->device_id);
 	int i, idx = -1;
 	/* 1.To check if this session exists already */
 	mutex_lock(&disp_session_lock);
@@ -248,17 +238,19 @@ int disp_create_session(disp_session_config *config)
 
 	/* 2. Create this session */
 	if (idx != -1) {
-		#ifdef CONFIG_MTK_HDMI_SUPPORT
-		if ((DISP_SESSION_TYPE(session) == DISP_SESSION_EXTERNAL) && ext_disp_is_alive()) {
+#ifdef CONFIG_MTK_HDMI_SUPPORT
+		if ((DISP_SESSION_TYPE(session) == DISP_SESSION_EXTERNAL) &&
+		    ext_disp_is_alive()) {
 			if (path_info.switching == 0) {
 				path_info.switching = 1;
-				path_info.ext_sid  = 0;
-				DISPCHECK("path have not been destroyed ,need destroy path first\n");
+				path_info.ext_sid = 0;
+				DISPCHECK(
+					"path have not been destroyed ,need destroy path first\n");
 				atomic_set(&switch_mode_event, 1);
 				wake_up_interruptible(&switch_mode_wq);
 			}
 		}
-		#endif
+#endif
 		config->session_id = session;
 		session_config[idx] = session;
 		DISPDBG("New session(0x%x)\n", session);
@@ -275,9 +267,9 @@ done:
 	return ret;
 }
 
-bool release_session_buffer(DISP_SESSION_TYPE type, unsigned int layerid,
+bool release_session_buffer(enum DISP_SESSION_TYPE type, unsigned int layerid,
 			    unsigned long layer_phy_addr);
-int disp_destroy_session(disp_session_config *config)
+int disp_destroy_session(struct disp_session_config *config)
 {
 	int ret = -1;
 	unsigned int session = config->session_id;
@@ -309,7 +301,7 @@ int disp_destroy_session(disp_session_config *config)
 	return ret;
 }
 
-bool release_session_buffer(DISP_SESSION_TYPE type, unsigned int layerid,
+bool release_session_buffer(enum DISP_SESSION_TYPE type, unsigned int layerid,
 			    unsigned long layer_phy_addr)
 {
 	unsigned int session = 0;
@@ -328,20 +320,23 @@ bool release_session_buffer(DISP_SESSION_TYPE type, unsigned int layerid,
 	}
 
 	if (session == 0)
-		/* /||((layerid < HW_OVERLAY_COUNT) &&(layer_phy_addr == NULL))) */
+	/* /||((layerid < HW_OVERLAY_COUNT) &&(layer_phy_addr == NULL))) */
 	{
-		DISPERR("sess(%u) (type %d)(addr 0x%lx) failed!\n", session, type, layer_phy_addr);
+		DISPERR("sess(%u) (type %d)(addr 0x%lx) failed!\n", session,
+			type, layer_phy_addr);
 		return false;
 	}
 
 	mutex_lock(&disp_session_lock);
 
 	if (layerid < release_layer_num) {
-		buff_idx = mtkfb_query_release_idx(session, layerid, layer_phy_addr);
+		buff_idx = mtkfb_query_release_idx(session, layerid,
+						   layer_phy_addr);
 
 		if (buff_idx > 0)
-			DISPMSG("release_session_buffer layerid %x addr 0x%lx idx %d\n", layerid,
-				layer_phy_addr, buff_idx);
+			DISPMSG(
+				"release_session_buffer layerid %x addr 0x%lx idx %d\n",
+				layerid, layer_phy_addr, buff_idx);
 
 		if (buff_idx > 0)
 			mtkfb_release_fence(session, layerid, buff_idx);
@@ -352,10 +347,9 @@ bool release_session_buffer(DISP_SESSION_TYPE type, unsigned int layerid,
 		for (i = 0; i < release_layer_num; i++)
 			mtkfb_release_layer_fence(session, i);
 
-		DISPMSG("release_session_buffer(type %d) release layer %d\n", type,
-			release_layer_num);
+		DISPMSG("release_session_buffer(type %d) release layer %d\n",
+			type, release_layer_num);
 	}
-
 
 	mutex_unlock(&disp_session_lock);
 	return true;
@@ -365,14 +359,15 @@ int _ioctl_create_session(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_config config;
+	struct disp_session_config config;
 
 	if (copy_from_user(&config, argp, sizeof(config))) {
 		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
 		return -EFAULT;
 	}
 
-	if ((config.type == DISP_SESSION_MEMORY) && (get_ovl1_to_mem_on() == false)) {
+	if ((config.type == DISP_SESSION_MEMORY) &&
+	    (get_ovl1_to_mem_on() == false)) {
 		DISPMSG("[FB]: _ioctl_create_session! line:%d  %d\n", __LINE__,
 			get_ovl1_to_mem_on());
 		return -EFAULT;
@@ -393,7 +388,7 @@ int _ioctl_destroy_session(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_config config;
+	struct disp_session_config config;
 
 	if (copy_from_user(&config, argp, sizeof(config))) {
 		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
@@ -426,7 +421,8 @@ int _mem_out_release_fence_callback(unsigned int userdata)
 	Bitmap.data_size = Bitmap.pitch * _ovl2mem_out_cached_config.h;
 	Bitmap.down_sample_x = 4;
 	Bitmap.down_sample_y = 4;
-	MMProfileLogMetaBitmap(HDMI_MMP_Events.DDPKBitblt, MMProfileFlagPulse, &Bitmap);
+	mmprofile_log_metaBitmap(
+		HDMI_MMP_Events.DDPKBitblt, MMPROFILE_FLAG_PULSE, &Bitmap);
 	if (fence_idx > 0)
 		mtkfb_release_fence(session_id, DDP_OUTPUT_LAYID, fence_idx);
 
@@ -455,19 +451,19 @@ char *disp_session_mode_spy(unsigned int session_id)
 }
 
 /*
-static unsigned int get_current_ticket(void)
-{
-	return dprec_get_vsync_count();
-}
-*/
+ * static unsigned int get_current_ticket(void)
+ * {
+ * return dprec_get_vsync_count();
+ * }
+ */
 int _ioctl_trigger_session(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_config config;
+	struct disp_session_config config;
 	unsigned int session_id = 0;
 	unsigned long ticket = 0;
-	disp_session_sync_info *session_info;
+	struct disp_session_sync_info *session_info;
 
 	if (copy_from_user(&config, argp, sizeof(config))) {
 		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
@@ -483,9 +479,26 @@ int _ioctl_trigger_session(unsigned long arg)
 	if (session_info)
 		dprec_start(&session_info->event_trigger, 0, 0);
 
-	DISPPR_FENCE("T+/%s%d\n", disp_session_mode_spy(session_id), DISP_SESSION_DEV(session_id));
+	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
+		DISPPR_FENCE("T+/%s%d/%d/dct:%d\n",
+				disp_session_mode_spy(session_id),
+				DISP_SESSION_DEV(session_id),
+				config.present_fence_idx,
+				config.dc_type);
+	} else
+		DISPPR_FENCE("T+/%s%d\n", disp_session_mode_spy(session_id),
+			     DISP_SESSION_DEV(session_id));
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
+		if (config.present_fence_idx != -1) {
+			primary_display_update_present_fence(
+					config.present_fence_idx);
+			mmprofile_log_ex(
+					ddp_mmp_get_events()->present_fence_set,
+					MMPROFILE_FLAG_PULSE,
+					config.present_fence_idx,
+					0);
+		}
 		primary_display_trigger(0, NULL, 0);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL) {
 #ifdef CONFIG_MTK_HDMI_SUPPORT
@@ -513,23 +526,138 @@ int _ioctl_trigger_session(unsigned long arg)
 	return ret;
 }
 
-
-int _ioctl_prepare_buffer(unsigned long arg, ePREPARE_FENCE_TYPE type)
+/* create fence for present fence */
+#if 0				/* use separate timeline */
+int _ioctl_prepare_present_fence(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_buffer_info info;
+	struct fence_data data;
+	static struct sw_sync_timeline *timeline;
+	static unsigned int fence_idx;
+
+	if (timeline == NULL) {
+		timeline = timeline_create("present_fence_timeline");
+		if (timeline)
+			DISPMSG("create present_fence_timeline success: %p\n",
+					timeline);
+		else
+			DISPERR("create present_fence_timeline failed!\n");
+	}
+	/* create fence */
+	data.fence = MTK_FB_INVALID_FENCE_FD;
+	data.value = ++fence_idx;
+	ret = fence_create(timeline, &data);
+	if (ret != 0) {
+		DISPMSG(
+			"%s%d, layer%d create Fence Object failed!\n",
+			disp_session_mode_spy(session_id),
+			DISP_SESSION_DEV(session_id),
+			timeline_id);
+		ret = -EFAULT;
+	}
+
+	if (copy_to_user(argp, &data, sizeof(struct fence_data))) {
+		pr_debug("[FB Driver]: copy_to_user failed! line:%d\n",
+				__LINE__);
+		ret = -EFAULT;
+	}
+
+	return ret;
+}
+#else
+/* extern disp_sync_info *_get_sync_info(
+ *		unsigned int session_id,
+ *		unsigned int timeline_id);
+ */
+int _ioctl_prepare_present_fence(unsigned long arg)
+{
+	int ret = 0;
+
+	void __user *argp = (void __user *)arg;
+	struct fence_data data;
+	struct disp_present_fence preset_fence_struct;
+	static unsigned int fence_idx;
+	struct disp_sync_info *layer_info = NULL;
+
+	if (copy_from_user(&preset_fence_struct,
+		(void __user *)arg,
+		sizeof(struct disp_present_fence))) {
+		pr_debug("[FB Driver]: copy_from_user failed! line:%d\n",
+				__LINE__
+				);
+		return -EFAULT;
+	}
+
+	if (DISP_SESSION_TYPE(preset_fence_struct.session_id)
+				!= DISP_SESSION_PRIMARY) {
+		pr_debug("non-primary ask for present fence! session=0x%x\n",
+			preset_fence_struct.session_id);
+		data.fence = MTK_FB_INVALID_FENCE_FD;
+		data.value = 0;
+	} else {
+		layer_info =
+		    _get_sync_info(preset_fence_struct.session_id,
+				   disp_sync_get_present_timeline_id());
+		if (layer_info == NULL) {
+			DISPERR("layer_info is null\n");
+			ret = -EFAULT;
+			return ret;
+		}
+		/* create fence */
+		data.fence = MTK_FB_INVALID_FENCE_FD;
+		data.value = ++fence_idx;
+		ret = fence_create(layer_info->timeline, &data);
+		if (ret != 0) {
+			DISPMSG("%s%d,layer%d create fence failed!\n",
+				disp_session_mode_spy(
+					preset_fence_struct.session_id),
+				DISP_SESSION_DEV(
+					preset_fence_struct.session_id),
+				disp_sync_get_present_timeline_id());
+			ret = -EFAULT;
+		}
+	}
+
+	preset_fence_struct.present_fence_fd = data.fence;
+	preset_fence_struct.present_fence_index = data.value;
+	if (copy_to_user(argp,
+			&preset_fence_struct,
+			sizeof(preset_fence_struct))) {
+		pr_debug("[FB Driver]: copy_to_user failed! line:%d\n",
+				__LINE__);
+		ret = -EFAULT;
+	}
+	mmprofile_log_ex(ddp_mmp_get_events()->present_fence_get,
+			MMPROFILE_FLAG_PULSE,
+			preset_fence_struct.present_fence_fd,
+			preset_fence_struct.present_fence_index);
+
+	return ret;
+}
+
+#endif
+
+
+int _ioctl_prepare_buffer(unsigned long arg, enum ePREPARE_FENCE_TYPE type)
+{
+	int ret = 0;
+	void __user *argp = (void __user *)arg;
+	struct disp_buffer_info info;
 	struct mtkfb_fence_buf_info *buf, *buf2;
 
 	if (copy_from_user(&info, (void __user *)arg, sizeof(info))) {
-		pr_debug("[FB Driver]: copy_from_user failed! line:%d\n", __LINE__);
+		pr_debug("[FB Driver]: copy_from_user failed! line:%d\n",
+			 __LINE__);
 		return (-EFAULT);
 	}
 
 	if (type == PREPARE_INPUT_FENCE)
 		;
-	else if (type == PREPARE_PRESENT_FENCE)
+	else if (type == PREPARE_PRESENT_FENCE) {
 		info.layer_id = disp_sync_get_present_timeline_id();
+		/*info.layer_en = 0;*/
+	}
 	else if (type == PREPARE_OUTPUT_FENCE)
 		info.layer_id = disp_sync_get_output_timeline_id();
 	else
@@ -541,64 +669,83 @@ int _ioctl_prepare_buffer(unsigned long arg, ePREPARE_FENCE_TYPE type)
 			info.fence_fd = buf->fence;
 			info.index = buf->idx;
 		} else {
-			DISPPR_ERROR("prepare fence failed, 0x%08x/l%d/e%d/ion%d/cache%d\n",
-				     info.session_id, info.layer_id, info.layer_en, info.ion_fd,
-				     info.cache_sync);
-			DISPPR_FENCE("P+ FAIL /%s%d/l%d/e%d/ion%d/c%d/id%d/ffd%d\n",
-				     disp_session_mode_spy(info.session_id),
-				     DISP_SESSION_DEV(info.session_id), info.layer_id,
-				     info.layer_en, info.ion_fd, info.cache_sync, info.index,
-				     info.fence_fd);
-			info.fence_fd = MTK_FB_INVALID_FENCE_FD;	/* invalid fd */
+			DISPPR_ERROR(
+				"prepare fence failed, 0x%08x/l%d/e%d/ion%d/cache%d\n",
+				info.session_id, info.layer_id, info.layer_en,
+				info.ion_fd, info.cache_sync);
+			DISPPR_FENCE(
+				"P+ FAIL /%s%d/l%d/e%d/ion%d/c%d/id%d/ffd%d\n",
+				disp_session_mode_spy(info.session_id),
+				DISP_SESSION_DEV(info.session_id),
+				info.layer_id, info.layer_en, info.ion_fd,
+				info.cache_sync, info.index, info.fence_fd);
+			info.fence_fd =
+				MTK_FB_INVALID_FENCE_FD; /* invalid fd */
 			info.index = 0;
 		}
 
 		if (type == PREPARE_OUTPUT_FENCE) {
-			if (primary_display_is_decouple_mode() && primary_display_is_mirror_mode()) {
-				/*create second fence for wdma when decouple mirror mode */
-				info.layer_id = disp_sync_get_output_interface_timeline_id();
+			if (primary_display_is_decouple_mode() &&
+			    primary_display_is_mirror_mode()) {
+				/*
+				 * create second fence for wdma when decouple
+				 * mirror mode
+				 */
+				info.layer_id =
+				disp_sync_get_output_interface_timeline_id();
 				buf2 = disp_sync_prepare_buf(&info);
 				if (buf2 != NULL) {
 					info.interface_fence_fd = buf2->fence;
 					info.interface_index = buf2->idx;
 				} else {
-					DISPPR_ERROR
-					    ("prepare fence failed, 0x%08x/l%d/e%d/ion%d/cache%d\n",
-					     info.session_id, info.layer_id, info.layer_en,
-					     info.ion_fd, info.cache_sync);
-					DISPPR_FENCE("P+ FAIL /%s%d/l%d/e%d/ion%d/c%d/id%d/ffd%d\n",
-						     disp_session_mode_spy(info.session_id),
-						     DISP_SESSION_DEV(info.session_id),
-						     info.layer_id, info.layer_en, info.ion_fd,
-						     info.cache_sync, info.index, info.fence_fd);
-					info.interface_fence_fd = MTK_FB_INVALID_FENCE_FD;	/* invalid fd */
+					DISPPR_ERROR(
+						"prepare fence failed, 0x%08x/l%d/e%d/ion%d/cache%d\n",
+						info.session_id, info.layer_id,
+						info.layer_en, info.ion_fd,
+						info.cache_sync);
+					DISPPR_FENCE(
+						"P+ FAIL /%s%d/l%d/e%d/ion%d/c%d/id%d/ffd%d\n",
+						disp_session_mode_spy(
+							info.session_id),
+						DISP_SESSION_DEV(
+							info.session_id),
+						info.layer_id, info.layer_en,
+						info.ion_fd, info.cache_sync,
+						info.index, info.fence_fd);
+					info.interface_fence_fd =
+						MTK_FB_INVALID_FENCE_FD;
 					info.interface_index = 0;
 				}
 			} else {
-				info.interface_fence_fd = MTK_FB_INVALID_FENCE_FD;	/* invalid fd */
+				info.interface_fence_fd =
+					MTK_FB_INVALID_FENCE_FD;
 				info.interface_index = 0;
 			}
 		}
 	} else {
-		DISPPR_ERROR("wrong prepare param, 0x%08x/l%d/e%d/ion%d/cache%d\n", info.session_id,
-			     info.layer_id, info.layer_en, info.ion_fd, info.cache_sync);
+		DISPPR_ERROR(
+			"wrong prepare param, 0x%08x/l%d/e%d/ion%d/cache%d\n",
+			info.session_id, info.layer_id, info.layer_en,
+			info.ion_fd, info.cache_sync);
 		DISPPR_FENCE("P+ FAIL /%s%d/l%d/e%d/ion%d/c%d/id%d/ffd%d\n",
 			     disp_session_mode_spy(info.session_id),
-			     DISP_SESSION_DEV(info.session_id), info.layer_id, info.layer_en,
-			     info.ion_fd, info.cache_sync, info.index, info.fence_fd);
-		info.fence_fd = MTK_FB_INVALID_FENCE_FD;	/* invalid fd */
+			     DISP_SESSION_DEV(info.session_id), info.layer_id,
+			     info.layer_en, info.ion_fd, info.cache_sync,
+			     info.index, info.fence_fd);
+		info.fence_fd = MTK_FB_INVALID_FENCE_FD; /* invalid fd */
 		info.index = 0;
 	}
 
 	if (copy_to_user(argp, &info, sizeof(info))) {
-		pr_debug("[FB Driver]: copy_to_user failed! line:%d\n", __LINE__);
+		pr_debug("[FB Driver]: copy_to_user failed! line:%d\n",
+			 __LINE__);
 		ret = -EFAULT;
 	}
 
 	return ret;
 }
 
-const char *_disp_format_spy(DISP_FORMAT format)
+const char *_disp_format_spy(enum DISP_FORMAT format)
 {
 	switch (format) {
 	case DISP_FORMAT_RGB565:
@@ -636,8 +783,10 @@ const char *_disp_format_spy(DISP_FORMAT format)
 	}
 }
 
-static int _sync_convert_fb_layer_to_ovl_struct(unsigned int session_id, disp_input_config *src,
-						OVL_CONFIG_STRUCT *dst, unsigned int dst_mva)
+static int _sync_convert_fb_layer_to_ovl_struct(unsigned int session_id,
+						struct disp_input_config *src,
+						struct OVL_CONFIG_STRUCT *dst,
+						unsigned int dst_mva)
 {
 	unsigned int layerpitch = 0;
 	unsigned int layerbpp = 0;
@@ -674,7 +823,7 @@ static int _sync_convert_fb_layer_to_ovl_struct(unsigned int session_id, disp_in
 		layerpitch = 3;
 		layerbpp = 24;
 		break;
-		/* xuecheng, ?????? */
+	/* xuecheng, ?????? */
 	case DISP_FORMAT_ARGB8888:
 		/* dst->fmt = eRGBA8888; */
 		dst->fmt = eARGB8888;
@@ -756,10 +905,11 @@ static int _sync_convert_fb_layer_to_ovl_struct(unsigned int session_id, disp_in
 	dst->dst_alpha = src->dst_alpha;
 
 #ifdef DISP_DISABLE_X_CHANNEL_ALPHA
-	if (DISP_FORMAT_ARGB8888 == src->src_fmt ||
-	    DISP_FORMAT_ABGR8888 == src->src_fmt ||
-	    DISP_FORMAT_RGBA8888 == src->src_fmt ||
-	    DISP_FORMAT_BGRA8888 == src->src_fmt || src->buffer_source == DISP_BUFFER_ALPHA) {
+	if (src->src_fmt == DISP_FORMAT_ARGB8888 ||
+	    src->src_fmt == DISP_FORMAT_ABGR8888 ||
+	    src->src_fmt == DISP_FORMAT_RGBA8888 ||
+	    src->src_fmt == DISP_FORMAT_BGRA8888 ||
+	    src->buffer_source == DISP_BUFFER_ALPHA) {
 		/* just keep what user set */
 		/* dst->aen = true; */
 		/* dst->sur_aen = true; */
@@ -794,21 +944,22 @@ static int _sync_convert_fb_layer_to_ovl_struct(unsigned int session_id, disp_in
 	dst->layer_en = src->layer_enable;
 	dst->isDirty = true;
 	if (src->buffer_source == DISP_BUFFER_ALPHA) {
-		dst->source = OVL_LAYER_SOURCE_RESERVED;	/* dim layer, constant alpha */
-	} else if (src->buffer_source == DISP_BUFFER_ION || src->buffer_source == DISP_BUFFER_MVA) {
-		dst->source = OVL_LAYER_SOURCE_MEM;	/* from memory */
+		/* dim layer, constant alpha */
+		dst->source = OVL_LAYER_SOURCE_RESERVED;
+	} else if (src->buffer_source == DISP_BUFFER_ION ||
+		   src->buffer_source == DISP_BUFFER_MVA) {
+		dst->source = OVL_LAYER_SOURCE_MEM; /* from memory */
 	} else {
 		DISPERR("unknown source = %d", src->buffer_source);
 		dst->source = OVL_LAYER_SOURCE_MEM;
 	}
 
-
 	return 0;
 }
 
-static int _sync_convert_fb_layer_to_disp_input(unsigned int session_id, disp_input_config *src,
-						primary_disp_input_config *dst,
-						unsigned int dst_mva)
+static int _sync_convert_fb_layer_to_disp_input(
+	unsigned int session_id, struct disp_input_config *src,
+	struct primary_disp_input_config *dst, unsigned int dst_mva)
 {
 	unsigned int layerpitch = 0;
 	unsigned int layerbpp = 0;
@@ -845,7 +996,7 @@ static int _sync_convert_fb_layer_to_disp_input(unsigned int session_id, disp_in
 		layerpitch = 3;
 		layerbpp = 24;
 		break;
-		/* xuecheng, ?????? */
+	/* xuecheng, ?????? */
 	case DISP_FORMAT_ARGB8888:
 		dst->fmt = eARGB8888;
 		layerpitch = 4;
@@ -935,10 +1086,11 @@ static int _sync_convert_fb_layer_to_disp_input(unsigned int session_id, disp_in
 	dst->dst_alpha = src->dst_alpha;
 
 #ifdef DISP_DISABLE_X_CHANNEL_ALPHA
-	if (DISP_FORMAT_ARGB8888 == src->src_fmt ||
-	    DISP_FORMAT_ABGR8888 == src->src_fmt ||
-	    DISP_FORMAT_RGBA8888 == src->src_fmt ||
-	    DISP_FORMAT_BGRA8888 == src->src_fmt || src->buffer_source == DISP_BUFFER_ALPHA) {
+	if (src->src_fmt == DISP_FORMAT_ARGB8888 ||
+	    src->src_fmt == DISP_FORMAT_ABGR8888 ||
+	    src->src_fmt == DISP_FORMAT_RGBA8888 ||
+	    src->src_fmt == DISP_FORMAT_BGRA8888 ||
+	    src->buffer_source == DISP_BUFFER_ALPHA) {
 		/* just keep what user set */
 		/* dst->aen = true; */
 		/* dst->sur_aen = true; */
@@ -978,16 +1130,17 @@ static int _sync_convert_fb_layer_to_disp_input(unsigned int session_id, disp_in
 	return 0;
 }
 
-static int set_memory_buffer(disp_session_input_config *input)
+static int set_memory_buffer(struct disp_session_input_config *input)
 {
 	int i = 0;
 	int layer_id = 0;
 	unsigned int dst_size = 0;
-	unsigned long dst_mva = 0;
+	unsigned int dst_mva = 0;
 	unsigned int session_id = input->session_id;
-	disp_session_sync_info *session_info = disp_get_session_sync_info_for_debug(session_id);
+	struct disp_session_sync_info *session_info =
+		disp_get_session_sync_info_for_debug(session_id);
 
-	ovl2mem_in_config input_params[HW_OVERLAY_COUNT];
+	struct ovl2mem_in_config input_params[HW_OVERLAY_COUNT];
 
 	memset((void *)&input_params, 0, sizeof(input_params));
 
@@ -995,78 +1148,103 @@ static int set_memory_buffer(disp_session_input_config *input)
 		dst_mva = 0;
 		layer_id = input->config[i].layer_id;
 		if (input->config[i].layer_enable) {
-			if (input->config[i].buffer_source == DISP_BUFFER_ALPHA) {
+			if (input->config[i].buffer_source ==
+			    DISP_BUFFER_ALPHA) {
 				DISPPR_FENCE("ML %d is dim layer,fence %d\n",
 					     input->config[i].layer_id,
 					     input->config[i].next_buff_idx);
 				input->config[i].sur_aen = 0;
 				input->config[i].src_fmt = DISP_FORMAT_RGB888;
-				input->config[i].src_pitch = input->config[i].src_width;
-				input->config[i].src_phy_addr = (void *)get_dim_layer_mva_addr();
+				input->config[i].src_pitch =
+					input->config[i].src_width;
+				input->config[i].src_phy_addr =
+				(void *)(unsigned long)get_dim_layer_mva_addr();
 				input->config[i].next_buff_idx = 0;
 				input->config[i].security = DISP_NORMAL_BUFFER;
 			}
 
 			if (input->config[i].src_phy_addr) {
-				dst_mva = (unsigned long)input->config[i].src_phy_addr;
+				dst_mva =
+				(unsigned int)(unsigned long)input->config[i]
+						  .src_phy_addr;
 			} else {
-				disp_sync_query_buf_info(session_id, layer_id,
-							 (unsigned int)input->config[i].
-							 next_buff_idx, &dst_mva, &dst_size);
+				disp_sync_query_buf_info(
+					session_id, layer_id,
+					(unsigned int)input->config[i]
+						.next_buff_idx,
+					&dst_mva, &dst_size);
 			}
 
 			if (dst_mva == 0)
 				input->config[i].layer_enable = 0;
 
-			DISPPR_FENCE
-			    ("S+/ML%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08lx/t%d/sec%d\n",
-			     input->config[i].layer_id, input->config[i].layer_enable,
-			     input->config[i].next_buff_idx, input->config[i].src_width,
-			     input->config[i].src_height, input->config[i].src_offset_x,
-			     input->config[i].src_offset_y, input->config[i].tgt_offset_x,
-			     input->config[i].tgt_offset_y,
-			     _disp_format_spy(input->config[i].src_fmt), input->config[i].src_pitch,
-			     input->config[i].src_phy_addr, dst_mva, get_ovl2mem_ticket(),
-			     input->config[i].security);
+			DISPPR_FENCE(
+				"S+/ML%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08x/t%d/sec%d\n",
+				input->config[i].layer_id,
+				input->config[i].layer_enable,
+				input->config[i].next_buff_idx,
+				input->config[i].src_width,
+				input->config[i].src_height,
+				input->config[i].src_offset_x,
+				input->config[i].src_offset_y,
+				input->config[i].tgt_offset_x,
+				input->config[i].tgt_offset_y,
+				_disp_format_spy(input->config[i].src_fmt),
+				input->config[i].src_pitch,
+				input->config[i].src_phy_addr, dst_mva,
+				get_ovl2mem_ticket(),
+				input->config[i].security);
 		} else {
-			DISPPR_FENCE("S+/ML%d/e%d/id%d\n", input->config[i].layer_id,
-				     input->config[i].layer_enable, input->config[i].next_buff_idx);
+			DISPPR_FENCE("S+/ML%d/e%d/id%d\n",
+				     input->config[i].layer_id,
+				     input->config[i].layer_enable,
+				     input->config[i].next_buff_idx);
 		}
 
-		_sync_convert_fb_layer_to_ovl_struct(input->session_id, &(input->config[i]),
-						     &ovl2mem_in_cached_config[layer_id], dst_mva);
-		/*disp_sync_put_cached_layer_info(session_id, layer_id, &input->config[i], get_ovl2mem_ticket()); */
-		mtkfb_update_buf_ticket(session_id, layer_id, input->config[i].next_buff_idx,
+		_sync_convert_fb_layer_to_ovl_struct(
+			input->session_id, &(input->config[i]),
+			&ovl2mem_in_cached_config[layer_id], dst_mva);
+		/*
+		 * disp_sync_put_cached_layer_info(session_id, layer_id,
+		 * &input->config[i], get_ovl2mem_ticket());
+		 */
+		mtkfb_update_buf_ticket(session_id, layer_id,
+					input->config[i].next_buff_idx,
 					get_ovl2mem_ticket());
-		_sync_convert_fb_layer_to_disp_input(input->session_id, &(input->config[i]),
-						     (primary_disp_input_config *) &
-						     input_params[layer_id], dst_mva);
+		_sync_convert_fb_layer_to_disp_input(
+			input->session_id, &(input->config[i]),
+			(struct primary_disp_input_config
+				 *)&input_params[layer_id],
+			dst_mva);
 		input_params[layer_id].dirty = 1;
 
 		if (input->config[i].layer_enable) {
-			mtkfb_update_buf_info(input->session_id, input->config[i].layer_id,
-					      input->config[i].next_buff_idx, 0,
-					      input->config[i].frm_sequence);
+			mtkfb_update_buf_info(input->session_id,
+				input->config[i].layer_id,
+				input->config[i].next_buff_idx, 0,
+				input->config[i].frm_sequence
+				#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+				, dst_mva, input->config[i].security
+				#endif
+				);
 		}
 
 		if (session_info) {
-			dprec_submit(&session_info->event_setinput, input->config[i].next_buff_idx,
-				     (input->config_layer_num << 28) | (input->config[i].
-									layer_id << 24) | (input->
-											   config
-											   [i].
-											   src_fmt
-											   << 12) |
-				     input->config[i].layer_enable);
+			dprec_submit(&session_info->event_setinput,
+				     input->config[i].next_buff_idx,
+				     (input->config_layer_num << 28) |
+					     (input->config[i].layer_id << 24) |
+					     (input->config[i].src_fmt << 12) |
+					     input->config[i].layer_enable);
 		}
 	}
 
-	ovl2mem_input_config((ovl2mem_in_config *) &input_params);
+	ovl2mem_input_config((struct ovl2mem_in_config *)&input_params);
 
 	return 0;
 }
 
-static int set_external_buffer(disp_session_input_config *input)
+static int set_external_buffer(struct disp_session_input_config *input)
 {
 #ifdef CONFIG_MTK_HDMI_SUPPORT
 	int i = 0;
@@ -1076,17 +1254,17 @@ static int set_external_buffer(disp_session_input_config *input)
 	unsigned int dst_mva = 0;
 	unsigned int session_id = 0;
 	unsigned int mva_offset = 0;
-	disp_session_sync_info *session_info;
-	ext_disp_input_config extd_input[HW_OVERLAY_COUNT];
+	struct disp_session_sync_info *session_info;
+	struct ext_disp_input_config extd_input[HW_OVERLAY_COUNT];
 
 	session_id = input->session_id;
 	session_info = disp_get_session_sync_info_for_debug(session_id);
 	if (extd_hdmi_path_get_mode() == EXTD_RDMA_DPI_MODE) {
 		input->config_layer_num = 1;
 		if (ovl1_remove == 1) {
-			M4U_PORT_STRUCT sPort;
+			struct M4U_PORT_STRUCT sPort;
 
-			DISPMSG("Donglei - config M4U Port DISP_MODULE_RDMA1\n");
+			DISPMSG("config M4U Port DISP_MODULE_RDMA1\n");
 			sPort.ePortID = M4U_PORT_DISP_RDMA1;
 			sPort.Virtuality = 1;
 			sPort.Security = 0;
@@ -1094,11 +1272,14 @@ static int set_external_buffer(disp_session_input_config *input)
 			sPort.Direction = 0;
 			ret = m4u_config_port(&sPort);
 			if (ret != 0)
-				DISPMSG("config M4U Port DISP_MODULE_RDMA1 FAIL\n");
+				DISPMSG(
+					"config M4U Port DISP_MODULE_RDMA1 FAIL\n"
+					);
 			ovl1_remove++;
 		}
 
-		hdmi_recompute_bg(input->config[0].src_width, input->config[0].src_height);
+		hdmi_recompute_bg(input->config[0].src_width,
+				  input->config[0].src_height);
 	}
 
 	memset((void *)&extd_input, 0, sizeof(extd_input));
@@ -1107,7 +1288,8 @@ static int set_external_buffer(disp_session_input_config *input)
 		dst_mva = 0;
 		layer_id = input->config[i].layer_id;
 		if (input->config[i].layer_enable) {
-			if (input->config[i].buffer_source == DISP_BUFFER_ALPHA) {
+			if (input->config[i].buffer_source ==
+			    DISP_BUFFER_ALPHA) {
 				DISPPR_FENCE("EL %d is dim layer,fence %d\n",
 					     input->config[i].layer_id,
 					     input->config[i].next_buff_idx);
@@ -1117,77 +1299,94 @@ static int set_external_buffer(disp_session_input_config *input)
 				/* input->config[i].tgt_offset_y = 0; */
 				input->config[i].sur_aen = 0;
 				input->config[i].src_fmt = DISP_FORMAT_RGB888;
-				input->config[i].src_pitch = input->config[i].src_width;
-				input->config[i].src_phy_addr = (void *)get_dim_layer_mva_addr();
+				input->config[i].src_pitch =
+					input->config[i].src_width;
+				input->config[i].src_phy_addr =
+				(void *)(unsigned long)get_dim_layer_mva_addr();
 				input->config[i].next_buff_idx = 0;
 				/* force dim layer as non-sec */
 				input->config[i].security = DISP_NORMAL_BUFFER;
 			}
 			if (input->config[i].src_phy_addr) {
-				dst_mva = (unsigned long)input->config[i].src_phy_addr;
+				dst_mva = (unsigned int)input->config[i]
+						  .src_phy_addr;
 			} else {
-				disp_sync_query_buf_info(session_id, (unsigned int)layer_id,
-							 (unsigned int)input->config[i].
-							 next_buff_idx, (unsigned long *)&dst_mva,
-							 &dst_size);
+				disp_sync_query_buf_info(
+					session_id, (unsigned int)layer_id,
+					(unsigned int)input->config[i]
+						.next_buff_idx,
+					(unsigned int *)&dst_mva, &dst_size);
 			}
 
 			if (dst_mva == 0)
 				input->config[i].layer_enable = 0;
-			DISPPR_FENCE("S+/EL%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08x\n",
+			DISPPR_FENCE(
+				"S+/EL%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08x\n",
+				input->config[i].layer_id,
+				input->config[i].layer_enable,
+				input->config[i].next_buff_idx,
+				input->config[i].src_width,
+				input->config[i].src_height,
+				input->config[i].src_offset_x,
+				input->config[i].src_offset_y,
+				input->config[i].tgt_offset_x,
+				input->config[i].tgt_offset_y,
+				_disp_format_spy(input->config[i].src_fmt),
+				input->config[i].src_pitch,
+				input->config[i].src_phy_addr, dst_mva);
+		} else {
+			DISPPR_FENCE("S+/EL%d/e%d/id%d\n",
 				     input->config[i].layer_id,
 				     input->config[i].layer_enable,
-				     input->config[i].next_buff_idx,
-				     input->config[i].src_width,
-				     input->config[i].src_height,
-				     input->config[i].src_offset_x,
-				     input->config[i].src_offset_y,
-				     input->config[i].tgt_offset_x,
-				     input->config[i].tgt_offset_y,
-				     _disp_format_spy(input->config[i].src_fmt),
-				     input->config[i].src_pitch,
-				     input->config[i].src_phy_addr, dst_mva);
-		} else {
-			DISPPR_FENCE("S+/EL%d/e%d/id%d\n", input->config[i].layer_id,
-				     input->config[i].layer_enable, input->config[i].next_buff_idx);
+				     input->config[i].next_buff_idx);
 		}
 
-		disp_sync_put_cached_layer_info(session_id, layer_id, &input->config[i], dst_mva);
-		_sync_convert_fb_layer_to_disp_input(input->session_id, &(input->config[i]),
-						     (primary_disp_input_config *) &
-						     extd_input[layer_id], dst_mva);
+		disp_sync_put_cached_layer_info(session_id, layer_id,
+						&input->config[i], dst_mva);
+		_sync_convert_fb_layer_to_disp_input(
+			input->session_id, &(input->config[i]),
+			(struct primary_disp_input_config
+				 *)&extd_input[layer_id],
+			dst_mva);
 
 		extd_input[layer_id].dirty = 1;
 
 		if (input->config[i].layer_enable) {
-			/* OVL addr is not the start address of buffer, which is calculated by pitch and ROI. */
+			/*
+			 * OVL addr is not the start address of buffer, which is
+			 * calculated by pitch and ROI.
+			 */
 			unsigned int hw_fmt, Bpp, bpp, x, y, pitch;
 
 			x = input->config[i].src_offset_x;
 			y = input->config[i].src_offset_y;
 			pitch = input->config[i].src_pitch;
-			disp_fmt_to_hw_fmt(input->config[i].src_fmt, &hw_fmt, &Bpp, &bpp);
+			disp_fmt_to_hw_fmt(input->config[i].src_fmt, &hw_fmt,
+					   &Bpp, &bpp);
 			mva_offset = (x + y * pitch) * Bpp;
-			mtkfb_update_buf_info(input->session_id, input->config[i].layer_id,
-					      input->config[i].next_buff_idx, mva_offset,
-					      input->config[i].frm_sequence);
+			mtkfb_update_buf_info(
+				input->session_id, input->config[i].layer_id,
+				input->config[i].next_buff_idx, mva_offset,
+				input->config[i].frm_sequence
+				#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+				, dst_mva, input->config[i].security
+				#endif
+				);
 		}
 
 		if (session_info) {
-			dprec_submit(&session_info->event_setinput, input->config[i].next_buff_idx,
-				     (input->config_layer_num << 28) | (input->config[i].
-									layer_id << 24) | (input->
-											   config
-											   [i].
-											   src_fmt
-											   << 12) |
-				     input->config[i].layer_enable);
+			dprec_submit(&session_info->event_setinput,
+				     input->config[i].next_buff_idx,
+				     (input->config_layer_num << 28) |
+					     (input->config[i].layer_id << 24) |
+					     (input->config[i].src_fmt << 12) |
+					     input->config[i].layer_enable);
 		}
 	}
 
-	ret =
-	    extd_hdmi_config_input_multiple((ext_disp_input_config *) &extd_input,
-					    input->config[0].next_buff_idx);
+	ret = extd_hdmi_config_input_multiple(
+		(ext_disp_input_config *)&extd_input,
+		input->config[0].next_buff_idx);
 
 	if (ret == -2) {
 		for (i = 0; i < input->config_layer_num; i++)
@@ -1198,7 +1397,7 @@ static int set_external_buffer(disp_session_input_config *input)
 	return 0;
 }
 
-static int _remove_assert_layer(disp_session_input_config *input)
+static int _remove_assert_layer(struct disp_session_input_config *input)
 {
 	int i, assert_layer, idx = -1;
 
@@ -1223,7 +1422,7 @@ static int _remove_assert_layer(disp_session_input_config *input)
 	return 0;
 }
 
-static inline void remove_assert_layer(disp_session_input_config *input)
+static inline void remove_assert_layer(struct disp_session_input_config *input)
 {
 	if (!is_DAL_Enabled())
 		return;
@@ -1231,16 +1430,16 @@ static inline void remove_assert_layer(disp_session_input_config *input)
 		;
 }
 
-static int set_primary_buffer(disp_session_input_config *input)
+static int set_primary_buffer(struct disp_session_input_config *input)
 {
 	int i = 0;
 	int ret = 0;
 	int layer_id = 0;
 	unsigned int dst_size = 0;
-	unsigned long dst_mva = 0;
+	unsigned int dst_mva = 0;
 	unsigned int session_id = 0;
 	unsigned int mva_offset = 0;
-	disp_session_sync_info *session_info;
+	struct disp_session_sync_info *session_info;
 
 	session_id = input->session_id;
 	session_info = disp_get_session_sync_info_for_debug(session_id);
@@ -1254,7 +1453,8 @@ static int set_primary_buffer(disp_session_input_config *input)
 		if (input->config[i].layer_enable) {
 			unsigned int hw_fmt, Bpp, bpp, x, y, pitch;
 
-			if (input->config[i].buffer_source == DISP_BUFFER_ALPHA) {
+			if (input->config[i].buffer_source ==
+			    DISP_BUFFER_ALPHA) {
 				DISPPR_FENCE("PL %d is dim layer,fence %d\n",
 					     input->config[i].layer_id,
 					     input->config[i].next_buff_idx);
@@ -1263,74 +1463,100 @@ static int set_primary_buffer(disp_session_input_config *input)
 				input->config[i].src_offset_y = 0;
 				input->config[i].sur_aen = 0;
 				input->config[i].src_fmt = DISP_FORMAT_RGB888;
-				input->config[i].src_pitch = input->config[i].src_width;
-				input->config[i].src_phy_addr = (void *)get_dim_layer_mva_addr();
+				input->config[i].src_pitch =
+					input->config[i].src_width;
+				input->config[i].src_phy_addr =
+				(void *)(unsigned long)get_dim_layer_mva_addr();
 				input->config[i].next_buff_idx = 0;
 				/* force dim layer as non-sec */
 				input->config[i].security = DISP_NORMAL_BUFFER;
 			}
 			if (input->config[i].src_phy_addr)
-				dst_mva = (unsigned long)input->config[i].src_phy_addr;
+				dst_mva =
+				(unsigned int)(unsigned long)input->config[i]
+						  .src_phy_addr;
 			else
-				disp_sync_query_buf_info(session_id, (unsigned int)layer_id,
-							 (unsigned int)input->config[i].
-							 next_buff_idx, &dst_mva, &dst_size);
+				disp_sync_query_buf_info(
+					session_id, (unsigned int)layer_id,
+					(unsigned int)input->config[i]
+						.next_buff_idx,
+					&dst_mva, &dst_size);
 
-			input->config[i].src_phy_addr = (void *)dst_mva;
+			input->config[i].src_phy_addr =
+				(void *)(unsigned long)dst_mva;
 
 			if (dst_mva == 0) {
-				DISPPR_ERROR("disable layer %d because of no valid mva\n",
-					     input->config[i].layer_id);
+				DISPPR_ERROR(
+					"disable layer %d because of no valid mva\n",
+					input->config[i].layer_id);
 				input->config[i].layer_enable = 0;
 			}
-			/* OVL addr is not the start address of buffer, which is calculated by pitch and ROI. */
+			/*
+			 * OVL addr is not the start address of buffer, which is
+			 * calculated by pitch and ROI.
+			 */
 			x = input->config[i].src_offset_x;
 			y = input->config[i].src_offset_y;
 			pitch = input->config[i].src_pitch;
-			disp_fmt_to_hw_fmt(input->config[i].src_fmt, &hw_fmt, &Bpp, &bpp);
+			disp_fmt_to_hw_fmt(input->config[i].src_fmt, &hw_fmt,
+					   &Bpp, &bpp);
 			mva_offset = (x + y * pitch) * Bpp;
-			mtkfb_update_buf_info(input->session_id, input->config[i].layer_id,
-					      input->config[i].next_buff_idx, mva_offset,
-					      input->config[i].frm_sequence);
+			mtkfb_update_buf_info(
+				input->session_id, input->config[i].layer_id,
+				input->config[i].next_buff_idx, mva_offset,
+				input->config[i].frm_sequence
+				#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+				, dst_mva, input->config[i].security
+				#endif
+				);
 
-			DISPPR_FENCE
-			    ("S+/PL%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08lx/sec%d\n",
-			     input->config[i].layer_id, input->config[i].layer_enable,
-			     input->config[i].next_buff_idx, input->config[i].src_width,
-			     input->config[i].src_height, input->config[i].src_offset_x,
-			     input->config[i].src_offset_y, input->config[i].tgt_offset_x,
-			     input->config[i].tgt_offset_y,
-			     _disp_format_spy(input->config[i].src_fmt), input->config[i].src_pitch,
-			     input->config[i].src_phy_addr, dst_mva, input->config[i].security);
+			DISPPR_FENCE(
+				"S+/PL%d/e%d/id%d/%dx%d(%d,%d)(%d,%d)/%s/%d/0x%p/mva0x%08x/sec%d\n",
+				input->config[i].layer_id,
+				input->config[i].layer_enable,
+				input->config[i].next_buff_idx,
+				input->config[i].src_width,
+				input->config[i].src_height,
+				input->config[i].src_offset_x,
+				input->config[i].src_offset_y,
+				input->config[i].tgt_offset_x,
+				input->config[i].tgt_offset_y,
+				_disp_format_spy(input->config[i].src_fmt),
+				input->config[i].src_pitch,
+				input->config[i].src_phy_addr, dst_mva,
+				input->config[i].security);
 		} else {
-			DISPPR_FENCE("S+/PL%d/e%d/id%d\n", input->config[i].layer_id,
-				     input->config[i].layer_enable, input->config[i].next_buff_idx);
+			DISPPR_FENCE("S+/PL%d/e%d/id%d\n",
+				     input->config[i].layer_id,
+				     input->config[i].layer_enable,
+				     input->config[i].next_buff_idx);
 		}
 
-		disp_sync_put_cached_layer_info(session_id, layer_id, &input->config[i], dst_mva);
+		disp_sync_put_cached_layer_info(session_id, layer_id,
+						&input->config[i], dst_mva);
 
 		if (session_info)
-			dprec_submit(&session_info->event_setinput, input->config[i].next_buff_idx,
-				     dst_mva);
+			dprec_submit(&session_info->event_setinput,
+				     input->config[i].next_buff_idx, dst_mva);
 	}
 
 	ret = primary_display_config_input_multiple(input);
 	if (ret == -2) {
 		for (i = 0; i < input->config_layer_num; i++)
-			mtkfb_release_fence(input->session_id, i, input->config[i].next_buff_idx);
+			mtkfb_release_fence(input->session_id, i,
+					    input->config[i].next_buff_idx);
 	}
 
 	return 0;
-
 }
 
-static int _disp_validate_color_fmt(DISP_FORMAT fmt)
+static int _disp_validate_color_fmt(enum DISP_FORMAT fmt)
 {
 	unsigned int fmt_id = 0;
 
 	fmt_id = GET_DISP_FORMAT_ID(fmt);
 	if (fmt_id < GET_DISP_FORMAT_ID(DISP_FORMAT_RGB565) ||
-		fmt_id > GET_DISP_FORMAT_ID(DISP_FORMAT_YV12)) {
+	    fmt_id > GET_DISP_FORMAT_ID(DISP_FORMAT_YV12)) {
 		DISPERR("%s: error format 0x%x\n", __func__, fmt);
 		return -1;
 	}
@@ -1338,27 +1564,28 @@ static int _disp_validate_color_fmt(DISP_FORMAT fmt)
 	return 0;
 }
 
-static int _disp_validate_session_input_params(disp_session_input_config *cfg)
+static int
+_disp_validate_session_input_params(struct disp_session_input_config *cfg)
 {
 	unsigned int i = 0;
 	unsigned int max = HW_OVERLAY_COUNT;
 
 	if (cfg->config_layer_num > max) {
-		DISPERR("%s: config_layer_num(%u) > %u",
-				__func__, cfg->config_layer_num, max);
+		DISPERR("%s: config_layer_num(%u) > %u", __func__,
+			cfg->config_layer_num, max);
 		return -1;
 	}
 
 	for (i = 0; i < cfg->config_layer_num; i++) {
 		if (cfg->config[i].layer_id >= max) {
 			DISPERR("%s: layer_id(%u) >= %u", __func__,
-					cfg->config_layer_num, max);
+				cfg->config_layer_num, max);
 			return -1;
 		}
 
 		if (cfg->config[i].layer_enable &&
-			(_disp_validate_color_fmt(cfg->config[i].src_fmt) == -1))
-		return -1;
+		    (_disp_validate_color_fmt(cfg->config[i].src_fmt) == -1))
+			return -1;
 	}
 
 	return 0;
@@ -1369,52 +1596,72 @@ int _ioctl_set_input_buffer(unsigned long arg)
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
 	unsigned int session_id = 0;
-	disp_session_sync_info *session_info;
-	disp_session_input_config session_input;
+	struct disp_session_sync_info *session_info = NULL;
+	struct disp_session_input_config *s_session_input = NULL;
 
-	if (copy_from_user(&session_input, argp, sizeof(session_input))) {
-		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+	s_session_input = kmalloc(
+				sizeof(struct disp_session_input_config),
+				GFP_KERNEL);
+	if (s_session_input == NULL) {
+		DISPERR("session input config alloc failed!\n");
 		return -EFAULT;
 	}
 
-	if (_disp_validate_session_input_params(&session_input) == -1)
+	if (copy_from_user(s_session_input,
+				argp,
+				sizeof(struct disp_session_input_config))) {
+		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
+		kfree(s_session_input);
 		return -EFAULT;
+	}
 
-	session_input.setter = SESSION_USER_HWC;
-	session_id = session_input.session_id;
+	if (_disp_validate_session_input_params(s_session_input) == -1) {
+		kfree(s_session_input);
+		return -EFAULT;
+	}
 
-	if (session_input.config_layer_num > OVL_LAYER_NUM) {
+	s_session_input->setter = SESSION_USER_HWC;
+	session_id = s_session_input->session_id;
+
+	if (s_session_input->config_layer_num > OVL_LAYER_NUM) {
 		DISPERR("set_input_buffer, config_layer_num invalid = %d!\n",
-		session_input.config_layer_num);
+			s_session_input->config_layer_num);
+		kfree(s_session_input);
 		return -1;
 	}
 
 	session_info = disp_get_session_sync_info_for_debug(session_id);
 	if (session_info)
-		dprec_start(&session_info->event_setinput, 0, session_input.config_layer_num);
+		dprec_start(&session_info->event_setinput, 0,
+			    s_session_input->config_layer_num);
 
 	DISPPR_FENCE("S+/%s%d/count%d\n", disp_session_mode_spy(session_id),
-		     DISP_SESSION_DEV(session_id), session_input.config_layer_num);
+		     DISP_SESSION_DEV(session_id),
+		     s_session_input->config_layer_num);
 
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
-		ret = set_primary_buffer(&session_input);
+		ret = set_primary_buffer(s_session_input);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL) {
-		ret = set_external_buffer(&session_input);
+		ret = set_external_buffer(s_session_input);
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_MEMORY) {
-		ret = set_memory_buffer(&session_input);
+		ret = set_memory_buffer(s_session_input);
 	} else {
 		DISPERR("session type is wrong:0x%08x\n", session_id);
+		kfree(s_session_input);
 		return -1;
 	}
 
 	if (session_info)
-		dprec_done(&session_info->event_setinput, 0, session_input.config_layer_num);
+		dprec_done(&session_info->event_setinput, 0,
+			   s_session_input->config_layer_num);
 
+	kfree(s_session_input);
 	return ret;
 }
 
-static int _sync_convert_fb_layer_to_disp_output(unsigned int session_id, disp_output_config *src,
-						 disp_mem_output_config *dst, unsigned int dst_mva)
+static int _sync_convert_fb_layer_to_disp_output(
+	unsigned int session_id, struct disp_output_config *src,
+	struct disp_mem_output_config *dst, unsigned int dst_mva)
 {
 	unsigned int layerpitch = 0;
 	unsigned int layerbpp = 0;
@@ -1444,7 +1691,7 @@ static int _sync_convert_fb_layer_to_disp_output(unsigned int session_id, disp_o
 		layerpitch = 3;
 		layerbpp = 24;
 		break;
-		/* xuecheng, ?????? */
+	/* xuecheng, ?????? */
 	case DISP_FORMAT_ARGB8888:
 		dst->fmt = eARGB8888;
 		layerpitch = 4;
@@ -1516,13 +1763,14 @@ static int _sync_convert_fb_layer_to_disp_output(unsigned int session_id, disp_o
 	dst->buff_idx = src->buff_idx;
 	dst->interface_idx = src->interface_idx;
 
-#if 0				/* #ifdef DISP_DISABLE_X_CHANNEL_ALPHA */
+#if 0 /* #ifdef DISP_DISABLE_X_CHANNEL_ALPHA */
 	/* set Alpha blending */
 	dst->alpha = 0xFF;
-	if (DISP_FORMAT_ARGB8888 == src->fmt ||
-	    DISP_FORMAT_ABGR8888 == src->fmt ||
-	    DISP_FORMAT_RGBA8888 == src->fmt ||
-	    DISP_FORMAT_BGRA8888 == src->fmt || src->buffer_source == DISP_BUFFER_ALPHA) {
+	if (src->fmt == DISP_FORMAT_ARGB8888 ||
+	    src->fmt == DISP_FORMAT_ABGR8888 ||
+	    src->fmt == DISP_FORMAT_RGBA8888 ||
+	    src->fmt == DISP_FORMAT_BGRA8888 ||
+	    src->buffer_source == DISP_BUFFER_ALPHA) {
 		dst->aen = true;
 	} else {
 		dst->aen = false;
@@ -1535,15 +1783,14 @@ static int _sync_convert_fb_layer_to_disp_output(unsigned int session_id, disp_o
 	return 0;
 }
 
-
 int _ioctl_set_output_buffer(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_output_config session_output;
+	struct disp_session_output_config session_output;
 	unsigned int session_id = 0;
-	unsigned long dst_mva = 0;
-	disp_session_sync_info *session_info;
+	unsigned int dst_mva = 0;
+	struct disp_session_sync_info *session_info;
 
 	if (copy_from_user(&session_output, argp, sizeof(session_output))) {
 		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
@@ -1554,141 +1801,180 @@ int _ioctl_set_output_buffer(unsigned long arg)
 
 	session_info = disp_get_session_sync_info_for_debug(session_id);
 	if (session_info)
-		dprec_start(&session_info->event_setoutput, session_output.config.buff_idx, 0);
+		dprec_start(&session_info->event_setoutput,
+			    session_output.config.buff_idx, 0);
 	else
-		DISPERR("can't get session_info for session_id:0x%08x\n", session_id);
+		DISPERR("can't get session_info for session_id:0x%08x\n",
+			session_id);
 
-	DISPMSG(" _ioctl_set_output_buffer session = 0x%x, idx %x, seq %x\n", session_id,
-		session_output.config.buff_idx, session_output.config.frm_sequence);
+	DISPMSG(" _ioctl_set_output_buffer session = 0x%x, idx %x, seq %x\n",
+		session_id, session_output.config.buff_idx,
+		session_output.config.frm_sequence);
 	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY) {
-		disp_mem_output_config primary_output;
+		struct disp_mem_output_config primary_output;
 
 		memset((void *)&primary_output, 0, sizeof(primary_output));
 		if (session_output.config.pa) {
-			dst_mva = (unsigned long)session_output.config.pa;
-		} else {
 			dst_mva =
-			    mtkfb_query_buf_mva(session_id, disp_sync_get_output_timeline_id(),
-						(unsigned int)session_output.config.buff_idx);
+			(unsigned int)(unsigned long)session_output.config.pa;
+		} else {
+			dst_mva = mtkfb_query_buf_mva(
+				session_id, disp_sync_get_output_timeline_id(),
+				(unsigned int)session_output.config.buff_idx);
 		}
 
 		_sync_convert_fb_layer_to_disp_output(session_output.session_id,
-						      &(session_output.config), &primary_output,
-						      dst_mva);
+						      &(session_output.config),
+						      &primary_output, dst_mva);
 		primary_output.dirty = 1;
 		/* must be mirror mode */
 		if (primary_display_is_decouple_mode()) {
-			/* xuecheng, UGLY WORKAROUND!!! should use a common struct for input/output cache info */
-			disp_input_config src;
+			/*
+			 * xuecheng, UGLY WORKAROUND!!! should use a common
+			 * struct for input/output cache info
+			 */
+			struct disp_input_config src;
 
-			memset((void *)&src, 0, sizeof(disp_input_config));
-			src.layer_id = disp_sync_get_output_interface_timeline_id();
+			memset((void *)&src, 0,
+			       sizeof(struct disp_input_config));
+			src.layer_id =
+				disp_sync_get_output_interface_timeline_id();
 			src.layer_enable = 1;
 			src.next_buff_idx = session_output.config.interface_idx;
 
-			disp_sync_put_cached_layer_info(session_id,
-							disp_sync_get_output_interface_timeline_id
-							(), &src, dst_mva);
+			disp_sync_put_cached_layer_info(
+				session_id,
+				disp_sync_get_output_interface_timeline_id(),
+				&src, dst_mva);
 
-			memset((void *)&src, 0, sizeof(disp_input_config));
+			memset((void *)&src, 0,
+			       sizeof(struct disp_input_config));
 			src.layer_id = disp_sync_get_output_timeline_id();
 			src.layer_enable = 1;
 			src.next_buff_idx = session_output.config.buff_idx;
 
-			disp_sync_put_cached_layer_info(session_id,
-							disp_sync_get_output_timeline_id(), &src,
-							dst_mva);
+			disp_sync_put_cached_layer_info(
+				session_id, disp_sync_get_output_timeline_id(),
+				&src, dst_mva);
 		}
 
-		DISPPR_FENCE
-		    ("S+O/%s%d/L%d(id%d)/L%d(id%d)/%dx%d(%d,%d)/%s/%d/0x%08x/mva0x%08lx/sec%d\n",
-		     disp_session_mode_spy(session_id), DISP_SESSION_DEV(session_id),
-		     disp_sync_get_output_timeline_id(), session_output.config.buff_idx,
-		     disp_sync_get_output_interface_timeline_id(),
-		     session_output.config.interface_idx, session_output.config.width,
-		     session_output.config.height, session_output.config.x, session_output.config.y,
-		     _disp_format_spy(session_output.config.fmt), session_output.config.pitch,
-		     session_output.config.pitchUV, dst_mva, session_output.config.security);
+		DISPPR_FENCE(
+			"S+O/%s%d/L%d(id%d)/L%d(id%d)/%dx%d(%d,%d)/%s/%d/0x%08x/mva0x%08x/sec%d\n",
+			disp_session_mode_spy(session_id),
+			DISP_SESSION_DEV(session_id),
+			disp_sync_get_output_timeline_id(),
+			session_output.config.buff_idx,
+			disp_sync_get_output_interface_timeline_id(),
+			session_output.config.interface_idx,
+			session_output.config.width,
+			session_output.config.height, session_output.config.x,
+			session_output.config.y,
+			_disp_format_spy(session_output.config.fmt),
+			session_output.config.pitch,
+			session_output.config.pitchUV, dst_mva,
+			session_output.config.security);
 
-		memcpy(&_ovl2mem_out_cached_config, &primary_output, sizeof(primary_output));
+		memcpy(&_ovl2mem_out_cached_config, &primary_output,
+		       sizeof(primary_output));
 		primary_display_config_output(&primary_output);
 
-		mtkfb_update_buf_info(session_output.session_id,
-				      disp_sync_get_output_interface_timeline_id(),
-				      session_output.config.buff_idx, 0,
-				      session_output.config.frm_sequence);
+		mtkfb_update_buf_info(
+			session_output.session_id,
+			disp_sync_get_output_interface_timeline_id(),
+			session_output.config.buff_idx, 0,
+			session_output.config.frm_sequence
+			#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+			, dst_mva, session_output.config.security
+			#endif
+			);
 		if (session_info) {
-			dprec_submit(&session_info->event_setoutput, session_output.config.buff_idx,
-				     dst_mva);
+			dprec_submit(&session_info->event_setoutput,
+				     session_output.config.buff_idx, dst_mva);
 		}
-		DISPMSG
-		    ("_ioctl_set_output_buffer done idx 0x%x, mva %lx, fmt %x, w %x, h %x (%x %x), p %x\n",
-		     session_output.config.buff_idx, dst_mva, session_output.config.fmt,
-		     session_output.config.width, session_output.config.height,
-		     session_output.config.x, session_output.config.y, session_output.config.pitch);
+		DISPMSG(
+			"_ioctl_set_output_buffer done idx 0x%x, mva %x, fmt %x, w %x, h %x (%x %x), p %x\n",
+			session_output.config.buff_idx, dst_mva,
+			session_output.config.fmt, session_output.config.width,
+			session_output.config.height, session_output.config.x,
+			session_output.config.y, session_output.config.pitch);
 
 	} else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_MEMORY) {
-		ovl2mem_out_config primary_output;
+		struct ovl2mem_out_config primary_output;
 
 		memset((void *)&primary_output, 0, sizeof(primary_output));
 		if (session_output.config.pa) {
-			dst_mva = (unsigned long)session_output.config.pa;
-		} else {
 			dst_mva =
-			    mtkfb_query_buf_mva(session_id, disp_sync_get_output_timeline_id(),
-						(unsigned int)session_output.config.buff_idx);
+			(unsigned int)(unsigned long)session_output.config.pa;
+		} else {
+			dst_mva = mtkfb_query_buf_mva(
+				session_id, disp_sync_get_output_timeline_id(),
+				(unsigned int)session_output.config.buff_idx);
 		}
 
-		mtkfb_update_buf_ticket(session_id, disp_sync_get_output_timeline_id(),
-					session_output.config.buff_idx, get_ovl2mem_ticket());
-		_sync_convert_fb_layer_to_disp_output(session_output.session_id,
-						      &(session_output.config),
-						      (disp_mem_output_config *) &primary_output,
-						      dst_mva);
+		mtkfb_update_buf_ticket(
+			session_id, disp_sync_get_output_timeline_id(),
+			session_output.config.buff_idx, get_ovl2mem_ticket());
+		_sync_convert_fb_layer_to_disp_output(
+			session_output.session_id, &(session_output.config),
+			(struct disp_mem_output_config *)&primary_output,
+			dst_mva);
 		primary_output.dirty = 1;
 
-		DISPPR_FENCE
-		    ("S+/%s%d/L%d/id%d/%dx%d(%d,%d)/%s/%d/%d/0x%p/mva0x%08lx/t%d/sec%d(%d)\n",
-		     disp_session_mode_spy(session_id), DISP_SESSION_DEV(session_id), 4,
-		     session_output.config.buff_idx, session_output.config.width,
-		     session_output.config.height, session_output.config.x, session_output.config.y,
-		     _disp_format_spy(session_output.config.fmt), session_output.config.pitch,
-		     session_output.config.pitchUV, session_output.config.pa, dst_mva,
-		     get_ovl2mem_ticket(), session_output.config.security, primary_output.security);
+		DISPPR_FENCE(
+			"S+/%s%d/L%d/id%d/%dx%d(%d,%d)/%s/%d/%d/0x%p/mva0x%08x/t%d/sec%d(%d)\n",
+			disp_session_mode_spy(session_id),
+			DISP_SESSION_DEV(session_id), 4,
+			session_output.config.buff_idx,
+			session_output.config.width,
+			session_output.config.height, session_output.config.x,
+			session_output.config.y,
+			_disp_format_spy(session_output.config.fmt),
+			session_output.config.pitch,
+			session_output.config.pitchUV, session_output.config.pa,
+			dst_mva, get_ovl2mem_ticket(),
+			session_output.config.security,
+			primary_output.security);
 
 		if (dst_mva) {
 			ovl2mem_output_config(&primary_output);
 			memcpy(&_ovl2mem_out_cached_config, &primary_output,
 			       sizeof(primary_output));
 		} else
-			DISPERR("error buffer idx 0x%x\n", session_output.config.buff_idx);
+			DISPERR("error buffer idx 0x%x\n",
+				session_output.config.buff_idx);
 
-		mtkfb_update_buf_info(session_output.session_id, disp_sync_get_output_timeline_id(),
-				      session_output.config.buff_idx, 0,
-				      session_output.config.frm_sequence);
+		mtkfb_update_buf_info(session_output.session_id,
+			disp_sync_get_output_timeline_id(),
+			session_output.config.buff_idx, 0,
+			session_output.config.frm_sequence
+			#ifdef CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+			, dst_mva, session_output.config.security
+			#endif
+			);
 
 		if (session_info) {
-			dprec_submit(&session_info->event_setoutput, session_output.config.buff_idx,
-				     dst_mva);
+			dprec_submit(&session_info->event_setoutput,
+				     session_output.config.buff_idx, dst_mva);
 		}
-		DISPMSG
-		    ("_ioctl_set_output_buffer done idx 0x%x, mva %lx, fmt %x, w %x, h %x, p %x\n",
-		     session_output.config.buff_idx, dst_mva, session_output.config.fmt,
-		     session_output.config.width, session_output.config.height,
-		     session_output.config.pitch);
+		DISPMSG(
+			"_ioctl_set_output_buffer done idx 0x%x, mva %x, fmt %x, w %x, h %x, p %x\n",
+			session_output.config.buff_idx, dst_mva,
+			session_output.config.fmt, session_output.config.width,
+			session_output.config.height,
+			session_output.config.pitch);
 	}
 
 	if (session_info)
-		dprec_done(&session_info->event_setoutput, session_output.config.buff_idx, 0);
+		dprec_done(&session_info->event_setoutput,
+			   session_output.config.buff_idx, 0);
 	return ret;
 }
-
 
 int _ioctl_get_info(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_info info;
+	struct disp_session_info info;
 	unsigned int session_id = 0;
 
 	if (copy_from_user(&info, argp, sizeof(info))) {
@@ -1711,7 +1997,6 @@ int _ioctl_get_info(unsigned long arg)
 		DISPERR("session type is wrong:0x%08x\n", session_id);
 		return -1;
 	}
-
 
 	if (copy_to_user(argp, &info, sizeof(info))) {
 		DISPMSG("[FB]: copy_to_user failed! line:%d\n", __LINE__);
@@ -1741,15 +2026,16 @@ int _ioctl_wait_vsync(unsigned long arg)
 {
 	int ret = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_vsync_config vsync_config;
-	disp_session_sync_info *session_info;
+	struct disp_session_vsync_config vsync_config;
+	struct disp_session_sync_info *session_info;
 
 	if (copy_from_user(&vsync_config, argp, sizeof(vsync_config))) {
 		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
 		return -EFAULT;
 	}
 
-	session_info = disp_get_session_sync_info_for_debug(vsync_config.session_id);
+	session_info =
+		disp_get_session_sync_info_for_debug(vsync_config.session_id);
 	if (session_info)
 		dprec_start(&session_info->event_waitvsync, 0, 0);
 
@@ -1771,7 +2057,7 @@ int _ioctl_wait_vsync(unsigned long arg)
 int _ioctl_get_display_caps(unsigned long arg)
 {
 	int ret = 0;
-	disp_caps_info caps_info;
+	struct disp_caps_info caps_info;
 	void __user *argp = (void __user *)arg;
 
 	if (copy_from_user(&caps_info, argp, sizeof(caps_info))) {
@@ -1795,8 +2081,22 @@ int _ioctl_get_display_caps(unsigned long arg)
 #else
 	caps_info.max_layer_num = 4;
 #endif
-	DISPMSG("%s mode:%d, pass:%d, max_layer_num:%d\n",
-		__func__, caps_info.output_mode, caps_info.output_pass, caps_info.max_layer_num);
+
+#ifdef CONFIG_MTK_LCM_PHYSICAL_ROTATION_HW
+	caps_info.is_output_rotated = 1;
+	caps_info.lcm_degree = 180;
+#endif
+
+	caps_info.disp_feature = 0;
+	caps_info.is_support_frame_cfg_ioctl = 0;
+#ifdef OVL_TIME_SHARING
+	caps_info.disp_feature |= DISP_FEATURE_TIME_SHARING;
+#endif
+
+	caps_info.disp_feature |= DISP_FEATURE_NO_PARGB;
+	DISPMSG("%s mode:%d, pass:%d, max_layer_num:%d\n", __func__,
+		caps_info.output_mode, caps_info.output_pass,
+		caps_info.max_layer_num);
 
 	if (copy_to_user(argp, &caps_info, sizeof(caps_info))) {
 		DISPMSG("[FB]: copy_to_user failed! line:%d\n", __LINE__);
@@ -1828,18 +2128,20 @@ int _ioctl_set_session_mode(unsigned long arg)
 	int i = 0;
 	int session_id = 0;
 	void __user *argp = (void __user *)arg;
-	disp_session_config config_info;
+	struct disp_session_config config_info;
 
-	if (copy_from_user(&config_info, argp, sizeof(disp_session_config))) {
+	if (copy_from_user(&config_info, argp,
+			   sizeof(struct disp_session_config))) {
 		DISPMSG("[FB]: copy_from_user failed! line:%d\n", __LINE__);
 		return -EFAULT;
 	}
 
 	if (DISP_SESSION_TYPE(config_info.session_id) == DISP_SESSION_PRIMARY)
-		primary_display_switch_mode(config_info.mode, config_info.session_id, 0);
+		primary_display_switch_mode(config_info.mode,
+					    config_info.session_id, 0);
 
-	if (config_info.mode == DISP_SESSION_DIRECT_LINK_MIRROR_MODE
-	    || config_info.mode == DISP_SESSION_DECOUPLE_MIRROR_MODE) {
+	if (config_info.mode == DISP_SESSION_DIRECT_LINK_MIRROR_MODE ||
+	    config_info.mode == DISP_SESSION_DECOUPLE_MIRROR_MODE) {
 		_ovl2mem_out_cached_config.mode = config_info.mode;
 	} else {
 		_ovl2mem_out_cached_config.mode = 0;
@@ -1849,8 +2151,9 @@ int _ioctl_set_session_mode(unsigned long arg)
 		return ret;
 
 	for (i = 0; i < MAX_SESSION_COUNT; i++) {
-		if (session_config[i] != 0
-		    && DISP_SESSION_TYPE(session_config[i]) != DISP_SESSION_PRIMARY) {
+		if (session_config[i] != 0 &&
+		    DISP_SESSION_TYPE(session_config[i]) !=
+			    DISP_SESSION_PRIMARY) {
 			session_id = session_config[i];
 			break;
 		}
@@ -1858,7 +2161,8 @@ int _ioctl_set_session_mode(unsigned long arg)
 
 	if ((config_info.mode != path_info.old_mode) ||
 	    (session_id > 0 && path_info.old_session == DISP_SESSION_PRIMARY) ||
-	    (session_id == 0 && path_info.old_session != DISP_SESSION_PRIMARY)) {
+	    (session_id == 0 &&
+	     path_info.old_session != DISP_SESSION_PRIMARY)) {
 		DISPMSG("_ioctl_set_session_mode mode, switch mode in\n");
 		if (path_info.switching == 0) {
 			int disp_type = 0;
@@ -1866,18 +2170,23 @@ int _ioctl_set_session_mode(unsigned long arg)
 			disp_type = extd_get_device_type();
 #endif
 #ifdef OVL_CASCADE_SUPPORT
-			if (session_id > 0
-			    && (config_info.mode < DISP_SESSION_DIRECT_LINK_MIRROR_MODE
-				|| disp_type == DISP_IF_HDMI_SMARTBOOK)) {
+			if (session_id > 0 &&
+			    (config_info.mode <
+				     DISP_SESSION_DIRECT_LINK_MIRROR_MODE ||
+			     disp_type == DISP_IF_HDMI_SMARTBOOK)) {
 
-				if (ovl_get_status() == DDP_OVL1_STATUS_PRIMARY
-				    && primary_display_is_sleepd() == 0) {
-					ovl_set_status(DDP_OVL1_STATUS_SUB_REQUESTING);
+				if (ovl_get_status() ==
+					    DDP_OVL1_STATUS_PRIMARY &&
+				    primary_display_is_sleepd() == 0) {
+					ovl_set_status(
+						DDP_OVL1_STATUS_SUB_REQUESTING);
 				}
 			}
 #ifdef CONFIG_MTK_HDMI_SUPPORT
-			if (session_id > 0 && path_info.old_session == DISP_SESSION_EXTERNAL
-			    && config_info.mode >= DISP_SESSION_DIRECT_LINK_MIRROR_MODE) {
+			if (session_id > 0 &&
+			    path_info.old_session == DISP_SESSION_EXTERNAL &&
+			    config_info.mode >=
+				    DISP_SESSION_DIRECT_LINK_MIRROR_MODE) {
 				hdmi_set_layer_num(1);
 			}
 #endif
@@ -1911,24 +2220,26 @@ static int wait_ovl1_available(void)
 			dpmgr_path_get_handle(&dp_handle, &cmdq_handle);
 			if (dp_handle != 0) {
 				DISPMSG("split OVL1 in suspen mode\n");
-				dpmgr_path_power_on((disp_path_handle) (dp_handle), 0);
+				dpmgr_path_power_on((void *)(dp_handle), 0);
 				g_enable_clock = 1;
-				dpmgr_path_disable_cascade((disp_path_handle) (dp_handle), 0);
+				dpmgr_path_disable_cascade((void *)(dp_handle),
+							   0);
 				ovl_set_status(DDP_OVL1_STATUS_SUB);
 			}
 		}
 	}
 
-	while ((ovl_get_status() != DDP_OVL1_STATUS_SUB)
-	       && (ovl_get_status() != DDP_OVL1_STATUS_IDLE) && (loop_cnt++ < 10)) {
+	while ((ovl_get_status() != DDP_OVL1_STATUS_SUB) &&
+	       (ovl_get_status() != DDP_OVL1_STATUS_IDLE) &&
+	       (loop_cnt++ < 10)) {
 		DISPMSG("cascade switch: 2.ovl1 status=%d\n", ovl_get_status());
 
 		/* wait untile primary release OVL1 */
-		ret =
-		    wait_event_interruptible_timeout(ovl1_wait_queue,
-						     (ovl_get_status() == DDP_OVL1_STATUS_SUB
-						      || ovl_get_status() == DDP_OVL1_STATUS_IDLE),
-						     HZ);
+		ret = wait_event_interruptible_timeout(
+			ovl1_wait_queue,
+			(ovl_get_status() == DDP_OVL1_STATUS_SUB ||
+			 ovl_get_status() == DDP_OVL1_STATUS_IDLE),
+			HZ);
 		if (ret < 0)
 			DISPERR("wait OVL1 interrupted by other ret=%d\n", ret);
 		else if (ret == 0)
@@ -1956,11 +2267,14 @@ static int create_external_display_path(int session, int mode)
 				ovl2mem_init(session);
 				ovl2mem_setlayernum(4);
 			} else {
-				DISPERR("mhl path: OVL1 can not be split out!\n");
+				DISPERR(
+					"mhl path: OVL1 can not be split out!\n"
+					);
 				ret = -1;
 			}
-		} else if (path_info.old_session == DISP_SESSION_MEMORY
-			   && path_info.old_mode < DISP_SESSION_DIRECT_LINK_MIRROR_MODE) {
+		} else if (path_info.old_session == DISP_SESSION_MEMORY &&
+			   path_info.old_mode <
+				   DISP_SESSION_DIRECT_LINK_MIRROR_MODE) {
 			ovl2mem_deinit();
 			ovl2mem_setlayernum(0);
 #ifdef OVL_CASCADE_SUPPORT
@@ -1973,7 +2287,8 @@ static int create_external_display_path(int session, int mode)
 
 				dpmgr_path_get_handle(&dp_handle, &cmdq_handle);
 				if (dp_handle != 0) {
-					dpmgr_path_power_off((disp_path_handle) (dp_handle), 0);
+					dpmgr_path_power_off(
+						(void *)(dp_handle), 0);
 					g_enable_clock = 0;
 				}
 			}
@@ -1981,8 +2296,8 @@ static int create_external_display_path(int session, int mode)
 		}
 	} else if (DISP_SESSION_TYPE(session) == DISP_SESSION_EXTERNAL) {
 #ifdef CONFIG_MTK_HDMI_SUPPORT
-		disp_path_handle dp_handle = 0;
-		cmdqRecHandle pHandle = 0;
+		void *dp_handle = 0;
+		struct cmdqRecStruct *pHandle = 0;
 		int extd_type = 0;
 
 		extd_get_path_handle(&dp_handle, &pHandle);
@@ -1992,23 +2307,31 @@ static int create_external_display_path(int session, int mode)
 		if (path_info.old_session == DISP_SESSION_EXTERNAL)
 			extd_hdmi_path_resume();
 
-		if (mode < DISP_SESSION_DIRECT_LINK_MIRROR_MODE
-		    || extd_type == DISP_IF_HDMI_SMARTBOOK) {
+		if (mode < DISP_SESSION_DIRECT_LINK_MIRROR_MODE ||
+		    extd_type == DISP_IF_HDMI_SMARTBOOK) {
 			if (wait_ovl1_available() > 0) {
-				if (path_info.old_session == DISP_SESSION_EXTERNAL
-				    && extd_type != DISP_IF_HDMI_SMARTBOOK) {
-					if (extd_hdmi_path_get_mode() != EXTD_DIRECT_LINK_MODE) {
-						dpmgr_insert_ovl1_sub(dp_handle, pHandle);
-						extd_hdmi_path_set_mode(EXTD_DIRECT_LINK_MODE);
+				if (path_info.old_session ==
+					    DISP_SESSION_EXTERNAL &&
+				    extd_type != DISP_IF_HDMI_SMARTBOOK) {
+					if (extd_hdmi_path_get_mode() !=
+					    EXTD_DIRECT_LINK_MODE) {
+						dpmgr_insert_ovl1_sub(dp_handle,
+								      pHandle);
+						extd_hdmi_path_set_mode(
+							EXTD_DIRECT_LINK_MODE);
 					}
 				} else {
-					extd_hdmi_path_init(EXTD_DIRECT_LINK_MODE, session);
+					extd_hdmi_path_init(
+						EXTD_DIRECT_LINK_MODE, session);
 				}
 
 				hdmi_set_layer_num(4);
 			} else {
-				DISPMSG("mhl path: OVL1 can not be split out!\n");
-				extd_hdmi_path_init(EXTD_RDMA_DPI_MODE, session);
+				DISPMSG(
+					"mhl path: OVL1 can not be split out!\n"
+					);
+				extd_hdmi_path_init(EXTD_RDMA_DPI_MODE,
+						    session);
 				hdmi_set_layer_num(1);
 			}
 		} else {
@@ -2018,7 +2341,8 @@ static int create_external_display_path(int session, int mode)
 				hdmi_set_layer_num(1);
 				ovl1_remove = 1;
 			} else {
-				extd_hdmi_path_init(EXTD_RDMA_DPI_MODE, session);
+				extd_hdmi_path_init(EXTD_RDMA_DPI_MODE,
+						    session);
 				hdmi_set_layer_num(1);
 			}
 		}
@@ -2031,25 +2355,26 @@ static int create_external_display_path(int session, int mode)
 static void destroy_external_display_path(int session, int mode)
 {
 	if ((path_info.old_session == DISP_SESSION_PRIMARY) ||
-	    (path_info.old_session == DISP_SESSION_MEMORY
-	     && path_info.old_mode >= DISP_SESSION_DIRECT_LINK_MIRROR_MODE)) {
+	    (path_info.old_session == DISP_SESSION_MEMORY &&
+	     path_info.old_mode >= DISP_SESSION_DIRECT_LINK_MIRROR_MODE)) {
 		return;
 	}
 
 	if (path_info.old_session == DISP_SESSION_EXTERNAL) {
 #ifdef CONFIG_MTK_HDMI_SUPPORT
 #ifdef OVL_CASCADE_SUPPORT
-		disp_path_handle dp_handle;
-		cmdqRecHandle pHandle;
+		void *dp_handle;
+		struct cmdqRecStruct *pHandle;
 		int ori_mode = extd_get_path_handle(&dp_handle, &pHandle);
 
-		if (ovl_get_status() == DDP_OVL1_STATUS_SUB && ori_mode == EXTD_RDMA_DPI_MODE) {
+		if (ovl_get_status() == DDP_OVL1_STATUS_SUB &&
+		    ori_mode == EXTD_RDMA_DPI_MODE) {
 			extd_hdmi_path_set_mode(EXTD_RDMA_DPI_MODE);
 			ovl_set_status(DDP_OVL1_STATUS_IDLE);
 		}
 #endif
 		extd_hdmi_path_deinit();
-		/* hdmi_set_layer_num(1); */
+/* hdmi_set_layer_num(1); */
 #ifdef OVL_CASCADE_SUPPORT
 		if (extd_hdmi_path_get_mode() == EXTD_DIRECT_LINK_MODE)
 			ovl_set_status(DDP_OVL1_STATUS_IDLE);
@@ -2070,7 +2395,7 @@ static void destroy_external_display_path(int session, int mode)
 
 			dpmgr_path_get_handle(&dp_handle, &cmdq_handle);
 			if (dp_handle != 0) {
-				dpmgr_path_power_off((disp_path_handle) (dp_handle), 0);
+				dpmgr_path_power_off((void *)(dp_handle), 0);
 				g_enable_clock = 0;
 			}
 		}
@@ -2078,34 +2403,38 @@ static void destroy_external_display_path(int session, int mode)
 
 		release_session_buffer(DISP_SESSION_MEMORY, 0xFF, 0);
 	}
-
-
 }
 
 static int disp_switch_mode_kthread(void *data)
 {
 	int ret = 0;
-	struct sched_param param = {.sched_priority = RTPM_PRIO_SCRN_UPDATE };
+	struct sched_param param = {.sched_priority =
+					    94 /* RTPM_PRIO_SCRN_UPDATE */};
 
 	sched_setscheduler(current, SCHED_RR, &param);
 	DISPMSG("disp_switch_mode_kthread in!\n");
 
 	for (;;) {
-		wait_event_interruptible(switch_mode_wq, atomic_read(&switch_mode_event));
+		wait_event_interruptible(switch_mode_wq,
+					 atomic_read(&switch_mode_event));
 		atomic_set(&switch_mode_event, 0);
 
-		DISPPR_FENCE("disp_switch_mode_kthread, need switch mode, mode:%d, session:0x%x\n",
-			     path_info.cur_mode, path_info.ext_sid);
+		DISPPR_FENCE(
+			"disp_switch_mode_kthread, need switch mode, mode:%d, session:0x%x\n",
+			path_info.cur_mode, path_info.ext_sid);
 
 		if (path_info.ext_sid > 0) {
-			ret = create_external_display_path(path_info.ext_sid, path_info.cur_mode);
+			ret = create_external_display_path(path_info.ext_sid,
+							   path_info.cur_mode);
 			if (ret == 0) {
-				path_info.old_session = DISP_SESSION_TYPE(path_info.ext_sid);
+				path_info.old_session =
+					DISP_SESSION_TYPE(path_info.ext_sid);
 				path_info.old_mode = path_info.cur_mode;
 			}
 		} else {
-			destroy_external_display_path(path_info.ext_sid,
-						      DISP_SESSION_DIRECT_LINK_MODE);
+			destroy_external_display_path(
+				path_info.ext_sid,
+				DISP_SESSION_DIRECT_LINK_MODE);
 			path_info.old_session = DISP_SESSION_PRIMARY;
 			path_info.old_mode = DISP_SESSION_DIRECT_LINK_MODE;
 		}
@@ -2122,30 +2451,61 @@ static int disp_switch_mode_kthread(void *data)
 const char *_session_ioctl_spy(unsigned int cmd)
 {
 	switch (cmd) {
-	case DISP_IOCTL_CREATE_SESSION:
-		{
-			return "DISP_IOCTL_CREATE_SESSION";
-		}
-	case DISP_IOCTL_DESTROY_SESSION:
-		{
-			return "DISP_IOCTL_DESTROY_SESSION";
-		}
-	case DISP_IOCTL_TRIGGER_SESSION:
-		{
-			return "DISP_IOCTL_TRIGGER_SESSION";
-		}
-	case DISP_IOCTL_SET_INPUT_BUFFER:
-		{
-			return "DISP_IOCTL_SET_INPUT_BUFFER";
-		}
-	case DISP_IOCTL_PREPARE_INPUT_BUFFER:
-		{
-			return "DISP_IOCTL_PREPARE_INPUT_BUFFER";
-		}
-	case DISP_IOCTL_WAIT_FOR_VSYNC:
-		{
-			return "DISP_IOCL_WAIT_FOR_VSYNC";
-		}
+	case DISP_IOCTL_CREATE_SESSION: {
+		return "DISP_IOCTL_CREATE_SESSION";
+	}
+	case DISP_IOCTL_DESTROY_SESSION: {
+		return "DISP_IOCTL_DESTROY_SESSION";
+	}
+	case DISP_IOCTL_TRIGGER_SESSION: {
+		return "DISP_IOCTL_TRIGGER_SESSION";
+	}
+	case DISP_IOCTL_GET_PRESENT_FENCE: {
+		return "DISP_IOCTL_GET_PRESENT_FENCE";
+	}
+	case DISP_IOCTL_SET_INPUT_BUFFER: {
+		return "DISP_IOCTL_SET_INPUT_BUFFER";
+	}
+	case DISP_IOCTL_PREPARE_INPUT_BUFFER: {
+		return "DISP_IOCTL_PREPARE_INPUT_BUFFER";
+	}
+	case DISP_IOCTL_WAIT_FOR_VSYNC: {
+		return "DISP_IOCTL_WAIT_FOR_VSYNC";
+	}
+	case DISP_IOCTL_GET_IS_DRIVER_SUSPEND:
+		return "DISP_IOCTL_GET_IS_DRIVER_SUSPEND";
+	case DISP_IOCTL_SET_VSYNC_FPS:
+		return "DISP_IOCTL_SET_VSYNC_FPS";
+	case DISP_IOCTL_SET_SESSION_MODE:
+		return "DISP_IOCTL_SET_SESSION_MODE";
+	case DISP_IOCTL_PREPARE_OUTPUT_BUFFER:
+		return "DISP_IOCTL_PREPARE_OUTPUT_BUFFER";
+	case DISP_IOCTL_SET_OUTPUT_BUFFER:
+		return "DISP_IOCTL_SET_OUTPUT_BUFFER";
+	case DISP_IOCTL_GET_LCMINDEX:
+		return "DISP_IOCTL_GET_LCMINDEX";
+	case DISP_IOCTL_PQ_SET_BYPASS_COLOR:
+		return "DISP_IOCTL_PQ_SET_BYPASS_COLOR";
+	case DISP_IOCTL_PQ_SET_WINDOW:
+		return "DISP_IOCTL_PQ_SET_WINDOW";
+	case DISP_IOCTL_WRITE_REG:
+		return "DISP_IOCTL_WRITE_REG";
+	case DISP_IOCTL_READ_REG:
+		return "DISP_IOCTL_READ_REG";
+	case DISP_IOCTL_MUTEX_CONTROL:
+		return "DISP_IOCTL_MUTEX_CONTROL";
+	case DISP_IOCTL_PQ_GET_TDSHP_FLAG:
+		return "DISP_IOCTL_PQ_GET_TDSHP_FLAG";
+	case DISP_IOCTL_PQ_SET_TDSHP_FLAG:
+		return "DISP_IOCTL_PQ_SET_TDSHP_FLAG";
+	case DISP_IOCTL_PQ_GET_DC_PARAM:
+		return "DISP_IOCTL_PQ_GET_DC_PARAM";
+	case DISP_IOCTL_PQ_SET_DC_PARAM:
+		return "DISP_IOCTL_PQ_SET_DC_PARAM";
+	case DISP_IOCTL_WRITE_SW_REG:
+		return "DISP_IOCTL_WRITE_SW_REG";
+	case DISP_IOCTL_READ_SW_REG:
+		return "DISP_IOCTL_READ_SW_REG";
 	case DISP_IOCTL_GET_SESSION_INFO:
 		return "DISP_IOCTL_GET_SESSION_INFO";
 	case DISP_IOCTL_AAL_EVENTCTL:
@@ -2168,6 +2528,8 @@ const char *_session_ioctl_spy(unsigned int cmd)
 		return "DISP_IOCTL_GET_PQINDEX";
 	case DISP_IOCTL_SET_PQINDEX:
 		return "DISP_IOCTL_SET_PQINDEX";
+	case DISP_IOCTL_SET_COLOR_REG:
+		return "DISP_IOCTL_SET_COLOR_REG";
 	case DISP_IOCTL_SET_TDSHPINDEX:
 		return "DISP_IOCTL_SET_TDSHPINDEX";
 	case DISP_IOCTL_GET_TDSHPINDEX:
@@ -2185,10 +2547,9 @@ const char *_session_ioctl_spy(unsigned int cmd)
 	case DISP_IOCTL_GET_DISPLAY_CAPS:
 		return "DISP_IOCTL_GET_DISPLAY_CAPS";
 
-	default:
-		{
-			return "unknown";
-		}
+	default: {
+		return "unknown";
+	}
 	}
 }
 
@@ -2196,70 +2557,62 @@ long mtk_disp_mgr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int ret = -1;
 
-	/* DISPMSG("mtk_disp_mgr_ioctl, cmd=%s, arg=0x%08x\n", _session_ioctl_spy(cmd), arg); */
+	/*
+	 * DISPMSG("mtk_disp_mgr_ioctl, cmd=%s, arg=0x%08x\n",
+	 * _session_ioctl_spy(cmd), arg);
+	 */
 
 	switch (cmd) {
-	case DISP_IOCTL_CREATE_SESSION:
-		{
-			return _ioctl_create_session(arg);
-		}
-	case DISP_IOCTL_DESTROY_SESSION:
-		{
-			return _ioctl_destroy_session(arg);
-		}
-	case DISP_IOCTL_TRIGGER_SESSION:
-		{
-			return _ioctl_trigger_session(arg);
-		}
-	case DISP_IOCTL_GET_PRESENT_FENCE:
-		{
-			return _ioctl_prepare_buffer(arg, PREPARE_PRESENT_FENCE);
-		}
-	case DISP_IOCTL_PREPARE_INPUT_BUFFER:
-		{
-			return _ioctl_prepare_buffer(arg, PREPARE_INPUT_FENCE);
-		}
-	case DISP_IOCTL_SET_INPUT_BUFFER:
-		{
-			return _ioctl_set_input_buffer(arg);
-		}
-	case DISP_IOCTL_WAIT_FOR_VSYNC:
-		{
-			return _ioctl_wait_vsync(arg);
-		}
-	case DISP_IOCTL_GET_SESSION_INFO:
-		{
-			return _ioctl_get_info(arg);
-		}
-	case DISP_IOCTL_GET_IS_DRIVER_SUSPEND:
-		{
-			return _ioctl_get_is_driver_suspend(arg);
-		}
-	case DISP_IOCTL_GET_DISPLAY_CAPS:
-		{
-			return _ioctl_get_display_caps(arg);
-		}
+	case DISP_IOCTL_CREATE_SESSION: {
+		return _ioctl_create_session(arg);
+	}
+	case DISP_IOCTL_DESTROY_SESSION: {
+		return _ioctl_destroy_session(arg);
+	}
+	case DISP_IOCTL_TRIGGER_SESSION: {
+		return _ioctl_trigger_session(arg);
+	}
+	case DISP_IOCTL_GET_PRESENT_FENCE: {
+		/* return _ioctl_prepare_buffer(arg,
+		 *			PREPARE_PRESENT_FENCE);
+		 */
+		return _ioctl_prepare_present_fence(arg);
+	}
+	case DISP_IOCTL_PREPARE_INPUT_BUFFER: {
+		return _ioctl_prepare_buffer(arg, PREPARE_INPUT_FENCE);
+	}
+	case DISP_IOCTL_SET_INPUT_BUFFER: {
+		return _ioctl_set_input_buffer(arg);
+	}
+	case DISP_IOCTL_WAIT_FOR_VSYNC: {
+		return _ioctl_wait_vsync(arg);
+	}
+	case DISP_IOCTL_GET_SESSION_INFO: {
+		return _ioctl_get_info(arg);
+	}
+	case DISP_IOCTL_GET_IS_DRIVER_SUSPEND: {
+		return _ioctl_get_is_driver_suspend(arg);
+	}
+	case DISP_IOCTL_GET_DISPLAY_CAPS: {
+		return _ioctl_get_display_caps(arg);
+	}
 
-	case DISP_IOCTL_SET_VSYNC_FPS:
-		{
-			return _ioctl_set_vsync(arg);
-		}
-	case DISP_IOCTL_SET_SESSION_MODE:
-		{
-			return _ioctl_set_session_mode(arg);
-		}
-	case DISP_IOCTL_PREPARE_OUTPUT_BUFFER:
-		{
-			return _ioctl_prepare_buffer(arg, PREPARE_OUTPUT_FENCE);
-		}
-	case DISP_IOCTL_SET_OUTPUT_BUFFER:
-		{
-			return _ioctl_set_output_buffer(arg);
-		}
-	case DISP_IOCTL_GET_LCMINDEX:
-		{
-			return primary_display_get_lcm_index();
-		}
+	case DISP_IOCTL_SET_VSYNC_FPS: {
+		return _ioctl_set_vsync(arg);
+	}
+	case DISP_IOCTL_SET_SESSION_MODE: {
+		return _ioctl_set_session_mode(arg);
+	}
+	case DISP_IOCTL_PREPARE_OUTPUT_BUFFER: {
+		return _ioctl_prepare_buffer(arg, PREPARE_OUTPUT_FENCE);
+	}
+	case DISP_IOCTL_SET_OUTPUT_BUFFER: {
+		return _ioctl_set_output_buffer(arg);
+	}
+	case DISP_IOCTL_GET_LCMINDEX: {
+		return primary_display_get_lcm_index();
+	}
+	case DISP_IOCTL_SET_COLOR_REG:
 	case DISP_IOCTL_AAL_EVENTCTL:
 	case DISP_IOCTL_AAL_GET_HIST:
 	case DISP_IOCTL_AAL_INIT_REG:
@@ -2287,94 +2640,85 @@ long mtk_disp_mgr_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case DISP_IOCTL_PQ_GET_DC_PARAM:
 	case DISP_IOCTL_PQ_SET_DC_PARAM:
 	case DISP_IOCTL_WRITE_SW_REG:
-	case DISP_IOCTL_READ_SW_REG:
-		{
-			ret = primary_display_user_cmd(cmd, arg);
-			break;
-		}
-	default:
-		{
-			DISPERR("[session]ioctl not supported, 0x%08x\n", cmd);
-		}
+	case DISP_IOCTL_READ_SW_REG: {
+		ret = primary_display_user_cmd(cmd, arg);
+		break;
+	}
+	default: {
+		DISPERR("[session]ioctl not supported, 0x%08x\n", cmd);
+	}
 	}
 
 	return ret;
 }
 
 #ifdef CONFIG_COMPAT
-static long mtk_disp_mgr_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long mtk_disp_mgr_compat_ioctl(struct file *file, unsigned int cmd,
+				      unsigned long arg)
 {
 	long ret = -ENOIOCTLCMD;
 
-	/*DISPMSG("mtk_disp_mgr_compat_ioctl, cmd=%s, arg=0x%08lx\n", _session_compat_ioctl_spy(cmd), arg);*/
+	/*
+	 * DISPMSG("mtk_disp_mgr_compat_ioctl, cmd=%s, arg=0x%08lx\n",
+	 * _session_compat_ioctl_spy(cmd), arg);
+	 */
 	switch (cmd) {
-	case COMPAT_DISP_IOCTL_CREATE_SESSION:
-		{
-			return _compat_ioctl_create_session(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_DESTROY_SESSION:
-		{
-			return _compat_ioctl_destroy_session(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_TRIGGER_SESSION:
-		{
-			return _compat_ioctl_trigger_session(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_GET_PRESENT_FENCE:
-		{
-			return _compat_ioctl_prepare_present_fence(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_PREPARE_INPUT_BUFFER:
-		{
-			return _compat_ioctl_prepare_buffer(file, arg, PREPARE_INPUT_FENCE);
-		}
-	case COMPAT_DISP_IOCTL_SET_INPUT_BUFFER:
-		{
-			return _compat_ioctl_set_input_buffer(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_WAIT_FOR_VSYNC:
-		{
-			return _compat_ioctl_wait_vsync(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_GET_SESSION_INFO:
-		{
-			return _compat_ioctl_get_info(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_GET_IS_DRIVER_SUSPEND:
-		{
-			return _compat_ioctl_get_is_driver_suspend(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_GET_DISPLAY_CAPS:
-		{
-			return _compat_ioctl_get_display_caps(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_SET_VSYNC_FPS:
-		{
-			return _compat_ioctl_set_vsync(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_SET_SESSION_MODE:
-		{
-		    return _compat_ioctl_set_session_mode(file, arg);
-		}
-	case COMPAT_DISP_IOCTL_PREPARE_OUTPUT_BUFFER:
-		{
-		    return _compat_ioctl_prepare_buffer(file, arg, PREPARE_OUTPUT_FENCE);
-		}
-	case COMPAT_DISP_IOCTL_SET_OUTPUT_BUFFER:
-		{
-		    return _compat_ioctl_set_output_buffer(file, arg);
-		}
+	case COMPAT_DISP_IOCTL_CREATE_SESSION: {
+		return _compat_ioctl_create_session(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_DESTROY_SESSION: {
+		return _compat_ioctl_destroy_session(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_TRIGGER_SESSION: {
+		return _compat_ioctl_trigger_session(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_GET_PRESENT_FENCE: {
+		return _compat_ioctl_prepare_present_fence(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_PREPARE_INPUT_BUFFER: {
+		return _compat_ioctl_prepare_buffer(file, arg,
+						    PREPARE_INPUT_FENCE);
+	}
+	case COMPAT_DISP_IOCTL_SET_INPUT_BUFFER: {
+		return _compat_ioctl_set_input_buffer(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_WAIT_FOR_VSYNC: {
+		return _compat_ioctl_wait_vsync(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_GET_SESSION_INFO: {
+		return _compat_ioctl_get_info(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_GET_IS_DRIVER_SUSPEND: {
+		return _compat_ioctl_get_is_driver_suspend(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_GET_DISPLAY_CAPS: {
+		return _compat_ioctl_get_display_caps(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_SET_VSYNC_FPS: {
+		return _compat_ioctl_set_vsync(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_SET_SESSION_MODE: {
+		return _compat_ioctl_set_session_mode(file, arg);
+	}
+	case COMPAT_DISP_IOCTL_PREPARE_OUTPUT_BUFFER: {
+		return _compat_ioctl_prepare_buffer(file, arg,
+						    PREPARE_OUTPUT_FENCE);
+	}
+	case COMPAT_DISP_IOCTL_SET_OUTPUT_BUFFER: {
+		return _compat_ioctl_set_output_buffer(file, arg);
+	}
+	case DISP_IOCTL_GET_LCMINDEX:
 	case DISP_IOCTL_AAL_GET_HIST:
 	case DISP_IOCTL_AAL_EVENTCTL:
 	case DISP_IOCTL_AAL_INIT_REG:
-	case DISP_IOCTL_AAL_SET_PARAM:
-		{
-			void __user *data32;
+	case DISP_IOCTL_AAL_SET_PARAM: {
+		void __user *data32;
 
-			data32 = compat_ptr(arg);
-			ret = file->f_op->unlocked_ioctl(file, cmd, (unsigned long)data32);
-			return ret;
-		}
+		data32 = compat_ptr(arg);
+		ret = file->f_op->unlocked_ioctl(file, cmd,
+						 (unsigned long)data32);
+		return ret;
+	}
 	case DISP_IOCTL_SET_GAMMALUT:
 	case DISP_IOCTL_SET_CCORR:
 	case DISP_IOCTL_SET_PQPARAM:
@@ -2398,23 +2742,20 @@ static long mtk_disp_mgr_compat_ioctl(struct file *file, unsigned int cmd, unsig
 	case DISP_IOCTL_PQ_GET_DC_PARAM:
 	case DISP_IOCTL_PQ_SET_DC_PARAM:
 	case DISP_IOCTL_WRITE_SW_REG:
-	case DISP_IOCTL_READ_SW_REG:
-		{
-			ret = primary_display_user_cmd(cmd, arg);
-			break;
-		}
+	case DISP_IOCTL_READ_SW_REG: {
+		ret = primary_display_user_cmd(cmd, arg);
+		break;
+	}
 
-	default:
-		{
-				DISPERR("[%s]ioctl not supported, 0x%08x\n", __func__, cmd);
-				return -ENOIOCTLCMD;
-		}
+	default: {
+		DISPERR("[%s]ioctl not supported, 0x%08x\n", __func__, cmd);
+		return -ENOIOCTLCMD;
+	}
 	}
 
 	return ret;
 }
 #endif
-
 
 static const struct file_operations mtk_disp_mgr_fops = {
 	.owner = THIS_MODULE,
@@ -2451,9 +2792,9 @@ static int mtk_disp_mgr_probe(struct platform_device *pdev)
 	}
 
 	mtk_disp_mgr_class = class_create(THIS_MODULE, DISP_SESSION_DEVICE);
-	class_dev =
-	    (struct class_device *)device_create(mtk_disp_mgr_class, NULL, mtk_disp_mgr_devno, NULL,
-						 DISP_SESSION_DEVICE);
+	class_dev = (struct class_device *)device_create(
+		mtk_disp_mgr_class, NULL, mtk_disp_mgr_devno, NULL,
+		DISP_SESSION_DEVICE);
 	disp_sync_init();
 
 	path_info.old_mode = DISP_SESSION_DIRECT_LINK_MODE;
@@ -2462,8 +2803,8 @@ static int mtk_disp_mgr_probe(struct platform_device *pdev)
 	path_info.ext_sid = 0;
 	init_waitqueue_head(&ovl1_wait_queue);
 	init_waitqueue_head(&switch_mode_wq);
-	disp_switch_mode_task =
-	    kthread_create(disp_switch_mode_kthread, NULL, "disp_switch_mode_kthread");
+	disp_switch_mode_task = kthread_create(disp_switch_mode_kthread, NULL,
+					       "disp_switch_mode_kthread");
 	wake_up_process(disp_switch_mode_task);
 
 	return 0;
@@ -2476,7 +2817,6 @@ static int mtk_disp_mgr_remove(struct platform_device *pdev)
 
 static void mtk_disp_mgr_shutdown(struct platform_device *pdev)
 {
-
 }
 
 static int mtk_disp_mgr_suspend(struct platform_device *pdev, pm_message_t mesg)
@@ -2489,7 +2829,6 @@ static int mtk_disp_mgr_resume(struct platform_device *pdev)
 	return 0;
 }
 
-
 static struct platform_driver mtk_disp_mgr_driver = {
 	.probe = mtk_disp_mgr_probe,
 	.remove = mtk_disp_mgr_remove,
@@ -2497,107 +2836,33 @@ static struct platform_driver mtk_disp_mgr_driver = {
 	.suspend = mtk_disp_mgr_suspend,
 	.resume = mtk_disp_mgr_resume,
 	.driver = {
-		   .name = DISP_SESSION_DEVICE,
-		   },
+
+
+			.name = DISP_SESSION_DEVICE,
+		},
 };
 
 static void mtk_disp_mgr_device_release(struct device *dev)
 {
-
 }
 
-static u64 mtk_disp_mgr_dmamask = ~(u32) 0;
+static u64 mtk_disp_mgr_dmamask = ~(u32)0;
 
 static struct platform_device mtk_disp_mgr_device = {
 	.name = DISP_SESSION_DEVICE,
 	.id = 0,
 	.dev = {
-		.release = mtk_disp_mgr_device_release,
-		.dma_mask = &mtk_disp_mgr_dmamask,
-		.coherent_dma_mask = 0xffffffff,
+
+
+			.release = mtk_disp_mgr_device_release,
+			.dma_mask = &mtk_disp_mgr_dmamask,
+			.coherent_dma_mask = 0xffffffff,
 		},
 	.num_resources = 0,
 };
 
-#ifdef CONFIG_MTK_VIDEOX_CYNGN_LIVEDISPLAY
-#define MAX_LUT_SCALE 2000
-#define PROGRESSION_SCALE 1000
-static u32 mtk_disp_ld_r = MAX_LUT_SCALE;
-static u32 mtk_disp_ld_g = MAX_LUT_SCALE;
-static u32 mtk_disp_ld_b = MAX_LUT_SCALE;
-
-static ssize_t mtk_disp_ld_get_rgb(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	return scnprintf(buf, PAGE_SIZE, "%d %d %d\n", mtk_disp_ld_r, mtk_disp_ld_g, mtk_disp_ld_b);
-}
-
-/**
- * The default gamma array is an arithmetic progression with alpha=2 and n0=0 and
- * n = 512.
- *
- * We scale it linearly with the color passed to this RGB interface. The display
- * subsystem has a color precision of 10 bits which means that values from [0-1024[
- * are acceptable.
- *
- * In order to avoid floating point computations in kernel space we scale the alpha
- * value by 1000 and then scale back the result using integer division.
- */
-static ssize_t mtk_disp_ld_set_rgb(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	int r = MAX_LUT_SCALE, g = MAX_LUT_SCALE, b = MAX_LUT_SCALE;
-
-	if (count > 19)
-		return -EINVAL;
-
-	sscanf(buf, "%d %d %d", &r, &g, &b);
-
-	if (r < 0 || r > MAX_LUT_SCALE) return -EINVAL;
-	if (g < 0 || g > MAX_LUT_SCALE) return -EINVAL;
-	if (b < 0 || b > MAX_LUT_SCALE) return -EINVAL;
-
-	cancel_work_sync(&mtk_rgb_work_queue.work);
-	mtk_disp_ld_r = r;
-	mtk_disp_ld_g = g;
-	mtk_disp_ld_b = b;
-	schedule_work(&mtk_rgb_work_queue.work);
-
-	return count;
-}
-
-static DEVICE_ATTR(rgb, S_IRUGO | S_IWUSR | S_IWGRP, mtk_disp_ld_get_rgb, mtk_disp_ld_set_rgb);
-
-static void mtk_disp_rgb_work(struct work_struct *work) {
-        struct mtk_rgb_work_queue *rgb_wq = container_of(work, struct mtk_rgb_work_queue, work);
-	int r = mtk_disp_ld_r, g = mtk_disp_ld_g, b = mtk_disp_ld_b;
-	int i, gammutR, gammutG, gammutB, ret;
-	DISP_GAMMA_LUT_T *gamma;
-
-	mutex_lock(&rgb_wq->lock);
-
-	gamma = kzalloc(sizeof(DISP_GAMMA_LUT_T), GFP_KERNEL);
-	gamma->hw_id = 0;
-	for (i = 0; i < 512; i++) {
-		gammutR = i * r / PROGRESSION_SCALE;
-		gammutG = i * g / PROGRESSION_SCALE;
-		gammutB = i * b / PROGRESSION_SCALE;
-
-		gamma->lut[i] = GAMMA_ENTRY(gammutR, gammutG, gammutB);
-	}
-
-	ret = primary_display_user_cmd(DISP_IOCTL_SET_GAMMALUT, (unsigned long)gamma);
-
-	kfree(gamma);
-	mutex_unlock(&rgb_wq->lock);
-}
-#endif
-
 static int __init mtk_disp_mgr_init(void)
 {
-
-	int rc = 0;
-
 	if (platform_device_register(&mtk_disp_mgr_device))
 		return -ENODEV;
 
@@ -2606,21 +2871,11 @@ static int __init mtk_disp_mgr_init(void)
 		return -ENODEV;
 	}
 
-#ifdef CONFIG_MTK_VIDEOX_CYNGN_LIVEDISPLAY
-	rc = sysfs_create_file(&(mtk_disp_mgr_device.dev.kobj), &dev_attr_rgb.attr);
-	mutex_init(&mtk_rgb_work_queue.lock);
-	INIT_WORK(&mtk_rgb_work_queue.work, mtk_disp_rgb_work);
-#endif
-
-	return rc;
+	return 0;
 }
 
 static void __exit mtk_disp_mgr_exit(void)
 {
-#ifdef CONFIG_MTK_VIDEOX_CYNGN_LIVEDISPLAY
-	mutex_destroy(&mtk_rgb_work_queue.lock);
-	sysfs_remove_file(&(mtk_disp_mgr_device.dev.kobj), &dev_attr_rgb.attr);
-#endif
 	cdev_del(mtk_disp_mgr_cdev);
 	unregister_chrdev_region(mtk_disp_mgr_devno, 1);
 

@@ -18,15 +18,14 @@ obj-$(CONFIG_MTK_FB) += mtkfb_console.o        \
 
 #debug
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/include/     \
-             -I$(srctree)/drivers/misc/mediatek/video/common/ \
-             -I$(srctree)/drivers/misc/mediatek/video/mt8163/videox/
+             -I$(srctree)/drivers/misc/mediatek/video/common/
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/video/$(MTK_PLATFORM)/dispsys/   \
              -I$(srctree)/drivers/misc/mediatek/m4u/       \
              -I$(srctree)/drivers/misc/mediatek/m4u/$(MTK_PLATFORM)       \
              -I$(srctree)/drivers/misc/mediatek/sync/      \
-             -I$(srctree)/drivers/misc/mediatek/cmdq/hv1/$(MTK_PLATFORM)/ \
-             -I$(srctree)/drivers/misc/mediatek/cmdq/hv1/ \
+             -I$(srctree)/drivers/misc/mediatek/cmdq/v2/$(MTK_PLATFORM)/ \
+             -I$(srctree)/drivers/misc/mediatek/cmdq/v2/ \
              -I$(srctree)/drivers/misc/mediatek/ext_disp/$(MTK_PLATFORM) \
              -I$(srctree)/drivers/misc/mediatek/lcm/inc/      \
              -I$(srctree)/drivers/misc/mediatek/mach/$(MTK_PLATFORM)/include/mach/ \
@@ -55,5 +54,6 @@ endif
 
 ifeq ($(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT),y)
 ccflags-y += -I$(srctree)/include/trustzone
+ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/trustzone
 ccflags-y += -I$(srctree)/include
 endif

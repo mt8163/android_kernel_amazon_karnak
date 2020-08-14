@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -56,7 +58,7 @@ static int mtk_voice_md2_platform_probe(struct snd_soc_platform *platform);
 #define USE_PERIODS_MAX     2048
 
 static bool voice_md2_Status;
-static AudioDigtalI2S mAudioDigitalI2S;
+static struct AudioDigtalI2S mAudioDigitalI2S;
 
 bool get_voice_md2_status(void)
 {
@@ -64,7 +66,7 @@ bool get_voice_md2_status(void)
 }
 EXPORT_SYMBOL(get_voice_md2_status);
 
-static AudioDigitalPCM Voice2IntPcm = {
+static struct AudioDigitalPCM Voice2IntPcm = {
 
 	.mBclkOutInv = false,
 	.mTxLchRepeatSel = Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT,
@@ -132,7 +134,8 @@ static int mtk_voice_md2_pcm_open(struct snd_pcm_substream *substream)
 
 	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
 					 &constraints_sample_rates);
-	ret = snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
+	ret = snd_pcm_hw_constraint_integer(runtime,
+		 SNDRV_PCM_HW_PARAM_PERIODS);
 
 	if (ret < 0)
 		pr_err("snd_pcm_hw_constraint_integer failed\n");
@@ -188,13 +191,17 @@ static int mtk_voice_md2_close(struct snd_pcm_substream *substream)
 
 	/* todo : enable sidetone */
 	/* here start digital part */
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I03,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I03,
 		      Soc_Aud_InterConnectionOutput_O07);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I04,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I04,
 		      Soc_Aud_InterConnectionOutput_O08);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I09,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I09,
 		      Soc_Aud_InterConnectionOutput_O03);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I09,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I09,
 		      Soc_Aud_InterConnectionOutput_O04);
 
 	SetI2SAdcEnable(false);
@@ -235,16 +242,17 @@ static int mtk_voice_md2_pcm_copy(struct snd_pcm_substream *substream,
 }
 
 static int mtk_voice_md2_pcm_silence(struct snd_pcm_substream *substream,
-				     int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
+	     int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
 {
 	pr_debug("mtk_voice_md2_pcm_silence\n");
 	return 0;		/* do nothing */
 }
 
 static void *dummy_page[2];
-static struct page *mtk_pcm_page(struct snd_pcm_substream *substream, unsigned long offset)
+static struct page *mtk_pcm_page(struct snd_pcm_substream *substream,
+	 unsigned long offset)
 {
-	return virt_to_page(dummy_page[substream->stream]);	/* the same page */
+	return virt_to_page(dummy_page[substream->stream]);
 }
 
 static int mtk_voice1_ext_prepare(struct snd_pcm_substream *substream)
@@ -252,24 +260,30 @@ static int mtk_voice1_ext_prepare(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtimeStream = substream->runtime;
 
 	pr_debug("mtk_alsa_prepare rate = %d channels = %d period_size = %lu\n",
-	       runtimeStream->rate, runtimeStream->channels, runtimeStream->period_size);
+	       runtimeStream->rate, runtimeStream->channels,
+		 runtimeStream->period_size);
 
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		pr_err("%s with SNDRV_PCM_STREAM_CAPTURE\n", __func__);
 		return 0;
 	}
 	/* here start digital part */
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I03,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I03,
 		      Soc_Aud_InterConnectionOutput_O07);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I04,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I04,
 		      Soc_Aud_InterConnectionOutput_O08);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I09,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I09,
 		      Soc_Aud_InterConnectionOutput_O03);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I09,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I09,
 		      Soc_Aud_InterConnectionOutput_O04);
 
 	/* start I2S DAC out */
-	SetI2SDacOut(substream->runtime->rate, false, Soc_Aud_I2S_WLEN_WLEN_16BITS);
+	SetI2SDacOut(substream->runtime->rate, false,
+	 Soc_Aud_I2S_WLEN_WLEN_16BITS);
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
 
 	ConfigAdcI2S(substream);
@@ -280,9 +294,9 @@ static int mtk_voice1_ext_prepare(struct snd_pcm_substream *substream)
 	SetI2SAdcEnable(true);
 	EnableAfe(true);
 	Voice2IntPcm.mPcmModeWidebandSel =
-	    (runtimeStream->rate ==
-	     8000) ? Soc_Aud_PCM_MODE_PCM_MODE_8K : Soc_Aud_PCM_MODE_PCM_MODE_16K;
-	/* Voice2IntPcm.mAsyncFifoSel = Soc_Aud_BYPASS_SRC_SLAVE_USE_ASYNC_FIFO; */
+		(runtimeStream->rate ==
+		8000) ? Soc_Aud_PCM_MODE_PCM_MODE_8K :
+		 Soc_Aud_PCM_MODE_PCM_MODE_16K;
 	SetModemPcmConfig(MODEM_EXTERNAL, Voice2IntPcm);
 	SetModemPcmEnable(MODEM_EXTERNAL, true);
 
@@ -340,7 +354,8 @@ static int mtk_voice_md2_probe(struct platform_device *pdev)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_VOICE_MD2);
 
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
-	return snd_soc_register_platform(&pdev->dev, &mtk_soc_voice_md2_platform);
+	return snd_soc_register_platform(&pdev->dev,
+	 &mtk_soc_voice_md2_platform);
 }
 
 static int mtk_soc_voice_md2_new(struct snd_soc_pcm_runtime *rtd)
@@ -375,7 +390,7 @@ static int mtk_voice_md2_pm_ops_suspend(struct device *device)
 	AudDrv_ANA_Clk_On();
 	AudDrv_Clk_On();	/* should enable clk for access reg */
 	b_modem1_speech_on = (bool) (Afe_Get_Reg(PCM2_INTF_CON) & 0x1);
-	b_modem2_speech_on = (bool) (Afe_Get_Reg(PCM_INTF_CON1) & 0x1);
+	b_modem2_speech_on = (bool) (Afe_Get_Reg(PCM_INTF_CON) & 0x1);
 	AudDrv_Clk_Off();	/* should enable clk for access reg */
 	AudDrv_ANA_Clk_Off();
 
@@ -396,7 +411,7 @@ static int mtk_voice_md2_pm_ops_resume(struct device *device)
 	AudDrv_ANA_Clk_On();
 	AudDrv_Clk_On();	/* should enable clk for access reg */
 	b_modem1_speech_on = (bool) (Afe_Get_Reg(PCM2_INTF_CON) & 0x1);
-	b_modem2_speech_on = (bool) (Afe_Get_Reg(PCM_INTF_CON1) & 0x1);
+	b_modem2_speech_on = (bool) (Afe_Get_Reg(PCM_INTF_CON) & 0x1);
 	AudDrv_Clk_Off();
 	AudDrv_ANA_Clk_Off();
 

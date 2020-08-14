@@ -1,16 +1,30 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 
 #define DFT_TAG "[CONN_MD_DMP]"
 
 #include "conn_md_log.h"
 #include "conn_md_dump.h"
 
-P_CONN_MD_DMP_MSG_LOG conn_md_dmp_init(void)
+struct conn_md_dmp_msg_log *conn_md_dmp_init(void)
 {
-	uint32 msg_log_size = sizeof(CONN_MD_DMP_MSG_LOG);
-	P_CONN_MD_DMP_MSG_LOG p_msg_log = vmalloc(msg_log_size);
+	uint32 msg_log_size = sizeof(struct conn_md_dmp_msg_log);
+	struct conn_md_dmp_msg_log *p_msg_log = vmalloc(msg_log_size);
 
-	if (NULL != p_msg_log) {
-		CONN_MD_INFO_FUNC("alloc memory for msg log system done, size:0x%08x\n", msg_log_size);
+	if (p_msg_log != NULL) {
+		CONN_MD_INFO_FUNC("alloc msg_log memory done, size:0x%08x\n",
+				msg_log_size);
 		memset(p_msg_log, 0, msg_log_size);
 
 		mutex_init(&p_msg_log->lock);
@@ -21,12 +35,12 @@ P_CONN_MD_DMP_MSG_LOG conn_md_dmp_init(void)
 	return p_msg_log;
 }
 
-int conn_md_dmp_deinit(P_CONN_MD_DMP_MSG_LOG p_log)
+int conn_md_dmp_deinit(struct conn_md_dmp_msg_log *p_log)
 {
 	int i_ret = -1;
 
-	if (NULL != p_log) {
-		CONN_MD_INFO_FUNC("valid log buffer pointer:0x%08x, free it.\n", p_log);
+	if (p_log != NULL) {
+		CONN_MD_INFO_FUNC("valid buffer pointer:0x%08x.\n", p_log);
 		mutex_destroy(&p_log->lock);
 		vfree(p_log);
 		i_ret = 0;
@@ -34,13 +48,14 @@ int conn_md_dmp_deinit(P_CONN_MD_DMP_MSG_LOG p_log)
 		CONN_MD_WARN_FUNC("invalid log buffer pointer\n");
 		i_ret = CONN_MD_ERR_INVALID_PARAM;
 	}
-	return 0;
+	return i_ret;
 }
 
-int __conn_md_dmp_in(ipc_ilm_t *p_ilm, CONN_MD_MSG_TYPE msg_type, P_CONN_MD_DMP_MSG_LOG p_msg_log)
+int __conn_md_dmp_in(struct ipc_ilm *p_ilm, enum conn_md_msg_type msg_type,
+		     struct conn_md_dmp_msg_log *p_msg_log)
 {
 	struct timeval now;
-	P_CONN_MD_DMP_MSG_STR p_msg = NULL;
+	struct conn_md_dmp_msg_str *p_msg = NULL;
 
 	/*get current time */
 	do_gettimeofday(&now);
@@ -55,7 +70,7 @@ int __conn_md_dmp_in(ipc_ilm_t *p_ilm, CONN_MD_MSG_TYPE msg_type, P_CONN_MD_DMP_
 	p_msg->type = msg_type;
 
 	/*Log p_ilm */
-	memcpy(&p_msg->ilm, p_ilm, sizeof(ipc_ilm_t));
+	memcpy(&p_msg->ilm, p_ilm, sizeof(struct ipc_ilm));
 
 	/*Log msg length */
 	p_msg->msg_len = p_ilm->local_para_ptr->msg_len;
@@ -66,7 +81,7 @@ int __conn_md_dmp_in(ipc_ilm_t *p_ilm, CONN_MD_MSG_TYPE msg_type, P_CONN_MD_DMP_
 
 	/*update in size and index */
 
-	if (NUMBER_OF_MSG_LOGGED <= p_msg_log->size)
+	if (p_msg_log->size >= NUMBER_OF_MSG_LOGGED)
 		p_msg_log->size = NUMBER_OF_MSG_LOGGED;
 	else
 		p_msg_log->size++;
@@ -79,13 +94,15 @@ int __conn_md_dmp_in(ipc_ilm_t *p_ilm, CONN_MD_MSG_TYPE msg_type, P_CONN_MD_DMP_
 	return 0;
 }
 
-int conn_md_dmp_in(ipc_ilm_t *p_ilm, CONN_MD_MSG_TYPE msg_type, P_CONN_MD_DMP_MSG_LOG p_msg_log)
+int conn_md_dmp_in(struct ipc_ilm *p_ilm, enum conn_md_msg_type msg_type,
+		   struct conn_md_dmp_msg_log *p_msg_log)
 {
 	int i_ret = -1;
 
-	if (NULL == p_ilm ||
-	    NULL == p_ilm->local_para_ptr ||
-	    0 == p_ilm->local_para_ptr->msg_len || (msg_type != MSG_ENQUEUE && msg_type != MSG_DEQUEUE)) {
+	if (p_ilm == NULL ||
+	    p_ilm->local_para_ptr == NULL ||
+	    p_ilm->local_para_ptr->msg_len == 0 ||
+	    (msg_type != MSG_ENQUEUE && msg_type != MSG_DEQUEUE)) {
 		CONN_MD_WARN_FUNC("invalid parameter\n");
 		i_ret = CONN_MD_ERR_INVALID_PARAM;
 	} else {
@@ -94,18 +111,20 @@ int conn_md_dmp_in(ipc_ilm_t *p_ilm, CONN_MD_MSG_TYPE msg_type, P_CONN_MD_DMP_MS
 	return i_ret;
 }
 
-int __conn_md_dmp_msg_filter(P_CONN_MD_DMP_MSG_STR p_msg, uint32 src_id, uint32 dst_id)
+int __conn_md_dmp_msg_filter(struct conn_md_dmp_msg_str *p_msg,
+				uint32 src_id, uint32 dst_id)
 {
-	ipc_ilm_t *p_ilm = &p_msg->ilm;
+	struct ipc_ilm *p_ilm = &p_msg->ilm;
 	int i = 0;
 
-	if (((0 == src_id) || (src_id == p_ilm->src_mod_id)) && ((0 == dst_id) || (dst_id == p_ilm->dest_mod_id))) {
+	if (((src_id == 0) || (src_id == p_ilm->src_mod_id)) &&
+	    ((dst_id == 0) || (dst_id == p_ilm->dest_mod_id))) {
 		__conn_md_log_print(DFT_TAG
 				    "%d.%d s, <%s> src_id:0x%08x, dst_id:0x%08x, msg_len:%d, dump_len:%d:\n",
 				    p_msg->sec, p_msg->usec,
-				    (MSG_ENQUEUE == p_msg->type ? "enqueue" : "dequeue"),
+				    (p_msg->type == MSG_ENQUEUE ? "enqueue" : "dequeue"),
 				    p_msg->ilm.src_mod_id, p_msg->ilm.dest_mod_id, p_msg->msg_len,
-				    (LENGTH_PER_PACKAGE >= p_msg->msg_len ? p_msg->msg_len : LENGTH_PER_PACKAGE));
+				    (p_msg->msg_len <= LENGTH_PER_PACKAGE ? p_msg->msg_len : LENGTH_PER_PACKAGE));
 
 		for (i = 0; (i < p_msg->msg_len) && (i < LENGTH_PER_PACKAGE); i++) {
 			__conn_md_log_print("%02x ", p_msg->data[i]);
@@ -117,26 +136,27 @@ int __conn_md_dmp_msg_filter(P_CONN_MD_DMP_MSG_STR p_msg, uint32 src_id, uint32 
 	return 0;
 }
 
-int conn_md_dmp_out(P_CONN_MD_DMP_MSG_LOG p_msg_log, uint32 src_id, uint32 dst_id)
+int conn_md_dmp_out(struct conn_md_dmp_msg_log *p_msg_log,
+			uint32 src_id, uint32 dst_id)
 {
 	int i_ret = 0;
 	int size = 0;
 	int in = 0;
 	int out = 0;
-	P_CONN_MD_DMP_MSG_STR p_msg = NULL;
+	struct conn_md_dmp_msg_str *p_msg = NULL;
 
-	mutex_lock(&p_msg_log->lock);
 
-	size = p_msg_log->size;
-
-	if (NULL == p_msg_log) {
-		mutex_unlock(&p_msg_log->lock);
-
-		CONN_MD_WARN_FUNC("invalid parameter, p_msg_log:0x%08x\n", p_msg_log);
+	if (p_msg_log == NULL) {
+		CONN_MD_WARN_FUNC("invalid parameter, p_msg_log:0x%08x\n",
+				p_msg_log);
 		return CONN_MD_ERR_INVALID_PARAM;
 	}
-	CONN_MD_INFO_FUNC("dump msg for <src_id:0x%08x, dst_id:0x%08x> start\n", src_id, dst_id);
-	if (NUMBER_OF_MSG_LOGGED == size)
+	mutex_lock(&p_msg_log->lock);
+	size = p_msg_log->size;
+	mutex_unlock(&p_msg_log->lock);
+	CONN_MD_INFO_FUNC("dump msg <src_id:0x%08x, dst_id:0x%08x> start\n",
+			src_id, dst_id);
+	if (size == NUMBER_OF_MSG_LOGGED)
 		out = in;
 	else
 		out = 0;
@@ -150,6 +170,7 @@ int conn_md_dmp_out(P_CONN_MD_DMP_MSG_LOG p_msg_log, uint32 src_id, uint32 dst_i
 		out %= NUMBER_OF_MSG_LOGGED;
 	}
 	mutex_unlock(&p_msg_log->lock);
-	CONN_MD_INFO_FUNC("dump msg for <src_id:0x%08x, dst_id:0x%08x> finished\n", src_id, dst_id);
+	CONN_MD_INFO_FUNC("dump msg <src_id:0x%08x, dst_id:0x%08x> finished\n",
+			src_id, dst_id);
 	return i_ret;
 }

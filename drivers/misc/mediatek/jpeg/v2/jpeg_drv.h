@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/ioctl.h>
 
 #ifdef CONFIG_COMPAT
@@ -105,9 +118,19 @@ const long jpeg_dev_get_decoder_base_VA(void);
 
 #ifndef CONFIG_MTK_CLKMGR
 typedef struct JpegClk {
-	struct clk *clk_disp_mtcmos;
-	struct clk *clk_venc_mtcmos;
-	struct clk *clk_disp_smi;
+	struct clk *clk_smi_common;
+  #ifdef JPEG_DRV_MT6799
+	struct clk *clk_mm_larb7;
+	struct clk *clk_gals_m0_2x;
+	struct clk *clk_gals_m1_2x;
+	struct clk *clk_upsz0;
+	struct clk *clk_upsz1;
+	struct clk *clk_fifo0;
+	struct clk *clk_fifo1;
+	struct clk *clk_smi_common_2x;
+  #endif
+	struct clk *clk_scp_sys_mm0;
+	struct clk *clk_scp_sys_ven;
 	struct clk *clk_venc_larb;
 	struct clk *clk_venc_jpgEnc;
 	struct clk *clk_venc_jpgDec;
@@ -287,11 +310,9 @@ typedef struct {
 
 typedef /* DQT data */
 struct {
-	/*
-	   although we leave 2bytes * 64 space here,
-	   if q table precision is 8bits, we use only
-	   first half (1x64) of this table
-	 */
+	/* although we leave 2bytes mul 64 space here, */
+	/* if q table precision is 8bits, we use only */
+	/* first half (1x64) of this table */
 	unsigned char aau1Qtbl[4][128];
 	unsigned int afgPrec[4];
 	unsigned char u1NumQ;
@@ -566,75 +587,39 @@ typedef struct {
 
 #endif
 
-
-/* typedef struct */
-/* { */
-/* unsigned int srcBufferAddr; YUV420: Luma */
-/* unsigned int srcChromaAddr; */
-/* unsigned int dstBufferAddr; */
-/* unsigned int dstBufferSize; */
-/*  */
-/* unsigned int srcWidth; */
-/* unsigned int srcHeight; */
-/*  */
-/* unsigned char enableEXIF; */
-/* unsigned char disableGMC; not support */
-/*  */
-/* unsigned int restartInterval; */
-/* unsigned int quality; */
-/* unsigned int yuvFormat; */
-/*  */
-/* } JpegDrvEncParam; */
-
-
-
 /* ====================================================================================== */
-
 
 #define JPEG_IOCTL_MAGIC        'x'
 
-#if 0
-#define JPEG_DEC_IOCTL_INIT     _IO(JPEG_IOCTL_MAGIC, 1)
-  /* #define JPEG_DEC_IOCTL_CONFIG   _IOW (JPEG_IOCTL_MAGIC, 2, JPEG_DEC_DRV_IN) */
-#define JPEG_DEC_IOCTL_START    _IO(JPEG_IOCTL_MAGIC, 3)
-#define JPEG_DEC_IOCTL_WAIT     _IOWR(JPEG_IOCTL_MAGIC, 6, JPEG_DEC_DRV_OUT)
-#define JPEG_DEC_IOCTL_DEINIT   _IO(JPEG_IOCTL_MAGIC, 8)
-  /* #define JPEG_DEC_IOCTL_RESUME   _IOW(JPEG_IOCTL_MAGIC, 4, JPEG_DEC_RESUME_IN) */
-  /* #define JPEG_DEC_IOCTL_RANGE    _IOWR(JPEG_IOCTL_MAGIC, 5, JPEG_DEC_RANGE_IN) */
-  /* #define JPEG_DEC_IOCTL_COPY     _IOWR(JPEG_IOCTL_MAGIC, 7, int) */
-#endif
-
 /* /////////////////// JPEG DEC IOCTL ///////////////////////////////////// */
 
-#define JPEG_DEC_IOCTL_INIT         _IO(JPEG_IOCTL_MAGIC,  1)
+#define JPEG_DEC_IOCTL_INIT         _IO(JPEG_IOCTL_MAGIC,   1)
 #define JPEG_DEC_IOCTL_CONFIG       _IOW(JPEG_IOCTL_MAGIC,  2, JPEG_DEC_DRV_IN)
 #define JPEG_DEC_IOCTL_FLOW         _IOW(JPEG_IOCTL_MAGIC,  3, JpegDrvDecFlow)
-#define JPEG_DEC_IOCTL_START        _IO(JPEG_IOCTL_MAGIC,  4)
-#define JPEG_DEC_IOCTL_WAIT         _IOWR(JPEG_IOCTL_MAGIC,  5, JPEG_DEC_DRV_OUT)
-#define JPEG_DEC_IOCTL_DEINIT       _IO(JPEG_IOCTL_MAGIC,  6)
-
-#define JPEG_DEC_IOCTL_RESET        _IO(JPEG_IOCTL_MAGIC,  7)
-#define JPEG_DEC_IOCTL_CHKSUM       _IOWR(JPEG_IOCTL_MAGIC,  8, JpegDrvDecResult)
-#define JPEG_DEC_IOCTL_BREAK        _IO(JPEG_IOCTL_MAGIC,  9)
-#define JPEG_DEC_IOCTL_RW_REG       _IO(JPEG_IOCTL_MAGIC, 10)
+#define JPEG_DEC_IOCTL_START        _IO(JPEG_IOCTL_MAGIC,   4)
+#define JPEG_DEC_IOCTL_WAIT         _IOWR(JPEG_IOCTL_MAGIC, 5, JPEG_DEC_DRV_OUT)
+#define JPEG_DEC_IOCTL_DEINIT       _IO(JPEG_IOCTL_MAGIC,   6)
+#define JPEG_DEC_IOCTL_RESET        _IO(JPEG_IOCTL_MAGIC,   7)
+#define JPEG_DEC_IOCTL_CHKSUM       _IOWR(JPEG_IOCTL_MAGIC, 8, JpegDrvDecResult)
+#define JPEG_DEC_IOCTL_BREAK        _IO(JPEG_IOCTL_MAGIC,   9)
+#define JPEG_DEC_IOCTL_RW_REG       _IO(JPEG_IOCTL_MAGIC,  10)
 #define JPEG_DEC_IOCTL_RESUME       _IOW(JPEG_IOCTL_MAGIC, 11, JPEG_DEC_CONFIG_ROW)
 
 #define JPEG_DEC_IOCTL_FLUSH_CMDQ   _IOW(JPEG_IOCTL_MAGIC, 17, JPEG_DEC_CONFIG_CMDQ)
 
-#define JPEG_DEC_IOCTL_DUMP_REG     _IO(JPEG_IOCTL_MAGIC, 30)
-/* #define JPEG_DEC_IOCTL_MAN_GDMA _IOW (JPEG_IOCTL_MAGIC, 31, unsigned char) */
+#define JPEG_DEC_IOCTL_DUMP_REG     _IO(JPEG_IOCTL_MAGIC,  30)
 
 /* /////////////////// JPEG ENC IOCTL ///////////////////////////////////// */
 
-#define JPEG_ENC_IOCTL_INIT         _IO(JPEG_IOCTL_MAGIC, 11)
-#define JPEG_ENC_IOCTL_CONFIG       _IOW(JPEG_IOCTL_MAGIC, 12, JPEG_ENC_DRV_IN)
+#define JPEG_ENC_IOCTL_INIT         _IO(JPEG_IOCTL_MAGIC,   11)
+#define JPEG_ENC_IOCTL_CONFIG       _IOW(JPEG_IOCTL_MAGIC,  12, JPEG_ENC_DRV_IN)
 #define JPEG_ENC_IOCTL_WAIT         _IOWR(JPEG_IOCTL_MAGIC, 13, JPEG_ENC_DRV_OUT)
-#define JPEG_ENC_IOCTL_DEINIT       _IO(JPEG_IOCTL_MAGIC, 14)
-#define JPEG_ENC_IOCTL_START        _IO(JPEG_IOCTL_MAGIC, 15)
+#define JPEG_ENC_IOCTL_DEINIT       _IO(JPEG_IOCTL_MAGIC,   14)
+#define JPEG_ENC_IOCTL_START        _IO(JPEG_IOCTL_MAGIC,   15)
 
-#define JPEG_ENC_IOCTL_WARM_RESET   _IO(JPEG_IOCTL_MAGIC, 20)
-#define JPEG_ENC_IOCTL_DUMP_REG     _IO(JPEG_IOCTL_MAGIC, 21)
-#define JPEG_ENC_IOCTL_RW_REG       _IO(JPEG_IOCTL_MAGIC, 22)
+#define JPEG_ENC_IOCTL_WARM_RESET   _IO(JPEG_IOCTL_MAGIC,   20)
+#define JPEG_ENC_IOCTL_DUMP_REG     _IO(JPEG_IOCTL_MAGIC,   21)
+#define JPEG_ENC_IOCTL_RW_REG       _IO(JPEG_IOCTL_MAGIC,   22)
 
 #ifdef CONFIG_COMPAT
 

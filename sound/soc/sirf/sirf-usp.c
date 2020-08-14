@@ -367,9 +367,10 @@ static int sirf_usp_pcm_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, usp);
 
 	mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base = devm_ioremap_resource(&pdev->dev, mem_res);
-	if (IS_ERR(base))
-		return PTR_ERR(base);
+	base = devm_ioremap(&pdev->dev, mem_res->start,
+		resource_size(mem_res));
+	if (base == NULL)
+		return -ENOMEM;
 	usp->regmap = devm_regmap_init_mmio(&pdev->dev, base,
 					    &sirf_usp_regmap_config);
 	if (IS_ERR(usp->regmap))
@@ -421,7 +422,6 @@ static const struct dev_pm_ops sirf_usp_pcm_pm_ops = {
 static struct platform_driver sirf_usp_pcm_driver = {
 	.driver = {
 		.name = "sirf-usp-pcm",
-		.owner = THIS_MODULE,
 		.of_match_table = sirf_usp_pcm_of_match,
 		.pm = &sirf_usp_pcm_pm_ops,
 	},

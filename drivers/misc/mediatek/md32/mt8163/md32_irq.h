@@ -14,9 +14,10 @@
 #ifndef __MD32_IRQ_H__
 #define __MD32_IRQ_H__
 #include <linux/interrupt.h>
+#include <linux/workqueue.h>
+#include <linux/notifier.h>
 
 #define MD32_MAX_USER	20
-/* #define MD2HOST_IPCR  0x1005001C */
 
 /*Define MD32 IRQ Type*/
 #define MD32_IPC_INT	0x100
@@ -63,16 +64,22 @@ struct md32_assert_func {
 	void *private_data[MD32_MAX_USER];
 	int in_use[MD32_MAX_USER];
 };
+struct mtk_md32 {
+	struct device *dev;
+	struct notifier_block pm_nb;
+	struct workqueue_struct *md32_workqueue;
+	struct work_struct md32_work;
+};
 
 void irq_ast_ipi_handler(int id, void *data, unsigned int len);
 void memcpy_to_md32(void __iomem *trg, const void *src, int size);
 void memcpy_from_md32(void *trg, const void __iomem *src, int size);
 void md32_ipi_handler(void);
 void md32_ipi_init(void);
-void md32_irq_init(void);
+void md32_irq_init(struct mtk_md32 *md32);
 irqreturn_t md32_irq_handler(int irq, void *dev_id);
 void md32_ocd_init(void);
-int reboot_load_md32(void);
+int reboot_load_md32(struct device *dev);
 
 extern struct device_attribute dev_attr_md32_ocd;
 extern unsigned char *md32_send_buff;

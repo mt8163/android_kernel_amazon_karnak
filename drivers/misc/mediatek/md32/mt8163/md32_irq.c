@@ -64,8 +64,6 @@ static struct work_struct work_md32_assert;
 static struct workqueue_struct *wq_md32_wdt;
 static struct workqueue_struct *wq_md32_assert;
 #endif
-/* static struct work_struct work_md32_reboot; */
-static struct workqueue_struct *wq_md32_reboot;
 
 struct md32_aed_cfg {
 	int *log;
@@ -79,8 +77,6 @@ struct md32_reboot_work {
 	struct work_struct work;
 	struct md32_aed_cfg aed;
 };
-
-static struct md32_reboot_work work_md32_reboot;
 
 struct md32_status_reg {
 	unsigned int status;
@@ -124,7 +120,7 @@ void md32_dump_regs(void)
 
 void md32_aee_stop(void)
 {
-	pr_debug("md32_aee_stop\n");
+	pr_debug("%s start\n", __func__);
 
 	md32_aee_status.status = readl(MD32_BASE);
 	md32_aee_status.pc = readl(MD32_DEBUG_PC_REG);
@@ -133,7 +129,7 @@ void md32_aee_stop(void)
 
 	mt_reg_sync_writel(0x0, MD32_BASE);
 
-	pr_debug("md32_aee_stop end\n");
+	pr_debug("%s end\n", __func__);
 }
 
 int md32_aee_dump(char *buf)
@@ -217,7 +213,10 @@ void md32_prepare_aed(char *aed_str, struct md32_aed_cfg *aed)
 	pr_debug("md32_prepare_aed\n");
 
 	detail = kmalloc(MD32_AED_STR_LEN, GFP_KERNEL);
-	ptr = detail;
+	if (detail)
+		ptr = detail;
+	else
+		return;
 	detail[MD32_AED_STR_LEN - 1] = '\0';
 	ptr += snprintf(detail, MD32_AED_STR_LEN, "%s", aed_str);
 	ptr += sprintf(ptr, " md32 pc=0x%08x, r14=0x%08x, r15=0x%08x\n",
@@ -447,6 +446,7 @@ int free_md32_assert_func(char *module_name)
 
 irqreturn_t md32_irq_handler(int irq, void *dev_id)
 {
+	struct mtk_md32 *md32_dev = (struct mtk_md32 *)dev_id;
 	struct reg_md32_to_host_ipc *md32_irq;
 	int reboot = 0;
 
@@ -485,18 +485,20 @@ irqreturn_t md32_irq_handler(int irq, void *dev_id)
 	writel(0x0, MD32_TO_HOST_REG);
 
 	if (reboot)
-		queue_work(wq_md32_reboot,
-			   (struct work_struct *)&work_md32_reboot);
+		queue_work(md32_dev->md32_workqueue, &md32_dev->md32_work);
 
 	return IRQ_HANDLED;
 }
 
-void md32_reboot_from_irq(struct work_struct *ws)
+static void md32_reboot_from_irq(struct work_struct *work)
 {
-	struct md32_reboot_work *rb_ws = (struct md32_reboot_work *)ws;
+	struct mtk_md32 *md32_dev;
+	struct md32_reboot_work *rb_ws = (struct md32_reboot_work *)work;
 	struct md32_aed_cfg *aed = &rb_ws->aed;
 	struct reg_md32_to_host_ipc *md32_irq = (struct reg_md32_to_host_ipc *)
 						&md32_aee_status.m2h_irq;
+
+	md32_dev = container_of(work, struct mtk_md32, md32_work);
 
 	if (md32_irq->wdt_int)
 		md32_prepare_aed("md32 wdt", aed);
@@ -519,8 +521,8 @@ void md32_reboot_from_irq(struct work_struct *ws)
 	pr_debug("[MD32] md32 exception dump is done\n");
 
 	/* Reboot MD32 when receiver exception interrupt */
-	pr_err("[MD32] Reload MD32 bin from IRQ\n");
-	reboot_load_md32();
+	pr_err("md32 exception dump is done, Reload MD32 bin from IRQ\n");
+	reboot_load_md32(md32_dev->dev);
 
 	pr_err("[MD32] Reload MD32 bin from IRQ done\n");
 }
@@ -540,7 +542,7 @@ void irq_ast_ipi_handler(int id, void *data, unsigned int len)
 		 irq_ast_info->md32_irq_ast_irqd);
 }
 
-void md32_irq_init(void)
+void md32_irq_init(struct mtk_md32 *md32)
 {
 	writel(0x0, MD32_TO_HOST_REG); /* clear md32 irq */
 
@@ -550,14 +552,13 @@ void md32_irq_init(void)
 	memset(&MD32_ASSERT_FUN, 0, sizeof(MD32_ASSERT_FUN));
 #endif
 
-	wq_md32_reboot = create_workqueue("MD32_REBOOT_WQ");
+	md32->md32_workqueue = alloc_ordered_workqueue("MD32_REBOOT_WQ", 0);
 #ifdef MD32_WDT_ASSERT_REGIST
-	wq_md32_wdt = create_workqueue("MD32_WDT_WQ");
-	wq_md32_assert = create_workqueue("MD32_ASSERT_WQ");
+	wq_md32_wdt = alloc_ordered_workqueue("MD32_WDT_WQ", 0);
+	wq_md32_assert = alloc_ordered_workqueue("MD32_ASSERT_WQ", 0);
 #endif
 
-	INIT_WORK((struct work_struct *)&work_md32_reboot,
-		  md32_reboot_from_irq);
+	INIT_WORK(&md32->md32_work, md32_reboot_from_irq);
 #ifdef MD32_WDT_ASSERT_REGIST
 	INIT_WORK(&work_md32_wdt, md32_wdt_reset_func);
 	INIT_WORK(&work_md32_assert, md32_assert_reset_func);

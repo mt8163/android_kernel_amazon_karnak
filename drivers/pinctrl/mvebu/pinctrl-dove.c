@@ -751,12 +751,12 @@ static struct mvebu_pinctrl_soc_info dove_pinctrl_info = {
 
 static struct clk *clk;
 
-static struct of_device_id dove_pinctrl_of_match[] = {
+static const struct of_device_id dove_pinctrl_of_match[] = {
 	{ .compatible = "marvell,dove-pinctrl", .data = &dove_pinctrl_info },
 	{ }
 };
 
-static struct regmap_config gc_regmap_config = {
+static const struct regmap_config gc_regmap_config = {
 	.reg_bits = 32,
 	.val_bits = 32,
 	.reg_stride = 4,
@@ -840,18 +840,14 @@ static int dove_pinctrl_probe(struct platform_device *pdev)
 
 static int dove_pinctrl_remove(struct platform_device *pdev)
 {
-	int ret;
-
-	ret = mvebu_pinctrl_remove(pdev);
 	if (!IS_ERR(clk))
 		clk_disable_unprepare(clk);
-	return ret;
+	return 0;
 }
 
 static struct platform_driver dove_pinctrl_driver = {
 	.driver = {
 		.name = "dove-pinctrl",
-		.owner = THIS_MODULE,
 		.of_match_table = dove_pinctrl_of_match,
 	},
 	.probe = dove_pinctrl_probe,

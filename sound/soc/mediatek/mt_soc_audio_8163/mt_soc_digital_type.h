@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 #ifndef _AUDIO_DIGITAL_TYPE_H
 #define _AUDIO_DIGITAL_TYPE_H
@@ -19,7 +21,7 @@
  *****************************************************************************/
 
 
-typedef enum {
+enum Soc_Aud_Digital_Block {
 	/* memmory interfrace */
 	Soc_Aud_Digital_Block_MEM_DL1 = 0,
 	Soc_Aud_Digital_Block_MEM_DL2,
@@ -51,15 +53,16 @@ typedef enum {
 	Soc_Aud_Digital_Block_MRG_I2S_IN,
 	Soc_Aud_Digital_Block_DAI_BT,
 	Soc_Aud_Digital_Block_NUM_OF_DIGITAL_BLOCK,
-	Soc_Aud_Digital_Block_NUM_OF_MEM_INTERFACE = Soc_Aud_Digital_Block_MEM_HDMI + 1
-} Soc_Aud_Digital_Block;
+	Soc_Aud_Digital_Block_NUM_OF_MEM_INTERFACE =
+	Soc_Aud_Digital_Block_MEM_HDMI + 1
+};
 
-typedef enum {
+enum {
 	Soc_Aud_MemIF_Direction_DIRECTION_OUTPUT,
 	Soc_Aud_MemIF_Direction_DIRECTION_INPUT
-} Soc_Aud_MemIF_Direction;
+};
 
-typedef enum {
+enum {
 	Soc_Aud_InterConnectionInput_I00,
 	Soc_Aud_InterConnectionInput_I01,
 	Soc_Aud_InterConnectionInput_I02,
@@ -84,9 +87,9 @@ typedef enum {
 	Soc_Aud_InterConnectionInput_I21,
 	Soc_Aud_InterConnectionInput_I22,
 	Soc_Aud_InterConnectionInput_Num_Input
-} Soc_Aud_InterConnectionInput;
+};
 
-typedef enum {
+enum {
 	Soc_Aud_InterConnectionOutput_O00,
 	Soc_Aud_InterConnectionOutput_O01,
 	Soc_Aud_InterConnectionOutput_O02,
@@ -114,9 +117,9 @@ typedef enum {
 	Soc_Aud_InterConnectionOutput_O24,
 	Soc_Aud_InterConnectionOutput_O25,
 	Soc_Aud_InterConnectionOutput_Num_Output
-} Soc_Aud_InterConnectionOutput;
+};
 
-typedef enum {
+enum {
 	Soc_Aud_InterConnectionInput_I30,
 	Soc_Aud_InterConnectionInput_I31,
 	Soc_Aud_InterConnectionInput_I32,
@@ -125,10 +128,9 @@ typedef enum {
 	Soc_Aud_InterConnectionInput_I35,
 	Soc_Aud_InterConnectionInput_I36,
 	Soc_Aud_InterConnectionInput_I37,
-} Soc_Aud_Hdmi_InterConnectionInput;
+};
 
-
-typedef enum {
+enum {
 	Soc_Aud_InterConnectionOutput_O30,
 	Soc_Aud_InterConnectionOutput_O31,
 	Soc_Aud_InterConnectionOutput_O32,
@@ -137,21 +139,21 @@ typedef enum {
 	Soc_Aud_InterConnectionOutput_O35,
 	Soc_Aud_InterConnectionOutput_O36,
 	Soc_Aud_InterConnectionOutput_O37,
-} Soc_Aud_Hdmi_InterConnectionOutput;
+};
 
 
-typedef enum {
+enum {
 	Soc_Aud_InterCon_DisConnect = 0x0,
 	Soc_Aud_InterCon_Connection = 0x1,
 	Soc_Aud_InterCon_ConnectionShift = 0x2
-} Soc_Aud_InterConnectionState;
+};
 
 
-typedef enum {
+enum {
 	STREAMSTATUS_STATE_FREE = -1,	/* memory is not allocate */
 	STREAMSTATUS_STATE_STANDBY,	/* memory allocate and ready */
 	STREAMSTATUS_STATE_EXECUTING,	/* stream is running */
-} STREAMSTATUS;
+};
 
 enum Soc_Aud_TopClockType {
 	Soc_Aud_TopClockType_APB_CLOCK = 1,
@@ -268,7 +270,7 @@ enum Soc_Aud_APLL_SOURCE {
 };
 
 
-typedef enum {
+enum {
 	AUDIO_APLL1_DIV0 = 0,
 	AUDIO_APLL2_DIV0 = 1,
 	AUDIO_APLL12_DIV1 = 2,
@@ -278,7 +280,7 @@ typedef enum {
 	AUDIO_APLL_HDMI_BCK_DIV = 1,
 	AUDIO_APLL_SPDIF_DIV = 1,
 	AUDIO_APLL_SPDIF2_DIV = 1,
-} AUDIO_APLL_DIVIDER_GROUP;
+};
 
 enum mt_afe_apll_clok_freq {
 	MT_AFE_APLL1_CLOCK_FREQ = (22579200 * 8),
@@ -330,7 +332,7 @@ enum mt_afe_tdm_st_ch_pair_sout {
 	CHANNEL_DATA_IS_ZERO,
 };
 
-typedef struct {
+struct AudioDigtalI2S {
 	bool mLR_SWAP;
 	bool mI2S_SLAVE;
 	uint32 mI2S_SAMPLERATE;
@@ -346,7 +348,7 @@ typedef struct {
 	bool mloopback;
 	bool mFpga_bit;
 	bool mFpga_bit_test;
-} AudioDigtalI2S;
+};
 
 enum Soc_Aud_TX_LCH_RPT {
 	Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT = 0,
@@ -364,8 +366,9 @@ enum Soc_Aud_EXT_MODEM {
 };
 
 enum Soc_Aud_PCM_SYNC_TYPE {
-	Soc_Aud_PCM_SYNC_TYPE_BCK_CYCLE_SYNC = 0,	/* bck sync length = 1 */
-	Soc_Aud_PCM_SYNC_TYPE_EXTEND_BCK_CYCLE_SYNC = 1	/* bck sync length = PCM_INTF_CON[9:13] */
+	Soc_Aud_PCM_SYNC_TYPE_BCK_CYCLE_SYNC = 0,
+	/* bck sync length = PCM_INTF_CON[9:13] */
+	Soc_Aud_PCM_SYNC_TYPE_EXTEND_BCK_CYCLE_SYNC = 1
 };
 
 enum Soc_Aud_BT_MODE {
@@ -374,8 +377,10 @@ enum Soc_Aud_BT_MODE {
 };
 
 enum Soc_Aud_BYPASS_SRC {
-	Soc_Aud_BYPASS_SRC_SLAVE_USE_ASRC = 0,	/* slave mode & external modem uses different crystal */
-	Soc_Aud_BYPASS_SRC_SLAVE_USE_ASYNC_FIFO = 1	/* slave mode & external modem uses the same crystal */
+	/* slave mode & external modem uses different crystal */
+	Soc_Aud_BYPASS_SRC_SLAVE_USE_ASRC = 0,
+	/* slave mode & external modem uses the same crystal */
+	Soc_Aud_BYPASS_SRC_SLAVE_USE_ASYNC_FIFO = 1
 };
 
 enum Soc_Aud_PCM_CLOCK_SOURCE {
@@ -401,7 +406,7 @@ enum Soc_Aud_PCM_FMT {
 	Soc_Aud_PCM_FMT_PCM_MODE_B = 3
 };
 
-typedef struct {
+struct AudioDigitalPCM {
 	uint32 mBclkOutInv;
 	uint32 mTxLchRepeatSel;
 	uint32 mVbt16kModeSel;
@@ -415,7 +420,7 @@ typedef struct {
 	uint32 mPcmModeWidebandSel;
 	uint32 mPcmFormat;
 	uint8 mModemPcmOn;
-} AudioDigitalPCM;
+};
 
 enum Soc_Aud_BT_DAI_INPUT {
 	Soc_Aud_BT_DAI_INPUT_FROM_BT,
@@ -437,7 +442,7 @@ enum Soc_Aud_BTSYNC {
 	Soc_Aud_BTSYNC_Long_Sync
 };
 
-typedef struct {
+struct AudioDigitalDAIBT {
 	bool mUSE_MRGIF_INPUT;
 	bool mDAI_BT_MODE;
 	bool mDAI_DEL;
@@ -446,9 +451,9 @@ typedef struct {
 	bool mBT_SYNC;
 	bool mBT_ON;
 	bool mDAIBT_ON;
-} AudioDigitalDAIBT;
+};
 
-enum Soc_Aud_MRFIF_I2S_SAMPLERATE {
+enum {
 	Soc_Aud_MRFIF_I2S_SAMPLERATE_MRFIF_I2S_8K = 0,
 	Soc_Aud_MRFIF_I2S_SAMPLERATE_MRFIF_I2S_11K = 1,
 	Soc_Aud_MRFIF_I2S_SAMPLERATE_MRFIF_I2S_12K = 2,
@@ -460,7 +465,7 @@ enum Soc_Aud_MRFIF_I2S_SAMPLERATE {
 	Soc_Aud_MRFIF_I2S_SAMPLERATE_MRFIF_I2S_48K = 10
 };
 
-typedef struct {
+struct AudioMrgIf {
 	bool Mergeif_I2S_Enable;
 	bool Merge_cnt_Clear;
 	int Mrg_I2S_SampleRate;
@@ -468,16 +473,16 @@ typedef struct {
 	int Mrg_Clk_Edge_Dly;
 	int Mrg_Clk_Dly;
 	bool MrgIf_En;
-} AudioMrgIf;
+};
 
 /* class for irq mode and counter. */
-typedef struct {
+struct AudioIrqMcuMode {
 	unsigned int mStatus;	/* on,off */
 	unsigned int mIrqMcuCounter;
 	unsigned int mSampleRate;
-} AudioIrqMcuMode;
+};
 
-typedef struct {
+struct AudioMemIFAttribute {
 	int mFormat;
 	int mDirection;
 	unsigned int mSampleRate;
@@ -492,36 +497,36 @@ typedef struct {
 	unsigned int mFetchFormatPerSample;
 	int mUserCount;
 	void *privatedata;
-} AudioMemIFAttribute;
+};
 
-typedef struct {
+struct Register_Control {
 	unsigned int offset;
 	unsigned int value;
 	unsigned int mask;
-} Register_Control;
+};
 
-typedef struct {
+struct SPH_Control {
 	int bSpeechFlag;
 	int bBgsFlag;
 	int bRecordFlag;
 	int bTtyFlag;
 	int bVT;
 	int bAudioPlay;
-} SPH_Control;
+};
 
-typedef struct {
+struct Hdmi_Clock_Control {
 	int SampleRate;
 	int ClkApllSel;		/* 0-5 */
-} Hdmi_Clock_Control;
+};
 
-enum SPEAKER_CHANNEL {
+enum {
 	Channel_None = 0,
 	Channel_Right,
 	Channel_Left,
 	Channel_Stereo
 };
 
-enum SOUND_PATH {
+enum {
 	DEFAULT_PATH = 0,
 	IN1_PATH,
 	IN2_PATH,
@@ -529,62 +534,62 @@ enum SOUND_PATH {
 	IN1_IN2_MIX,
 };
 
-enum MIC_ANALOG_SWICTH {
+enum {
 	MIC_ANA_DEFAULT_PATH = 0,
 	MIC_ANA_SWITCH1_HIGH
 };
-enum PolicyParameters {
+enum {
 	POLICY_LOAD_VOLUME = 0,
 	POLICY_SET_FM_SPEAKER,
 	POLICY_CHECK_FM_PRIMARY_KEY_ROUTING,
 	POLICY_SET_FM_PRESTOP,
 };
 
-enum modem_index_t {
+enum {
 	MODEM_1 = 0,
 	MODEM_2 = 1,
 	MODEM_EXTERNAL = 2,
 	NUM_MODEM
 };
 
-typedef enum {
+enum {
 	AFE_WLEN_16_BIT = 0,
 	AFE_WLEN_32_BIT_ALIGN_8BIT_0_24BIT_DATA = 1,
 	AFE_WLEN_32_BIT_ALIGN_24BIT_DATA_8BIT_0 = 3,
-} FETCHFORMATPERSAMPLE;
+};
 
-typedef enum {
+enum {
 	AFE_DATA_WLEN_16BIT = 0,
 	AFE_DATA_WLEN_32BIT = 1,
-} AFE_DATA_WLEN;
+};
 
-typedef enum {
+enum {
 	OUTPUT_DATA_FORMAT_16BIT = 0,
 	OUTPUT_DATA_FORMAT_24BIT
-} OUTPUT_DATA_FORMAT;
+};
 
 
-typedef enum {
+enum {
 	APLL_SOURCE_24576 = 0,
 	APLL_SOURCE_225792 = 1
-} APLL_SOURCE_SEL;
+};
 
-typedef enum {
+enum {
 	HDMI_SDATA0 = 0,
 	HDMI_SDATA1,
 	HDMI_SDATA2,
 	HDMI_SDATA3,
-} HDMI_SDATA_CHANNEL;
+};
 
-typedef enum {
+enum {
 	HDMI_8_CHANNELS = 0,
 	HDMI_6_CHANNELS,
 	HDMI_4_CHANNELS,
 	HDMI_2_CHANNELS,
-} HDMI_SDATA_SEQUENCE;
+};
 
 
-typedef struct {
+struct AudioHdmi {
 	bool mLR_SWAP;
 	bool mI2S_SLAVE;
 	uint32 mSampleRate;
@@ -606,7 +611,7 @@ typedef struct {
 	bool mloopback;
 	bool mFpga_bit;
 	bool mFpga_bit_test;
-} AudioHdmi;
+};
 
 #ifdef CONFIG_MTK_AUDIO_USE_SHARED_SRAM
 typedef enum {
@@ -618,48 +623,49 @@ typedef enum {
 	SRAM_STATE_PLAYBACKDRAM = 0x10,
 } AUDIO_SRAM_STATE;
 #else
-typedef enum {
+enum {
 	SRAM_STATE_FREE = 0,
 	SRAM_STATE_PLAYBACKFULL = 0x1,
 	SRAM_STATE_PLAYBACKPARTIAL = 0x2,
 	SRAM_STATE_CAPTURE = 0x4,
 	SRAM_STATE_PLAYBACKDRAM = 0x8,
-} AUDIO_SRAM_STATE;
+};
 #endif
 
-typedef struct {
+struct AudioSramManager {
 	unsigned int mMemoryState;
 	bool mPlaybackAllocated;
 	bool mPlaybackAllocateSize;
 	bool mCaptureAllocated;
 	bool mCaptureAllocateSize;
-} AudioSramManager;
+};
 
-typedef enum {
+enum {
 	AUDIO_ANC_ON = 0,
 	AUDIO_ANC_OFF,
-} AUDIO_ANC_MODE;
+};
 
 
 #if 0
-typedef enum {
+enum {
 	AUDIO_APLL1_DIV0 = 0,
 	AUDIO_APLL2_DIV0 = 1,
 	AUDIO_APLL12_DIV1 = 2,
 	AUDIO_APLL12_DIV2 = 3,
 	AUDIO_APLL12_DIV3 = 4,
 	AUDIO_APLL12_DIV4 = 5
-} AUDIO_APLL_DIVIDER_GROUP;
+};
 #endif
-typedef enum {
+
+enum {
 	AUDIO_MODE_NORMAL = 0,
 	AUDIO_MODE_RINGTONE,
 	AUDIO_MODE_INCALL,
 	AUDIO_MODE_INCALL2,
 	AUDIO_MODE_INCALL_EXTERNAL,
-} AUDIO_MODE;
+};
 
-typedef struct {
+struct AudioAfeRegCache {
 	uint32 REG_AUDIO_TOP_CON1;
 	uint32 REG_AUDIO_TOP_CON2;
 	uint32 REG_AUDIO_TOP_CON3;
@@ -919,6 +925,6 @@ typedef struct {
 	uint32 REG_AFE_ADDA4_ULCF_CFG_28_27;
 	uint32 REG_AFE_ADDA4_ULCF_CFG_30_29;
 #endif
-} AudioAfeRegCache;
+};
 
 #endif

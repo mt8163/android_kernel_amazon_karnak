@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifdef BUILD_LK
 #include <platform/mt_gpio.h>
 #include <platform/mt_i2c.h>
@@ -110,7 +123,7 @@ int lcm_vgp_supply_enable(void)
 
 	pr_debug("LCM: lcm_vgp_supply_enable\n");
 
-	if (NULL == lcm_vgp)
+	if (lcm_vgp == NULL)
 		return 0;
 
 	pr_debug("LCM: set regulator voltage lcm_vgp voltage to 1.8V\n");
@@ -126,7 +139,8 @@ int lcm_vgp_supply_enable(void)
 	if (volt == 1800000)
 		pr_err("LCM: check regulator voltage=1800000 pass!\n");
 	else
-		pr_err("LCM: check regulator voltage=1800000 fail! (voltage: %d)\n", volt);
+		pr_err("LCM: check regulator voltage=1800000 fail! (voltage: %d)\n",
+		     volt);
 
 	ret = regulator_enable(lcm_vgp);
 	if (ret != 0) {
@@ -142,13 +156,13 @@ int lcm_vgp_supply_disable(void)
 	int ret = 0;
 	unsigned int isenable;
 
-	if (NULL == lcm_vgp)
+	if (lcm_vgp == NULL)
 		return 0;
 
 	/* disable regulator */
 	isenable = regulator_is_enabled(lcm_vgp);
 
-	pr_debug("LCM: lcm query regulator enable status[0x%d]\n", isenable);
+	pr_debug("LCM: lcm query regulator enable status[%d]\n", isenable);
 
 	if (isenable) {
 		ret = regulator_disable(lcm_vgp);
@@ -165,24 +179,28 @@ int lcm_vgp_supply_disable(void)
 	return ret;
 }
 
-static int lcm_probe(struct device *dev)
+static int lcm_platform_probe(struct platform_device *pdev)
 {
+	struct device	*dev = &pdev->dev;
 	lcm_get_vgp_supply(dev);
 	lcm_get_gpio_infor();
 
 	return 0;
 }
 
+#ifdef CONFIG_OF
 static const struct of_device_id lcm_of_ids[] = {
 	{.compatible = "mediatek,lcm",},
 	{}
 };
+MODULE_DEVICE_TABLE(of, lcm_of_ids);
+#endif
 
 static struct platform_driver lcm_driver = {
+	.probe = lcm_platform_probe,
 	.driver = {
 		   .name = "mtk_lcm",
 		   .owner = THIS_MODULE,
-		   .probe = lcm_probe,
 #ifdef CONFIG_OF
 		   .of_match_table = lcm_of_ids,
 #endif
@@ -211,34 +229,39 @@ MODULE_AUTHOR("mediatek");
 MODULE_DESCRIPTION("Display subsystem Driver");
 MODULE_LICENSE("GPL");
 #endif
-/* --------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 /* Local Constants */
-/* --------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 
 #define FRAME_WIDTH  (800)
 #define FRAME_HEIGHT (1280)
 
-/* --------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 /* Local Variables */
-/* --------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 
-static LCM_UTIL_FUNCS lcm_util = { 0 };
+static struct LCM_UTIL_FUNCS lcm_util = { 0 };
 
 #define SET_RESET_PIN(v)    (lcm_util.set_reset_pin((v)))
 
 #define UDELAY(n) (lcm_util.udelay(n))
 #define MDELAY(n) (lcm_util.mdelay(n))
 
-/* --------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 /* Local Functions */
-/* --------------------------------------------------------------------------- */
-#define dsi_set_cmdq_V2(cmd, count, ppara, force_update)lcm_util.dsi_set_cmdq_V2(cmd, count, ppara, force_update)
-#define dsi_set_cmdq(pdata, queue_size, force_update)	lcm_util.dsi_set_cmdq(pdata, queue_size, force_update)
-#define wrtie_cmd(cmd)							lcm_util.dsi_write_cmd(cmd)
-#define write_regs(addr, pdata, byte_nums)		lcm_util.dsi_write_regs(addr, pdata, byte_nums)
-#define read_reg(cmd)							lcm_util.dsi_dcs_read_lcm_reg(cmd)
-#define read_reg_v2(cmd, buffer, buffer_size)	lcm_util.dsi_dcs_read_lcm_reg_v2(cmd, buffer, buffer_size)
-
+/* ------------------------------------------------------------------------- */
+#define dsi_set_cmdq_V2(cmd, count, ppara, force_update) \
+		 (lcm_util.dsi_set_cmdq_V2(cmd, count, ppara, force_update))
+#define dsi_set_cmdq(pdata, queue_size, force_update) \
+		 (lcm_util.dsi_set_cmdq(pdata, queue_size, force_update))
+#define wrtie_cmd(cmd) \
+		 (lcm_util.dsi_write_cmd(cmd))
+#define write_regs(addr, pdata, byte_nums) \
+		 (lcm_util.dsi_write_regs(addr, pdata, byte_nums))
+#define read_reg(cmd) \
+		 (lcm_util.dsi_dcs_read_lcm_reg(cmd))
+#define read_reg_v2(cmd, buffer, buffer_size)	\
+		 (lcm_util.dsi_dcs_read_lcm_reg_v2(cmd, buffer, buffer_size))
 #define   LCM_DSI_CMD_MODE	0
 
 static void lcm_init_power(void)
@@ -296,17 +319,17 @@ static void lcm_resume_power(void)
 #endif
 }
 
-/* --------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
 /* LCM Driver Implementations */
-/* --------------------------------------------------------------------------- */
-static void lcm_set_util_funcs(const LCM_UTIL_FUNCS *util)
+/* ------------------------------------------------------------------------- */
+static void lcm_set_util_funcs(const struct LCM_UTIL_FUNCS *util)
 {
-	memcpy(&lcm_util, util, sizeof(LCM_UTIL_FUNCS));
+	memcpy(&lcm_util, util, sizeof(struct LCM_UTIL_FUNCS));
 }
 
-static void lcm_get_params(LCM_PARAMS *params)
+static void lcm_get_params(struct LCM_PARAMS *params)
 {
-	memset(params, 0, sizeof(LCM_PARAMS));
+	memset(params, 0, sizeof(struct LCM_PARAMS));
 
 	params->type = LCM_TYPE_DSI;
 
@@ -421,7 +444,8 @@ void lcm_resume(void)
 }
 
 #if (LCM_DSI_CMD_MODE)
-static void lcm_update(unsigned int x, unsigned int y, unsigned int width, unsigned int height)
+static void lcm_update(unsigned int x, unsigned int y, unsigned int width,
+unsigned int height)
 {
 	unsigned int x0 = x;
 	unsigned int y0 = y;
@@ -457,7 +481,7 @@ static void lcm_update(unsigned int x, unsigned int y, unsigned int width, unsig
 }
 #endif
 
-LCM_DRIVER kr070ia4t_dsi_vdo_lcm_drv = {
+struct LCM_DRIVER kr070ia4t_dsi_vdo_lcm_drv = {
 	.name = "KR070IA4T_DSI_VDO",
 	.set_util_funcs = lcm_set_util_funcs,
 	.get_params = lcm_get_params,

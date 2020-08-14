@@ -1,8 +1,20 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
 #include <linux/kobject.h>
-
 #include <linux/uaccess.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -28,11 +40,15 @@
 #include <linux/compat.h>
 #endif
 
-#include "mt_smi.h"
+#ifdef MMDVFS_ENABLE
+#include "mmdvfs_mgr_8173.h"
+#endif
+
+
+#include "mtk_smi.h"
 
 #include "smi_reg.h"
 #include "smi_common.h"
-#include "smi_debug.h"
 
 #include "smi_priv.h"
 #include "m4u.h"
@@ -44,25 +60,31 @@
 #define LARB_BACKUP_REG_SIZE 128
 
 #define SMI_COMMON_BACKUP_REG_NUM   10
+#ifdef CONFIG_ARCH_MT8167
+/* mt8167 has different register offset as other SoCs of SMI_L1LEN etc */
+static unsigned short
+g_smi_common_backup_reg_offset[SMI_COMMON_BACKUP_REG_NUM] = {
+	0x100, 0x104, 0x108, 0x10c, 0x110,
+	0x114, 0x120, 0x230, 0x234, 0x238
+};
 
+#else
 /*
  * SMI COMMON register list to be backuped
  * for some socs which do not have some register, it's OK to read and write to
  * the non-exist offset.
  */
-static unsigned short g_smi_common_backup_reg_offset[SMI_COMMON_BACKUP_REG_NUM] = {
-	0x200, 0x204, 0x208, 0x20c, 0x210, 0x214, 0x220, 0x230, 0x234, 0x238
+static unsigned short
+g_smi_common_backup_reg_offset[SMI_COMMON_BACKUP_REG_NUM] = {
+	0x200, 0x204, 0x208, 0x20c, 0x210,
+	0x214, 0x220, 0x230, 0x234, 0x238
 };
+#endif
 
 #define SF_HWC_PIXEL_MAX_NORMAL  (2560 * 1600 * 7)
 #define SF_HWC_PIXEL_MAX_VR   (2560 * 1600 * 7)
 #define SF_HWC_PIXEL_MAX_VP   (2560 * 1600 * 7)
 #define SF_HWC_PIXEL_MAX_ALWAYS_GPU  (2560 * 1600 * 1)
-
-#define SMIDBG(level, x...)            \
-		do { if (smi_debug_level >= (level))\
-			SMIMSG(x);\
-		} while (0)
 
 struct SMI_struct {
 	spinlock_t SMI_lock;
@@ -99,11 +121,13 @@ static unsigned int smi_profile = SMI_BWC_SCEN_NORMAL;
 static unsigned int *pLarbRegBackUp[SMI_LARB_NR_MAX];
 static int g_bInited;
 
-static MTK_SMI_BWC_MM_INFO g_smi_bwc_mm_info = { 0, 0, {0, 0}, {0, 0},
-{0, 0}, {0, 0}, 0, 0, 0,
-SF_HWC_PIXEL_MAX_NORMAL
-};
+bool smi_clk_always_on;
 
+static struct MTK_SMI_BWC_MM_INFO g_smi_bwc_mm_info = {
+	0, 0, {0, 0}, {0, 0},
+	{0, 0}, {0, 0}, 0, 0, 0,
+	SF_HWC_PIXEL_MAX_NORMAL
+};
 
 struct mtk_smi_common {
 	void __iomem		*base;
@@ -124,7 +148,8 @@ static int _mtk_smi_larb_get(struct device *larbdev, bool pm);
 static void _mtk_smi_larb_put(struct device *larbdev, bool pm);
 
 #if IS_ENABLED(CONFIG_COMPAT)
-static long MTK_SMI_COMPAT_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+static long MTK_SMI_COMPAT_ioctl(struct file *filp,
+	unsigned int cmd, unsigned long arg);
 #else
 #define MTK_SMI_COMPAT_ioctl  NULL
 #endif
@@ -133,11 +158,11 @@ typedef void (power_state_fn)(struct device *dev, int state);
 int set_power_state_cb(struct device *dev, power_state_fn *cb);
 
 /* Use this function to get base address of Larb resgister
-* to support error checking
-*/
+ * to support error checking
+ */
 static unsigned long get_larb_base_addr(int larb_id)
 {
-	if (!smi_data || larb_id > smi_data->larb_nr || larb_id < 0)
+	if (!smi_data || larb_id >= smi_data->larb_nr || larb_id < 0)
 		return SMI_ERROR_ADDR;
 	else
 		return smi_data->larb_base[larb_id];
@@ -217,7 +242,9 @@ void mtk_smi_larb_clock_off(int larbid, bool pm)
 		pr_err("error:larb ref <=0, larb %d ref %d\n", larbid,
 			mtk_smi_larb_get_ref_cnt(larbid));
 	atomic_dec(&(smi_data->larbref[larbid]));
-	_mtk_smi_larb_put(smi_data->larb[larbid], pm);
+
+	if (!smi_clk_always_on)
+		_mtk_smi_larb_put(smi_data->larb[larbid], pm);
 }
 
 static void backup_smi_common(void)
@@ -227,7 +254,7 @@ static void backup_smi_common(void)
 	for (i = 0; i < SMI_COMMON_BACKUP_REG_NUM; i++) {
 		g_smi_common_backup[i] =
 		    M4U_ReadReg32(SMI_COMMON_EXT_BASE,
-				  (unsigned long)g_smi_common_backup_reg_offset[i]);
+			(unsigned long)g_smi_common_backup_reg_offset[i]);
 	}
 }
 
@@ -237,8 +264,8 @@ static void restore_smi_common(void)
 
 	for (i = 0; i < SMI_COMMON_BACKUP_REG_NUM; i++) {
 		M4U_WriteReg32(SMI_COMMON_EXT_BASE,
-			       (unsigned long)g_smi_common_backup_reg_offset[i],
-			       g_smi_common_backup[i]);
+	       (unsigned long)g_smi_common_backup_reg_offset[i],
+	       g_smi_common_backup[i]);
 	}
 }
 
@@ -262,13 +289,16 @@ static void backup_larb_smi(int index)
 		return;
 
 	for (port_index = 0; port_index < total_port_num; port_index++) {
-		*backup_ptr = (unsigned short int)(M4U_ReadReg32(larb_base, larb_offset));
+		*backup_ptr =
+			(unsigned short int)(M4U_ReadReg32(larb_base,
+			larb_offset));
 		backup_ptr++;
 		larb_offset += 4;
 	}
 
 	/* backup smi common along with larb0,
-	 * smi common clk is guaranteed to be on when processing larbs */
+	 * smi common clk is guaranteed to be on when processing larbs
+	 */
 	if (index == 0)
 		backup_smi_common();
 
@@ -296,7 +326,8 @@ static void restore_larb_smi(int index)
 		return;
 
 	/* restore smi common along with larb0,
-	 * smi common clk is guaranteed to be on when processing larbs */
+	 * smi common clk is guaranteed to be on when processing larbs
+	 */
 	if (index == 0)
 		restore_smi_common();
 
@@ -308,11 +339,17 @@ static void restore_larb_smi(int index)
 	}
 
 	/* we do not backup 0x20 because it is a fixed setting */
-	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173 || smi_data->smi_priv->plat == MTK_PLAT_MT8163)
-		M4U_WriteReg32(larb_base, 0x20, smi_data->smi_priv->larb_vc_setting[index]);
+	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173
+		|| smi_data->smi_priv->plat == MTK_PLAT_MT8163
+		|| smi_data->smi_priv->plat == MTK_PLAT_MT8167)
+		M4U_WriteReg32(larb_base, 0x20,
+			smi_data->smi_priv->larb_vc_setting[index]);
 
-	/* turn off EMI empty OSTD dobule, fixed setting */
-	M4U_WriteReg32(larb_base, 0x2c, 4);
+	/* turn off EMI empty OSTD dobule,
+	 * fixed setting, mt8167 do not have this register
+	 */
+	if (smi_data->smi_priv->plat != MTK_PLAT_MT8167)
+		M4U_WriteReg32(larb_base, 0x2c, 4);
 
 }
 
@@ -328,9 +365,10 @@ static int larb_reg_backup(int larb)
 
 	backup_larb_smi(larb);
 
-	if (0 == larb)
+	if (larb == 0)
 		g_bInited = 0;
-	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173 || smi_data->smi_priv->plat == MTK_PLAT_MT8163)
+	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173
+		|| smi_data->smi_priv->plat == MTK_PLAT_MT8163)
 		m4u_larb_backup_sec(larb);
 
 	return 0;
@@ -344,23 +382,23 @@ static int smi_larb_init(unsigned int larb)
 	unsigned long larb_base = get_larb_base_addr(larb);
 
 	/* Clock manager enable LARB clock before call back restore already,
-	 *it will be disabled after restore call back returns
-	 * Got to enable OSTD before engine starts */
+	 * it will be disabled after restore call back returns
+	 * Got to enable OSTD before engine starts
+	 */
 	regval = M4U_ReadReg32(larb_base, SMI_LARB_STAT);
 
-	/*todo */
 	/* regval1 = M4U_ReadReg32(larb_base , SMI_LARB_MON_BUS_REQ0); */
 	/* regval2 = M4U_ReadReg32(larb_base , SMI_LARB_MON_BUS_REQ1); */
 
-	if (0 == regval) {
-		SMIDBG(1, "Init OSTD for larb_base: 0x%lx\n", larb_base);
+	if (regval == 0) {
+		pr_debug("Init OSTD for larb_base: 0x%lx\n", larb_base);
 		M4U_WriteReg32(larb_base, SMI_LARB_OSTDL_SOFT_EN, 0xffffffff);
 	} else {
-		SMIMSG("Larb: 0x%lx is busy : 0x%x , port:0x%x,0x%x ,fail to set OSTD\n", larb_base,
-		       regval, regval1, regval2);
+		pr_warn("Larb: 0x%lx is busy : 0x%x , port:0x%x,0x%x ,fail to set OSTD\n",
+			larb_base, regval, regval1, regval2);
 		smi_dumpDebugMsg();
 		if (smi_debug_level >= 1) {
-			SMIERR("DISP_MDP LARB  0x%lx OSTD cannot be set:0x%x,port:0x%x,0x%x\n",
+			pr_err("DISP_MDP LARB  0x%lx OSTD cannot be set:0x%x,port:0x%x,0x%x\n",
 			       larb_base, regval, regval1, regval2);
 		} else {
 			dump_stack();
@@ -382,14 +420,14 @@ int larb_reg_restore(int larb)
 
 	/* The larb assign doesn't exist */
 	if (larb_base == SMI_ERROR_ADDR) {
-		SMIMSG("Can't find the base address for Larb%d\n", larb);
+		pr_warn("Can't find the base address for Larb%d\n", larb);
 		return 0;
 	}
 
 	pReg = pLarbRegBackUp[larb];
 
-	SMIDBG(1, "+larb_reg_restore(), larb_idx=%d\n", larb);
-	SMIDBG(1, "m4u part restore, larb_idx=%d\n", larb);
+	pr_debug("+larb_reg_restore(), larb_idx=%d\n", larb);
+	pr_debug("m4u part restore, larb_idx=%d\n", larb);
 	/*warning: larb_con is controlled by set/clr */
 	regval = *(pReg++);
 	M4U_WriteReg32(larb_base, SMI_LARB_CON_CLR, ~(regval));
@@ -399,22 +437,25 @@ int larb_reg_restore(int larb)
 	/*M4U_WriteReg32(larb_base, SMI_ROUTE_SEL, *(pReg++) ); */
 
 	smi_larb_init(larb);
-	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173 || smi_data->smi_priv->plat == MTK_PLAT_MT8163)
+	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173
+		|| smi_data->smi_priv->plat == MTK_PLAT_MT8163
+		|| smi_data->smi_priv->plat == MTK_PLAT_MT8167)
 		m4u_larb_restore_sec(larb);
 
 	return 0;
 }
 
 /* Fake mode check, e.g. WFD */
-static int fake_mode_handling(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
+static int fake_mode_handling(struct MTK_SMI_BWC_CONFIG *p_conf,
+	unsigned int *pu4LocalCnt)
 {
 	if (p_conf->scenario == SMI_BWC_SCEN_WFD) {
 		if (p_conf->b_on_off) {
 			wifi_disp_transaction = 1;
-			SMIMSG("Enable WFD in profile: %d\n", smi_profile);
+			pr_debug("Enable WFD in profile: %d\n", smi_profile);
 		} else {
 			wifi_disp_transaction = 0;
-			SMIMSG("Disable WFD in profile: %d\n", smi_profile);
+			pr_debug("Disable WFD in profile: %d\n", smi_profile);
 		}
 		return 1;
 	} else {
@@ -429,9 +470,6 @@ static int ovl_limit_uevent(int bwc_scenario, int ovl_pixel_limit)
 	char scenario_buf[32] = "";
 	char ovl_limit_buf[32] = "";
 
-	/* scenario_buf = kzalloc(sizeof(char)*128, GFP_KERNEL); */
-	/* ovl_limit_buf = kzalloc(sizeof(char)*128, GFP_KERNEL); */
-
 	snprintf(scenario_buf, 31, "SCEN=%d", bwc_scenario);
 	snprintf(ovl_limit_buf, 31, "HWOVL=%d", ovl_pixel_limit);
 
@@ -440,33 +478,30 @@ static int ovl_limit_uevent(int bwc_scenario, int ovl_pixel_limit)
 	envp[2] = NULL;
 
 	if (pSmiDev != NULL) {
-		/* err = kobject_uevent_env(&(pSmiDev->kobj), KOBJ_CHANGE, envp); */
-		/* use smi_data->dev.lobj instead */
-		/* err = kobject_uevent_env(&(smi_data->dev->kobj), KOBJ_CHANGE, envp); */
-		/* user smiDeviceUevent->kobj instead */
-		err = kobject_uevent_env(&(smiDeviceUevent->kobj), KOBJ_CHANGE, envp);
-		SMIMSG("Notify OVL limitaion=%d, SCEN=%d", ovl_pixel_limit, bwc_scenario);
+		err = kobject_uevent_env(&(smiDeviceUevent->kobj),
+			KOBJ_CHANGE, envp);
+		pr_debug("Notify OVL limitaion=%d, SCEN=%d",
+			ovl_pixel_limit, bwc_scenario);
 	}
-	/* kfree(scenario_buf); */
-	/* kfree(ovl_limit_buf); */
 
 	if (err < 0)
-		SMIMSG(KERN_INFO "[%s] kobject_uevent_env error = %d\n", __func__, err);
+		pr_warn("[%s] kobject_uevent_env error = %d\n", __func__, err);
 
 	return err;
 }
 
-static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
+static int smi_bwc_config(struct MTK_SMI_BWC_CONFIG *p_conf,
+	unsigned int *pu4LocalCnt)
 {
 	int i;
 	int result = 0;
 	unsigned int u4Concurrency = 0;
-	MTK_SMI_BWC_SCEN eFinalScen;
-	static MTK_SMI_BWC_SCEN ePreviousFinalScen = SMI_BWC_SCEN_CNT;
+	enum MTK_SMI_BWC_SCEN eFinalScen;
+	static enum MTK_SMI_BWC_SCEN ePreviousFinalScen = SMI_BWC_SCEN_CNT;
 	struct mtk_smi_priv *smicur = (struct mtk_smi_priv *)smi_data->smi_priv;
 
 	if (smi_tuning_mode == 1) {
-		SMIMSG("Doesn't change profile in tunning mode");
+		pr_warn("Doesn't change profile in tunning mode");
 		return 0;
 	}
 
@@ -478,14 +513,13 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 	if (result == 1)
 		return 0;
 
-	if ((SMI_BWC_SCEN_CNT <= p_conf->scenario) || (0 > p_conf->scenario)) {
-		SMIERR("Incorrect SMI BWC config : 0x%x, how could this be...\n", p_conf->scenario);
+	if ((p_conf->scenario >= SMI_BWC_SCEN_CNT) || (p_conf->scenario < 0)) {
+		pr_err("Incorrect SMI BWC config : 0x%x, how could this be...\n",
+			p_conf->scenario);
 		return -1;
 	}
-/* Debug - S */
-/* SMIMSG("SMI setTo%d,%s,%d\n" , p_conf->scenario , (p_conf->b_on_off ? "on" : "off") , ePreviousFinalScen); */
-/* Debug - E */
-#if 0
+
+#ifdef MMDVFS_ENABLE
 	if (p_conf->b_on_off) {
 		/* set mmdvfs step according to certain scenarios */
 		mmdvfs_notify_scenario_enter(p_conf->scenario);
@@ -504,23 +538,24 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 		/* turn on certain scenario */
 		g_SMIInfo.pu4ConcurrencyTable[p_conf->scenario] += 1;
 
-		if (NULL != pu4LocalCnt)
+		if (pu4LocalCnt != NULL)
 			pu4LocalCnt[p_conf->scenario] += 1;
 	} else {
 		/* turn off certain scenario */
-		if (0 == g_SMIInfo.pu4ConcurrencyTable[p_conf->scenario]) {
-			SMIMSG("Too many turning off for global SMI profile:%d,%d\n",
-			       p_conf->scenario, g_SMIInfo.pu4ConcurrencyTable[p_conf->scenario]);
+		if (g_SMIInfo.pu4ConcurrencyTable[p_conf->scenario] == 0) {
+			pr_warn("Too many turning off for global SMI profile:%d,%d\n",
+				p_conf->scenario,
+				g_SMIInfo.pu4ConcurrencyTable
+				[p_conf->scenario]);
 		} else {
 			g_SMIInfo.pu4ConcurrencyTable[p_conf->scenario] -= 1;
 		}
 
-		if (NULL != pu4LocalCnt) {
-			if (0 == pu4LocalCnt[p_conf->scenario]) {
-				SMIMSG
-				    ("Process : %s did too many turning off for local SMI profile:%d,%d\n",
-				     current->comm, p_conf->scenario,
-				     pu4LocalCnt[p_conf->scenario]);
+		if (pu4LocalCnt != NULL) {
+			if (pu4LocalCnt[p_conf->scenario] == 0) {
+				pr_warn("Process:%s did too many turning off for local SMI profile:%d,%d\n",
+				current->comm, p_conf->scenario,
+				pu4LocalCnt[p_conf->scenario]);
 			} else {
 				pu4LocalCnt[p_conf->scenario] -= 1;
 			}
@@ -531,6 +566,11 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 		if (g_SMIInfo.pu4ConcurrencyTable[i])
 			u4Concurrency |= (1 << i);
 	}
+
+#ifdef MMDVFS_ENABLE
+		/* notify mmdvfs concurrency */
+		mmdvfs_notify_scenario_concurrency(u4Concurrency);
+#endif
 
 	if ((1 << SMI_BWC_SCEN_MM_GPU) & u4Concurrency)
 		eFinalScen = SMI_BWC_SCEN_MM_GPU;
@@ -554,7 +594,7 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 		eFinalScen = SMI_BWC_SCEN_NORMAL;
 
 	if (ePreviousFinalScen == eFinalScen) {
-		SMIMSG("Scen equal%d,don't change\n", eFinalScen);
+		pr_warn("Scen equal%d,don't change\n", eFinalScen);
 		goto err_clkoff;
 	} else {
 		ePreviousFinalScen = eFinalScen;
@@ -565,7 +605,7 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 	/* Bandwidth Limiter */
 	switch (eFinalScen) {
 	case SMI_BWC_SCEN_VP:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_VP");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_VP");
 		if (smi_data->smi_priv->plat != MTK_PLAT_MT8163)
 			smicur->vp_setting(smi_data);
 		else {
@@ -579,58 +619,58 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 		break;
 
 	case SMI_BWC_SCEN_SWDEC_VP:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_SWDEC_VP");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_SWDEC_VP");
 		smicur->vp_setting(smi_data);
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_VP;
 		break;
 
 	case SMI_BWC_SCEN_VR:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_VR");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_VR");
 		smicur->vr_setting(smi_data);
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_VR;
 		break;
 
 	case SMI_BWC_SCEN_VR_SLOW:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_VR");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_VR");
 		smi_profile = SMI_BWC_SCEN_VR_SLOW;
 		smicur->vr_setting(smi_data);
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_VR;
 		break;
 
 	case SMI_BWC_SCEN_VENC:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_VENC");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_VENC");
 		smicur->vr_setting(smi_data);
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_NORMAL;
 		break;
 
 	case SMI_BWC_SCEN_NORMAL:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_NORMAL");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_NORMAL");
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_NORMAL;
 		smicur->init_setting(smi_data, &is_default_value_saved,
 				default_val_smi_l1arb, smi_data->larb_nr);
 		break;
 
 	case SMI_BWC_SCEN_MM_GPU:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_MM_GPU");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_MM_GPU");
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_NORMAL;
 		smicur->init_setting(smi_data, &is_default_value_saved,
 				default_val_smi_l1arb, smi_data->larb_nr);
 		break;
 
 	case SMI_BWC_SCEN_HDMI:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_HDMI");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_HDMI");
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_NORMAL;
 		smicur->hdmi_setting(smi_data);
 		break;
 
 	case SMI_BWC_SCEN_HDMI4K:
-		SMIMSG("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_HDMI4K");
+		pr_debug("[SMI_PROFILE] : %s\n", "SMI_BWC_SCEN_HDMI4K");
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_NORMAL;
 		smicur->hdmi_4k_setting(smi_data);
 		break;
 
 	default:
-		SMIMSG("[SMI_PROFILE] : %s %d\n", "initSetting", eFinalScen);
+		pr_debug("[SMI_PROFILE] : %s %d\n", "initSetting", eFinalScen);
 		smicur->init_setting(smi_data, &is_default_value_saved,
 				default_val_smi_l1arb, smi_data->larb_nr);
 		g_smi_bwc_mm_info.hw_ovl_limit = SF_HWC_PIXEL_MAX_NORMAL;
@@ -643,23 +683,18 @@ static int smi_bwc_config(MTK_SMI_BWC_CONFIG *p_conf, unsigned int *pu4LocalCnt)
 	for (i = 0; i <= smi_data->larb_nr; i++)
 		mtk_smi_larb_clock_off(i, true);
 
-	/* Since send uevent may trigger sleeping, we must send the event after releasing spin lock */
+	/* Since send uevent may trigger sleeping
+	 * we must send the event after releasing spin lock
+	 */
 	ovl_limit_uevent(smi_profile, g_smi_bwc_mm_info.hw_ovl_limit);
 
-	SMIMSG("SMI_PROFILE to:%d %s,cur:%d,%d,%d,%d\n", p_conf->scenario,
+	pr_debug("SMI_PROFILE to:%d %s,cur:%d,%d,%d,%d\n", p_conf->scenario,
 	       (p_conf->b_on_off ? "on" : "off"), eFinalScen,
 	       g_SMIInfo.pu4ConcurrencyTable[SMI_BWC_SCEN_NORMAL],
 	       g_SMIInfo.pu4ConcurrencyTable[SMI_BWC_SCEN_VR],
 	       g_SMIInfo.pu4ConcurrencyTable[SMI_BWC_SCEN_VP]);
 
 	return 0;
-
-/* Debug usage - S */
-/* smi_dumpDebugMsg(); */
-/* SMIMSG("Config:%d,%d,%d\n" , eFinalScen ,
-*g_SMIInfo.pu4ConcurrencyTable[SMI_BWC_SCEN_NORMAL] ,
-*(NULL == pu4LocalCnt ? (-1) : pu4LocalCnt[p_conf->scenario])); */
-/* Debug usage - E */
 
 err_clkoff:
 	spin_unlock(&g_SMIInfo.SMI_lock);
@@ -670,19 +705,13 @@ err_clkoff:
 	return 0;
 }
 
-/*
-const struct dev_pm_ops mtk_smi_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(smiclk_subsys_before_off, smiclk_subsys_after_on)
-};*/
-
 int smi_common_init(void)
 {
 	int i;
 
-	for (i = 0; i <= smi_data->larb_nr; i++) {
-		pLarbRegBackUp[i] = kmalloc(LARB_BACKUP_REG_SIZE, GFP_KERNEL | __GFP_ZERO);
-		if (pLarbRegBackUp[i] == NULL)
-			SMIERR("pLarbRegBackUp kmalloc fail %d\n", i);
+	for (i = 0; i < smi_data->larb_nr; i++) {
+		pLarbRegBackUp[i] =
+			kmalloc(LARB_BACKUP_REG_SIZE, GFP_KERNEL | __GFP_ZERO);
 	}
 
 	for (i = 0; i < smi_data->larb_nr; i++)
@@ -692,23 +721,22 @@ int smi_common_init(void)
 	smi_data->smi_priv->init_setting(smi_data, &is_default_value_saved,
 			default_val_smi_l1arb, smi_data->larb_nr);
 
-
 	fglarbcallback = true;
 
 	for (i = smi_data->larb_nr; i >= 0; i--)
 		mtk_smi_larb_clock_off(i, true);
+
 
 	return 0;
 }
 
 static int smi_open(struct inode *inode, struct file *file)
 {
-	file->private_data = kmalloc_array(SMI_BWC_SCEN_CNT, sizeof(unsigned int), GFP_ATOMIC);
+	file->private_data = kmalloc_array(SMI_BWC_SCEN_CNT,
+		sizeof(unsigned int), GFP_ATOMIC);
 
-	if (NULL == file->private_data) {
-		SMIMSG("Not enough entry for DDP open operation\n");
+	if (file->private_data == NULL)
 		return -ENOMEM;
-	}
 
 	memset(file->private_data, 0, SMI_BWC_SCEN_CNT * sizeof(unsigned int));
 
@@ -717,7 +745,7 @@ static int smi_open(struct inode *inode, struct file *file)
 
 static int smi_release(struct inode *inode, struct file *file)
 {
-	if (NULL != file->private_data) {
+	if (file->private_data != NULL) {
 		kfree(file->private_data);
 		file->private_data = NULL;
 	}
@@ -767,17 +795,19 @@ void smi_bwc_mm_info_set(int property_id, long val1, long val2)
 static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 {
 	int ret = 0;
-/* unsigned long * pu4Cnt = (unsigned long *)pFile->private_data; */
 
 	switch (cmd) {
 
 	case MTK_IOC_SMI_BWC_CONFIG:
 		{
-			MTK_SMI_BWC_CONFIG cfg;
+			struct MTK_SMI_BWC_CONFIG cfg;
 
-			ret = copy_from_user(&cfg, (void *)param, sizeof(MTK_SMI_BWC_CONFIG));
+			ret = copy_from_user(&cfg,
+				(void *)param,
+				sizeof(struct MTK_SMI_BWC_CONFIG));
 			if (ret) {
-				SMIMSG(" SMI_BWC_CONFIG, copy_from_user failed: %d\n", ret);
+				pr_warn(" SMI_BWC_CONFIG, copy_from_user failed: %d\n",
+					ret);
 				return -EFAULT;
 			}
 
@@ -787,28 +817,34 @@ static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 		/* GMP start */
 	case MTK_IOC_SMI_BWC_INFO_SET:
 		{
-			MTK_SMI_BWC_INFO_SET cfg;
-			/* SMIMSG("Handle MTK_IOC_SMI_BWC_INFO_SET request... start"); */
-			ret = copy_from_user(&cfg, (void *)param, sizeof(MTK_SMI_BWC_INFO_SET));
+			struct MTK_SMI_BWC_INFO_SET cfg;
+
+			ret = copy_from_user(&cfg,
+				(void *)param,
+				sizeof(struct MTK_SMI_BWC_INFO_SET));
 			if (ret) {
-				SMIMSG(" MTK_IOC_SMI_BWC_INFO_SET, copy_to_user failed: %d\n", ret);
+				pr_warn(" MTK_IOC_SMI_BWC_INFO_SET, copy_to_user failed: %d\n",
+					ret);
 				return -EFAULT;
 			}
-			/* Set the address to the value assigned by user space program */
-			smi_bwc_mm_info_set(cfg.property, cfg.value1, cfg.value2);
-			/* SMIMSG("Handle MTK_IOC_SMI_BWC_INFO_SET request... finish"); */
+			/* Set the address to the value
+			 * assigned by user space program
+			 */
+			smi_bwc_mm_info_set(cfg.property,
+				cfg.value1, cfg.value2);
 			break;
 		}
 	case MTK_IOC_SMI_BWC_INFO_GET:
 		{
-			ret = copy_to_user((void *)param, (void *)&g_smi_bwc_mm_info,
-					   sizeof(MTK_SMI_BWC_MM_INFO));
+			ret = copy_to_user((void *)param,
+				(void *)&g_smi_bwc_mm_info,
+				sizeof(struct MTK_SMI_BWC_MM_INFO));
 
 			if (ret) {
-				SMIMSG(" MTK_IOC_SMI_BWC_INFO_GET, copy_to_user failed: %d\n", ret);
+				pr_warn(" MTK_IOC_SMI_BWC_INFO_GET, copy_to_user failed: %d\n",
+					ret);
 				return -EFAULT;
 			}
-			/* SMIMSG("Handle MTK_IOC_SMI_BWC_INFO_GET request... finish"); */
 			break;
 		}
 		/* GMP end */
@@ -817,7 +853,8 @@ static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 		{
 			unsigned int larb_index;
 
-			ret = copy_from_user(&larb_index, (void *)param, sizeof(unsigned int));
+			ret = copy_from_user(&larb_index,
+				(void *)param, sizeof(unsigned int));
 			if (ret)
 				return -EFAULT;
 
@@ -829,7 +866,8 @@ static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 		{
 			unsigned int arg;
 
-			ret = copy_from_user(&arg, (void *)param, sizeof(unsigned int));
+			ret = copy_from_user(&arg,
+				(void *)param, sizeof(unsigned int));
 			if (ret)
 				return -EFAULT;
 
@@ -837,21 +875,26 @@ static long smi_ioctl(struct file *pFile, unsigned int cmd, unsigned long param)
 		}
 		break;
 
-	/*case MTK_IOC_MMDVFS_CMD:
+#ifdef MMDVFS_ENABLE
+	case MTK_IOC_MMDVFS_CMD:
 		{
-			MTK_MMDVFS_CMD mmdvfs_cmd;
+			struct MTK_MMDVFS_CMD mmdvfs_cmd;
 
-			if (copy_from_user(&mmdvfs_cmd, (void *)param, sizeof(MTK_MMDVFS_CMD)))
+			if (copy_from_user(&mmdvfs_cmd,	(void *)param,
+					sizeof(struct MTK_MMDVFS_CMD)))
 				return -EFAULT;
 
 			mmdvfs_handle_cmd(&mmdvfs_cmd);
 
-			if (copy_to_user
-			    ((void *)param, (void *)&mmdvfs_cmd, sizeof(MTK_MMDVFS_CMD)))
+			if (copy_to_user((void *)param,
+					(void *)&mmdvfs_cmd,
+					sizeof(struct MTK_MMDVFS_CMD)))
 				return -EFAULT;
 
 			break;
-	}*/
+	}
+#endif
+
 	default:
 		return -1;
 	}
@@ -871,15 +914,15 @@ static dev_t smiDevNo = MKDEV(MTK_SMI_MAJOR_NUMBER, 0);
 static inline int smi_register(void)
 {
 	if (alloc_chrdev_region(&smiDevNo, 0, 1, "MTK_SMI")) {
-		SMIERR("Allocate device No. failed");
+		pr_err("Allocate device No. failed");
 		return -EAGAIN;
 	}
 	/* Allocate driver */
 	pSmiDev = cdev_alloc();
 
-	if (NULL == pSmiDev) {
+	if (pSmiDev == NULL) {
 		unregister_chrdev_region(smiDevNo, 1);
-		SMIERR("Allocate mem for kobject failed");
+		pr_err("Allocate mem for kobject failed");
 		return -ENOMEM;
 	}
 	/* Attatch file operation. */
@@ -888,7 +931,7 @@ static inline int smi_register(void)
 
 	/* Add to system */
 	if (cdev_add(pSmiDev, smiDevNo, 1)) {
-		SMIERR("Attatch file operation failed");
+		pr_err("Attatch file operation failed");
 		unregister_chrdev_region(smiDevNo, 1);
 		return -EAGAIN;
 	}
@@ -910,17 +953,19 @@ static int smi_dev_register(void)
 	pSmiClass = class_create(THIS_MODULE, "MTK_SMI");
 	if (IS_ERR(pSmiClass)) {
 		ret = PTR_ERR(pSmiClass);
-		SMIERR("Unable to create class, err = %d", ret);
+		pr_err("Unable to create class, err = %d", ret);
 		return ret;
 	}
 
-	smiDevice = device_create(pSmiClass, NULL, smiDevNo, NULL, "MTK_SMI");
+	smiDevice = device_create(pSmiClass, NULL,
+		smiDevNo, NULL, "MTK_SMI");
 	smiDeviceUevent = smiDevice;
 
 	return 0;
 }
 
-static int mtk_smi_common_get(struct device *smidev, bool pm)
+static int mtk_smi_common_get(struct device *smidev,
+	bool pm)
 {
 	struct mtk_smi_common *smipriv = dev_get_drvdata(smidev);
 	int ret;
@@ -951,7 +996,8 @@ err_put_pm:
 	return ret;
 }
 
-static void mtk_smi_common_put(struct device *smidev, bool pm)
+static void mtk_smi_common_put(struct device *smidev,
+	bool pm)
 {
 	struct mtk_smi_common *smipriv = dev_get_drvdata(smidev);
 
@@ -961,7 +1007,8 @@ static void mtk_smi_common_put(struct device *smidev, bool pm)
 		pm_runtime_put_sync(smidev);
 }
 
-static int _mtk_smi_larb_get(struct device *larbdev, bool pm)
+static int _mtk_smi_larb_get(struct device *larbdev,
+	bool pm)
 {
 	struct mtk_smi_larb *larbpriv = dev_get_drvdata(larbdev);
 	int ret;
@@ -1000,7 +1047,8 @@ err_put_smicommon:
 	return ret;
 }
 
-static void _mtk_smi_larb_put(struct device *larbdev, bool pm)
+static void _mtk_smi_larb_put(struct device *larbdev,
+	bool pm)
 {
 	struct mtk_smi_larb *larbpriv = dev_get_drvdata(larbdev);
 
@@ -1031,7 +1079,6 @@ static int mtk_smi_larb_runtime_suspend(struct device *dev)
 	larb_reg_backup(idx);
 
 	_mtk_smi_larb_put(dev, false);
-
 	return 0;
 }
 
@@ -1072,6 +1119,7 @@ static int mtk_smi_larb_probe(struct platform_device *pdev)
 	struct platform_device *smi_pdev;
 	int ret, larbid;
 
+	pr_err("%s called\n", __func__);
 	if (!dev->pm_domain)
 		return -EPROBE_DEFER;
 
@@ -1114,7 +1162,8 @@ static int mtk_smi_larb_probe(struct platform_device *pdev)
 	smi_data->larb_nr++;
 	atomic_set(&(smi_data->larbref[larbid]), 0);
 
-	SMIMSG("larb %d-cnt %d probe done\n", larbid, smi_data->larb_nr);
+	pr_err("larb %d-cnt %d, base 0x%lx probe done\n", larbid,
+		smi_data->larb_nr, smi_data->larb_base[larbid]);
 
 	pm_runtime_enable(dev);
 	dev_set_drvdata(dev, larbpriv);
@@ -1131,6 +1180,7 @@ static const struct of_device_id mtk_smi_larb_of_ids[] = {
 	{ .compatible = "mediatek,mt8173-smi-larb", },
 	{ .compatible = "mediatek,mt8163-smi-larb", },
 	{ .compatible = "mediatek,mt8127-smi-larb", },
+	{ .compatible = "mediatek,mt8167-smi-larb", },
 	{}
 };
 
@@ -1150,9 +1200,10 @@ static int mtk_smi_probe(struct platform_device *pdev);
 static int mtk_smi_remove(struct platform_device *pdev);
 
 static const struct of_device_id mtk_smi_of_ids[] = {
-	{ .compatible = "mediatek,mt8173-smi", .data = &smi_mt8173_priv, },
-	{ .compatible = "mediatek,mt8163-smi", .data = &smi_mt8163_priv, },
-	{ .compatible = "mediatek,mt8127-smi", .data = &smi_mt8127_priv, },
+	{ .compatible = "mediatek,mt8173-smi-common",
+	  .data = &smi_mt8173_priv, },
+	{ .compatible = "mediatek,mt8163-smi",
+	  .data = &smi_mt8163_priv, },
 	{}
 };
 
@@ -1164,8 +1215,6 @@ static struct platform_driver mtk_smi_driver = {
 		.of_match_table = mtk_smi_of_ids,
 	}
 };
-
-extern unsigned long DispPmReg;
 
 static int mtk_smi_probe(struct platform_device *pdev)
 {
@@ -1215,10 +1264,9 @@ static int mtk_smi_probe(struct platform_device *pdev)
 	smi_data->smi_priv = priv;
 
 	pm_runtime_enable(dev);
-	set_power_state_cb(&pdev->dev, mm_power_state_cb);
+	pm_runtime_get_sync(dev);
 	dev_set_drvdata(dev, smipriv);
-
-	DispPmReg = (unsigned long)ioremap(0x1000660c,4);
+	pr_err("%s end\n", __func__);
 	return 0;
 }
 
@@ -1233,7 +1281,7 @@ static int mtk_smi_larb_fb_suspend(void)
 	int i;
 
 	if (!smi_data || !smi_data->larb_nr) {
-		SMIMSG("smi fb suspend, smi or smi larb did not probed\n");
+		pr_warn("smi fb suspend, smi or smi larb did not probed\n");
 		return 0;
 	}
 
@@ -1243,7 +1291,7 @@ static int mtk_smi_larb_fb_suspend(void)
 		mtk_smi_larb_clock_off(i, true);
 	}
 	smi_suspend = 1;
-	SMIMSG("mtk_smi_larb fb suspended\n");
+	pr_debug("mtk_smi_larb fb suspended\n");
 	return 0;
 }
 
@@ -1252,12 +1300,12 @@ static int mtk_smi_larb_fb_resume(void)
 	int i;
 
 	if (!smi_suspend) {
-		SMIMSG("resume without suspend\n");
+		pr_warn("resume without suspend\n");
 		return 0;
 	}
 
 	if (!smi_data || !smi_data->larb_nr) {
-		SMIMSG("smi fb resume, smi or smi larb did not probed\n");
+		pr_warn("smi fb resume, smi or smi larb did not probed\n");
 		return 0;
 	}
 
@@ -1268,13 +1316,14 @@ static int mtk_smi_larb_fb_resume(void)
 	}
 
 	smi_suspend = 0;
-	SMIMSG("mtk_smi_larb fb resume\n");
+	pr_debug("mtk_smi_larb fb resume\n");
 	return 0;
 
 }
 
-static int mtk_smi_variant_event_notify(struct notifier_block *self,
-				unsigned long action, void *data)
+static int mtk_smi_variant_event_notify(
+	struct notifier_block *self,
+	unsigned long action, void *data)
 {
 	if (action != FB_EARLY_EVENT_BLANK)
 		return 0;
@@ -1302,7 +1351,8 @@ static int mtk_smi_variant_event_notify(struct notifier_block *self,
 }
 
 
-static struct notifier_block mtk_smi_variant_event_notifier = {
+static struct notifier_block
+	mtk_smi_variant_event_notifier = {
 	.notifier_call  = mtk_smi_variant_event_notify,
 };
 
@@ -1311,10 +1361,8 @@ static int __init smi_init(void)
 	int ret;
 
 	smi_data = kzalloc(sizeof(*smi_data), GFP_KERNEL);
-	if (smi_data == NULL) {
-		SMIERR("Unable to allocate memory for smi driver");
+	if (smi_data == NULL)
 		return -ENOMEM;
-	}
 
 	ret = platform_driver_register(&mtk_smi_driver);
 	if (ret != 0) {
@@ -1330,16 +1378,20 @@ static int __init smi_init(void)
 
 	ret = smi_dev_register();
 	if (ret) {
-		SMIMSG("register dev/smi failed\n");
+		pr_err("register dev/smi failed\n");
 		return ret;
 	}
 
-	memset(g_SMIInfo.pu4ConcurrencyTable, 0, SMI_BWC_SCEN_CNT * sizeof(unsigned int));
+	memset(g_SMIInfo.pu4ConcurrencyTable, 0,
+		SMI_BWC_SCEN_CNT * sizeof(unsigned int));
 	spin_lock_init(&g_SMIInfo.SMI_lock);
 
-	SMI_DBG_Init();
+	/* SMI_DBG_Init();*/
+#ifdef MMDVFS_ENABLE
+	mmdvfs_init(&g_smi_bwc_mm_info);
+#endif
 	fb_register_client(&mtk_smi_variant_event_notifier);
-	SMIMSG("smi_init done\n");
+	pr_debug("smi_init done\n");
 
 	return 0;
 }
@@ -1353,99 +1405,130 @@ static void __exit smi_exit(void)
 static int __init smi_init_late(void)
 {
 	/*init clk/mtcmos should be late while ccf */
-	SMIMSG("smi_init_late-\n");
+	pr_debug("smi_init_late-\n");
 
 	smi_common_init();
+	pm_runtime_put_sync(smi_data->smicommon);
 
 	return 0;
 }
 
-static void smi_dumpCommonDebugMsg(void)
+void smi_dumpCommonDebugMsg(void)
 {
 	unsigned long u4Base;
+	int i, cnt = 5;
 
 	/* SMI COMMON dump */
-	SMIMSG("===SMI common reg dump===\n");
+	pr_err("===SMI common reg dump===\n");
 
 	u4Base = SMI_COMMON_EXT_BASE;
-	SMIMSG("[0x200,0x204,0x208]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x200),
-	       M4U_ReadReg32(u4Base, 0x204), M4U_ReadReg32(u4Base, 0x208));
-	SMIMSG("[0x20C,0x210,0x214]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x20C),
-	       M4U_ReadReg32(u4Base, 0x210), M4U_ReadReg32(u4Base, 0x214));
-	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173 || smi_data->smi_priv->plat == MTK_PLAT_MT8163) {
-		SMIMSG("[0x220,0x230,0x234,0x238]=[0x%x,0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x220),
-		       M4U_ReadReg32(u4Base, 0x230), M4U_ReadReg32(u4Base, 0x234), M4U_ReadReg32(u4Base,
-												 0x238));
-		SMIMSG("[0x400,0x404,0x408]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x400),
-		       M4U_ReadReg32(u4Base, 0x404), M4U_ReadReg32(u4Base, 0x408));
-
-	} else if (smi_data->smi_priv->plat == MTK_PLAT_MT8127) {
-		SMIMSG("[0x218,0x230,0x234,0x238]=[0x%x,0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x218),
-		       M4U_ReadReg32(u4Base, 0x230), M4U_ReadReg32(u4Base, 0x234), M4U_ReadReg32(u4Base,
-												 0x238));
-		SMIMSG("[0x400,0x404,]=[0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x400),
-		       M4U_ReadReg32(u4Base, 0x404));
+	pr_err("[0x200,0x204,0x208]=[0x%x,0x%x,0x%x]\n",
+		M4U_ReadReg32(u4Base, 0x200),
+		M4U_ReadReg32(u4Base, 0x204),
+		M4U_ReadReg32(u4Base, 0x208));
+	pr_err("[0x20C,0x210,0x214]=[0x%x,0x%x,0x%x]\n",
+		M4U_ReadReg32(u4Base, 0x20C),
+		M4U_ReadReg32(u4Base, 0x210),
+		M4U_ReadReg32(u4Base, 0x214));
+	pr_err("[0x300]=[0x%x]\n", M4U_ReadReg32(u4Base, 0x300));
+	if (smi_data->smi_priv->plat == MTK_PLAT_MT8173
+		|| smi_data->smi_priv->plat == MTK_PLAT_MT8163) {
+		pr_err("[0x220,0x230,0x234,0x238]=[0x%x,0x%x,0x%x,0x%x]\n",
+			M4U_ReadReg32(u4Base, 0x220),
+			M4U_ReadReg32(u4Base, 0x230),
+			M4U_ReadReg32(u4Base, 0x234),
+			M4U_ReadReg32(u4Base, 0x238));
+		for (i = 0; i < cnt; i++) {
+			pr_err("%d.[0x400,0x404,0x408,0x40c,0x410]=[0x%x,0x%x,0x%x,0x%x,0x%x]\n",
+				i, M4U_ReadReg32(u4Base, 0x400),
+				M4U_ReadReg32(u4Base, 0x404),
+				M4U_ReadReg32(u4Base, 0x408),
+				M4U_ReadReg32(u4Base, 0x40c),
+				M4U_ReadReg32(u4Base, 0x410));
+		}
+	} else if (smi_data->smi_priv->plat
+		== MTK_PLAT_MT8127) {
+		pr_err("[0x218,0x230,0x234,0x238]=[0x%x,0x%x,0x%x,0x%x]\n",
+			M4U_ReadReg32(u4Base, 0x218),
+			M4U_ReadReg32(u4Base, 0x230),
+			M4U_ReadReg32(u4Base, 0x234),
+			M4U_ReadReg32(u4Base, 0x238));
+		pr_err("[0x400,0x404,]=[0x%x,0x%x]\n",
+			M4U_ReadReg32(u4Base, 0x400),
+			M4U_ReadReg32(u4Base, 0x404));
 	}
-
-
-	/* TBD: M4U should dump these, the offset of MT27 have been checked and same with the followings. */
-/*
-	For VA and PA check:
-	0x1000C5C0 , 0x1000C5C4, 0x1000C5C8, 0x1000C5CC, 0x1000C5D0
-	u4Base = SMI_COMMON_AO_BASE;
-	SMIMSG("===SMI always on reg dump===\n");
-	SMIMSG("[0x5C0,0x5C4,0x5C8]=[0x%x,0x%x,0x%x]\n" ,
-		M4U_ReadReg32(u4Base , 0x5C0),M4U_ReadReg32(u4Base , 0x5C4),
-		M4U_ReadReg32(u4Base , 0x5C8));
-	SMIMSG("[0x5CC,0x5D0]=[0x%x,0x%x]\n" ,M4U_ReadReg32(u4Base , 0x5CC),
-		M4U_ReadReg32(u4Base , 0x5D0));
-*/
 }
 
-static void smi_dumpLarbDebugMsg(unsigned int u4Index)
+void smi_dumpLarbDebugMsg(unsigned int u4Index)
 {
 	unsigned long u4Base;
+	int i, cnt = 5;
 
 	u4Base = get_larb_base_addr(u4Index);
 
 	if (u4Base == SMI_ERROR_ADDR) {
-		SMIMSG("Doesn't support reg dump for Larb%d\n", u4Index);
+		pr_err("Doesn't support reg dump for Larb%d\n", u4Index);
 	} else {
 		unsigned int u4Offset = 0;
 
-		SMIMSG("===SMI LARB%d reg dump===\n", u4Index);
+		pr_err("===SMI LARB%d reg dump===\n", u4Index);
 
-		if (smi_data->smi_priv->plat == MTK_PLAT_MT8173 || smi_data->smi_priv->plat == MTK_PLAT_MT8163) {
-			SMIMSG("[0x0,0x8,0x10]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x0),
-			       M4U_ReadReg32(u4Base, 0x8), M4U_ReadReg32(u4Base, 0x10));
-			SMIMSG("[0x24,0x50,0x60]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x24),
-			       M4U_ReadReg32(u4Base, 0x50), M4U_ReadReg32(u4Base, 0x60));
-			SMIMSG("[0xa0,0xa4,0xa8]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0xa0),
-			       M4U_ReadReg32(u4Base, 0xa4), M4U_ReadReg32(u4Base, 0xa8));
-			SMIMSG("[0xac,0xb0,0xb4]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0xac),
-			       M4U_ReadReg32(u4Base, 0xb0), M4U_ReadReg32(u4Base, 0xb4));
-			SMIMSG("[0xb8,0xbc,0xc0]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0xb8),
-			       M4U_ReadReg32(u4Base, 0xbc), M4U_ReadReg32(u4Base, 0xc0));
-			SMIMSG("[0xc8,0xcc]=[0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0xc8),
-			       M4U_ReadReg32(u4Base, 0xcc));
+		if (smi_data->smi_priv->plat == MTK_PLAT_MT8173
+			|| smi_data->smi_priv->plat == MTK_PLAT_MT8163) {
+			for (i = 0; i < cnt; i++) {
+				pr_err("[0x0] %d: 0x%x\n",
+					i, M4U_ReadReg32(u4Base, 0x0));
+			}
+			pr_err("[0x8,0x10]=[0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0x8),
+				M4U_ReadReg32(u4Base, 0x10));
+			pr_err("[0x24,0x50,0x60]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0x24),
+				M4U_ReadReg32(u4Base, 0x50),
+				M4U_ReadReg32(u4Base, 0x60));
+			pr_err("[0xa0,0xa4,0xa8]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0xa0),
+				M4U_ReadReg32(u4Base, 0xa4),
+				M4U_ReadReg32(u4Base, 0xa8));
+			pr_err("[0xac,0xb0,0xb4]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0xac),
+				M4U_ReadReg32(u4Base, 0xb0),
+				M4U_ReadReg32(u4Base, 0xb4));
+			pr_err("[0xb8,0xbc,0xc0]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0xb8),
+				M4U_ReadReg32(u4Base, 0xbc),
+				M4U_ReadReg32(u4Base, 0xc0));
+			pr_err("[0xc8,0xcc]=[0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0xc8),
+				M4U_ReadReg32(u4Base, 0xcc));
 		} else if (smi_data->smi_priv->plat == MTK_PLAT_MT8127) {
-			SMIMSG("[0x0,0x10,0x60]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x0),
-			       M4U_ReadReg32(u4Base, 0x10), M4U_ReadReg32(u4Base, 0x60));
-			SMIMSG("[0x64,0x8c,0x450]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x64),
-			       M4U_ReadReg32(u4Base, 0x8c), M4U_ReadReg32(u4Base, 0x450));
-			SMIMSG("[0x454,0x600,0x604]=[0x%x,0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x454),
-			       M4U_ReadReg32(u4Base, 0x600), M4U_ReadReg32(u4Base, 0x604));
-			SMIMSG("[0x610,0x614]=[0x%x,0x%x]\n", M4U_ReadReg32(u4Base, 0x610),
-			       M4U_ReadReg32(u4Base, 0x614));
-
+			pr_err("[0x0,0x10,0x60]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0x0),
+				M4U_ReadReg32(u4Base, 0x10),
+				M4U_ReadReg32(u4Base, 0x60));
+			pr_err("[0x64,0x8c,0x450]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0x64),
+			    	M4U_ReadReg32(u4Base, 0x8c),
+			    	M4U_ReadReg32(u4Base, 0x450));
+			pr_err("[0x454,0x600,0x604]=[0x%x,0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0x454),
+			    	M4U_ReadReg32(u4Base, 0x600),
+			    	M4U_ReadReg32(u4Base, 0x604));
+			pr_err("[0x610,0x614]=[0x%x,0x%x]\n",
+				M4U_ReadReg32(u4Base, 0x610),
+			    	M4U_ReadReg32(u4Base, 0x614));
 		}
 
-		for (u4Offset = 0x200; u4Offset <= 0x200 + smi_data->larb_nr * 4; u4Offset += 4)
-			SMIMSG("[0x%x = 0x%x ]\n", u4Offset, M4U_ReadReg32(u4Base , u4Offset));
+		for (u4Offset = 0x200;
+			u4Offset <= 0x200 + smi_data->larb_nr * 4;
+			u4Offset += 4)
+			pr_err("[0x%x = 0x%x ]\n",
+				u4Offset, M4U_ReadReg32(u4Base, u4Offset));
 	}
 }
 
-static void smi_dump_format(unsigned long base, unsigned int from, unsigned int to)
+static void smi_dump_format(unsigned long base,
+	unsigned int from, unsigned int to)
 {
 	int i, j, left;
 	unsigned int value[8];
@@ -1454,7 +1537,8 @@ static void smi_dump_format(unsigned long base, unsigned int from, unsigned int 
 		for (j = 0; j < 8; j++)
 			value[j] = M4U_ReadReg32(base, i + j * 4);
 
-		SMIMSG2("%8x %x %x %x %x %x %x %x %x\n", i, value[0], value[1], value[2], value[3],
+		pr_debug("%8x %x %x %x %x %x %x %x %x\n",
+			i, value[0], value[1], value[2], value[3],
 			value[4], value[5], value[6], value[7]);
 	}
 
@@ -1466,8 +1550,10 @@ static void smi_dump_format(unsigned long base, unsigned int from, unsigned int 
 		for (j = 0; j < left; j++)
 			value[j] = M4U_ReadReg32(base, i - 32 + j * 4);
 
-		SMIMSG2("%8x %x %x %x %x %x %x %x %x\n", i - 32 + j * 4, value[0], value[1],
-			value[2], value[3], value[4], value[5], value[6], value[7]);
+		pr_debug("%8x %x %x %x %x %x %x %x %x\n",
+			i - 32 + j * 4, value[0], value[1],
+			value[2], value[3], value[4], value[5],
+			value[6], value[7]);
 	}
 }
 
@@ -1478,10 +1564,12 @@ static void smi_dumpLarb(unsigned int index)
 	u4Base = get_larb_base_addr(index);
 
 	if (u4Base == SMI_ERROR_ADDR) {
-		SMIMSG2("Doesn't support reg dump for Larb%d\n", index);
+		pr_warn("Doesn't support reg dump for Larb%d\n",
+			index);
 
 	} else {
-		SMIMSG2("===SMI LARB%d reg dump base 0x%lx===\n", index, u4Base);
+		pr_debug("===SMI LARB%d reg dump base 0x%lx===\n",
+			index, u4Base);
 
 		smi_dump_format(u4Base, 0, 0x434);
 		smi_dump_format(u4Base, 0xF00, 0xF0C);
@@ -1490,7 +1578,8 @@ static void smi_dumpLarb(unsigned int index)
 
 static void smi_dumpCommon(void)
 {
-	SMIMSG2("===SMI COMMON reg dump base 0x%lx===\n", SMI_COMMON_EXT_BASE);
+	pr_debug("===SMI COMMON reg dump base 0x%lx===\n",
+		SMI_COMMON_EXT_BASE);
 
 	smi_dump_format(SMI_COMMON_EXT_BASE, 0x1A0, 0x418);
 }
@@ -1503,151 +1592,30 @@ void smi_dumpDebugMsg(void)
 	smi_dumpCommonDebugMsg();
 
 	/* dump all SMI LARB */
-	for (u4Index = 0; u4Index <= smi_data->larb_nr; u4Index++)
+	for (u4Index = 0; u4Index < smi_data->larb_nr; u4Index++)
 		smi_dumpLarbDebugMsg(u4Index);
-}
-
-int smi_debug_bus_hanging_detect(unsigned int larbs, int show_dump)
-{
-#ifdef CONFIG_MTK_SMI
-	int i = 0;
-	int dump_time = 0;
-	int is_smi_issue = 0;
-	int status_code = 0;
-	/* Keep the dump result */
-	unsigned char smi_common_busy_count = 0;
-	/*volatile */ unsigned int reg_temp = 0;
-	unsigned char smi_larb_busy_count[SMI_LARB_NR_MAX] = { 0 };
-	unsigned char smi_larb_mmu_status[SMI_LARB_NR_MAX] = { 0 };
-
-	/* dump resister and save resgister status */
-	for (dump_time = 0; dump_time < 5; dump_time++) {
-		unsigned int u4Index = 0;
-
-		reg_temp = M4U_ReadReg32(SMI_COMMON_EXT_BASE, 0x400);
-		if ((reg_temp & (1 << 30)) == 0) {
-			/* smi common is busy */
-			smi_common_busy_count++;
-		}
-		/* Dump smi common regs */
-		if (show_dump != 0)
-			smi_dumpCommonDebugMsg();
-
-		for (u4Index = 0; u4Index <= smi_data->larb_nr; u4Index++) {
-			unsigned long u4Base = get_larb_base_addr(u4Index);
-
-			if (u4Base != SMI_ERROR_ADDR) {
-				reg_temp = M4U_ReadReg32(u4Base, 0x0);
-				if (reg_temp != 0) {
-					/* Larb is busy */
-					smi_larb_busy_count[u4Index]++;
-				}
-				smi_larb_mmu_status[u4Index] = M4U_ReadReg32(u4Base, 0xa0);
-				if (show_dump != 0)
-					smi_dumpLarbDebugMsg(u4Index);
-			}
-		}
-
-	}
-
-	/* Show the checked result */
-	for (i = 0; i <= smi_data->larb_nr; i++) {	/* Check each larb */
-		if (SMI_DGB_LARB_SELECT(larbs, i)) {
-			/* larb i has been selected */
-			/* Get status code */
-
-			if (smi_larb_busy_count[i] == 5) {	/* The larb is always busy */
-				if (smi_common_busy_count == 5) {	/* smi common is always busy */
-					status_code = 1;
-				} else if (smi_common_busy_count == 0) {	/* smi common is always idle */
-					status_code = 2;
-				} else {
-					status_code = 5;	/* smi common is sometimes busy and idle */
-				}
-			} else if (smi_larb_busy_count[i] == 0) {	/* The larb is always idle */
-				if (smi_common_busy_count == 5) {	/* smi common is always busy */
-					status_code = 3;
-				} else if (smi_common_busy_count == 0) {	/* smi common is always idle */
-					status_code = 4;
-				} else {
-					status_code = 6;	/* smi common is sometimes busy and idle */
-				}
-			} else {	/* sometime the larb is busy */
-				if (smi_common_busy_count == 5) {	/* smi common is always busy */
-					status_code = 7;
-				} else if (smi_common_busy_count == 0) {	/* smi common is always idle */
-					status_code = 8;
-				} else {
-					status_code = 9;	/* smi common is sometimes busy and idle */
-				}
-			}
-
-			/* Send the debug message according to the final result */
-			switch (status_code) {
-			case 1:
-			case 3:
-			case 5:
-			case 7:
-			case 8:
-				SMIMSG
-				    ("Larb%d Busy=%d/5, SMI Common Busy=%d/5, status=%d ==> Check engine's state first",
-				     i, smi_larb_busy_count[i], smi_common_busy_count, status_code);
-				SMIMSG
-				    ("If the engine is waiting for Larb%ds' response, it needs SMI HW's check",
-				     i);
-				break;
-			case 2:
-				if (smi_larb_mmu_status[i] == 0) {
-					SMIMSG("Larb%d Busy=%d/5, Common Busy=%d/5,status=%d=>Check engine state first",
-					     i, smi_larb_busy_count[i], smi_common_busy_count,
-					     status_code);
-					SMIMSG("If the engine is waiting for Larb%ds' response,it needs SMI HW's check",
-							i);
-				} else {
-					SMIMSG("Larb%d Busy=%d/5, Common Busy=%d/5, status=%d==>MMU port config error",
-						i, smi_larb_busy_count[i], smi_common_busy_count,
-						status_code);
-					is_smi_issue = 1;
-				}
-				break;
-			case 4:
-			case 6:
-			case 9:
-				SMIMSG
-				    ("Larb%d Busy=%d/5, SMI Common Busy=%d/5, status=%d ==> not SMI issue",
-				     i, smi_larb_busy_count[i], smi_common_busy_count, status_code);
-				break;
-			default:
-				SMIMSG
-				    ("Larb%d Busy=%d/5, SMI Common Busy=%d/5, status=%d ==> status unknown",
-				     i, smi_larb_busy_count[i], smi_common_busy_count, status_code);
-				break;
-			}
-		}
-	}
-
-	return is_smi_issue;
-#endif
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_COMPAT)
 /* 32 bits process ioctl support: */
-/* This is prepared for the future extension since currently the sizes of 32 bits */
+/* This is prepared for the future extension
+ * since currently the sizes of 32 bits
+ */
 /* and 64 bits smi parameters are the same. */
 
-typedef struct {
+struct MTK_SMI_COMPAT_BWC_CONFIG {
 	compat_int_t scenario;
-	compat_int_t b_on_off;	/* 0 : exit this scenario , 1 : enter this scenario */
-} MTK_SMI_COMPAT_BWC_CONFIG;
+	compat_int_t b_on_off;
+	/* 0 : exit this scenario , 1 : enter this scenario */
+};
 
-typedef struct {
+struct MTK_SMI_COMPAT_BWC_INFO_SET {
 	compat_int_t property;
 	compat_int_t value1;
 	compat_int_t value2;
-} MTK_SMI_COMPAT_BWC_INFO_SET;
+};
 
-typedef struct {
+struct MTK_SMI_COMPAT_BWC_MM_INFO {
 	compat_uint_t flag;	/* Reserved */
 	compat_int_t concurrent_profile;
 	compat_int_t sensor_size[2];
@@ -1658,20 +1626,26 @@ typedef struct {
 	compat_int_t video_encode_codec;
 	compat_int_t video_decode_codec;
 	compat_int_t hw_ovl_limit;
-} MTK_SMI_COMPAT_BWC_MM_INFO;
+};
 
-#define COMPAT_MTK_IOC_SMI_BWC_CONFIG      MTK_IOW(24, MTK_SMI_COMPAT_BWC_CONFIG)
-#define COMPAT_MTK_IOC_SMI_BWC_INFO_SET    MTK_IOWR(28, MTK_SMI_COMPAT_BWC_INFO_SET)
-#define COMPAT_MTK_IOC_SMI_BWC_INFO_GET    MTK_IOWR(29, MTK_SMI_COMPAT_BWC_MM_INFO)
+#define COMPAT_MTK_IOC_SMI_BWC_CONFIG \
+	MTK_IOW(24, struct MTK_SMI_COMPAT_BWC_CONFIG)
+#define COMPAT_MTK_IOC_SMI_BWC_INFO_SET \
+	MTK_IOWR(28, struct MTK_SMI_COMPAT_BWC_INFO_SET)
+#define COMPAT_MTK_IOC_SMI_BWC_INFO_GET \
+	MTK_IOWR(29, struct MTK_SMI_COMPAT_BWC_MM_INFO)
 
-static int compat_get_smi_bwc_config_struct(MTK_SMI_COMPAT_BWC_CONFIG __user *data32,
-					    MTK_SMI_BWC_CONFIG __user *data)
+static int compat_get_smi_bwc_config_struct(
+	struct MTK_SMI_COMPAT_BWC_CONFIG __user *data32,
+	struct MTK_SMI_BWC_CONFIG __user *data)
 {
 
 	compat_int_t i;
 	int err;
 
-	/* since the int sizes of 32 A32 and A64 are equal so we don't convert them actually here */
+	/* since the int sizes of 32 A32 and A64 are equal
+	 * so we don't convert them actually here
+	 */
 	err = get_user(i, &(data32->scenario));
 	err |= put_user(i, &(data->scenario));
 	err |= get_user(i, &(data32->b_on_off));
@@ -1680,14 +1654,17 @@ static int compat_get_smi_bwc_config_struct(MTK_SMI_COMPAT_BWC_CONFIG __user *da
 	return err;
 }
 
-static int compat_get_smi_bwc_mm_info_set_struct(MTK_SMI_COMPAT_BWC_INFO_SET __user *data32,
-						 MTK_SMI_BWC_INFO_SET __user *data)
+static int compat_get_smi_bwc_mm_info_set_struct(
+	struct MTK_SMI_COMPAT_BWC_INFO_SET __user *data32,
+	struct MTK_SMI_BWC_INFO_SET __user *data)
 {
 
 	compat_int_t i;
 	int err;
 
-	/* since the int sizes of 32 A32 and A64 are equal so we don't convert them actually here */
+	/* since the int sizes of 32 A32 and A64 are equal
+	 * so we don't convert them actually here
+	 */
 	err = get_user(i, &(data32->property));
 	err |= put_user(i, &(data->property));
 	err |= get_user(i, &(data32->value1));
@@ -1698,15 +1675,18 @@ static int compat_get_smi_bwc_mm_info_set_struct(MTK_SMI_COMPAT_BWC_INFO_SET __u
 	return err;
 }
 
-static int compat_get_smi_bwc_mm_info_struct(MTK_SMI_COMPAT_BWC_MM_INFO __user *data32,
-					     MTK_SMI_BWC_MM_INFO __user *data)
+static int compat_get_smi_bwc_mm_info_struct(
+	struct MTK_SMI_COMPAT_BWC_MM_INFO __user *data32,
+	struct MTK_SMI_BWC_MM_INFO __user *data)
 {
 	compat_uint_t u;
 	compat_int_t i;
 	compat_int_t p[2];
 	int err;
 
-	/* since the int sizes of 32 A32 and A64 are equal so we don't convert them actually here */
+	/* since the int sizes of 32 A32 and A64 are equal
+	 * so we don't convert them actually here
+	 */
 	err = get_user(u, &(data32->flag));
 	err |= put_user(u, &(data->flag));
 	err |= get_user(i, &(data32->concurrent_profile));
@@ -1732,8 +1712,9 @@ static int compat_get_smi_bwc_mm_info_struct(MTK_SMI_COMPAT_BWC_MM_INFO __user *
 	return err;
 }
 
-static int compat_put_smi_bwc_mm_info_struct(MTK_SMI_COMPAT_BWC_MM_INFO __user *data32,
-					     MTK_SMI_BWC_MM_INFO __user *data)
+static int compat_put_smi_bwc_mm_info_struct(
+	struct MTK_SMI_COMPAT_BWC_MM_INFO __user *data32,
+	struct MTK_SMI_BWC_MM_INFO __user *data)
 {
 
 	compat_uint_t u;
@@ -1741,7 +1722,9 @@ static int compat_put_smi_bwc_mm_info_struct(MTK_SMI_COMPAT_BWC_MM_INFO __user *
 	compat_int_t p[2];
 	int err;
 
-	/* since the int sizes of 32 A32 and A64 are equal so we don't convert them actually here */
+	/* since the int sizes of 32 A32 and A64 are equal
+	 * so we don't convert them actually here
+	 */
 	err = get_user(u, &(data->flag));
 	err |= put_user(u, &(data32->flag));
 	err |= get_user(i, &(data->concurrent_profile));
@@ -1765,7 +1748,8 @@ static int compat_put_smi_bwc_mm_info_struct(MTK_SMI_COMPAT_BWC_MM_INFO __user *
 	return err;
 }
 
-long MTK_SMI_COMPAT_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+long MTK_SMI_COMPAT_ioctl(struct file *filp,
+	unsigned int cmd, unsigned long arg)
 {
 	long ret;
 
@@ -1775,28 +1759,32 @@ long MTK_SMI_COMPAT_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 	switch (cmd) {
 	case COMPAT_MTK_IOC_SMI_BWC_CONFIG:
 		{
-			if (COMPAT_MTK_IOC_SMI_BWC_CONFIG == MTK_IOC_SMI_BWC_CONFIG) {
-				SMIMSG("Optimized compct IOCTL: COMPAT_MTK_IOC_SMI_BWC_CONFIG");
+			if (COMPAT_MTK_IOC_SMI_BWC_CONFIG
+				== MTK_IOC_SMI_BWC_CONFIG) {
+				pr_debug("Optimized compct IOCTL: COMPAT_MTK_IOC_SMI_BWC_CONFIG");
 				return filp->f_op->unlocked_ioctl(filp, cmd,
-								  (unsigned long)compat_ptr(arg));
+					(unsigned long)compat_ptr(arg));
 			} else {
 
-				MTK_SMI_COMPAT_BWC_CONFIG __user *data32;
-				MTK_SMI_BWC_CONFIG __user *data;
+				struct MTK_SMI_COMPAT_BWC_CONFIG __user *data32;
+				struct MTK_SMI_BWC_CONFIG __user *data;
 				int err;
 
 				data32 = compat_ptr(arg);
-				data = compat_alloc_user_space(sizeof(MTK_SMI_BWC_CONFIG));
+				data = compat_alloc_user_space(
+					sizeof(struct MTK_SMI_BWC_CONFIG));
 
 				if (data == NULL)
 					return -EFAULT;
 
-				err = compat_get_smi_bwc_config_struct(data32, data);
+				err = compat_get_smi_bwc_config_struct(
+					data32, data);
 				if (err)
 					return err;
 
-				ret = filp->f_op->unlocked_ioctl(filp, MTK_IOC_SMI_BWC_CONFIG,
-								 (unsigned long)data);
+				ret = filp->f_op->unlocked_ioctl(filp,
+					MTK_IOC_SMI_BWC_CONFIG,
+					(unsigned long)data);
 				return ret;
 			}
 		}
@@ -1804,56 +1792,67 @@ long MTK_SMI_COMPAT_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 	case COMPAT_MTK_IOC_SMI_BWC_INFO_SET:
 		{
 
-			if (COMPAT_MTK_IOC_SMI_BWC_INFO_SET == MTK_IOC_SMI_BWC_INFO_SET) {
-				SMIMSG("Optimized compct IOCTL: COMPAT_MTK_IOC_SMI_BWC_INFO_SET");
+			if (COMPAT_MTK_IOC_SMI_BWC_INFO_SET
+				== MTK_IOC_SMI_BWC_INFO_SET) {
+				pr_debug("Optimized compct IOCTL: COMPAT_MTK_IOC_SMI_BWC_INFO_SET");
 				return filp->f_op->unlocked_ioctl(filp, cmd,
-								  (unsigned long)compat_ptr(arg));
+					(unsigned long)compat_ptr(arg));
 			} else {
 
-				MTK_SMI_COMPAT_BWC_INFO_SET __user *data32;
-				MTK_SMI_BWC_INFO_SET __user *data;
+				struct MTK_SMI_COMPAT_BWC_INFO_SET
+					__user *data32;
+				struct MTK_SMI_BWC_INFO_SET __user *data;
 				int err;
 
 				data32 = compat_ptr(arg);
-				data = compat_alloc_user_space(sizeof(MTK_SMI_BWC_INFO_SET));
+				data = compat_alloc_user_space(
+					sizeof(struct MTK_SMI_BWC_INFO_SET));
 				if (data == NULL)
 					return -EFAULT;
 
-				err = compat_get_smi_bwc_mm_info_set_struct(data32, data);
+				err = compat_get_smi_bwc_mm_info_set_struct(
+					data32, data);
 				if (err)
 					return err;
 
-				return filp->f_op->unlocked_ioctl(filp, MTK_IOC_SMI_BWC_INFO_SET,
-								  (unsigned long)data);
+				return filp->f_op->unlocked_ioctl(filp,
+					MTK_IOC_SMI_BWC_INFO_SET,
+					(unsigned long)data);
 			}
 		}
 		break;
 
 	case COMPAT_MTK_IOC_SMI_BWC_INFO_GET:
 		{
-			if (COMPAT_MTK_IOC_SMI_BWC_INFO_GET == MTK_IOC_SMI_BWC_INFO_GET) {
-				SMIMSG("Optimized compct IOCTL: COMPAT_MTK_IOC_SMI_BWC_INFO_GET");
+			if (COMPAT_MTK_IOC_SMI_BWC_INFO_GET
+				== MTK_IOC_SMI_BWC_INFO_GET) {
+				pr_debug("Optimized compct IOCTL: COMPAT_MTK_IOC_SMI_BWC_INFO_GET");
 				return filp->f_op->unlocked_ioctl(filp, cmd,
-								  (unsigned long)compat_ptr(arg));
+					(unsigned long)compat_ptr(arg));
 			} else {
-				MTK_SMI_COMPAT_BWC_MM_INFO __user *data32;
-				MTK_SMI_BWC_MM_INFO __user *data;
+				struct MTK_SMI_COMPAT_BWC_MM_INFO
+					__user *data32;
+				struct MTK_SMI_BWC_MM_INFO __user *data;
 				int err;
 
 				data32 = compat_ptr(arg);
-				data = compat_alloc_user_space(sizeof(MTK_SMI_BWC_MM_INFO));
+				data = compat_alloc_user_space(
+					sizeof(struct MTK_SMI_BWC_MM_INFO));
 
 				if (data == NULL)
 					return -EFAULT;
 
-				err = compat_get_smi_bwc_mm_info_struct(data32, data);
+				err = compat_get_smi_bwc_mm_info_struct(
+					data32, data);
 				if (err)
 					return err;
 
-				ret = filp->f_op->unlocked_ioctl(filp, MTK_IOC_SMI_BWC_INFO_GET,
-								 (unsigned long)data);
+				ret = filp->f_op->unlocked_ioctl(filp,
+					MTK_IOC_SMI_BWC_INFO_GET,
+					(unsigned long)data);
 
-				err = compat_put_smi_bwc_mm_info_struct(data32, data);
+				err = compat_put_smi_bwc_mm_info_struct(
+					data32, data);
 
 				if (err)
 					return err;
@@ -1867,7 +1866,8 @@ long MTK_SMI_COMPAT_ioctl(struct file *filp, unsigned int cmd, unsigned long arg
 	case MTK_IOC_SMI_DUMP_COMMON:
 	case MTK_IOC_MMDVFS_CMD:
 
-		return filp->f_op->unlocked_ioctl(filp, cmd, (unsigned long)compat_ptr(arg));
+		return filp->f_op->unlocked_ioctl(filp,
+			cmd, (unsigned long)compat_ptr(arg));
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -1880,9 +1880,12 @@ module_init(smi_init);
 module_exit(smi_exit);
 late_initcall(smi_init_late);
 
-module_param_named(debug_level, smi_debug_level, uint, S_IRUGO | S_IWUSR);
-module_param_named(tuning_mode, smi_tuning_mode, uint, S_IRUGO | S_IWUSR);
-module_param_named(wifi_disp_transaction, wifi_disp_transaction, uint, S_IRUGO | S_IWUSR);
+module_param_named(debug_level, smi_debug_level,
+	uint, 0644);
+module_param_named(tuning_mode, smi_tuning_mode,
+	uint, 0644);
+module_param_named(wifi_disp_transaction,
+	wifi_disp_transaction, uint, 0644);
 
 MODULE_DESCRIPTION("MTK SMI driver");
 MODULE_AUTHOR("Glory Hung<glory.hung@mediatek.com>");

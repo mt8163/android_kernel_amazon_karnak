@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 #ifndef _AUDDRV_ANA_H_
 #define _AUDDRV_ANA_H_
@@ -42,9 +44,9 @@
 
 #if 0 /* defined in <mach/upmu_hw.h> */
 
-/* ---------------digital pmic  register define end --------------------------------------- */
+/* ---------------digital pmic  register define end -------------------- */
 
-/* ---------------analog pmic  register define start -------------------------------------- */
+/* ---------------analog pmic  register define start ------------------- */
 #define TOP_CKPDN0                  (PMIC_REG_BASE + 0x102)
 #define TOP_CKPDN0_SET              (PMIC_REG_BASE + 0x104)
 #define TOP_CKPDN0_CLR              (PMIC_REG_BASE + 0x106)

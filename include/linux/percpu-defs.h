@@ -35,6 +35,12 @@
 
 #endif
 
+#ifdef CONFIG_PAGE_TABLE_ISOLATION
+#define USER_MAPPED_SECTION "..user_mapped"
+#else
+#define USER_MAPPED_SECTION ""
+#endif
+
 /*
  * Base implementations of per-CPU variable declarations and definitions, where
  * the section in which the variable is to be placed is provided by the
@@ -115,6 +121,12 @@
 #define DEFINE_PER_CPU(type, name)					\
 	DEFINE_PER_CPU_SECTION(type, name, "")
 
+#define DECLARE_PER_CPU_USER_MAPPED(type, name)				\
+	DECLARE_PER_CPU_SECTION(type, name, USER_MAPPED_SECTION)
+
+#define DEFINE_PER_CPU_USER_MAPPED(type, name)				\
+	DEFINE_PER_CPU_SECTION(type, name, USER_MAPPED_SECTION)
+
 /*
  * Declaration/definition used for per-CPU variables that must come first in
  * the set of variables.
@@ -144,6 +156,14 @@
 	DEFINE_PER_CPU_SECTION(type, name, PER_CPU_SHARED_ALIGNED_SECTION) \
 	____cacheline_aligned_in_smp
 
+#define DECLARE_PER_CPU_SHARED_ALIGNED_USER_MAPPED(type, name)		\
+	DECLARE_PER_CPU_SECTION(type, name, USER_MAPPED_SECTION PER_CPU_SHARED_ALIGNED_SECTION) \
+	____cacheline_aligned_in_smp
+
+#define DEFINE_PER_CPU_SHARED_ALIGNED_USER_MAPPED(type, name)		\
+	DEFINE_PER_CPU_SECTION(type, name, USER_MAPPED_SECTION PER_CPU_SHARED_ALIGNED_SECTION) \
+	____cacheline_aligned_in_smp
+
 #define DECLARE_PER_CPU_ALIGNED(type, name)				\
 	DECLARE_PER_CPU_SECTION(type, name, PER_CPU_ALIGNED_SECTION)	\
 	____cacheline_aligned
@@ -162,11 +182,21 @@
 #define DEFINE_PER_CPU_PAGE_ALIGNED(type, name)				\
 	DEFINE_PER_CPU_SECTION(type, name, "..page_aligned")		\
 	__aligned(PAGE_SIZE)
+/*
+ * Declaration/definition used for per-CPU variables that must be page aligned and need to be mapped in user mode.
+ */
+#define DECLARE_PER_CPU_PAGE_ALIGNED_USER_MAPPED(type, name)		\
+	DECLARE_PER_CPU_SECTION(type, name, USER_MAPPED_SECTION"..page_aligned") \
+	__aligned(PAGE_SIZE)
+
+#define DEFINE_PER_CPU_PAGE_ALIGNED_USER_MAPPED(type, name)		\
+	DEFINE_PER_CPU_SECTION(type, name, USER_MAPPED_SECTION"..page_aligned") \
+	__aligned(PAGE_SIZE)
 
 /*
  * Declaration/definition used for per-CPU variables that must be read mostly.
  */
-#define DECLARE_PER_CPU_READ_MOSTLY(type, name)			\
+#define DECLARE_PER_CPU_READ_MOSTLY(type, name)				\
 	DECLARE_PER_CPU_SECTION(type, name, "..read_mostly")
 
 #define DEFINE_PER_CPU_READ_MOSTLY(type, name)				\
@@ -254,8 +284,10 @@ do {									\
 #endif	/* CONFIG_SMP */
 
 #define per_cpu(var, cpu)	(*per_cpu_ptr(&(var), cpu))
-#define __raw_get_cpu_var(var)	(*raw_cpu_ptr(&(var)))
-#define __get_cpu_var(var)	(*this_cpu_ptr(&(var)))
+
+#if defined(CONFIG_MTK_RT_THROTTLE_MON) || defined(CONFIG_MTK_SCHED_MONITOR)
+#define __raw_get_cpu_var(var)  (*raw_cpu_ptr(&(var)))
+#endif
 
 /*
  * Must be an lvalue. Since @var must be a simple identifier,
@@ -490,10 +522,8 @@ do {									\
 #define __this_cpu_dec_return(pcp)	__this_cpu_add_return(pcp, -1)
 
 /*
- * Operations with implied preemption protection.  These operations can be
- * used without worrying about preemption.  Note that interrupts may still
- * occur while an operation is in progress and if the interrupt modifies
- * the variable too then RMW actions may not be reliable.
+ * Operations with implied preemption/interrupt protection.  These
+ * operations can be used without worrying about preemption or interrupt.
  */
 #define this_cpu_read(pcp)		__pcpu_size_call_return(this_cpu_read_, pcp)
 #define this_cpu_write(pcp, val)	__pcpu_size_call(this_cpu_write_, pcp, val)

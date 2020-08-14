@@ -3,3 +3,6 @@ config MTK_DRAMC
 	default n
 	---help---
 	  This selects the MediaTek(R) DRAMC driver.
+	  incude the following API
+	  PASR
+	  DVFS

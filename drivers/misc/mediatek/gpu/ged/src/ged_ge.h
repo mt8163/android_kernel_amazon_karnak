@@ -18,6 +18,9 @@
 
 #include <ged_type.h>
 
+#define GE_REGION_NUM_MAX       9
+#define GE_REGION_SIZE_MAX      264
+
 int ged_ge_init(void);
 int ged_ge_exit(void);
 int ged_ge_alloc(int region_num, uint32_t *region_sizes);

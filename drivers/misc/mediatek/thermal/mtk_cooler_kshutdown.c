@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2017 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -27,45 +27,63 @@
 #include "mt-plat/mtk_thermal_monitor.h"
 
 #if 1
-#define mtk_cooler_kshutdown_dprintk(fmt, args...) pr_debug("thermal/cooler/kshutdown " fmt, ##args)
+#define mtk_cooler_kshutdown_dprintk(fmt, args...)	\
+	pr_notice("thermal/cooler/kshutdown " fmt, ##args)
 #else
 #define mtk_cooler_kshutdown_dprintk(fmt, args...)
 #endif
 
-#define MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN  8
+#define MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN  5
 
-static struct thermal_cooling_device *cl_kshutdown_dev[MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN] = { 0 };
-static unsigned long cl_kshutdown_state[MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN] = { 0 };
+static struct thermal_cooling_device
+*cl_kshutdown_dev[MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN] = { 0 };
+static unsigned long cl_kshutdown_state[MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN]
+= { 0 };
 
-static int mtk_cl_kshutdown_get_max_state(struct thermal_cooling_device *cdev, unsigned long *state)
+	static int mtk_cl_kshutdown_get_max_state
+(struct thermal_cooling_device *cdev, unsigned long *state)
 {
 	*state = 1;
-	/* mtk_cooler_kshutdown_dprintk("mtk_cl_kshutdown_get_max_state() %s %d\n", cdev->type, *state); */
+	/* mtk_cooler_kshutdown_dprintk(
+	 * "mtk_cl_kshutdown_get_max_state() %s %d\n", cdev->type, *state);
+	 */
 	return 0;
 }
 
-static int mtk_cl_kshutdown_get_cur_state(struct thermal_cooling_device *cdev, unsigned long *state)
+	static int mtk_cl_kshutdown_get_cur_state
+(struct thermal_cooling_device *cdev, unsigned long *state)
 {
-#if 1				/* cannot use this way for now since devdata is used by mtk_thermal_monitor */
+#if 1	/* cannot use this way for now
+	 * since devdata is used by mtk_thermal_monitor
+	 */
 	*state = *((unsigned long *)cdev->devdata);
 #else
 	*state = cl_kshutdown_state[(int)cdev->type[16]];
 #endif
-	/* mtk_cooler_kshutdown_dprintk("mtk_cl_kshutdown_get_cur_state() %s %d\n", cdev->type, *state); */
+	/* mtk_cooler_kshutdown_dprintk(
+	 * "mtk_cl_kshutdown_get_cur_state() %s %d\n",
+	 * cdev->type, *state);
+	 */
 	return 0;
 }
 
-static int mtk_cl_kshutdown_set_cur_state(struct thermal_cooling_device *cdev, unsigned long state)
+	static int mtk_cl_kshutdown_set_cur_state
+(struct thermal_cooling_device *cdev, unsigned long state)
 {
-	/* mtk_cooler_kshutdown_dprintk("mtk_cl_kshutdown_set_cur_state() %s %d\n", cdev->type, state); */
+	/* mtk_cooler_kshutdown_dprintk(
+	 * "mtk_cl_kshutdown_set_cur_state() %s %d\n",
+	 * cdev->type, state);
+	 */
 #if 1
 	*((unsigned long *)cdev->devdata) = state;
 #else
 	cl_kshutdown_state[(int)cdev->type[16]] = state;
 #endif
-	if (1 == state) {
-		mtk_cooler_kshutdown_dprintk("%s %s invokes machine_power_off\n", __func__,
-					     cdev->type);
+	if (state == 1) {
+		mtk_cooler_kshutdown_dprintk(
+				"%s %s invokes machine_power_off\n", __func__,
+				cdev->type);
+
 		machine_power_off();
 	}
 
@@ -89,15 +107,14 @@ static int mtk_cooler_kshutdown_register_ltf(void)
 		char temp[20] = { 0 };
 
 		sprintf(temp, "mtk-cl-kshutdown%02d", i);
-		cl_kshutdown_dev[i] = mtk_thermal_cooling_device_register(temp,
-									  (void *)
-									  &cl_kshutdown_state[i],
-									  &mtk_cl_kshutdown_ops);
+		cl_kshutdown_dev[i] = mtk_thermal_cooling_device_register(
+				temp, (void *)&cl_kshutdown_state[i],
+				&mtk_cl_kshutdown_ops);
 	}
 
 #if 0
-	cl_kshutdown_dev = mtk_thermal_cooling_device_register("mtk-cl-shutdown",
-							       NULL, &mtk_cl_kshutdown_ops);
+	cl_kshutdown_dev = mtk_thermal_cooling_device_register(
+			"mtk-cl-shutdown", NULL, &mtk_cl_kshutdown_ops);
 #endif
 
 	return 0;
@@ -111,7 +128,8 @@ static void mtk_cooler_kshutdown_unregister_ltf(void)
 
 	for (i = MAX_NUM_INSTANCE_MTK_COOLER_KSHUTDOWN; i-- > 0;) {
 		if (cl_kshutdown_dev[i]) {
-			mtk_thermal_cooling_device_unregister(cl_kshutdown_dev[i]);
+			mtk_thermal_cooling_device_unregister(
+					cl_kshutdown_dev[i]);
 			cl_kshutdown_dev[i] = NULL;
 			cl_kshutdown_state[i] = 0;
 		}
@@ -145,7 +163,7 @@ static int __init mtk_cooler_kshutdown_init(void)
 
 	return 0;
 
- err_unreg:
+err_unreg:
 	mtk_cooler_kshutdown_unregister_ltf();
 	return err;
 }

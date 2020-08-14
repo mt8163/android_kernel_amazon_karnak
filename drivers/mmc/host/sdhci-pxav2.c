@@ -167,23 +167,16 @@ static int sdhci_pxav2_probe(struct platform_device *pdev)
 	struct sdhci_pxa_platdata *pdata = pdev->dev.platform_data;
 	struct device *dev = &pdev->dev;
 	struct sdhci_host *host = NULL;
-	struct sdhci_pxa *pxa = NULL;
 	const struct of_device_id *match;
 
 	int ret;
 	struct clk *clk;
 
-	pxa = kzalloc(sizeof(struct sdhci_pxa), GFP_KERNEL);
-	if (!pxa)
-		return -ENOMEM;
-
 	host = sdhci_pltfm_init(pdev, NULL, 0);
-	if (IS_ERR(host)) {
-		kfree(pxa);
+	if (IS_ERR(host))
 		return PTR_ERR(host);
-	}
+
 	pltfm_host = sdhci_priv(host);
-	pltfm_host->priv = pxa;
 
 	clk = clk_get(dev, "PXA-SDHCLK");
 	if (IS_ERR(clk)) {
@@ -238,7 +231,6 @@ err_add_host:
 	clk_put(clk);
 err_clk_get:
 	sdhci_pltfm_free(pdev);
-	kfree(pxa);
 	return ret;
 }
 
@@ -246,14 +238,12 @@ static int sdhci_pxav2_remove(struct platform_device *pdev)
 {
 	struct sdhci_host *host = platform_get_drvdata(pdev);
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
-	struct sdhci_pxa *pxa = pltfm_host->priv;
 
 	sdhci_remove_host(host, 1);
 
 	clk_disable_unprepare(pltfm_host->clk);
 	clk_put(pltfm_host->clk);
 	sdhci_pltfm_free(pdev);
-	kfree(pxa);
 
 	return 0;
 }
@@ -261,10 +251,8 @@ static int sdhci_pxav2_remove(struct platform_device *pdev)
 static struct platform_driver sdhci_pxav2_driver = {
 	.driver		= {
 		.name	= "sdhci-pxav2",
-#ifdef CONFIG_OF
-		.of_match_table = sdhci_pxav2_of_match,
-#endif
-		.pm	= SDHCI_PLTFM_PMOPS,
+		.of_match_table = of_match_ptr(sdhci_pxav2_of_match),
+		.pm	= &sdhci_pltfm_pmops,
 	},
 	.probe		= sdhci_pxav2_probe,
 	.remove		= sdhci_pxav2_remove,

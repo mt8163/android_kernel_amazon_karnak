@@ -1,35 +1,14 @@
 /*
- * MUSB OTG driver virtual root hub support
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2006 by Texas Instruments
- * Copyright (C) 2006-2007 Nokia Corporation
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -84,7 +63,9 @@ static void musb_port_suspend(struct musb *musb, bool do_suspend)
 			musb->is_active = otg->host->b_hnp_enable;
 			if (musb->is_active)
 				mod_timer(&musb->otg_timer, jiffies
-					  + msecs_to_jiffies(OTG_TIME_A_AIDL_BDIS));
+					  +
+					  msecs_to_jiffies
+					  (OTG_TIME_A_AIDL_BDIS));
 			musb_platform_try_idle(musb, 0);
 			break;
 		case OTG_STATE_B_HOST:
@@ -93,7 +74,8 @@ static void musb_port_suspend(struct musb *musb, bool do_suspend)
 			musb_platform_try_idle(musb, 0);
 			break;
 		default:
-			DBG(0, "bogus rh suspend? %s\n", otg_state_string(musb->xceiv->state));
+			DBG(0, "bogus rh suspend? %s\n",
+			    otg_state_string(musb->xceiv->state));
 		}
 	} else if (power & MUSB_POWER_SUSPENDM) {
 		power &= ~MUSB_POWER_SUSPENDM;
@@ -138,7 +120,8 @@ static void musb_port_reset(struct musb *musb, bool do_reset)
 		if (power & MUSB_POWER_RESUME) {
 			while (time_before(jiffies, musb->rh_timer))
 				mdelay(1);
-			musb_writeb(mbase, MUSB_POWER, power & ~MUSB_POWER_RESUME);
+			musb_writeb(mbase, MUSB_POWER,
+				    power & ~MUSB_POWER_RESUME);
 			mdelay(1);
 		}
 
@@ -162,7 +145,8 @@ static void musb_port_reset(struct musb *musb, bool do_reset)
 		}
 
 		musb->port1_status &= ~USB_PORT_STAT_RESET;
-		musb->port1_status |= USB_PORT_STAT_ENABLE | (USB_PORT_STAT_C_RESET << 16)
+		musb->port1_status |=
+		    USB_PORT_STAT_ENABLE | (USB_PORT_STAT_C_RESET << 16)
 		    | (USB_PORT_STAT_C_ENABLE << 16);
 		usb_hcd_poll_rh_status(musb_to_hcd(musb));
 
@@ -174,18 +158,12 @@ void musb_root_disconnect(struct musb *musb)
 {
 	struct usb_otg *otg = musb->xceiv->otg;
 
-	musb->port1_status = USB_PORT_STAT_POWER | (USB_PORT_STAT_C_CONNECTION << 16);
+	musb->port1_status =
+	    USB_PORT_STAT_POWER | (USB_PORT_STAT_C_CONNECTION << 16);
 
 	usb_hcd_poll_rh_status(musb_to_hcd(musb));
 	musb->is_active = 0;
 
-	/* when UMS device is detached, khubd need to wait for usb-storage
-	   thread to stop, then it will disable all endpoints, and clean up pending
-	   URBs. But if usb-storage is waiting for some URBs, it will never stop.
-	   So there is a dead lock: khubd need to end usb-storage then flush URB,
-	   but usb-storage need that URB to end itself. So we flush URB here first,
-	   this will cause usb-storage quit waiting and end itself when khubd asks.
-	 */
 	spin_unlock(&musb->lock);
 	musb_h_pre_disable(musb);
 	spin_lock(&musb->lock);
@@ -208,7 +186,8 @@ void musb_root_disconnect(struct musb *musb)
 		musb->xceiv->state = OTG_STATE_B_IDLE;
 		break;
 	default:
-		DBG(0, "host disconnect (%s)\n", otg_state_string(musb->xceiv->state));
+		DBG(0, "host disconnect (%s)\n",
+		    otg_state_string(musb->xceiv->state));
 	}
 }
 
@@ -230,12 +209,14 @@ int musb_hub_status_data(struct usb_hcd *hcd, char *buf)
 }
 
 int musb_hub_control(struct usb_hcd *hcd,
-		     u16 typeReq, u16 wValue, u16 wIndex, char *buf, u16 wLength)
+		     u16 typeReq, u16 wValue, u16 wIndex, char *buf,
+		     u16 wLength)
 {
 	struct musb *musb = hcd_to_musb(hcd);
 	u32 temp;
 	int retval = 0;
 	unsigned long flags;
+	bool vbus_off = false;
 
 	spin_lock_irqsave(&musb->lock, flags);
 
@@ -271,7 +252,8 @@ int musb_hub_control(struct usb_hcd *hcd,
 			break;
 		case USB_PORT_FEAT_POWER:
 			if (!hcd->self.is_b_host)
-				musb_platform_set_vbus(musb, 0);
+				vbus_off = true;	/* I2C can't use with spin_lock */
+				/*musb_platform_set_vbus(musb, 0);*/
 			break;
 		case USB_PORT_FEAT_C_CONNECTION:
 		case USB_PORT_FEAT_C_ENABLE:
@@ -292,9 +274,8 @@ int musb_hub_control(struct usb_hcd *hcd,
 			desc->bDescLength = 9;
 			desc->bDescriptorType = 0x29;
 			desc->bNbrPorts = 1;
-			desc->wHubCharacteristics = cpu_to_le16(0x0001	/* per-port power switching */
-								| 0x0010	/* no overcurrent reporting */
-			    );
+			desc->wHubCharacteristics = cpu_to_le16(0x0001
+								| 0x0010);
 			desc->bPwrOn2PwrGood = 5;	/* msec/2 */
 			desc->bHubContrCurrent = 0;
 
@@ -332,7 +313,8 @@ int musb_hub_control(struct usb_hcd *hcd,
 			 */
 
 			musb->is_active = 1;
-			musb->port1_status &= ~(USB_PORT_STAT_SUSPEND | MUSB_PORT_STAT_RESUME);
+			musb->port1_status &=
+			    ~(USB_PORT_STAT_SUSPEND | MUSB_PORT_STAT_RESUME);
 			musb->port1_status |= USB_PORT_STAT_C_SUSPEND << 16;
 			usb_hcd_poll_rh_status(musb_to_hcd(musb));
 			/* NOTE: it might really be A_WAIT_BCON ... */
@@ -340,7 +322,8 @@ int musb_hub_control(struct usb_hcd *hcd,
 		}
 
 		put_unaligned(cpu_to_le32(musb->port1_status
-					  & ~MUSB_PORT_STAT_RESUME), (__le32 *) buf);
+					  & ~MUSB_PORT_STAT_RESUME),
+			      (__le32 *) buf);
 
 		/* port change status is more interesting */
 		DBG(0, "port status %08x,devctl=0x%x\n", musb->port1_status,
@@ -398,9 +381,11 @@ int musb_hub_control(struct usb_hcd *hcd,
 				break;
 			case 5:
 				pr_debug("TEST_FORCE_ENABLE\n");
-				temp = MUSB_TEST_FORCE_HOST | MUSB_TEST_FORCE_HS;
+				temp =
+				    MUSB_TEST_FORCE_HOST | MUSB_TEST_FORCE_HS;
 
-				musb_writeb(musb->mregs, MUSB_DEVCTL, MUSB_DEVCTL_SESSION);
+				musb_writeb(musb->mregs, MUSB_DEVCTL,
+					    MUSB_DEVCTL_SESSION);
 				break;
 			case 6:
 				pr_debug("TEST_FIFO_ACCESS\n");
@@ -424,5 +409,9 @@ error:
 		retval = -EPIPE;
 	}
 	spin_unlock_irqrestore(&musb->lock, flags);
+
+	if (vbus_off)
+		musb_platform_set_vbus(musb, 0);
+
 	return retval;
 }

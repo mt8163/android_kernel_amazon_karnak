@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 #ifndef AUDIO_MT_SOC_COMMON_H
@@ -31,18 +33,16 @@
 #include <linux/wait.h>
 #include <linux/spinlock.h>
 #include <linux/sched.h>
-#include <linux/wakelock.h>
 #include <linux/semaphore.h>
 #include <linux/jiffies.h>
 #include <linux/proc_fs.h>
 #include <linux/string.h>
 #include <linux/mutex.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/irq.h>
-#include <asm/io.h>
+#include <linux/io.h>
 #include <asm/div64.h>
 #include <mt-plat/aee.h>
-#include <mt-plat/mt_gpio.h>
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -70,16 +70,10 @@
 
 #define CHIP_SRAM_SIZE (36*1024)
 
-/*
-define for PCM settings
-*/
 #define MAX_PCM_DEVICES     4
 #define MAX_PCM_SUBSTREAMS  128
 #define MAX_MIDI_DEVICES
 
-/*
-     PCM buufer size and pperiod size setting
-*/
 #define BT_DAI_MAX_BUFFER_SIZE     (16*1024)
 #define BT_DAI_MIN_PERIOD_SIZE     1
 #define BT_DAI_MAX_PERIOD_SIZE     BT_DAI_MAX_BUFFER_SIZE
@@ -110,10 +104,14 @@ define for PCM settings
 #define HDMI_MAX_BUFFER_SIZE     (192*1024)
 #define HDMI_MIN_PERIOD_SIZE       1
 #define HDMI_MAX_PERIODBYTE_SIZE     HDMI_MAX_BUFFER_SIZE
-#define HDMI_MAX_2CH_16BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(2*2))	/* 2 channels , 16bits */
-#define HDMI_MAX_8CH_16BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(8*2))	/* 8 channels , 16bits */
-#define HDMI_MAX_2CH_24BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(2*2*2))	/* 2 channels , 24bits */
-#define HDMI_MAX_8CH_24BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(8*2*2))	/* 8 channels , 24bits */
+/* 2 channels , 16bits */
+#define HDMI_MAX_2CH_16BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(2*2))
+/* 8 channels , 16bits */
+#define HDMI_MAX_8CH_16BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(8*2))
+/* 2 channels , 24bits */
+#define HDMI_MAX_2CH_24BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(2*2*2))
+/* 8 channels , 24bits */
+#define HDMI_MAX_8CH_24BIT_PERIOD_SIZE     (HDMI_MAX_PERIODBYTE_SIZE/(8*2*2))
 
 
 
@@ -147,7 +145,8 @@ define for PCM settings
 			       SNDRV_PCM_FMTBIT_U16_LE |\
 			       SNDRV_PCM_FMTBIT_U16_BE)
 
-#define SOC_NORMAL_USE_RATE        (SNDRV_PCM_RATE_CONTINUOUS | SNDRV_PCM_RATE_8000_48000)
+#define SOC_NORMAL_USE_RATE        (SNDRV_PCM_RATE_CONTINUOUS |\
+	SNDRV_PCM_RATE_8000_48000)
 #define SOC_NORMAL_USE_RATE_MIN        8000
 #define SOC_NORMAL_USE_RATE_MAX       48000
 #define SOC_NORMAL_USE_CHANNELS_MIN    1
@@ -157,7 +156,8 @@ define for PCM settings
 #define SOC_NORMAL_USE_BUFFERSIZE_MAX     (48*1024)
 
 
-#define SOC_HIGH_USE_RATE        (SNDRV_PCM_RATE_CONTINUOUS | SNDRV_PCM_RATE_8000_192000)
+#define SOC_HIGH_USE_RATE  (SNDRV_PCM_RATE_CONTINUOUS |\
+	SNDRV_PCM_RATE_8000_192000)
 #define SOC_HIGH_USE_RATE_MIN        8000
 #define SOC_HIGH_USE_RATE_MAX       192000
 #define SOC_HIGH_USE_CHANNELS_MIN    1
@@ -183,7 +183,8 @@ const unsigned int soc_normal_supported_sample_rates[9] = {
 /* Conventional and unconventional sample rate supported */
 const unsigned int soc_high_supported_sample_rates[13] = {
 
-	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 88200, 96000, 176400, 192000
+	8000, 11025, 12000, 16000, 22050, 24000, 32000,
+	44100, 48000, 88200, 96000, 176400, 192000
 };
 #else
 extern const unsigned int soc_fm_supported_sample_rates[3];
@@ -192,8 +193,10 @@ extern const unsigned int soc_normal_supported_sample_rates[9];
 extern const unsigned int soc_high_supported_sample_rates[13];
 #endif
 
-unsigned long audio_frame_to_bytes(struct snd_pcm_substream *substream, unsigned long count);
-unsigned long audio_bytes_to_frame(struct snd_pcm_substream *substream, unsigned long count);
+unsigned long audio_frame_to_bytes(struct snd_pcm_substream *substream,
+	unsigned long count);
+unsigned long audio_bytes_to_frame(struct snd_pcm_substream *substream,
+	unsigned long count);
 
 extern void *AFE_BASE_ADDRESS;
 

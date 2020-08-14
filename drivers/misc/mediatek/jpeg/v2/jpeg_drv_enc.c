@@ -1,4 +1,18 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/kernel.h>
+/* #include <linux/xlog.h> */
 
 #include "jpeg_drv_reg.h"
 #include "jpeg_drv_common.h"
@@ -22,11 +36,9 @@
 
 #define JPEG_ENC_DEBUG_INFO0_GMC_IDLE_MASK      (1 << 13)
 
-#define JPEG_MSG pr_debug
-#define JPEG_WRN pr_debug
-#define JPEG_ERR pr_debug
 
-kal_uint32 _jpeg_enc_int_status = 0;
+
+kal_uint32 _jpeg_enc_int_status;
 
 
 int jpeg_isr_enc_lisr(void)
@@ -183,7 +195,7 @@ kal_uint32 jpeg_drv_enc_warm_reset(void)
 
 	while (0 == (REG_JPEG_ENC_DEBUG_INFO0 & JPEG_ENC_DEBUG_INFO0_GMC_IDLE_MASK)) {
 		timeout--;
-		if (0 == timeout) {
+		if (timeout == 0) {
 			JPEG_MSG("Wait for GMC IDLE timeout\n");
 			return 0;
 		}
@@ -326,7 +338,7 @@ void jpeg_drv_enc_set_restart_interval(kal_uint32 restart_interval)
 	unsigned int u4Value;
 
 	u4Value = REG_JPEG_ENC_CTRL;
-	if (0 != restart_interval) {
+	if (restart_interval != 0) {
 		u4Value |= JPEG_ENC_CTRL_RESTART_EN_BIT;
 		IMG_REG_WRITE((u4Value), REG_ADDR_JPEG_ENC_CTRL);
 	} else {

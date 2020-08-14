@@ -4,32 +4,27 @@
  * Copyright 1995-2002, Russell King
  */
 #include <linux/module.h>
-#include <linux/signal.h>
 #include <linux/ioport.h>
-#include <linux/delay.h>
 #include <linux/blkdev.h>
 #include <linux/init.h>
 
 #include <asm/ecard.h>
 #include <asm/io.h>
 
-#include "../scsi.h"
 #include <scsi/scsi_host.h>
 
-#include <scsi/scsicam.h>
-
-#define AUTOSENSE
-#define PSEUDO_DMA
-
-#define CUMANASCSI_PUBLIC_RELEASE 1
-
 #define priv(host)			((struct NCR5380_hostdata *)(host)->hostdata)
-#define NCR5380_local_declare()		struct Scsi_Host *_instance
-#define NCR5380_setup(instance)		_instance = instance
-#define NCR5380_read(reg)		cumanascsi_read(_instance, reg)
-#define NCR5380_write(reg, value)	cumanascsi_write(_instance, reg, value)
+#define NCR5380_read(reg)		cumanascsi_read(instance, reg)
+#define NCR5380_write(reg, value)	cumanascsi_write(instance, reg, value)
+
+#define NCR5380_dma_xfer_len(instance, cmd, phase)	(cmd->transfersize)
+#define NCR5380_dma_recv_setup		cumanascsi_pread
+#define NCR5380_dma_send_setup		cumanascsi_pwrite
+#define NCR5380_dma_residual(instance)	(0)
+
 #define NCR5380_intr			cumanascsi_intr
 #define NCR5380_queue_command		cumanascsi_queue_command
+#define NCR5380_info			cumanascsi_info
 
 #define NCR5380_implementation_fields	\
 	unsigned ctrl;			\
@@ -42,18 +37,13 @@ void cumanascsi_setup(char *str, int *ints)
 {
 }
 
-const char *cumanascsi_info(struct Scsi_Host *spnt)
-{
-	return "";
-}
-
 #define CTRL	0x16fc
 #define STAT	0x2004
 #define L(v)	(((v)<<16)|((v) & 0x0000ffff))
 #define H(v)	(((v)>>16)|((v) & 0xffff0000))
 
-static inline int
-NCR5380_pwrite(struct Scsi_Host *host, unsigned char *addr, int len)
+static inline int cumanascsi_pwrite(struct Scsi_Host *host,
+                                    unsigned char *addr, int len)
 {
   unsigned long *laddr;
   void __iomem *dma = priv(host)->dma + 0x2000;
@@ -112,11 +102,14 @@ NCR5380_pwrite(struct Scsi_Host *host, unsigned char *addr, int len)
   }
 end:
   writeb(priv(host)->ctrl | 0x40, priv(host)->base + CTRL);
-  return len;
+
+	if (len)
+		return -1;
+	return 0;
 }
 
-static inline int
-NCR5380_pread(struct Scsi_Host *host, unsigned char *addr, int len)
+static inline int cumanascsi_pread(struct Scsi_Host *host,
+                                   unsigned char *addr, int len)
 {
   unsigned long *laddr;
   void __iomem *dma = priv(host)->dma + 0x2000;
@@ -174,7 +167,10 @@ NCR5380_pread(struct Scsi_Host *host, unsigned char *addr, int len)
   }
 end:
   writeb(priv(host)->ctrl | 0x40, priv(host)->base + CTRL);
-  return len;
+
+	if (len)
+		return -1;
+	return 0;
 }
 
 static unsigned char cumanascsi_read(struct Scsi_Host *host, unsigned int reg)
@@ -219,6 +215,8 @@ static struct scsi_host_template cumanascsi_template = {
 	.cmd_per_lun		= 2,
 	.use_clustering		= DISABLE_CLUSTERING,
 	.proc_name		= "CumanaSCSI-1",
+	.cmd_size		= NCR5380_CMD_SIZE,
+	.max_sectors		= 128,
 };
 
 static int cumanascsi1_probe(struct expansion_card *ec,
@@ -248,32 +246,22 @@ static int cumanascsi1_probe(struct expansion_card *ec,
 
 	host->irq = ec->irq;
 
-	NCR5380_init(host, 0);
+	ret = NCR5380_init(host, FLAG_DMA_FIXUP | FLAG_LATE_DMA_SETUP);
+	if (ret)
+		goto out_unmap;
+
+	NCR5380_maybe_reset_bus(host);
 
         priv(host)->ctrl = 0;
         writeb(0, priv(host)->base + CTRL);
-
-	host->n_io_port = 255;
-	if (!(request_region(host->io_port, host->n_io_port, "CumanaSCSI-1"))) {
-		ret = -EBUSY;
-		goto out_unmap;
-	}
 
 	ret = request_irq(host->irq, cumanascsi_intr, 0,
 			  "CumanaSCSI-1", host);
 	if (ret) {
 		printk("scsi%d: IRQ%d not free: %d\n",
 		    host->host_no, host->irq, ret);
-		goto out_unmap;
+		goto out_exit;
 	}
-
-	printk("scsi%d: at port 0x%08lx irq %d",
-		host->host_no, host->io_port, host->irq);
-	printk(" options CAN_QUEUE=%d CMD_PER_LUN=%d release=%d",
-		host->can_queue, host->cmd_per_lun, CUMANASCSI_PUBLIC_RELEASE);
-	printk("\nscsi%d:", host->host_no);
-	NCR5380_print_options(host);
-	printk("\n");
 
 	ret = scsi_add_host(host, &ec->dev);
 	if (ret)
@@ -284,6 +272,8 @@ static int cumanascsi1_probe(struct expansion_card *ec,
 
  out_free_irq:
 	free_irq(host->irq, host);
+ out_exit:
+	NCR5380_exit(host);
  out_unmap:
 	iounmap(priv(host)->base);
 	iounmap(priv(host)->dma);

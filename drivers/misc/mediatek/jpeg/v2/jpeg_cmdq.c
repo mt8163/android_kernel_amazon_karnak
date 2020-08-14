@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <cmdq_core.h>
 #include <cmdq_reg.h>
 
@@ -35,12 +48,12 @@ int32_t cmdqJpegDumpInfo(uint64_t engineFlag, int level)
 int32_t cmdqJpegResetEng(uint64_t engineFlag)
 {
 	if (engineFlag & (1 << CMDQ_ENG_JPEG_DEC)) {
-		IMG_REG_WRITE(0x0000FFFF, REG_ADDR_JPGDEC_INTERRUPT_STATUS);	/* ack decoder */
-		IMG_REG_WRITE(0x00, REG_ADDR_JPGDEC_RESET);	/* REG_JPGDEC_RESET = 0x00; */
-		IMG_REG_WRITE(0x01, REG_ADDR_JPGDEC_RESET);	/* REG_JPGDEC_RESET = 0x01; */
+		IMG_REG_WRITE(0x0000FFFF, REG_ADDR_JPGDEC_INTERRUPT_STATUS);
+		IMG_REG_WRITE(0x00, REG_ADDR_JPGDEC_RESET);
+		IMG_REG_WRITE(0x01, REG_ADDR_JPGDEC_RESET);
 
-		IMG_REG_WRITE(0x00, REG_ADDR_JPGDEC_RESET);	/* REG_JPGDEC_RESET = 0x00; */
-		IMG_REG_WRITE(0x10, REG_ADDR_JPGDEC_RESET);	/* REG_JPGDEC_RESET = 0x10; */
+		IMG_REG_WRITE(0x00, REG_ADDR_JPGDEC_RESET);
+		IMG_REG_WRITE(0x10, REG_ADDR_JPGDEC_RESET);
 	}
 
 	if (engineFlag & (1 << CMDQ_ENG_JPEG_ENC)) {

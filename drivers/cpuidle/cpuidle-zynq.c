@@ -28,7 +28,6 @@
 #include <linux/init.h>
 #include <linux/cpuidle.h>
 #include <linux/platform_device.h>
-#include <asm/proc-fns.h>
 #include <asm/cpuidle.h>
 
 #define ZYNQ_MAX_STATES		2
@@ -71,9 +70,7 @@ static int zynq_cpuidle_probe(struct platform_device *pdev)
 static struct platform_driver zynq_cpuidle_driver = {
 	.driver = {
 		.name = "cpuidle-zynq",
-		.owner = THIS_MODULE,
 	},
 	.probe = zynq_cpuidle_probe,
 };
-
-module_platform_driver(zynq_cpuidle_driver);
+builtin_platform_driver(zynq_cpuidle_driver);

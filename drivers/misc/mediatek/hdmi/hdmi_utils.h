@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 
 #include "linux/hdmitx.h"
 
@@ -11,38 +24,38 @@
 
 #define HDMI_LOG_INFO(fmt, arg...) \
 do { \
-	if (HDMI_LOG_LEVEL_INFO >= hdmi_log_lv) { \
-		pr_err(TAG "%s,%d ", __func__, __LINE__); \
-		pr_err(TAG fmt, ##arg); \
+	if (hdmi_log_lv <= HDMI_LOG_LEVEL_INFO) { \
+		pr_debug(TAG "%s,%d ", __func__, __LINE__); \
+		pr_debug(TAG fmt, ##arg); \
 	} \
 } while (0)
 
 #define HDMI_LOG_DBG(fmt, arg...) \
 do { \
-	if (HDMI_LOG_LEVEL_DBG >= hdmi_log_lv) { \
-		pr_err(TAG "%s,%d ", __func__, __LINE__); \
-		pr_err(TAG fmt, ##arg); \
+	if (hdmi_log_lv <= HDMI_LOG_LEVEL_DBG) { \
+		pr_debug(TAG "%s,%d ", __func__, __LINE__); \
+		pr_debug(TAG fmt, ##arg); \
 	} \
 } while (0)
 
 #define HDMI_LOG_ERR(fmt, arg...) \
 do { \
-	if (HDMI_LOG_LEVEL_ERR >= hdmi_log_lv) { \
-		pr_err(TAG "%s,%d ", __func__, __LINE__); \
-		pr_err(TAG fmt, ##arg); \
+	if (hdmi_log_lv <= HDMI_LOG_LEVEL_ERR) { \
+		pr_debug(TAG "%s,%d ", __func__, __LINE__); \
+		pr_debug(TAG fmt, ##arg); \
 	} \
 } while (0)
 
 #define HDMI_FUNC() \
 do { \
-	if (HDMI_LOG_LEVEL_DBG >= hdmi_log_lv) \
-		pr_err(TAG "%s\n", __func__); \
+	if (hdmi_log_lv <= HDMI_LOG_LEVEL_DBG) \
+		pr_debug(TAG "%s\n", __func__); \
 } while (0)
 
 #define HDMI_LINE() \
 do { \
-	if (HDMI_LOG_LEVEL_DBG >= hdmi_log_lv) { \
-		pr_err(TAG "%s,%d ", __func__, __LINE__); \
+	if (hdmi_log_lv <= HDMI_LOG_LEVEL_DBG) { \
+		pr_debug(TAG "%s,%d ", __func__, __LINE__); \
 	} \
 } while (0)
 
@@ -95,7 +108,8 @@ static char *_hdmi_ioctl_spy(unsigned int cmd)
 		return "MTK_HDMI_PREPARE_BUFFER";
 	case MTK_HDMI_FACTORY_MODE_ENABLE:
 		return "MTK_HDMI_FACTORY_MODE_ENABLE";
-#if defined(CONFIG_MTK_MT8193_HDMI_SUPPORT) || defined(CONFIG_MTK_INTERNAL_HDMI_SUPPORT)
+#if defined(CONFIG_MTK_MT8193_HDMI_SUPPORT) || \
+	defined(CONFIG_MTK_INTERNAL_HDMI_SUPPORT)
 	case MTK_HDMI_WRITE_DEV:
 		return "MTK_HDMI_WRITE_DEV";
 	case MTK_HDMI_READ_DEV:
@@ -165,8 +179,6 @@ static char *_hdmi_ioctl_spy(unsigned int cmd)
 		return "MTK_HDMI_COLOR_DEEP";
 	case MTK_HDMI_HDCP_KEY:
 		return "MTK_HDMI_HDCP_KEY";
-#endif
-#if defined(CONFIG_MTK_INTERNAL_HDMI_SUPPORT) || defined(CONFIG_MTK_INTERNAL_MHL_SUPPORT)
 	case MTK_HDMI_AUDIO_SETTING:
 		return "MTK_HDMI_AUDIO_SETTING";
 #endif

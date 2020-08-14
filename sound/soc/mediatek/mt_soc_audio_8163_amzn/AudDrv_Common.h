@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 #ifndef AUDIO_GLOBAL_H
 #define AUDIO_GLOBAL_H
@@ -46,37 +48,36 @@ typedef	int32_t kal_int32;
 typedef	uint64_t kal_uint64;
 typedef	int64_t kal_int64;
 
-typedef struct {
+struct AFE_BLOCK_T {
 	kal_uint32 pucPhysBufAddr;
 	kal_uint8 *pucVirtBufAddr;
 	kal_int32 u4BufferSize;
 	kal_int32 u4DataRemained;
-	kal_uint32 u4SampleNumMask;    /* sample number mask */
-	kal_uint32 u4SamplesPerInt;    /* number of samples to play before interrupting */
-	kal_int32 u4WriteIdx;          /* Previous Write Index */
-	kal_int32 u4DMAReadIdx;        /* Previous DMA Read Index */
+	kal_uint32 u4SampleNumMask;
+	kal_uint32 u4SamplesPerInt;
+	kal_int32 u4WriteIdx;
+	kal_int32 u4DMAReadIdx;
 	kal_uint32 u4MaxCopySize;
 	kal_uint32 u4fsyncflag;
 	kal_uint32 uResetFlag;
-} AFE_BLOCK_T;
+};
 
-typedef struct substreamList {
+struct substreamList {
 	struct snd_pcm_substream *substream;
-	volatile kal_uint32 u4MaxCopySize;
+	kal_uint32 u4MaxCopySize;
 	struct substreamList *next;
-} substreamList;
+};
 
-
-typedef struct {
+struct AFE_MEM_CONTROL_T {
 	struct file *flip;
-	substreamList *substreamL;
-	AFE_BLOCK_T    rBlock;
+	struct substreamList *substreamL;
+	struct AFE_BLOCK_T rBlock;
 	kal_uint32   MemIfNum;
 	bool interruptTrigger;
 	spinlock_t substream_lock;
 	void (*offloadCbk)(void *stream);
 	void *offloadstream;
-} AFE_MEM_CONTROL_T;
+};
 
 struct pcm_afe_info {
 	struct AFE_BLOCK_T *mAfeBlock;

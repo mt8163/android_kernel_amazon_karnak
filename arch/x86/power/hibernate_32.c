@@ -9,7 +9,6 @@
 #include <linux/gfp.h>
 #include <linux/suspend.h>
 #include <linux/bootmem.h>
-#include <linux/export.h>
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
@@ -107,7 +106,7 @@ static int resume_physical_mapping_init(pgd_t *pgd_base)
 			 * normal page tables.
 			 * NOTE: We can mark everything as executable here
 			 */
-			if (cpu_has_pse) {
+			if (boot_cpu_has(X86_FEATURE_PSE)) {
 				set_pmd(pmd, pfn_pmd(pfn, PAGE_KERNEL_LARGE_EXEC));
 				pfn += PTRS_PER_PTE;
 			} else {
@@ -160,7 +159,6 @@ asmlinkage int swsusp_arch_resume(void)
 	restore_image();
 	return 0;
 }
-EXPORT_SYMBOL_GPL(swsusp_arch_resume);
 
 /*
  *	pfn_is_nosave - check if given pfn is in the 'nosave' section

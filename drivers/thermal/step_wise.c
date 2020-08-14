@@ -44,7 +44,7 @@
  *    c. if the trend is THERMAL_TREND_RAISE_FULL, do nothing
  *    d. if the trend is THERMAL_TREND_DROP_FULL, use lower limit,
  *       if the cooling state already equals lower limit,
- *       deactive the thermal instance
+ *       deactivate the thermal instance
  */
 static unsigned long get_target_state(struct thermal_instance *instance,
 				enum thermal_trend trend, bool throttle)
@@ -127,14 +127,12 @@ static void update_passive_instance(struct thermal_zone_device *tz,
 
 static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 {
-	long trip_temp;
+	int trip_temp;
 	enum thermal_trip_type trip_type;
 	enum thermal_trend trend;
 	struct thermal_instance *instance;
 	bool throttle = false;
 	int old_target;
-	char data[3][25];
-	char *envp[] = { data[0], data[1], data[2], NULL };
 
 	if (trip == THERMAL_TRIPS_NONE) {
 		trip_temp = tz->forced_passive;
@@ -151,7 +149,7 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 		trace_thermal_zone_trip(tz, trip, trip_type);
 	}
 
-	dev_dbg(&tz->device, "Trip%d[type=%d,temp=%ld]:trend=%d,throttle=%d\n",
+	dev_dbg(&tz->device, "Trip%d[type=%d,temp=%d]:trend=%d,throttle=%d\n",
 				trip, trip_type, trip_temp, trend, throttle);
 
 	mutex_lock(&tz->lock);
@@ -168,13 +166,6 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 		if (instance->initialized && old_target == instance->target)
 			continue;
 
-		snprintf(data[0], sizeof(data[0]), "TRIP=%d", trip);
-		snprintf(data[1], sizeof(data[1]), "THERMAL_STATE=%ld",
-			 instance->target);
-		snprintf(data[2], sizeof(data[2]), "CDEV_TYPE=%s",
-			 instance->cdev->type);
-		kobject_uevent_env(&tz->device.kobj, KOBJ_CHANGE, envp);
-
 		/* Activate a passive thermal instance */
 		if (old_target == THERMAL_NO_TARGET &&
 			instance->target != THERMAL_NO_TARGET)
@@ -185,14 +176,16 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 			update_passive_instance(tz, trip_type, -1);
 
 		instance->initialized = true;
+		mutex_lock(&instance->cdev->lock);
 		instance->cdev->updated = false; /* cdev needs update */
+		mutex_unlock(&instance->cdev->lock);
 	}
 
 	mutex_unlock(&tz->lock);
 }
 
 /**
- * step_wise_throttle - throttles devices asscciated with the given zone
+ * step_wise_throttle - throttles devices associated with the given zone
  * @tz - thermal_zone_device
  * @trip - the trip point
  * @trip_type - type of the trip point

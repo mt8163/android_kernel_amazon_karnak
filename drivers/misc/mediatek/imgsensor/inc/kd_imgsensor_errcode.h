@@ -1,8 +1,21 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #ifndef _KD_IMGSENSOR_ERRCODE_H_
 #define _KD_IMGSENSOR_ERRCODE_H_
 
 /* @ the same as camera_custom_errocode.h */
-typedef enum {
+enum CUSTOM_CAMERA_ERROR_CODE_ENUM {
 	ERROR_NONE = 0,
 	ERROR_MSDK_IS_ACTIVED,
 	ERROR_INVALID_DRIVER_MOD_ID,
@@ -35,7 +48,7 @@ typedef enum {
 	ERROR_FACE_DETECTION_NOT_SUPPORT,
 	ERROR_PANORAMA_NOT_SUPPORT,
 	ERROR_MAX
-} CUSTOM_CAMERA_ERROR_CODE_ENUM;
+};
 
 
 #endif

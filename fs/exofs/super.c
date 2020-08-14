@@ -100,7 +100,6 @@ static int parse_options(char *options, struct exofs_mountopt *opts)
 		token = match_token(p, tokens, args);
 		switch (token) {
 		case Opt_name:
-			kfree(opts->dev_name);
 			opts->dev_name = match_strdup(&args[0]);
 			if (unlikely(!opts->dev_name)) {
 				EXOFS_ERR("Error allocating dev_name");
@@ -123,7 +122,7 @@ static int parse_options(char *options, struct exofs_mountopt *opts)
 			if (match_int(&args[0], &option))
 				return -EINVAL;
 			if (option <= 0) {
-				EXOFS_ERR("Timout must be > 0");
+				EXOFS_ERR("Timeout must be > 0");
 				return -EINVAL;
 			}
 			opts->timeout = option * HZ;
@@ -195,8 +194,8 @@ static int init_inodecache(void)
 {
 	exofs_inode_cachep = kmem_cache_create("exofs_inode_cache",
 				sizeof(struct exofs_i_info), 0,
-				SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD,
-				exofs_init_once);
+				SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD |
+				SLAB_ACCOUNT, exofs_init_once);
 	if (exofs_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;
@@ -837,7 +836,7 @@ static int exofs_fill_super(struct super_block *sb, void *data, int silent)
 		goto free_sbi;
 	}
 
-	ret = bdi_setup_and_register(&sbi->bdi, "exofs", BDI_CAP_MAP_COPY);
+	ret = bdi_setup_and_register(&sbi->bdi, "exofs");
 	if (ret) {
 		EXOFS_DBGMSG("Failed to bdi_setup_and_register\n");
 		dput(sb->s_root);
@@ -869,10 +868,8 @@ static struct dentry *exofs_mount(struct file_system_type *type,
 	int ret;
 
 	ret = parse_options(data, &opts);
-	if (ret) {
-		kfree(opts.dev_name);
+	if (ret)
 		return ERR_PTR(ret);
-	}
 
 	if (!opts.dev_name)
 		opts.dev_name = dev_name;
@@ -961,7 +958,7 @@ static struct dentry *exofs_get_parent(struct dentry *child)
 	if (!ino)
 		return ERR_PTR(-ESTALE);
 
-	return d_obtain_alias(exofs_iget(child->d_inode->i_sb, ino));
+	return d_obtain_alias(exofs_iget(child->d_sb, ino));
 }
 
 static struct inode *exofs_nfs_get_inode(struct super_block *sb,

@@ -20,8 +20,8 @@
  *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#include "cx231xx.h"
 #include <linux/kernel.h>
-#include <linux/usb.h>
 #include <linux/init.h>
 #include <linux/sound.h>
 #include <linux/spinlock.h>
@@ -37,17 +37,10 @@
 #include <sound/initval.h>
 #include <sound/control.h>
 #include <media/v4l2-common.h>
-#include "cx231xx.h"
 
 static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "activates debug info");
-
-#define dprintk(fmt, arg...) do {					\
-		if (debug)						\
-			printk(KERN_INFO "cx231xx-audio %s: " fmt,	\
-				__func__, ##arg); 			\
-	} while (0)
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;
 
@@ -55,7 +48,7 @@ static int cx231xx_isoc_audio_deinit(struct cx231xx *dev)
 {
 	int i;
 
-	dprintk("Stopping isoc\n");
+	dev_dbg(dev->dev, "Stopping isoc\n");
 
 	for (i = 0; i < CX231XX_AUDIO_BUFS; i++) {
 		if (dev->adev.urb[i]) {
@@ -79,7 +72,7 @@ static int cx231xx_bulk_audio_deinit(struct cx231xx *dev)
 {
 	int i;
 
-	dprintk("Stopping bulk\n");
+	dev_dbg(dev->dev, "Stopping bulk\n");
 
 	for (i = 0; i < CX231XX_AUDIO_BUFS; i++) {
 		if (dev->adev.urb[i]) {
@@ -123,7 +116,8 @@ static void cx231xx_audio_isocirq(struct urb *urb)
 	case -ESHUTDOWN:
 		return;
 	default:		/* error */
-		dprintk("urb completition error %d.\n", urb->status);
+		dev_dbg(dev->dev, "urb completition error %d.\n",
+			urb->status);
 		break;
 	}
 
@@ -182,8 +176,9 @@ static void cx231xx_audio_isocirq(struct urb *urb)
 
 	status = usb_submit_urb(urb, GFP_ATOMIC);
 	if (status < 0) {
-		cx231xx_errdev("resubmit of audio urb failed (error=%i)\n",
-			       status);
+		dev_err(dev->dev,
+			"resubmit of audio urb failed (error=%i)\n",
+			status);
 	}
 	return;
 }
@@ -211,7 +206,8 @@ static void cx231xx_audio_bulkirq(struct urb *urb)
 	case -ESHUTDOWN:
 		return;
 	default:		/* error */
-		dprintk("urb completition error %d.\n", urb->status);
+		dev_dbg(dev->dev, "urb completition error %d.\n",
+			urb->status);
 		break;
 	}
 
@@ -266,8 +262,9 @@ static void cx231xx_audio_bulkirq(struct urb *urb)
 
 	status = usb_submit_urb(urb, GFP_ATOMIC);
 	if (status < 0) {
-		cx231xx_errdev("resubmit of audio urb failed (error=%i)\n",
-			       status);
+		dev_err(dev->dev,
+			"resubmit of audio urb failed (error=%i)\n",
+			status);
 	}
 	return;
 }
@@ -277,7 +274,8 @@ static int cx231xx_init_audio_isoc(struct cx231xx *dev)
 	int i, errCode;
 	int sb_size;
 
-	cx231xx_info("%s: Starting ISO AUDIO transfers\n", __func__);
+	dev_dbg(dev->dev,
+		"%s: Starting ISO AUDIO transfers\n", __func__);
 
 	if (dev->state & DEV_DISCONNECTED)
 		return -ENODEV;
@@ -295,7 +293,6 @@ static int cx231xx_init_audio_isoc(struct cx231xx *dev)
 		memset(dev->adev.transfer_buffer[i], 0x80, sb_size);
 		urb = usb_alloc_urb(CX231XX_ISO_NUM_AUDIO_PACKETS, GFP_ATOMIC);
 		if (!urb) {
-			cx231xx_errdev("usb_alloc_urb failed!\n");
 			for (j = 0; j < i; j++) {
 				usb_free_urb(dev->adev.urb[j]);
 				kfree(dev->adev.transfer_buffer[j]);
@@ -338,7 +335,8 @@ static int cx231xx_init_audio_bulk(struct cx231xx *dev)
 	int i, errCode;
 	int sb_size;
 
-	cx231xx_info("%s: Starting BULK AUDIO transfers\n", __func__);
+	dev_dbg(dev->dev,
+		"%s: Starting BULK AUDIO transfers\n", __func__);
 
 	if (dev->state & DEV_DISCONNECTED)
 		return -ENODEV;
@@ -356,7 +354,6 @@ static int cx231xx_init_audio_bulk(struct cx231xx *dev)
 		memset(dev->adev.transfer_buffer[i], 0x80, sb_size);
 		urb = usb_alloc_urb(CX231XX_NUM_AUDIO_PACKETS, GFP_ATOMIC);
 		if (!urb) {
-			cx231xx_errdev("usb_alloc_urb failed!\n");
 			for (j = 0; j < i; j++) {
 				usb_free_urb(dev->adev.urb[j]);
 				kfree(dev->adev.transfer_buffer[j]);
@@ -392,8 +389,9 @@ static int snd_pcm_alloc_vmalloc_buffer(struct snd_pcm_substream *subs,
 					size_t size)
 {
 	struct snd_pcm_runtime *runtime = subs->runtime;
+	struct cx231xx *dev = snd_pcm_substream_chip(subs);
 
-	dprintk("Allocating vbuffer\n");
+	dev_dbg(dev->dev, "Allocating vbuffer\n");
 	if (runtime->dma_area) {
 		if (runtime->dma_bytes > size)
 			return 0;
@@ -436,16 +434,12 @@ static int snd_cx231xx_capture_open(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	int ret = 0;
 
-	dprintk("opening device and trying to acquire exclusive lock\n");
-
-	if (!dev) {
-		cx231xx_errdev("BUG: cx231xx can't find device struct."
-			       " Can't proceed with open\n");
-		return -ENODEV;
-	}
+	dev_dbg(dev->dev,
+		"opening device and trying to acquire exclusive lock\n");
 
 	if (dev->state & DEV_DISCONNECTED) {
-		cx231xx_errdev("Can't open. the device was removed.\n");
+		dev_err(dev->dev,
+			"Can't open. the device was removed.\n");
 		return -ENODEV;
 	}
 
@@ -458,7 +452,8 @@ static int snd_cx231xx_capture_open(struct snd_pcm_substream *substream)
 		ret = cx231xx_set_alt_setting(dev, INDEX_AUDIO, 0);
 	mutex_unlock(&dev->lock);
 	if (ret < 0) {
-		cx231xx_errdev("failed to set alternate setting !\n");
+		dev_err(dev->dev,
+			"failed to set alternate setting !\n");
 
 		return ret;
 	}
@@ -484,7 +479,7 @@ static int snd_cx231xx_pcm_close(struct snd_pcm_substream *substream)
 	int ret;
 	struct cx231xx *dev = snd_pcm_substream_chip(substream);
 
-	dprintk("closing device\n");
+	dev_dbg(dev->dev, "closing device\n");
 
 	/* inform hardware to stop streaming */
 	mutex_lock(&dev->lock);
@@ -494,20 +489,26 @@ static int snd_cx231xx_pcm_close(struct snd_pcm_substream *substream)
 	/* 1 - 48000 samples per sec */
 	ret = cx231xx_set_alt_setting(dev, INDEX_AUDIO, 0);
 	if (ret < 0) {
-		cx231xx_errdev("failed to set alternate setting !\n");
+		dev_err(dev->dev,
+			"failed to set alternate setting !\n");
 
 		mutex_unlock(&dev->lock);
 		return ret;
 	}
 
 	dev->adev.users--;
+	if (substream->runtime->dma_area) {
+		dev_dbg(dev->dev, "freeing\n");
+		vfree(substream->runtime->dma_area);
+		substream->runtime->dma_area = NULL;
+	}
 	mutex_unlock(&dev->lock);
 
 	if (dev->adev.users == 0 && dev->adev.shutdown == 1) {
-		dprintk("audio users: %d\n", dev->adev.users);
-		dprintk("disabling audio stream!\n");
+		dev_dbg(dev->dev, "audio users: %d\n", dev->adev.users);
+		dev_dbg(dev->dev, "disabling audio stream!\n");
 		dev->adev.shutdown = 0;
-		dprintk("released lock\n");
+		dev_dbg(dev->dev, "released lock\n");
 		if (atomic_read(&dev->stream_started) > 0) {
 			atomic_set(&dev->stream_started, 0);
 			schedule_work(&dev->wq_trigger);
@@ -519,9 +520,10 @@ static int snd_cx231xx_pcm_close(struct snd_pcm_substream *substream)
 static int snd_cx231xx_hw_capture_params(struct snd_pcm_substream *substream,
 					 struct snd_pcm_hw_params *hw_params)
 {
+	struct cx231xx *dev = snd_pcm_substream_chip(substream);
 	int ret;
 
-	dprintk("Setting capture parameters\n");
+	dev_dbg(dev->dev, "Setting capture parameters\n");
 
 	ret = snd_pcm_alloc_vmalloc_buffer(substream,
 					   params_buffer_bytes(hw_params));
@@ -543,7 +545,7 @@ static int snd_cx231xx_hw_capture_free(struct snd_pcm_substream *substream)
 {
 	struct cx231xx *dev = snd_pcm_substream_chip(substream);
 
-	dprintk("Stop capture, if needed\n");
+	dev_dbg(dev->dev, "Stop capture, if needed\n");
 
 	if (atomic_read(&dev->stream_started) > 0) {
 		atomic_set(&dev->stream_started, 0);
@@ -568,7 +570,7 @@ static void audio_trigger(struct work_struct *work)
 	struct cx231xx *dev = container_of(work, struct cx231xx, wq_trigger);
 
 	if (atomic_read(&dev->stream_started)) {
-		dprintk("starting capture");
+		dev_dbg(dev->dev, "starting capture");
 		if (is_fw_load(dev) == 0)
 			cx25840_call(dev, core, load_fw);
 		if (dev->USE_ISO)
@@ -576,7 +578,7 @@ static void audio_trigger(struct work_struct *work)
 		else
 			cx231xx_init_audio_bulk(dev);
 	} else {
-		dprintk("stopping capture");
+		dev_dbg(dev->dev, "stopping capture");
 		cx231xx_isoc_audio_deinit(dev);
 	}
 }
@@ -633,7 +635,7 @@ static struct page *snd_pcm_get_vmalloc_page(struct snd_pcm_substream *subs,
 	return vmalloc_to_page(pageptr);
 }
 
-static struct snd_pcm_ops snd_cx231xx_pcm_capture = {
+static const struct snd_pcm_ops snd_cx231xx_pcm_capture = {
 	.open = snd_cx231xx_capture_open,
 	.close = snd_cx231xx_pcm_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -662,20 +664,18 @@ static int cx231xx_audio_init(struct cx231xx *dev)
 		return 0;
 	}
 
-	cx231xx_info("cx231xx-audio.c: probing for cx231xx "
-		     "non standard usbaudio\n");
+	dev_dbg(dev->dev,
+		"probing for cx231xx non standard usbaudio\n");
 
-	err = snd_card_new(&dev->udev->dev, index[devnr], "Cx231xx Audio",
+	err = snd_card_new(dev->dev, index[devnr], "Cx231xx Audio",
 			   THIS_MODULE, 0, &card);
 	if (err < 0)
 		return err;
 
 	spin_lock_init(&adev->slock);
 	err = snd_pcm_new(card, "Cx231xx Audio", 0, 0, 1, &pcm);
-	if (err < 0) {
-		snd_card_free(card);
-		return err;
-	}
+	if (err < 0)
+		goto err_free_card;
 
 	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE,
 			&snd_cx231xx_pcm_capture);
@@ -689,10 +689,9 @@ static int cx231xx_audio_init(struct cx231xx *dev)
 	INIT_WORK(&dev->wq_trigger, audio_trigger);
 
 	err = snd_card_register(card);
-	if (err < 0) {
-		snd_card_free(card);
-		return err;
-	}
+	if (err < 0)
+		goto err_free_card;
+
 	adev->sndcard = card;
 	adev->udev = dev->udev;
 
@@ -703,8 +702,8 @@ static int cx231xx_audio_init(struct cx231xx *dev)
 					    audio_index + 1];
 
 	if (uif->altsetting[0].desc.bNumEndpoints < isoc_pipe + 1) {
-		snd_card_free(card);
-		return -ENODEV;
+		err = -ENODEV;
+		goto err_free_card;
 	}
 
 	adev->end_point_addr =
@@ -712,32 +711,40 @@ static int cx231xx_audio_init(struct cx231xx *dev)
 			bEndpointAddress;
 
 	adev->num_alt = uif->num_altsetting;
-	cx231xx_info("EndPoint Addr 0x%x, Alternate settings: %i\n",
-		     adev->end_point_addr, adev->num_alt);
+	dev_info(dev->dev,
+		"audio EndPoint Addr 0x%x, Alternate settings: %i\n",
+		adev->end_point_addr, adev->num_alt);
 	adev->alt_max_pkt_size = kmalloc(32 * adev->num_alt, GFP_KERNEL);
-
-	if (adev->alt_max_pkt_size == NULL) {
-		cx231xx_errdev("out of memory!\n");
-		return -ENOMEM;
+	if (!adev->alt_max_pkt_size) {
+		err = -ENOMEM;
+		goto err_free_card;
 	}
 
 	for (i = 0; i < adev->num_alt; i++) {
 		u16 tmp;
 
 		if (uif->altsetting[i].desc.bNumEndpoints < isoc_pipe + 1) {
-			snd_card_free(card);
-			return -ENODEV;
+			err = -ENODEV;
+			goto err_free_pkt_size;
 		}
 
 		tmp = le16_to_cpu(uif->altsetting[i].endpoint[isoc_pipe].desc.
 				wMaxPacketSize);
 		adev->alt_max_pkt_size[i] =
 		    (tmp & 0x07ff) * (((tmp & 0x1800) >> 11) + 1);
-		cx231xx_info("Alternate setting %i, max size= %i\n", i,
-			     adev->alt_max_pkt_size[i]);
+		dev_dbg(dev->dev,
+			"audio alternate setting %i, max size= %i\n", i,
+			adev->alt_max_pkt_size[i]);
 	}
 
 	return 0;
+
+err_free_pkt_size:
+	kfree(adev->alt_max_pkt_size);
+err_free_card:
+	snd_card_free(card);
+
+	return err;
 }
 
 static int cx231xx_audio_fini(struct cx231xx *dev)

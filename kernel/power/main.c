@@ -11,15 +11,22 @@
 #include <linux/export.h>
 #include <linux/kobject.h>
 #include <linux/string.h>
-#include <linux/resume-trace.h>
+#include <linux/pm-trace.h>
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#endif
+
 #include "power.h"
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+struct delayed_work suspend_work;
+#endif
+
 DEFINE_MUTEX(pm_mutex);
-EXPORT_SYMBOL_GPL(pm_mutex);
 
 #ifdef CONFIG_PM_SLEEP
 
@@ -39,13 +46,19 @@ int unregister_pm_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_pm_notifier);
 
-int pm_notifier_call_chain(unsigned long val)
+int __pm_notifier_call_chain(unsigned long val, int nr_to_call, int *nr_calls)
 {
-	int ret = blocking_notifier_call_chain(&pm_chain_head, val, NULL);
+	int ret;
+
+	ret = __blocking_notifier_call_chain(&pm_chain_head, val, NULL,
+						nr_to_call, nr_calls);
 
 	return notifier_to_errno(ret);
 }
-EXPORT_SYMBOL_GPL(pm_notifier_call_chain);
+int pm_notifier_call_chain(unsigned long val)
+{
+	return __pm_notifier_call_chain(val, -1, NULL);
+}
 
 /* If set, devices may be suspended and resumed asynchronously. */
 int pm_async_enabled = 1;
@@ -274,12 +287,21 @@ static inline void pm_print_times_init(void)
 {
 	pm_print_times_enabled = !!initcall_debug;
 }
-#else /* !CONFIG_PP_SLEEP_DEBUG */
+
+static ssize_t pm_wakeup_irq_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+	return pm_wakeup_irq ? sprintf(buf, "%u\n", pm_wakeup_irq) : -ENODATA;
+}
+
+power_attr_ro(pm_wakeup_irq);
+
+#else /* !CONFIG_PM_SLEEP_DEBUG */
 static inline void pm_print_times_init(void) {}
 #endif /* CONFIG_PM_SLEEP_DEBUG */
 
 struct kobject *power_kobj;
-EXPORT_SYMBOL_GPL(power_kobj);
 
 /**
  * state - control system sleep states.
@@ -551,14 +573,7 @@ static ssize_t pm_trace_dev_match_show(struct kobject *kobj,
 	return show_trace_dev_match(buf, PAGE_SIZE);
 }
 
-static ssize_t
-pm_trace_dev_match_store(struct kobject *kobj, struct kobj_attribute *attr,
-			 const char *buf, size_t n)
-{
-	return -EINVAL;
-}
-
-power_attr(pm_trace_dev_match);
+power_attr_ro(pm_trace_dev_match);
 
 #endif /* CONFIG_PM_TRACE */
 
@@ -607,6 +622,7 @@ static struct attribute * g[] = {
 #endif
 #ifdef CONFIG_PM_SLEEP_DEBUG
 	&pm_print_times_attr.attr,
+	&pm_wakeup_irq_attr.attr,
 #endif
 #endif
 #ifdef CONFIG_FREEZER
@@ -629,6 +645,38 @@ static int __init pm_start_workqueue(void)
 	return pm_wq ? 0 : -ENOMEM;
 }
 
+#ifdef CONFIG_AMAZON_METRICS_LOG
+static void suspend_metrics_work(struct work_struct *work)
+{
+	char buf[400] = {0};
+	struct delayed_work *dw = container_of(work, struct delayed_work, work);
+	int last_dev, last_errno, last_step;
+	last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
+	last_dev %= REC_FAILED_NUM;
+	last_errno = suspend_stats.last_failed_errno + REC_FAILED_NUM - 1;
+	last_errno %= REC_FAILED_NUM;
+	last_step = suspend_stats.last_failed_step + REC_FAILED_NUM - 1;
+	last_step %= REC_FAILED_NUM;
+
+	snprintf(buf, sizeof(buf),"suspend_event:def:success=%d;CT;1,fail=%d;CT;1,"
+		"failed_freeze=%d;CT;1,failed_prepare=%d;CT;1,failed_suspend=%d;CT;1,"
+		"failed_suspend_late=%d;CT;1,failed_suspend_noirq=%d;CT;1,"
+		"failed_resume=%d;CT;1,failed_resume_early=%d;CT;1,"
+		"failed_resume_noirq=%d;CT;1,last_failed_dev=%s;DV;1,"
+		"last_failed_errno=%d;CT;1,last_failed_step=%d;CT;1:NR",
+		suspend_stats.success, suspend_stats.fail, suspend_stats.failed_freeze,
+		suspend_stats.failed_prepare, suspend_stats.failed_suspend,
+		suspend_stats.failed_suspend_late, suspend_stats.failed_suspend_noirq,
+		suspend_stats.failed_resume, suspend_stats.failed_resume_early,
+		suspend_stats.failed_resume_noirq, suspend_stats.failed_devs[last_dev],
+		suspend_stats.errno[last_errno], suspend_stats.failed_steps[last_step]);
+
+	log_to_metrics(ANDROID_LOG_INFO, "SuspendEvent", buf);
+
+	schedule_delayed_work(dw, 12*3600*HZ);
+}
+#endif
+
 static int __init pm_init(void)
 {
 	int error = pm_start_workqueue();
@@ -636,6 +684,7 @@ static int __init pm_init(void)
 		return error;
 	hibernate_image_size_init();
 	hibernate_reserved_size_init();
+	pm_states_init();
 	power_kobj = kobject_create_and_add("power", NULL);
 	if (!power_kobj)
 		return -ENOMEM;
@@ -643,6 +692,12 @@ static int __init pm_init(void)
 	if (error)
 		return error;
 	pm_print_times_init();
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	INIT_DELAYED_WORK(&suspend_work, suspend_metrics_work);
+	schedule_delayed_work(&suspend_work, 3600*HZ);
+#endif
+
 	return pm_autosleep_init();
 }
 

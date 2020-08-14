@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2015-2018 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -15,7 +15,7 @@
 #include <linux/thermal.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 /* #include "wmt_tm.h" */
 #include "mt-plat/mtk_thermal_monitor.h"
 #include <linux/timer.h>
@@ -26,15 +26,28 @@
 /* For using net dev - */
 #include <mt-plat/mtk_wcn_cmb_stub.h>
 
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+#include <linux/thermal_framework.h>
+#endif
+
+#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
+#include <linux/sign_of_life.h>
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+#include <linux/metricslog.h>
+#define TSWMT_METRICS_STR_LEN 128
+#endif
+
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
 
 static int wmt_tm_debug_log;
 #define wmt_tm_dprintk(fmt, args...)   \
 do {                                    \
-		if (wmt_tm_debug_log) {                \
-				pr_debug("Power/WMT_Thermal" fmt, ##args); \
-		}                                   \
+	if (wmt_tm_debug_log) {                \
+		pr_debug("Power/WMT_Thermal" fmt, ##args); \
+	}                                   \
 } while (0)
 
 #define wmt_tm_printk(fmt, args...) pr_debug("Power/WMT_Thermal" fmt, ##args)
@@ -117,7 +130,8 @@ static char g_bind9[20] = { 0 };
 
 /**
  * If curr_temp >= polling_trip_temp1, use interval
- * else if cur_temp >= polling_trip_temp2 && curr_temp < polling_trip_temp1, use interval*polling_factor1
+ * else if cur_temp >= polling_trip_temp2 &&
+ * curr_temp < polling_trip_temp1, use interval*polling_factor1
  * else, use interval*polling_factor2
  */
 static int polling_trip_temp1 = 40000;
@@ -130,40 +144,65 @@ static unsigned int cl_dev_state;
 static unsigned int cl_pa1_dev_state;
 static unsigned int cl_pa2_dev_state;
 /*static unsigned int cl_pa3_dev_state =0;*/
-static unsigned int g_trip_temp[COOLER_NUM] = { 85000, 85000, 85000, 85000, 0, 0, 0, 0, 0, 0 };
+static unsigned int g_trip_temp[COOLER_NUM] = {
+	85000, 85000, 85000, 85000, 0, 0, 0, 0, 0, 0 };
 
-/*static int g_thro[COOLER_THRO_NUM] = {10 * ONE_MBITS_PER_SEC, 5 * ONE_MBITS_PER_SEC, 1 * ONE_MBITS_PER_SEC};*/
-static int g_thermal_trip[COOLER_NUM] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+/*static int g_thro[COOLER_THRO_NUM] = {
+ * 10 * ONE_MBITS_PER_SEC, 5 * ONE_MBITS_PER_SEC,
+ * 1 * ONE_MBITS_PER_SEC};
+ */
+static int g_thermal_trip[COOLER_NUM] = {
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 /* -Cooler info- */
 
 struct wmt_tm g_wmt_tm;
 struct wmt_tm *pg_wmt_tm = &g_wmt_tm;
 
-static int wmt_thz_bind(struct thermal_zone_device *, struct thermal_cooling_device *);
-static int wmt_thz_unbind(struct thermal_zone_device *, struct thermal_cooling_device *);
-static int wmt_thz_get_temp(struct thermal_zone_device *, unsigned long *);
-static int wmt_thz_get_mode(struct thermal_zone_device *, enum thermal_device_mode *);
-static int wmt_thz_set_mode(struct thermal_zone_device *, enum thermal_device_mode);
-static int wmt_thz_get_trip_type(struct thermal_zone_device *, int, enum thermal_trip_type *);
-static int wmt_thz_get_trip_temp(struct thermal_zone_device *, int, unsigned long *);
-static int wmt_thz_get_crit_temp(struct thermal_zone_device *, unsigned long *);
-static int wmt_cl_get_max_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_get_cur_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_set_cur_state(struct thermal_cooling_device *, unsigned long);
+static int wmt_thz_bind(struct thermal_zone_device *,
+	struct thermal_cooling_device *);
+static int wmt_thz_unbind(struct thermal_zone_device *,
+	struct thermal_cooling_device *);
+static int wmt_thz_get_temp(struct thermal_zone_device *, int *);
+static int wmt_thz_get_mode(struct thermal_zone_device *,
+	enum thermal_device_mode *);
+static int wmt_thz_set_mode(struct thermal_zone_device *,
+	enum thermal_device_mode);
+static int wmt_thz_get_trip_type(struct thermal_zone_device *, int,
+	enum thermal_trip_type *);
+static int wmt_thz_get_trip_temp(struct thermal_zone_device *, int, int *);
+static int wmt_thz_set_trip_temp(struct thermal_zone_device *, int, int);
+static int wmt_thz_get_crit_temp(struct thermal_zone_device *, int *);
+static int wmt_cl_get_max_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_get_cur_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_set_cur_state(struct thermal_cooling_device *,
+	unsigned long);
+static int mtktswmt_thermal_notify(struct thermal_zone_device *thermal,
+					int trip, enum thermal_trip_type type);
 
-static int wmt_cl_pa1_get_max_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_pa1_get_cur_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *, unsigned long);
+static int wmt_cl_pa1_get_max_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_pa1_get_cur_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *,
+	unsigned long);
 
-static int wmt_cl_pa2_get_max_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_pa2_get_cur_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *, unsigned long);
+static int wmt_cl_pa2_get_max_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_pa2_get_cur_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *,
+	unsigned long);
 
 #ifdef NEVER
-static int wmt_cl_pa3_get_max_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_pa3_get_cur_state(struct thermal_cooling_device *, unsigned long *);
-static int wmt_cl_pa3_set_cur_state(struct thermal_cooling_device *, unsigned long);
+static int wmt_cl_pa3_get_max_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_pa3_get_cur_state(struct thermal_cooling_device *,
+	unsigned long *);
+static int wmt_cl_pa3_set_cur_state(struct thermal_cooling_device *,
+	unsigned long);
 #endif				/* NEVER */
 
 static struct thermal_zone_device_ops wmt_thz_dev_ops = {
@@ -174,7 +213,9 @@ static struct thermal_zone_device_ops wmt_thz_dev_ops = {
 	.set_mode = wmt_thz_set_mode,
 	.get_trip_type = wmt_thz_get_trip_type,
 	.get_trip_temp = wmt_thz_get_trip_temp,
+	.set_trip_temp = wmt_thz_set_trip_temp,
 	.get_crit_temp = wmt_thz_get_crit_temp,
+	.notify = mtktswmt_thermal_notify,
 };
 
 static struct thermal_cooling_device_ops mtktspa_cooling_sysrst_ops = {
@@ -212,10 +253,12 @@ static unsigned long get_tx_bytes(void)
 	read_lock(&dev_base_lock);
 	for_each_net(net) {
 		for_each_netdev(net, dev) {
-			if (!strncmp(dev->name, "wlan", 4) || !strncmp(dev->name, "ap", 2)
-			    || !strncmp(dev->name, "p2p", 3)) {
+			if (!strncmp(dev->name, "wlan", 4)
+				|| !strncmp(dev->name, "ap", 2)
+				|| !strncmp(dev->name, "p2p", 3)) {
 				struct rtnl_link_stats64 temp;
-				const struct rtnl_link_stats64 *stats = dev_get_stats(dev, &temp);
+				const struct rtnl_link_stats64 *stats =
+					dev_get_stats(dev, &temp);
 
 				tx_bytes = tx_bytes + stats->tx_bytes;
 			}
@@ -230,8 +273,9 @@ static int wmt_cal_stats(unsigned long data)
 	struct wmt_stats *stats_info = (struct wmt_stats *)data;
 	struct timeval cur_time;
 
-	wmt_tm_dprintk("[%s] pre_time=%lu, pre_data=%lu\n", __func__, pre_time,
-		       stats_info->pre_tx_bytes);
+	wmt_tm_dprintk("[%s] pre_time=%lu, pre_data=%lu\n",
+		__func__, pre_time,
+		stats_info->pre_tx_bytes);
 
 	do_gettimeofday(&cur_time);
 
@@ -239,35 +283,40 @@ static int wmt_cal_stats(unsigned long data)
 		unsigned long tx_bytes = get_tx_bytes();
 
 		if (tx_bytes > stats_info->pre_tx_bytes) {
-
 			tx_throughput =
-			    ((tx_bytes - stats_info->pre_tx_bytes) / (cur_time.tv_sec -
-								      pre_time)) >> 7;
+				((tx_bytes - stats_info->pre_tx_bytes) /
+				(cur_time.tv_sec - pre_time)) >> 7;
 
-			wmt_tm_dprintk("[%s] cur_time=%lu, cur_data=%lu, tx_throughput=%luKb/s\n",
-				       __func__, cur_time.tv_sec, tx_bytes, tx_throughput);
+			wmt_tm_dprintk(
+			"[%s] cur_time=%lu, cur_data=%lu, tx_throughput=%luKb/s\n",
+			__func__, cur_time.tv_sec, tx_bytes, tx_throughput);
 
 			stats_info->pre_tx_bytes = tx_bytes;
 		} else if (tx_bytes < stats_info->pre_tx_bytes) {
 			/* Overflow */
 			tx_throughput =
-			    ((0xffffffff - stats_info->pre_tx_bytes + tx_bytes) / (cur_time.tv_sec -
-										   pre_time)) >> 7;
+				((0xffffffff - stats_info->pre_tx_bytes +
+				tx_bytes) / (cur_time.tv_sec -
+				pre_time)) >> 7;
 			stats_info->pre_tx_bytes = tx_bytes;
-			wmt_tm_dprintk("[%s] cur_tx(%lu) < pre_tx\n", __func__, tx_bytes);
+			wmt_tm_dprintk("[%s] cur_tx(%lu) < pre_tx\n",
+				__func__, tx_bytes);
 		} else {
 			/* No traffic */
 			tx_throughput = 0;
-			wmt_tm_dprintk("[%s] cur_tx(%lu) = pre_tx\n", __func__, tx_bytes);
+			wmt_tm_dprintk("[%s] cur_tx(%lu) = pre_tx\n",
+				__func__, tx_bytes);
 		}
 	} else {
 		/* Overflow possible ?? */
 		tx_throughput = 0;
-		wmt_tm_printk("[%s] cur_time(%lu) < pre_time\n", __func__, cur_time.tv_sec);
+		wmt_tm_printk("[%s] cur_time(%lu) < pre_time\n",
+			__func__, cur_time.tv_sec);
 	}
 
 	pre_time = cur_time.tv_sec;
-	wmt_tm_dprintk("[%s] pre_time=%lu, tv_sec=%lu\n", __func__, pre_time, cur_time.tv_sec);
+	wmt_tm_dprintk("[%s] pre_time=%lu, tv_sec=%lu\n",
+		__func__, pre_time, cur_time.tv_sec);
 
 	wmt_stats_timer.expires = jiffies + 1 * HZ;
 	add_timer(&wmt_stats_timer);
@@ -307,7 +356,8 @@ static int wmt_thz_bind(struct thermal_zone_device *thz_dev,
 	} else
 		return 0;
 
-	if (mtk_thermal_zone_bind_cooling_device(thz_dev, table_val, cool_dev)) {
+	if (mtk_thermal_zone_bind_cooling_device(thz_dev,
+		table_val, cool_dev)) {
 		wmt_tm_info("[%s] binding fail\n", __func__);
 		return -EINVAL;
 	}
@@ -364,10 +414,24 @@ static int wmt_thz_unbind(struct thermal_zone_device *thz_dev,
 	return 0;
 }
 
-static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, unsigned long *pv)
+int wmt_thz_hw_get_temp(void)
+{
+	int temp = 0;
+
+#ifndef CONFIG_MTK_COMBO_CHIP_MT76x2
+	temp = mtk_wcn_cmb_stub_query_ctrl();
+#endif /* CONFIG_MTK_COMBO_CHIP_MT76x2 */
+	if (temp >= 255)	/* dummy values */
+		temp = -127;
+
+	temp = temp * 1000;
+	return temp;
+}
+
+static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, int *pv)
 {
 	/* struct wmt_thermal_ctrl_ops *p_des; */
-	int temp = 0;
+	long temp = 0;
 
 	*pv = 0;
 
@@ -375,8 +439,9 @@ static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, unsigned long *
 	{
 		/* p_des = &pg_wmt_tm->wmt_if.ops; */
 		/* temp = p_des->query_temp(); */
+#ifndef CONFIG_MTK_COMBO_CHIP_MT76x2
 		temp = mtk_wcn_cmb_stub_query_ctrl();
-
+#endif /* CONFIG_MTK_COMBO_CHIP_MT76x2 */
 		if (temp >= 255)	/* dummy values */
 			temp = -127;
 
@@ -384,25 +449,29 @@ static int wmt_thz_get_temp(struct thermal_zone_device *thz_dev, unsigned long *
 		/* temp = ((temp & 0x80) == 0x0)?temp:(-1)*(temp & 0x7f); */
 		*pv = temp * 1000;
 
-		wmt_tm_dprintk("[wmt_thz_get_temp] temp = %d\n", temp);
+		wmt_tm_dprintk("[wmt_thz_get_temp] temp = %ld\n", temp);
 
 		if (temp != -127) {
 			if (temp > 100 || temp < -30)
-				wmt_tm_info("[wmt_thz_get_temp] temp = %d\n", temp);
+				wmt_tm_info("[wmt_thz_get_temp] temp = %ld\n",
+					temp);
 		}
 	}
 
 	if ((int)*pv >= polling_trip_temp1)
 		thz_dev->polling_delay = g_wmt_tm.linux_if.interval;
 	else if ((int)*pv < polling_trip_temp2)
-		thz_dev->polling_delay = g_wmt_tm.linux_if.interval * polling_factor2;
+		thz_dev->polling_delay =
+			g_wmt_tm.linux_if.interval * polling_factor2;
 	else
-		thz_dev->polling_delay = g_wmt_tm.linux_if.interval * polling_factor1;
+		thz_dev->polling_delay =
+			g_wmt_tm.linux_if.interval * polling_factor1;
 
 	return 0;
 }
 
-static int wmt_thz_get_mode(struct thermal_zone_device *thz_dev, enum thermal_device_mode *mode)
+static int wmt_thz_get_mode(struct thermal_zone_device *thz_dev,
+	enum thermal_device_mode *mode)
 {
 	struct linux_thermal_ctrl_if *p_linux_if = 0;
 /* int    kernel_mode = 0; */
@@ -418,12 +487,14 @@ static int wmt_thz_get_mode(struct thermal_zone_device *thz_dev, enum thermal_de
 
 	wmt_tm_dprintk("[%s] %d\n", __func__, p_linux_if->kernel_mode);
 
-	*mode = (p_linux_if->kernel_mode) ? THERMAL_DEVICE_ENABLED : THERMAL_DEVICE_DISABLED;
+	*mode = (p_linux_if->kernel_mode) ?
+		THERMAL_DEVICE_ENABLED : THERMAL_DEVICE_DISABLED;
 
 	return 0;
 }
 
-static int wmt_thz_set_mode(struct thermal_zone_device *thz_dev, enum thermal_device_mode mode)
+static int wmt_thz_set_mode(struct thermal_zone_device *thz_dev,
+	enum thermal_device_mode mode)
 {
 	struct linux_thermal_ctrl_if *p_linux_if = 0;
 
@@ -445,22 +516,32 @@ static int wmt_thz_set_mode(struct thermal_zone_device *thz_dev, enum thermal_de
 
 }
 
-static int wmt_thz_get_trip_type(struct thermal_zone_device *thz_dev, int trip,
-				 enum thermal_trip_type *type)
+static int wmt_thz_get_trip_type(struct thermal_zone_device *thz_dev,
+	int trip, enum thermal_trip_type *type)
 {
-	wmt_tm_dprintk("[mtktspa_get_trip_type] %d\n", trip);
+	wmt_tm_dprintk("[wmt_thz_get_trip_type] %d\n", trip);
 	*type = g_thermal_trip[trip];
 	return 0;
 }
 
-static int wmt_thz_get_trip_temp(struct thermal_zone_device *thz_dev, int trip, unsigned long *pv)
+static int wmt_thz_get_trip_temp(struct thermal_zone_device *thz_dev,
+	int trip, int *pv)
 {
-	wmt_tm_dprintk("[mtktspa_get_trip_temp] %d\n", trip);
+	wmt_tm_dprintk("[wmt_thz_get_trip_temp] %d\n", trip);
 	*pv = g_trip_temp[trip];
 	return 0;
 }
 
-static int wmt_thz_get_crit_temp(struct thermal_zone_device *thz_dev, unsigned long *pv)
+static int wmt_thz_set_trip_temp(struct thermal_zone_device *thermal,
+				  int trip,
+				  int t)
+{
+	wmt_tm_dprintk("[wmt_thz_set_trip_temp] %d\n", trip);
+	g_trip_temp[trip] = t;
+	return 0;
+}
+
+static int wmt_thz_get_crit_temp(struct thermal_zone_device *thz_dev, int *pv)
 {
 	wmt_tm_dprintk("[%s]\n", __func__);
 #define WMT_TM_TEMP_CRIT 85000	/* 85.000 degree Celsius */
@@ -469,35 +550,80 @@ static int wmt_thz_get_crit_temp(struct thermal_zone_device *thz_dev, unsigned l
 	return 0;
 }
 
+#define PREFIX "thermaltswmt:def"
+static int mtktswmt_thermal_notify(struct thermal_zone_device *thermal,
+	int trip, enum thermal_trip_type type)
+{
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	char buf[TSWMT_METRICS_STR_LEN];
+#endif
+
+#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
+	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err(
+			"[%s] Thermal shutdown WiFi, temp=%d, trip=%d\n",
+			__func__, thermal->temperature, trip);
+		life_cycle_set_thermal_shutdown_reason(
+			THERMAL_SHUTDOWN_REASON_WIFI);
+	}
+#endif
+
+#ifdef CONFIG_THERMAL_SHUTDOWN_LAST_KMESG
+	if (type == THERMAL_TRIP_CRITICAL) {
+		pr_err("%s: thermal_shutdown notify\n", __func__);
+		last_kmsg_thermal_shutdown();
+		pr_err("%s: thermal_shutdown notify end\n", __func__);
+	}
+#endif
+
+#ifdef CONFIG_AMAZON_METRICS_LOG
+	if (type == THERMAL_TRIP_CRITICAL &&
+		snprintf(buf, TSWMT_METRICS_STR_LEN,
+			"%s:tswmtmonitor;CT;1,temp=%d;trip=%d;CT;1:NR",
+			PREFIX, thermal->temperature, trip) > 0)
+		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+
+#endif
+
+	return 0;
+}
+
 /* +mtktspa_cooling_sysrst_ops+ */
-static int wmt_cl_get_max_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_get_max_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = 1;
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)(*pv));
 	return 0;
 }
 
-static int wmt_cl_get_cur_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_get_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = cl_dev_state;
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)(*pv));
 	return 0;
 }
 
-static int wmt_cl_set_cur_state(struct thermal_cooling_device *cool_dev, unsigned long v)
+static int wmt_cl_set_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long v)
 {
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)v);
 	cl_dev_state = v;
 
 	if (cl_dev_state == 1) {
-		wmt_tm_printk("wmt_cl_set_cur_state = 1\n");
-		/* the temperature is over than the critical, system reboot. */
-#ifndef CONFIG_ARM64
-		BUG();
-#else
-		*(unsigned int *)0x0 = 0xdead;	/* To trigger data abort to reset the system for thermal protection. */
+		pr_err("wmt_cl_set_cur_state = 1\n");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+		pr_err("*****************************************");
+		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+
+#ifdef CONFIG_AMAZON_SIGN_OF_LIFE
+		life_cycle_set_thermal_shutdown_reason(THERMAL_SHUTDOWN_REASON_WIFI);
 #endif
 
+/* the temperature is over than the critical, system reboot. */
+/* To trigger data abort to reset the system for thermal protection. */
+		*(unsigned int *)0x0 = 0xdead;
 	}
 
 	return 0;
@@ -515,7 +641,8 @@ static int wmt_send_signal(int level)
 		ret = -1;
 	}
 
-	wmt_tm_printk("[%s] pid is %d, %d, %d\n", __func__, tm_pid, tm_input_pid, thro);
+	wmt_tm_printk("[%s] pid is %d, %d, %d\n",
+		__func__, tm_pid, tm_input_pid, thro);
 
 	if (ret == 0 && tm_input_pid != tm_pid) {
 		tm_pid = tm_input_pid;
@@ -544,7 +671,8 @@ static int wmt_send_signal(int level)
 #define HIGH_STAT 2
 #define WFD_STAT 3
 
-static inline unsigned long thro(unsigned long a, unsigned int b, unsigned int c)
+static inline unsigned long thro(unsigned long a,
+	unsigned int b, unsigned int c)
 {
 
 	unsigned long tmp;
@@ -574,8 +702,10 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 
 	int cur_wifi_stat = 0;
 
-	wmt_tm_dprintk("[%s]+ [0]=%d, [1]=%d || [%d] is %s\n", __func__, mail_box[0], mail_box[1],
-		       index, (is_on == 1 ? "ON" : "OFF"));
+	wmt_tm_dprintk(
+		"[%s]+ [0]=%d, [1]=%d || [%d] is %s\n",
+		__func__, mail_box[0], mail_box[1],
+		index, (is_on == 1 ? "ON" : "OFF"));
 	mail_box[index] = is_on;
 
 	if (mail_box[0] < 0 || mail_box[1] < 0) {
@@ -585,7 +715,8 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 	cur_wifi_stat = mail_box[0] + mail_box[1];
 
 	/*
-	 * If Wifi-display is on, go to WFD_STAT state, and reset the throttling.
+	 * If Wifi-display is on,
+	 * go to WFD_STAT state, and reset the throttling.
 	 */
 	if (tm_wfd_stat == 2)
 		cur_wifi_stat = WFD_STAT;
@@ -606,43 +737,66 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 		break;
 
 	case HIGH_STAT:
-		if (throttling_pre_stat < HIGH_STAT || throttling_pre_stat == WFD_STAT) {
+		if (throttling_pre_stat < HIGH_STAT
+			|| throttling_pre_stat == WFD_STAT) {
 			if (cur_thro > 0)	/*Wifi is working!! */
 				thro_constraint =
-				    thro(cur_thro, up_numerator, up_denominator);
-			else	/*At this moment, current throughput is none. Use the previous constraint. */
+					thro(cur_thro,
+					up_numerator,
+					up_denominator);
+/* At this moment, current throughput is none.
+ * Use the previous constraint.
+ */
+			else
 				thro_constraint =
-				    thro(thro_constraint, up_numerator, up_denominator);
+					thro(thro_constraint,
+					up_numerator, up_denominator);
 
-			wmt_tm_printk("LOW/MID-->HIGH:%lu <- (%d / %d) %lu",
-				      thro_constraint, up_numerator, up_denominator,
-				      cur_thro);
+			wmt_tm_printk(
+				"LOW/MID-->HIGH:%lu <- (%d / %d) %lu",
+				thro_constraint, up_numerator,
+				up_denominator,
+				cur_thro);
 
 			/* wmt_send_signal( thro_constraint / 1000); */
-			wmt_send_signal(thro_constraint);	/* unit : Kbytes */
+			/* unit : Kbytes */
+			wmt_send_signal(thro_constraint);
 			throttling_pre_stat = HIGH_STAT;
 			over_up_time = 0;
 		} else if (throttling_pre_stat == HIGH_STAT) {
 			over_up_time++;
 			if ((over_up_time * interval) >= up_duration) {
-				if (cur_thro < thro_constraint)	/*real throughput may have huge variant */
+/*real throughput may have huge variant */
+				if (cur_thro < thro_constraint)
 					thro_constraint =
-					    thro(cur_thro, up_numerator, up_denominator);
-				else	/* current throughput is large than constraint. WHAT!!! */
+						thro(cur_thro,
+						up_numerator,
+						up_denominator);
+/* current throughput is large than constraint. WHAT!!! */
+				else
 					thro_constraint =
-					    thro(thro_constraint, up_numerator,
-						 up_denominator);
+						thro(thro_constraint,
+						up_numerator,
+						up_denominator);
 
-				wmt_tm_printk("HIGH-->HIGH:%lu <- (%d / %d) %lu",
-					      thro_constraint, up_numerator, up_denominator,
-					      cur_thro);
+				wmt_tm_printk(
+					"HIGH-->HIGH:%lu <- (%d / %d) %lu",
+					thro_constraint,
+					up_numerator,
+					up_denominator,
+					cur_thro);
 
-				/* wmt_send_signal( thro_constraint / 1000); */
-				wmt_send_signal(thro_constraint);	/* unit : Kbytes */
+				/* wmt_send_signal(
+				 * thro_constraint / 1000);
+				 */
+				/* unit : Kbytes */
+				wmt_send_signal(thro_constraint);
 				over_up_time = 0;
 			}
 		} else {
-			wmt_tm_info("[%s] Error state1 %d!!\n", __func__, throttling_pre_stat);
+			wmt_tm_info(
+				"[%s] Error state1 %d!!\n",
+				__func__, throttling_pre_stat);
 		}
 		wmt_tm_printk("case2 time=%d\n", over_up_time);
 		break;
@@ -673,17 +827,21 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 				thro_constraint = cur_thro * 3;
 			} else if (cur_thro >= 5000) {
 				thro_constraint =
-				    thro(cur_thro, low_numerator, low_denominator);
+					thro(cur_thro, low_numerator,
+					low_denominator);
 			} else {
 				thro_constraint =
-				    thro(thro_constraint, low_numerator, low_denominator);
+					thro(thro_constraint, low_numerator,
+					low_denominator);
 			}
 
-			wmt_tm_printk("MID/HIGH-->LOW:%lu <- (%d / %d) %lu",
-				      thro_constraint, low_numerator, low_denominator,
-				      cur_thro);
+			wmt_tm_printk(
+				"MID/HIGH-->LOW:%lu <- (%d / %d) %lu",
+				thro_constraint, low_numerator,
+				low_denominator, cur_thro);
 			/* wmt_send_signal( thro_constraint / 1000); */
-			wmt_send_signal(thro_constraint);	/* unit : Kbytes */
+			/* unit : Kbytes */
+			wmt_send_signal(thro_constraint);
 			throttling_pre_stat = LOW_STAT;
 			below_low_time = 0;
 			low_rst_time = 0;
@@ -692,7 +850,8 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 			below_low_time++;
 			if ((below_low_time * interval) >= low_duration) {
 				if (low_rst_time >= low_rst_max && !is_reset) {
-					wmt_tm_printk("over rst time=%d", low_rst_time);
+					wmt_tm_printk("over rst time=%d",
+						low_rst_time);
 
 					wmt_send_signal(-1);	/* reset */
 					low_rst_time = low_rst_max;
@@ -702,37 +861,45 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 						thro_constraint = cur_thro * 3;
 					} else if (cur_thro >= 5000) {
 						thro_constraint =
-						    thro(cur_thro, low_numerator,
-							 low_denominator);
+							thro(cur_thro,
+							low_numerator,
+							low_denominator);
 						low_rst_time++;
 					} else {
 						thro_constraint =
-						    thro(thro_constraint, low_numerator,
-							 low_denominator);
+							thro(thro_constraint,
+							low_numerator,
+							low_denominator);
 						low_rst_time++;
 					}
 
-					wmt_tm_printk("LOW-->LOW:%lu <-(%d / %d) %lu",
-						      thro_constraint, low_numerator,
-						      low_denominator, cur_thro);
+					wmt_tm_printk(
+						"LOW-->LOW:%lu <-(%d / %d) %lu",
+						thro_constraint, low_numerator,
+						low_denominator, cur_thro);
 
-					/* wmt_send_signal( thro_constraint / 1000); */
-					wmt_send_signal(thro_constraint);	/* unit : Kbytes */
+					/* wmt_send_signal(
+					 * thro_constraint / 1000);
+					 */
+					/* unit : Kbytes */
+					wmt_send_signal(thro_constraint);
 					below_low_time = 0;
 				} else {
-					wmt_tm_dprintk("Have reset, no control!!");
+					wmt_tm_dprintk(
+					"Have reset, no control!!");
 				}
 			}
 		} else {
 			wmt_tm_info("[%s] Error state3 %d!!\n", __func__,
 				    throttling_pre_stat);
 		}
-		wmt_tm_dprintk("case0 time=%d, rst=%d %d\n", below_low_time, low_rst_time,
-			       is_reset);
+		wmt_tm_dprintk("case0 time=%d, rst=%d %d\n",
+			below_low_time, low_rst_time, is_reset);
 		break;
 
 	default:
-		wmt_tm_info("[%s] Error cur_wifi_stat=%d!!\n", __func__, cur_wifi_stat);
+		wmt_tm_info("[%s] Error cur_wifi_stat=%d!!\n",
+			__func__, cur_wifi_stat);
 		break;
 	}
 
@@ -742,21 +909,24 @@ static int wmt_judge_throttling(int index, int is_on, int interval)
 }
 
 /* +mtktspa_cooling_pa1_ops+ */
-static int wmt_cl_pa1_get_max_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_pa1_get_max_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = 1;
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)(*pv));
 	return 0;
 }
 
-static int wmt_cl_pa1_get_cur_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_pa1_get_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = cl_pa1_dev_state;
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)(*pv));
 	return 0;
 }
 
-static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *cool_dev, unsigned long v)
+static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long v)
 {
 	struct linux_thermal_ctrl_if *p_linux_if = 0;
 	int ret = 0;
@@ -770,9 +940,9 @@ static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *cool_dev, uns
 
 	cl_pa1_dev_state = (unsigned int)v;
 
-	if (cl_pa1_dev_state == 1)
+	if (cl_pa1_dev_state == 1 && ret == 0)
 		ret = wmt_judge_throttling(0, 1, p_linux_if->interval / 1000);
-	else
+	else if (ret == 0)
 		ret = wmt_judge_throttling(0, 0, p_linux_if->interval / 1000);
 	if (ret != 0)
 		wmt_tm_info("[%s] ret=%d\n", __func__, ret);
@@ -782,21 +952,24 @@ static int wmt_cl_pa1_set_cur_state(struct thermal_cooling_device *cool_dev, uns
 /* -mtktspa_cooling_pa1_ops- */
 
 /* +mtktspa_cooling_pa2_ops+ */
-static int wmt_cl_pa2_get_max_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_pa2_get_max_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = 1;
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)(*pv));
 	return 0;
 }
 
-static int wmt_cl_pa2_get_cur_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_pa2_get_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = cl_pa2_dev_state;
 	wmt_tm_dprintk("[%s] %d\n", __func__, (int)(*pv));
 	return 0;
 }
 
-static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *cool_dev, unsigned long v)
+static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long v)
 {
 	struct linux_thermal_ctrl_if *p_linux_if = 0;
 	int ret = 0;
@@ -806,7 +979,7 @@ static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *cool_dev, uns
 	if (pg_wmt_tm)
 		p_linux_if = &pg_wmt_tm->linux_if;
 	else
-		ret = -1;
+		return -1;
 
 	cl_pa2_dev_state = (unsigned int)v;
 
@@ -824,21 +997,24 @@ static int wmt_cl_pa2_set_cur_state(struct thermal_cooling_device *cool_dev, uns
 
 #ifdef NEVER
 /* +mtktspa_cooling_pa3_ops+ */
-static int wmt_cl_pa3_get_max_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_pa3_get_max_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = 1;
 	wmt_tm_dprintk("[%s] %d\n", __func__, *pv);
 	return 0;
 }
 
-static int wmt_cl_pa3_get_cur_state(struct thermal_cooling_device *cool_dev, unsigned long *pv)
+static int wmt_cl_pa3_get_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long *pv)
 {
 	*pv = cl_pa3_dev_state;
 	wmt_tm_dprintk("[%s] %d\n", __func__, *pv);
 	return 0;
 }
 
-static int wmt_cl_pa3_set_cur_state(struct thermal_cooling_device *cool_dev, unsigned long v)
+static int wmt_cl_pa3_set_cur_state(struct thermal_cooling_device *cool_dev,
+	unsigned long v)
 {
 	struct linux_thermal_ctrl_if *p_linux_if = 0;
 	int ret = 0;
@@ -879,7 +1055,8 @@ static int wmt_wifi_tx_thro_open(struct inode *inode, struct file *file)
 }
 
 /*New Wifi throttling Algo+*/
-ssize_t wmt_wifi_algo_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+ssize_t wmt_wifi_algo_write(struct file *filp,
+	const char __user *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = { 0 };
 
@@ -901,9 +1078,10 @@ ssize_t wmt_wifi_algo_write(struct file *filp, const char __user *buf, size_t le
 	if (copy_from_user(desc, buf, len))
 		return -EFAULT;
 
-	if (sscanf
-	    (desc, "%d %d/%d %d %d/%d %d", &tmp_up_dur, &tmp_up_num, &tmp_up_den, &tmp_low_dur,
-	     &tmp_low_num, &tmp_low_den, &tmp_low_rst_max) == 7) {
+	if (sscanf(desc,
+		"%d %d/%d %d %d/%d %d",
+		&tmp_up_dur, &tmp_up_num, &tmp_up_den, &tmp_low_dur,
+		&tmp_low_num, &tmp_low_den, &tmp_low_rst_max) == 7) {
 
 		up_duration = tmp_up_dur;
 		up_denominator = tmp_up_den;
@@ -919,9 +1097,11 @@ ssize_t wmt_wifi_algo_write(struct file *filp, const char __user *buf, size_t le
 		below_low_time = 0;
 		low_rst_time = 0;
 
-		wmt_tm_printk("[%s] %s [up]%d %d/%d, [low]%d %d/%d, rst=%d\n", __func__, desc,
-			      up_duration, up_numerator, up_denominator, low_duration,
-			      low_numerator, low_denominator, low_rst_max);
+		wmt_tm_printk(
+			"[%s] %s [up]%d %d/%d, [low]%d %d/%d, rst=%d\n",
+			__func__, desc, up_duration,
+			up_numerator, up_denominator, low_duration,
+			low_numerator, low_denominator, low_rst_max);
 
 		return len;
 	} else if (sscanf(desc, "log=%d", &tmp_log) == 1) {
@@ -941,16 +1121,20 @@ int wmt_wifi_algo_read(struct seq_file *m, void *v)
 	/* int ret; */
 	/* char tmp[MAX_LEN] = {0}; */
 
-	seq_printf(m, "[up]\t%3d(sec)\t%2d/%2d\n[low]\t%3d(sec)\t%2d/%2d\nrst=%2d\n", up_duration,
-		   up_numerator, up_denominator, low_duration, low_numerator, low_denominator,
-		   low_rst_max);
+	seq_printf(m,
+		"[up]\t%3d(sec)\t%2d/%2d\n[low]\t%3d(sec)\t%2d/%2d\nrst=%2d\n",
+		up_duration, up_numerator, up_denominator, low_duration,
+		low_numerator, low_denominator,
+		low_rst_max);
 	/* ret = strlen(tmp); */
 
 	/* memcpy(buf, tmp, ret*sizeof(char)); */
 
-	wmt_tm_printk("[%s] [up]%d %d/%d, [low]%d %d/%d, rst=%d\n", __func__, up_duration,
-		      up_numerator, up_denominator, low_duration, low_numerator, low_denominator,
-		      low_rst_max);
+	wmt_tm_printk(
+		"[%s] [up]%d %d/%d, [low]%d %d/%d, rst=%d\n",
+		__func__, up_duration, up_numerator, up_denominator,
+		low_duration, low_numerator, low_denominator,
+		low_rst_max);
 
 	return 0;
 }
@@ -962,18 +1146,22 @@ static int wmt_wifi_algo_open(struct inode *inode, struct file *file)
 
 /*New Wifi throttling Algo-*/
 
-ssize_t wmt_tm_wfd_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+ssize_t wmt_tm_wfd_write(struct file *filp,
+	const char __user *buf, size_t len, loff_t *data)
 {
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
-	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
+
+	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
+
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
 
 	ret = kstrtoint(tmp, 10, &tm_wfd_stat);
 
-	wmt_tm_printk("[%s] %s = %d, len=%d, ret=%d\n", __func__, tmp, tm_wfd_stat, (int)len, ret);
+	wmt_tm_printk("[%s] %s = %d, len=%d, ret=%d\n",
+		__func__, tmp, tm_wfd_stat, (int)len, ret);
 
 	return len;
 }
@@ -999,11 +1187,14 @@ static int wmt_tm_wfd_open(struct inode *inode, struct file *file)
 	return single_open(file, wmt_tm_wfd_read, PDE_DATA(inode));
 }
 
-ssize_t wmt_tm_pid_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+ssize_t wmt_tm_pid_write(struct file *filp,
+	const char __user *buf, size_t len, loff_t *data)
 {
 	int ret = 0;
 	char tmp[MAX_LEN] = { 0 };
-	len = (len < (MAX_LEN - 1)) ? len : (MAX_LEN - 1);
+
+	len = (len < (MAX_LEN-1)) ? len : (MAX_LEN-1);
+
 	/* write data to the buffer */
 	if (copy_from_user(tmp, buf, len))
 		return -EFAULT;
@@ -1087,7 +1278,8 @@ static int wmt_tm_open(struct inode *inode, struct file *file)
 	return single_open(file, wmt_tm_read, PDE_DATA(inode));
 }
 
-static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t count, loff_t *data)
+static ssize_t wmt_tm_write(struct file *filp,
+	const char __user *buf, size_t count, loff_t *data)
 {
 	int i = 0;
 	int len = 0, time_msec = 0;
@@ -1117,26 +1309,35 @@ static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t co
 
 	desc[len] = '\0';
 
-	if (sscanf
-	    (desc,
+	if (sscanf(desc,
 	     "%d %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d %d %s %d",
-	     &g_num_trip, &trip_temp[0], &thermal_trip[0], bind0, &trip_temp[1], &thermal_trip[1],
-	     bind1, &trip_temp[2], &thermal_trip[2], bind2, &trip_temp[3], &thermal_trip[3], bind3,
-	     &trip_temp[4], &thermal_trip[4], bind4, &trip_temp[5], &thermal_trip[5], bind5,
-	     &trip_temp[6], &thermal_trip[6], bind6, &trip_temp[7], &thermal_trip[7], bind7,
-	     &trip_temp[8], &thermal_trip[8], bind8, &trip_temp[9], &thermal_trip[9], bind9,
+	     &g_num_trip,
+	     &trip_temp[0], &thermal_trip[0], bind0,
+	     &trip_temp[1], &thermal_trip[1], bind1,
+	     &trip_temp[2], &thermal_trip[2], bind2,
+	     &trip_temp[3], &thermal_trip[3], bind3,
+	     &trip_temp[4], &thermal_trip[4], bind4,
+	     &trip_temp[5], &thermal_trip[5], bind5,
+	     &trip_temp[6], &thermal_trip[6], bind6,
+	     &trip_temp[7], &thermal_trip[7], bind7,
+	     &trip_temp[8], &thermal_trip[8], bind8,
+	     &trip_temp[9], &thermal_trip[9], bind9,
 	     &time_msec) == 32) {
 		/* unregister */
 		if (p_linux_if->thz_dev) {
 			mtk_thermal_zone_device_unregister(p_linux_if->thz_dev);
 			p_linux_if->thz_dev = NULL;
 		}
+		if (g_num_trip < 0 || g_num_trip > 10)
+			return -EINVAL;
 
 		for (i = 0; i < g_num_trip; i++)
 			g_thermal_trip[i] = thermal_trip[i];
 
-		g_bind0[0] = g_bind1[0] = g_bind2[0] = g_bind3[0] = g_bind4[0] = '\0';
-		g_bind5[0] = g_bind6[0] = g_bind7[0] = g_bind8[0] = g_bind9[0] = '\0';
+		g_bind0[0] = g_bind1[0] = g_bind2[0] =
+			g_bind3[0] = g_bind4[0] = '\0';
+		g_bind5[0] = g_bind6[0] = g_bind7[0] =
+			g_bind8[0] = g_bind9[0] = '\0';
 
 		for (i = 0; i < 20; i++) {
 			g_bind0[i] = bind0[i];
@@ -1156,42 +1357,53 @@ static ssize_t wmt_tm_write(struct file *filp, const char __user *buf, size_t co
 
 		p_linux_if->interval = time_msec;
 
-		wmt_tm_dprintk
-		    ("[wmt_tm_write] g_trip_temp [0]=%d, [1]=%d, [2]=%d, [3]=%d, [4]=%d\n",
-		     g_thermal_trip[0], g_thermal_trip[1], g_thermal_trip[2], g_thermal_trip[3],
-		     g_thermal_trip[4]);
+		wmt_tm_dprintk(
+			"[wmt_tm_write] g_trip_temp [0]=%d, [1]=%d, [2]=%d, [3]=%d, [4]=%d\n",
+			g_thermal_trip[0], g_thermal_trip[1],
+			g_thermal_trip[2], g_thermal_trip[3],
+			g_thermal_trip[4]);
 
-		wmt_tm_dprintk
-		    ("[wmt_tm_write] g_trip_temp [5]=%d, [6]=%d, [7]=%d, [8]=%d, [9]=%d\n",
-		     g_thermal_trip[5], g_thermal_trip[6], g_thermal_trip[7], g_thermal_trip[8],
-		     g_thermal_trip[9]);
+		wmt_tm_dprintk(
+			"[wmt_tm_write] g_trip_temp [5]=%d, [6]=%d, [7]=%d, [8]=%d, [9]=%d\n",
+			g_thermal_trip[5], g_thermal_trip[6],
+			g_thermal_trip[7], g_thermal_trip[8],
+			g_thermal_trip[9]);
 
-		wmt_tm_dprintk("[wmt_tm_write] cooldev [0]=%s, [1]=%s, [2]=%s, [3]=%s, [4]=%s,\n",
-			       g_bind0, g_bind1, g_bind2, g_bind3, g_bind4);
+		wmt_tm_dprintk(
+			"[wmt_tm_write] cooldev [0]=%s, [1]=%s, [2]=%s, [3]=%s, [4]=%s,\n",
+			g_bind0, g_bind1, g_bind2, g_bind3, g_bind4);
 
-		wmt_tm_dprintk("[wmt_tm_write] cooldev [5]=%s, [6]=%s, [7]=%s, [8]=%s, [9]=%s,\n",
-			       g_bind5, g_bind6, g_bind7, g_bind8, g_bind9);
+		wmt_tm_dprintk(
+			"[wmt_tm_write] cooldev [5]=%s, [6]=%s, [7]=%s, [8]=%s, [9]=%s,\n",
+			g_bind5, g_bind6, g_bind7, g_bind8, g_bind9);
 
-		wmt_tm_dprintk("[wmt_tm_write] trip_temp [0]=%d, [1]=%d, [2]=%d, [3]=%d, [4]=%d\n",
-			       trip_temp[0], trip_temp[1], trip_temp[2], trip_temp[3],
-			       trip_temp[4]);
+		wmt_tm_dprintk(
+			"[wmt_tm_write] trip_temp [0]=%d, [1]=%d, [2]=%d, [3]=%d, [4]=%d\n",
+			trip_temp[0], trip_temp[1], trip_temp[2], trip_temp[3],
+			trip_temp[4]);
 
-		wmt_tm_dprintk("[wmt_tm_write] trip_temp [5]=%d, [6]=%d, [7]=%d, [8]=%d, [9]=%d\n",
-			       trip_temp[5], trip_temp[6], trip_temp[7], trip_temp[8],
-			       trip_temp[9]);
+		wmt_tm_dprintk(
+			"[wmt_tm_write] trip_temp [5]=%d, [6]=%d, [7]=%d, [8]=%d, [9]=%d\n",
+			trip_temp[5], trip_temp[6], trip_temp[7], trip_temp[8],
+			trip_temp[9]);
 
-		wmt_tm_dprintk("[wmt_tm_write] polling time=%d\n", p_linux_if->interval);
+		wmt_tm_dprintk("[wmt_tm_write] polling time=%d\n",
+			p_linux_if->interval);
 
-		/* p_linux_if->thz_dev->polling_delay = p_linux_if->interval*1000; */
+		/* p_linux_if->thz_dev->polling_delay =
+		 * p_linux_if->interval*1000;
+		 */
 
 		/* thermal_zone_device_update(p_linux_if->thz_dev); */
 
 		/* register */
-		p_linux_if->thz_dev = mtk_thermal_zone_device_register("mtktswmt", g_num_trip, NULL,
-								       &wmt_thz_dev_ops, 0, 0, 0,
-								       p_linux_if->interval);
+		p_linux_if->thz_dev =
+			mtk_thermal_zone_device_register("mtktswmt",
+			g_num_trip, NULL, &wmt_thz_dev_ops, 0, 0, 0,
+			p_linux_if->interval);
 
-		wmt_tm_dprintk("[wmt_tm_write] time_ms=%d\n", p_linux_if->interval);
+		wmt_tm_dprintk("[wmt_tm_write] time_ms=%d\n",
+			p_linux_if->interval);
 
 		return count;
 	}
@@ -1253,31 +1465,32 @@ static int wmt_tm_proc_register(void)
 
 	wmt_tm_proc_dir = mtk_thermal_get_proc_drv_therm_dir_entry();
 	if (!wmt_tm_proc_dir) {
-		wmt_tm_printk("[%s]: mkdir /proc/driver/thermal failed\n", __func__);
+		wmt_tm_printk("[%s]: mkdir /proc/driver/thermal failed\n",
+			__func__);
 	} else {
 		entry =
-		    proc_create("tzwmt", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, wmt_tm_proc_dir,
+		    proc_create("tzwmt", 0660, wmt_tm_proc_dir,
 				&_wmt_tm_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
 		entry =
-		    proc_create("clwmt_pid", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, wmt_tm_proc_dir,
+		    proc_create("clwmt_pid", 0660, wmt_tm_proc_dir,
 				&_tm_pid_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
 		entry =
-		    proc_create("clwmt_val", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, wmt_tm_proc_dir,
+		    proc_create("clwmt_val", 0660, wmt_tm_proc_dir,
 				&_wmt_val_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
-		entry =
-		    proc_create("wifi_tx_thro", S_IRUGO | S_IWUSR, wmt_tm_proc_dir, &_tx_thro_fops);
+		entry =	proc_create("wifi_tx_thro", 0644,
+			wmt_tm_proc_dir, &_tx_thro_fops);
 
 		entry =
-		    proc_create("clwmt_wfdstat", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP,
+		    proc_create("clwmt_wfdstat", 0660,
 				wmt_tm_proc_dir, &_wfd_stat_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
@@ -1306,26 +1519,31 @@ static int wmt_tm_thz_cl_register(void)
 		return -1;
 
 	/* cooling devices */
-	p_linux_if->cl_dev = mtk_thermal_cooling_device_register("mtktswmt-sysrst", NULL,
-								 &mtktspa_cooling_sysrst_ops);
+	p_linux_if->cl_dev =
+		mtk_thermal_cooling_device_register("mtktswmt-sysrst",
+		NULL, &mtktspa_cooling_sysrst_ops);
 
-	p_linux_if->cl_pa1_dev = mtk_thermal_cooling_device_register("mtktswmt-pa1", NULL,
-								     &mtktspa_cooling_pa1_ops);
+	p_linux_if->cl_pa1_dev =
+		mtk_thermal_cooling_device_register("mtktswmt-pa1",
+		NULL, &mtktspa_cooling_pa1_ops);
 
-	p_linux_if->cl_pa2_dev = mtk_thermal_cooling_device_register("mtktswmt-pa2", NULL,
-								     &mtktspa_cooling_pa2_ops);
+	p_linux_if->cl_pa2_dev =
+		mtk_thermal_cooling_device_register("mtktswmt-pa2",
+		NULL, &mtktspa_cooling_pa2_ops);
 
 #ifdef NEVER
-	p_linux_if->cl_pa3_dev = mtk_thermal_cooling_device_register("mtktswmt-pa3", NULL,
-								     &mtktspa_cooling_pa3_ops);
-#endif				/* NEVER */
+	p_linux_if->cl_pa3_dev =
+		mtk_thermal_cooling_device_register("mtktswmt-pa3",
+		NULL, &mtktspa_cooling_pa3_ops);
+#endif /* NEVER */
 
 	p_linux_if->interval = DEFAULT_POLL_TIME;
 
 	/* trips */
-	p_linux_if->thz_dev = mtk_thermal_zone_device_register("mtktswmt", g_num_trip, NULL,
-							       &wmt_thz_dev_ops, 0, 0, 0,
-							       p_linux_if->interval);
+	p_linux_if->thz_dev =
+		mtk_thermal_zone_device_register("mtktswmt",
+		g_num_trip, NULL, &wmt_thz_dev_ops, 0, 0,
+		0, p_linux_if->interval);
 
 	return 0;
 }

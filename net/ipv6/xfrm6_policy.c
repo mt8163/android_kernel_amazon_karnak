@@ -20,21 +20,26 @@
 #include <net/ip.h>
 #include <net/ipv6.h>
 #include <net/ip6_route.h>
+#include <net/l3mdev.h>
 #if IS_ENABLED(CONFIG_IPV6_MIP6)
 #include <net/mip6.h>
 #endif
 
 static struct xfrm_policy_afinfo xfrm6_policy_afinfo;
 
-static struct dst_entry *xfrm6_dst_lookup(struct net *net, int tos,
+static struct dst_entry *xfrm6_dst_lookup(struct net *net, int tos, int oif,
 					  const xfrm_address_t *saddr,
-					  const xfrm_address_t *daddr)
+					  const xfrm_address_t *daddr,
+					  u32 mark)
 {
 	struct flowi6 fl6;
 	struct dst_entry *dst;
 	int err;
 
 	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_oif = l3mdev_master_ifindex_by_index(net, oif);
+	fl6.flowi6_flags = FLOWI_FLAG_SKIP_NH_OIF;
+	fl6.flowi6_mark = mark;
 	memcpy(&fl6.daddr, daddr, sizeof(fl6.daddr));
 	if (saddr)
 		memcpy(&fl6.saddr, saddr, sizeof(fl6.saddr));
@@ -50,20 +55,19 @@ static struct dst_entry *xfrm6_dst_lookup(struct net *net, int tos,
 	return dst;
 }
 
-static int xfrm6_get_saddr(struct net *net,
-			   xfrm_address_t *saddr, xfrm_address_t *daddr)
+static int xfrm6_get_saddr(struct net *net, int oif,
+			   xfrm_address_t *saddr, xfrm_address_t *daddr,
+			   u32 mark)
 {
 	struct dst_entry *dst;
 	struct net_device *dev;
 
-	dst = xfrm6_dst_lookup(net, 0, NULL, daddr);
+	dst = xfrm6_dst_lookup(net, 0, oif, NULL, daddr, mark);
 	if (IS_ERR(dst))
 		return -EHOSTUNREACH;
 
 	dev = ip6_dst_idev(dst)->dev;
-	ipv6_dev_get_saddr(dev_net(dev), dev,
-			   (struct in6_addr *)&daddr->a6, 0,
-			   (struct in6_addr *)&saddr->a6);
+	ipv6_dev_get_saddr(dev_net(dev), dev, &daddr->in6, 0, &saddr->in6);
 	dst_release(dst);
 	return 0;
 }
@@ -73,20 +77,12 @@ static int xfrm6_get_tos(const struct flowi *fl)
 	return 0;
 }
 
-static void xfrm6_init_dst(struct net *net, struct xfrm_dst *xdst)
-{
-	struct rt6_info *rt = (struct rt6_info *)xdst;
-
-	rt6_init_peer(rt, net->ipv6.peers);
-}
-
 static int xfrm6_init_path(struct xfrm_dst *path, struct dst_entry *dst,
 			   int nfheader_len)
 {
 	if (dst->ops->family == AF_INET6) {
 		struct rt6_info *rt = (struct rt6_info *)dst;
-		if (rt->rt6i_node)
-			path->path_cookie = rt->rt6i_node->fn_sernum;
+		path->path_cookie = rt6_get_cookie(rt);
 	}
 
 	path->u.rt6.rt6i_nfheader_len = nfheader_len;
@@ -108,16 +104,13 @@ static int xfrm6_fill_dst(struct xfrm_dst *xdst, struct net_device *dev,
 		return -ENODEV;
 	}
 
-	rt6_transfer_peer(&xdst->u.rt6, rt);
-
 	/* Sheit... I remember I did this right. Apparently,
 	 * it was magically lost, so this code needs audit */
 	xdst->u.rt6.rt6i_flags = rt->rt6i_flags & (RTF_ANYCAST |
 						   RTF_LOCAL);
 	xdst->u.rt6.rt6i_metric = rt->rt6i_metric;
 	xdst->u.rt6.rt6i_node = rt->rt6i_node;
-	if (rt->rt6i_node)
-		xdst->route_cookie = rt->rt6i_node->fn_sernum;
+	xdst->route_cookie = rt6_get_cookie(rt);
 	xdst->u.rt6.rt6i_gateway = rt->rt6i_gateway;
 	xdst->u.rt6.rt6i_dst = rt->rt6i_dst;
 	xdst->u.rt6.rt6i_src = rt->rt6i_src;
@@ -130,12 +123,18 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
 {
 	struct flowi6 *fl6 = &fl->u.ip6;
 	int onlyproto = 0;
-	u16 offset = skb_network_header_len(skb);
 	const struct ipv6hdr *hdr = ipv6_hdr(skb);
+	u32 offset = sizeof(*hdr);
 	struct ipv6_opt_hdr *exthdr;
 	const unsigned char *nh = skb_network_header(skb);
-	u8 nexthdr = nh[IP6CB(skb)->nhoff];
+	u16 nhoff = IP6CB(skb)->nhoff;
 	int oif = 0;
+	u8 nexthdr;
+
+	if (!nhoff)
+		nhoff = offsetof(struct ipv6hdr, nexthdr);
+
+	nexthdr = nh[nhoff];
 
 	if (skb_dst(skb))
 		oif = skb_dst(skb)->dev->ifindex;
@@ -181,7 +180,8 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
 			return;
 
 		case IPPROTO_ICMPV6:
-			if (!onlyproto && pskb_may_pull(skb, nh + offset + 2 - skb->data)) {
+			if (!onlyproto && (nh + offset + 2 < skb->data ||
+			    pskb_may_pull(skb, nh + offset + 2 - skb->data))) {
 				u8 *icmp;
 
 				nh = skb_network_header(skb);
@@ -194,7 +194,9 @@ _decode_session6(struct sk_buff *skb, struct flowi *fl, int reverse)
 
 #if IS_ENABLED(CONFIG_IPV6_MIP6)
 		case IPPROTO_MH:
-			if (!onlyproto && pskb_may_pull(skb, nh + offset + 3 - skb->data)) {
+			offset += ipv6_optlen(exthdr);
+			if (!onlyproto && (nh + offset + 3 < skb->data ||
+			    pskb_may_pull(skb, nh + offset + 3 - skb->data))) {
 				struct ip6_mh *mh;
 
 				nh = skb_network_header(skb);
@@ -250,10 +252,6 @@ static void xfrm6_dst_destroy(struct dst_entry *dst)
 	if (likely(xdst->u.rt6.rt6i_idev))
 		in6_dev_put(xdst->u.rt6.rt6i_idev);
 	dst_destroy_metrics_generic(dst);
-	if (rt6_has_peer(&xdst->u.rt6)) {
-		struct inet_peer *peer = rt6_peer_ptr(&xdst->u.rt6);
-		inet_putpeer(peer);
-	}
 	xfrm_dst_destroy(xdst);
 }
 
@@ -266,27 +264,29 @@ static void xfrm6_dst_ifdown(struct dst_entry *dst, struct net_device *dev,
 		return;
 
 	xdst = (struct xfrm_dst *)dst;
-	if (xdst->u.rt6.rt6i_idev->dev == dev) {
-		struct inet6_dev *loopback_idev =
-			in6_dev_get(dev_net(dev)->loopback_dev);
-		BUG_ON(!loopback_idev);
+	if (xdst->u.rt6.rt6i_idev) {
+		if (xdst->u.rt6.rt6i_idev->dev == dev) {
+			struct inet6_dev *loopback_idev =
+				in6_dev_get(dev_net(dev)->loopback_dev);
+			BUG_ON(!loopback_idev);
 
-		do {
-			in6_dev_put(xdst->u.rt6.rt6i_idev);
-			xdst->u.rt6.rt6i_idev = loopback_idev;
-			in6_dev_hold(loopback_idev);
-			xdst = (struct xfrm_dst *)xdst->u.dst.child;
-		} while (xdst->u.dst.xfrm);
+			do {
+				in6_dev_put(xdst->u.rt6.rt6i_idev);
+				xdst->u.rt6.rt6i_idev = loopback_idev;
+				in6_dev_hold(loopback_idev);
+				xdst = (struct xfrm_dst *)xdst->u.dst.child;
+			} while (xdst->u.dst.xfrm);
 
-		__in6_dev_put(loopback_idev);
+			__in6_dev_put(loopback_idev);
+		}
+	} else {
+		pr_info("xfrm6_dst_ifdown-->xdst->u.rt6.rt6i_idev ==NULL");
 	}
-
 	xfrm_dst_ifdown(dst, dev);
 }
 
 static struct dst_ops xfrm6_dst_ops_template = {
 	.family =		AF_INET6,
-	.protocol =		cpu_to_be16(ETH_P_IPV6),
 	.gc =			xfrm6_garbage_collect,
 	.update_pmtu =		xfrm6_update_pmtu,
 	.redirect =		xfrm6_redirect,
@@ -294,7 +294,7 @@ static struct dst_ops xfrm6_dst_ops_template = {
 	.destroy =		xfrm6_dst_destroy,
 	.ifdown =		xfrm6_dst_ifdown,
 	.local_out =		__ip6_local_out,
-	.gc_thresh =		32768,
+	.gc_thresh =		INT_MAX,
 };
 
 static struct xfrm_policy_afinfo xfrm6_policy_afinfo = {
@@ -304,7 +304,6 @@ static struct xfrm_policy_afinfo xfrm6_policy_afinfo = {
 	.get_saddr =		xfrm6_get_saddr,
 	.decode_session =	_decode_session6,
 	.get_tos =		xfrm6_get_tos,
-	.init_dst =		xfrm6_init_dst,
 	.init_path =		xfrm6_init_path,
 	.fill_dst =		xfrm6_fill_dst,
 	.blackhole_route =	ip6_blackhole_route,
@@ -364,7 +363,7 @@ static void __net_exit xfrm6_net_sysctl_exit(struct net *net)
 {
 	struct ctl_table *table;
 
-	if (net->ipv6.sysctl.xfrm6_hdr == NULL)
+	if (!net->ipv6.sysctl.xfrm6_hdr)
 		return;
 
 	table = net->ipv6.sysctl.xfrm6_hdr->ctl_table_arg;
@@ -373,12 +372,12 @@ static void __net_exit xfrm6_net_sysctl_exit(struct net *net)
 		kfree(table);
 }
 #else /* CONFIG_SYSCTL */
-static int inline xfrm6_net_sysctl_init(struct net *net)
+static inline int xfrm6_net_sysctl_init(struct net *net)
 {
 	return 0;
 }
 
-static void inline xfrm6_net_sysctl_exit(struct net *net)
+static inline void xfrm6_net_sysctl_exit(struct net *net)
 {
 }
 #endif

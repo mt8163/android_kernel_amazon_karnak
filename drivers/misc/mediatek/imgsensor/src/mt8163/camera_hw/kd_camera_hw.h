@@ -1,3 +1,17 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
+
 #ifndef _KD_CAMERA_HW_H_
 #define _KD_CAMERA_HW_H_
 
@@ -68,25 +82,26 @@ int mtkcam_gpio_init(struct platform_device *pdev);
 
 #endif /* End of #if defined CONFIG_MTK_LEGACY */
 
-typedef enum KD_REGULATOR_TYPE_TAG {
+enum KD_REGULATOR_TYPE_T {
 	VCAMA,
 	VCAMD,
 	VCAMIO,
 	VCAMAF,
 	SUB_VCAMD,
 	VCAMI2C,
-} KD_REGULATOR_TYPE_T;
+};
 
-typedef enum {
+enum CAMPowerType {
 	CAMPDN,
 	CAMRST,
 	CAM1PDN,
 	CAM1RST,
 	CAMLDO
-} CAMPowerType;
+};
 
-extern bool _hwPowerDown(int PinIdx, KD_REGULATOR_TYPE_T PwrType);
-extern bool _hwPowerOn(int PinIdx, KD_REGULATOR_TYPE_T PwrType, int Voltage);
+extern bool _hwPowerDown(int PinIdx, enum KD_REGULATOR_TYPE_T PwrType);
+extern bool _hwPowerOn(int PinIdx, enum KD_REGULATOR_TYPE_T PwrType,
+	int Voltage);
 
 extern void ISP_MCLK1_EN(BOOL En);
 extern void ISP_MCLK2_EN(BOOL En);

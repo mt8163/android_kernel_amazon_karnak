@@ -17,7 +17,7 @@
 typedef enum GED_ERROR_TAG {
 	GED_OK,
 	GED_ERROR_FAIL,
-	GED_ERROR_OOM ,
+	GED_ERROR_OOM,
 	GED_ERROR_OUT_OF_FD,
 	GED_ERROR_FAIL_WITH_LIMIT,
 	GED_ERROR_TIMEOUT,
@@ -53,7 +53,7 @@ typedef enum GED_INFO_TAG {
 	GED_PRE_FREQ_IDX = 4,
 	GED_CUR_FREQ = 5,
 	GED_CUR_FREQ_IDX = 6,
-	GED_MAX_FREQ_IDX = 7 ,
+	GED_MAX_FREQ_IDX = 7,
 	GED_MAX_FREQ_IDX_FREQ = 8,
 	GED_MIN_FREQ_IDX = 9,
 	GED_MIN_FREQ_IDX_FREQ = 10,
@@ -66,6 +66,7 @@ typedef enum GED_INFO_TAG {
 	GED_PRE_HALF_PERIOD = 17,
 	GED_LATEST_START = 18,
 	GED_FPS = 19,
+
 	GED_INFO_SIZE
 } GED_INFO;
 
@@ -115,13 +116,13 @@ typedef struct GED_DVFS_UM_QUERY_PACK_TAG {
 	char bFirstBorn;
 	unsigned int ui32GPULoading;
 	unsigned int ui32GPUFreqID;
-	unsigned long gpu_cur_freq;
-	unsigned long gpu_pre_freq;
+	unsigned int gpu_cur_freq;
+	unsigned int gpu_pre_freq;
 	long long usT;
 	long long nsOffset;
-	unsigned long ul3DFenceDoneTime;
-	unsigned long ulPreCalResetTS_us;
-	unsigned long ulWorkingPeriod_us;
+	unsigned long long ul3DFenceDoneTime;
+	unsigned long long ulPreCalResetTS_us;
+	unsigned long long ulWorkingPeriod_us;
 	unsigned int ui32TargetPeriod_us;
 	unsigned int ui32BoostValue;
 } GED_DVFS_UM_QUERY_PACK;

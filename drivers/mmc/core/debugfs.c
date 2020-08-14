@@ -126,6 +126,12 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 	case MMC_TIMING_SD_HS:
 		str = "sd high-speed";
 		break;
+	case MMC_TIMING_UHS_SDR12:
+		str = "sd uhs SDR12";
+		break;
+	case MMC_TIMING_UHS_SDR25:
+		str = "sd uhs SDR25";
+		break;
 	case MMC_TIMING_UHS_SDR50:
 		str = "sd uhs SDR50";
 		break;
@@ -142,7 +148,8 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 		str = "mmc HS200";
 		break;
 	case MMC_TIMING_MMC_HS400:
-		str = "mmc HS400";
+		str = mmc_card_hs400es(host->card) ?
+			"mmc HS400 enhanced strobe" : "mmc HS400";
 		break;
 	default:
 		str = "invalid";
@@ -164,7 +171,26 @@ static int mmc_ios_show(struct seq_file *s, void *data)
 		str = "invalid";
 		break;
 	}
-	seq_printf(s, "signal voltage:\t%u (%s)\n", ios->chip_select, str);
+	seq_printf(s, "signal voltage:\t%u (%s)\n", ios->signal_voltage, str);
+
+	switch (ios->drv_type) {
+	case MMC_SET_DRIVER_TYPE_A:
+		str = "driver type A";
+		break;
+	case MMC_SET_DRIVER_TYPE_B:
+		str = "driver type B";
+		break;
+	case MMC_SET_DRIVER_TYPE_C:
+		str = "driver type C";
+		break;
+	case MMC_SET_DRIVER_TYPE_D:
+		str = "driver type D";
+		break;
+	default:
+		str = "invalid";
+		break;
+	}
+	seq_printf(s, "driver type:\t%u (%s)\n", ios->drv_type, str);
 
 	return 0;
 }
@@ -195,7 +221,7 @@ static int mmc_clock_opt_set(void *data, u64 val)
 	struct mmc_host *host = data;
 
 	/* We need this check due to input value is u64 */
-	if (val > host->f_max)
+	if (val != 0 && (val > host->f_max || val < host->f_min))
 		return -EINVAL;
 
 	mmc_claim_host(host);
@@ -230,11 +256,6 @@ void mmc_add_host_debugfs(struct mmc_host *host)
 			&mmc_clock_fops))
 		goto err_node;
 
-#ifdef CONFIG_MMC_CLKGATE
-	if (!debugfs_create_u32("clk_delay", (S_IRUSR | S_IWUSR),
-				root, &host->clk_delay))
-		goto err_node;
-#endif
 #ifdef CONFIG_FAIL_MMC_REQUEST
 	if (fail_request)
 		setup_fault_attr(&fail_default_attr, fail_request);
@@ -291,14 +312,8 @@ static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
 	if (!buf)
 		return -ENOMEM;
 
-	ext_csd = kmalloc(512, GFP_KERNEL);
-	if (!ext_csd) {
-		err = -ENOMEM;
-		goto out_free;
-	}
-
 	mmc_get_card(card);
-	err = mmc_send_ext_csd(card, ext_csd);
+	err = mmc_get_ext_csd(card, &ext_csd);
 	mmc_put_card(card);
 	if (err)
 		goto out_free;
@@ -314,7 +329,6 @@ static int mmc_ext_csd_open(struct inode *inode, struct file *filp)
 
 out_free:
 	kfree(buf);
-	kfree(ext_csd);
 	return err;
 }
 
@@ -339,96 +353,6 @@ static const struct file_operations mmc_dbg_ext_csd_fops = {
 	.release	= mmc_ext_csd_release,
 	.llseek		= default_llseek,
 };
-
-#ifdef MTK_BKOPS_IDLE_MAYA
-static int mmc_bkops_stats_open(struct inode *inode, struct file *filp)
-{
-	struct mmc_card *card = inode->i_private;
-
-	filp->private_data = card;
-
-	card->bkops_info.bkops_stats.print_stats = 1;
-	return 0;
-}
-
-static ssize_t mmc_bkops_stats_read(struct file *filp, char __user *ubuf,
-	size_t cnt, loff_t *ppos)
-{
-	struct mmc_card *card = filp->private_data;
-	struct mmc_bkops_stats *bkops_stats;
-	int i, ret;
-	unsigned long page = get_zeroed_page(GFP_KERNEL);
-	char *temp_buf = (char *) page;
-
-	if (!card)
-		return cnt;
-
-	bkops_stats = &card->bkops_info.bkops_stats;
-	if (!bkops_stats->print_stats)
-		return 0;
-
-	if (!bkops_stats->enabled) {
-		pr_err("%s: bkops statistics are disabled\n",
-			mmc_hostname(card->host));
-		goto exit;
-	}
-
-	spin_lock(&bkops_stats->lock);
-	temp_buf += sprintf(temp_buf, "%s: bkops statistics:\n", mmc_hostname(card->host));
-
-	for (i = 0; i < BKOPS_NUM_OF_SEVERITY_LEVELS; ++i) {
-		temp_buf += sprintf(temp_buf, "%s: BKOPS: due to level %d: %u\n",
-				mmc_hostname(card->host), i, bkops_stats->bkops_level[i]);
-	}
-	temp_buf += sprintf(temp_buf, "%s: BKOPS: stopped due to HPI: %u\n",
-				mmc_hostname(card->host), bkops_stats->hpi);
-	temp_buf += sprintf(temp_buf, "%s: BKOPS: how many time host was suspended: %u\n",
-				mmc_hostname(card->host), bkops_stats->suspend);
-	spin_unlock(&bkops_stats->lock);
-	ret = simple_read_from_buffer(ubuf, cnt, ppos, (char *) page, (unsigned long) temp_buf - page);
-	free_page(page);
-exit:
-	if (bkops_stats->print_stats == 1) {
-		bkops_stats->print_stats = 0;
-		return strnlen(ubuf, cnt);
-	}
-	return ret;
-}
-
-static ssize_t mmc_bkops_stats_write(struct file *filp,
-	const char __user *ubuf, size_t cnt, loff_t *ppos)
-{
-	struct mmc_card *card = filp->private_data;
-	char value;
-	struct mmc_bkops_stats *bkops_stats;
-	int cnt;
-
-	if (!card)
-		return cnt;
-
-	bkops_stats = &card->bkops_info.bkops_stats;
-
-	cnt = sscanf(ubuf, "%s", &value);
-	if (cnt != 1)
-		return -1;
-	if (value) {
-		mmc_blk_init_bkops_statistics(card);
-	} else {
-		pr_err("enter into mmc_bkops_stats_write else bkops_stats->enabled = false\n");
-		spin_lock(&bkops_stats->lock);
-		bkops_stats->enabled = false;
-		spin_unlock(&bkops_stats->lock);
-	}
-
-	return cnt;
-}
-
-static const struct file_operations mmc_dbg_bkops_stats_fops = {
-	.open = mmc_bkops_stats_open,
-	.read = mmc_bkops_stats_read,
-	.write = mmc_bkops_stats_write
-};
-#endif
 
 void mmc_add_card_debugfs(struct mmc_card *card)
 {
@@ -461,13 +385,6 @@ void mmc_add_card_debugfs(struct mmc_card *card)
 		if (!debugfs_create_file("ext_csd", S_IRUSR, root, card,
 					&mmc_dbg_ext_csd_fops))
 			goto err;
-#ifdef MTK_BKOPS_IDLE_MAYA
-	if (mmc_card_mmc(card) && (card->ext_csd.rev >= 5) &&
-		card->ext_csd.bkops_en)
-		if (!debugfs_create_file("bkops_stats", S_IRUSR, root, card,
-			&mmc_dbg_bkops_stats_fops))
-			goto err;
-#endif
 
 	return;
 

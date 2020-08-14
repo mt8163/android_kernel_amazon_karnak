@@ -1,17 +1,186 @@
+# This is the world regulatory domain
+country 00:
+	(2402 - 2472 @ 40), (20)
+	# Channel 12 - 13.
+	(2457 - 2482 @ 20), (20), NO-IR, AUTO-BW
+	# Channel 14. Only JP enables this and for 802.11b only
+	#(2474 - 2494 @ 20), (20), NO-IR, NO-OFDM
+	# Channel 36 - 48
+	(5170 - 5250 @ 80), (20)
+	# Channel 52 - 64
+	(5250 - 5330 @ 80), (20), NO-IR, DFS, AUTO-BW
+	# Channel 100 - 144
+	(5490 - 5730 @ 80), (20), NO-IR, DFS
+	# Channel 149 - 165
+	(5735 - 5835 @ 80), (20), NO-IR, DFS
+	# IEEE 802.11ad (60GHz), channels 1..3
+	#(57240 - 63720 @ 2160), (0)
+
+country AT: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+# Source:
+# https://www.legislation.gov.au/Details/F2016C00432
+# Both DFS-ETSI and DFS-FCC are acceptable per AS/NZS 4268 Appendix B.
+# The EIRP for DFS bands can be increased by 3dB if TPC is implemented.
+# In order to allow 80MHz operation between 5650-5730MHz the upper boundary
+# of this more restrictive band has been shifted up by 5MHz from 5725MHz.
+country AU: DFS-ETSI
+	(2402 - 2482 @ 40), (36)
+	(5170 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
+	(5250 - 5330 @ 80), (20), NO-OUTDOOR, AUTO-BW, DFS
+	(5490 - 5590 @ 80), (27), DFS
+	(5650 - 5710 @ 40), (27), DFS
+	(5735 - 5835 @ 80), (36)
+	#(57000 - 66000 @ 2160), (43), NO-OUTDOOR
+
+# Source:
+# https://www.ic.gc.ca/eic/site/smt-gst.nsf/vwapj/rss-247-i2-e.pdf/$file/rss-247-i2-e.pdf
+country CA: DFS-FCC
+	(2402 - 2472 @ 40), (30)
+	(5170 - 5250 @ 80), (23), NO-OUTDOOR, AUTO-BW
+	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
+	(5490 - 5730 @ 80), (24), DFS
+	(5735 - 5835 @ 80), (30)
+
+# Allocation for the 2.4 GHz band (Vfg 10 / 2013, Allgemeinzuteilung von
+# Frequenzen für die Nutzung in lokalen Netzwerken; Wireless Local Area
+# Networks (WLAN-Funkanwendungen).
+# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2013_10_WLAN_2,4GHz_pdf.pdf
 #
-# This file is a placeholder to prevent accidental build breakage if someone
-# enables CONFIG_CFG80211_INTERNAL_REGDB.  Almost no one actually needs to
-# enable that build option.
+# Allocation for the 5 GHz band (Vfg. 7 / 2010, Allgemeinzuteilung von
+# Frequenzen in den Bereichen 5150 MHz - 5350 MHz und 5470 MHz - 5725 MHz für
+# Funkanwendungen zur breitbandigen Datenübertragung, WAS/WLAN („Wireless
+# Access Systems including Wireless Local Area Networks“).
+# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2010_07_WLAN_5GHz_pdf.pdf
+# The values for the 5 GHz have been reduced by a factor of 2 (3db) for non TPC
+# devices (in other words: devices with TPC can use twice the tx power of this
+# table). Note that the docs do not require TPC for 5150--5250; the reduction
+# to 100mW thus is not strictly required -- however the conservative 100mW
+# limit is used here as the non-interference with radar and satellite
+# apps relies on the attenuation by the building walls only in the
+# absence of DFS; the neighbour countries have 100mW limit here as well.
 #
-# You should be using CRDA instead.  It is even better if you use the CRDA
-# package provided by your distribution, since they will probably keep it
-# up-to-date on your behalf.
+# The ETSI EN 300 440-1 standard for short range devices in the 5 GHz band has
+# been implemented in Germany:
+# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2014_69_SRD_pdf.pdf
 #
-# If you _really_ intend to use CONFIG_CFG80211_INTERNAL_REGDB then you will
-# need to replace this file with one containing appropriately formatted
-# regulatory rules that cover the regulatory domains you will be using.  Your
-# best option is to extract the db.txt file from the wireless-regdb git
-# repository:
+# Allocation for the 60 GHz band (Allgemeinzuteilung von Frequenzen im
+# Bereich 57 GHz - 66 GHz für Funkanwendungen für weitbandige
+# Datenübertragungssysteme; „Multiple Gigabit WAS/RLAN Systems (MGWS)“).
+# https://www.bundesnetzagentur.de/SharedDocs/Downloads/DE/Sachgebiete/Telekommunikation/Unternehmen_Institutionen/Frequenzen/Allgemeinzuteilungen/2011_08_MGWS_pdf.pdf
+
+country DE: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+# Orden IET/787/2013, de 25 de abril, por la que se aprueba
+# el cuadro nacional de atribución de frecuencias.
+# http://www.boe.es/diario_boe/txt.php?id=BOE-A-2013-4845
 #
-#   git://git.kernel.org/pub/scm/linux/kernel/git/linville/wireless-regdb.git
+# more info at "Cuadro nacional de atribución de frecuencias (CNAF)":
+# http://www.minetur.gob.es/telecomunicaciones/espectro/paginas/cnaf.aspx
+
+country ES: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+country FR: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+country GB: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+country IE: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+country IN:
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (23)
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5730 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (23)
+
+country IT: DFS-ETSI
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (30)
+
+country JP: DFS-JP
+	(2402 - 2482 @ 40), (20)
+	#(2474 - 2494 @ 20), (20), NO-OFDM
+	#(4910 - 4990 @ 40), (23)
+	#(5030 - 5090 @ 40), (23)
+	(5170 - 5250 @ 80), (20), AUTO-BW
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (23), DFS
+	# 60 GHz band channels 2-4 at 10mW,
+	# ref: http://www.arib.or.jp/english/html/overview/doc/1-STD-T74v1_1.pdf
+	#(59000 - 66000 @ 2160), (10 mW)
+
+country MX: DFS-FCC
+	(2402 - 2472 @ 40), (20)
+	(5170 - 5250 @ 80), (17), AUTO-BW
+	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
+#	(5490 - 5730 @ 80), (24), DFS
+	(5490 - 5590 @ 80), (24), DFS
+	(5650 - 5730 @ 80), (24), DFS
+	(5735 - 5835 @ 80), (30)
+
+# Regulation on the use of frequency space without a license and
+# without notification 2015
 #
+# http://wetten.overheid.nl/BWBR0036378/2015-03-05
+
+country NZ: DFS-ETSI
+	(2402 - 2482 @ 40), (30)
+	(5170 - 5250 @ 80), (17), AUTO-BW
+	(5250 - 5330 @ 80), (24), DFS, AUTO-BW
+	(5490 - 5590 @ 80), (24), DFS
+	(5650 - 5710 @ 40), (24), DFS
+	(5735 - 5835 @ 80), (30)
+
+country US: DFS-FCC
+	(2402 - 2472 @ 40), (30)
+	# 5.15 ~ 5.25 GHz: 30 dBm for master mode, 23 dBm for clients
+	(5170 - 5250 @ 80), (23), AUTO-BW
+	(5250 - 5330 @ 80), (23), DFS, AUTO-BW
+	(5490 - 5730 @ 80), (23), DFS
+	(5735 - 5835 @ 80), (30)
+	# 60g band
+	# reference: http://cfr.regstoday.com/47cfr15.aspx#47_CFR_15p255
+	# channels 1,2,3, EIRP=40dBm(43dBm peak)
+	#(57240 - 63720 @ 2160), (40)
+
+country BR:
+	(2402 - 2482 @ 40), (20)
+	(5170 - 5250 @ 80), (23)
+	(5250 - 5330 @ 80), (20), DFS, AUTO-BW
+	(5490 - 5710 @ 80), (27), DFS
+	(5735 - 5835 @ 80), (23)
+
+

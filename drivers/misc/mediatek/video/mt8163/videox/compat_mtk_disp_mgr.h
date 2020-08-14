@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2018 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -13,15 +13,15 @@
 
 #ifndef _COMPAT_MTK_DISP_MGR_H_
 #define _COMPAT_MTK_DISP_MGR_H_
-#include <linux/uaccess.h>
-#include <linux/compat.h>
 #include "mtk_disp_mgr.h"
+#include <linux/compat.h>
+#include <linux/uaccess.h>
 
 #include "disp_session.h"
 
 #ifdef CONFIG_COMPAT
 
-typedef struct compat_disp_session_config_t {
+struct compat_disp_session_config {
 	compat_uint_t type;
 	compat_uint_t device_id;
 	compat_uint_t mode;
@@ -31,16 +31,16 @@ typedef struct compat_disp_session_config_t {
 	compat_uint_t dc_type;
 	compat_int_t need_merge;
 	compat_int_t tigger_mode;
-} compat_disp_session_config;
+};
 
-typedef struct compat_layer_dirty_roi_t {
+struct compat_layer_dirty_roi {
 	compat_ushort_t dirty_x;
 	compat_ushort_t dirty_y;
 	compat_ushort_t dirty_w;
 	compat_ushort_t dirty_h;
-} compat_layer_dirty_roi;
+};
 
-typedef struct compat_disp_input_config_t {
+struct compat_disp_input_config {
 	compat_uint_t layer_id;
 	compat_uint_t layer_enable;
 	compat_uint_t buffer_source;
@@ -60,7 +60,11 @@ typedef struct compat_disp_input_config_t {
 	compat_uint_t layer_type;
 	compat_uint_t video_rotation;
 
-	compat_uint_t isTdshp;	/* set to 1, will go through tdshp first, then layer blending, then to color */
+	/*
+	 * set to 1, will go through tdshp first,
+	 * then layer blending, then to color
+	 */
+	compat_uint_t isTdshp;
 
 	compat_uint_t next_buff_idx;
 	compat_int_t identity;
@@ -72,10 +76,18 @@ typedef struct compat_disp_input_config_t {
 	compat_uint_t src_alpha;
 	compat_uint_t dst_alpha;
 	compat_uint_t frm_sequence;
+	compat_uint_t dim_color;
 	compat_uint_t yuv_range;
-} compat_disp_input_config;
 
-typedef struct compat_disp_output_config_t {
+	compat_uint_t fps;
+	compat_s64 timestamp;
+	compat_uint_t ext_sel_layer;
+	compat_int_t src_fence_fd;
+	compat_uptr_t dirty_roi_addr;
+	compat_uint_t dirty_roi_num;
+};
+
+struct compat_disp_output_config {
 	compat_uptr_t va;
 	compat_uptr_t pa;
 	compat_uint_t fmt;
@@ -88,39 +100,47 @@ typedef struct compat_disp_output_config_t {
 	compat_uint_t security;
 	compat_uint_t buff_idx;
 	compat_uint_t interface_idx;
+	/* fence to be waited before using this buffer. -1 if invalid */
+	compat_int_t src_fence_fd;
+	/* fence struct of src_fence_fd, used in kernel */
+	compat_uptr_t src_fence_struct;
 	compat_uint_t frm_sequence;
-} compat_disp_output_config;
+};
 
-typedef struct compat_disp_session_input_config_t {
+struct compat_disp_ccorr_config {
+	bool is_dirty;
+	compat_int_t mode;
+	compat_int_t color_matrix[16];
+};
+
+struct compat_disp_session_input_config {
 	compat_uint_t setter;
 	compat_uint_t session_id;
 	compat_uint_t config_layer_num;
-	compat_disp_input_config config[8];
-} compat_disp_session_input_config;
+	struct compat_disp_input_config config[8];
+	struct compat_disp_ccorr_config ccorr_config;
+};
 
-typedef struct compat_disp_present_fence_info_t {
+struct compat_disp_present_fence {
 
 	compat_uint_t session_id;
 	compat_uint_t present_fence_fd;
 	compat_uint_t present_fence_index;
-} compat_disp_present_fence;
+};
 
-
-typedef struct {
+struct compat_disp_session_vsync_config {
 	compat_uint_t session_id;
 	compat_uint_t vsync_cnt;
 	compat_u64 vsync_ts;
 	compat_uint_t lcm_fps;
-} compat_disp_session_vsync_config;
+};
 
-typedef struct compat_disp_session_layer_num_config_t {
+struct compat_disp_session_layer_num_config {
 	compat_uint_t session_id;
 	compat_uint_t max_layer_num;
-} compat_disp_session_layer_num_config;
+};
 
-
-
-typedef struct compat_disp_caps_t {
+struct compat_disp_caps_info {
 	compat_uint_t output_mode;
 	compat_uint_t output_pass;
 	compat_uint_t max_layer_num;
@@ -129,10 +149,20 @@ typedef struct compat_disp_caps_t {
 #endif
 	compat_uint_t disp_feature;
 	compat_int_t is_support_frame_cfg_ioctl;
-} compat_disp_caps_info;
+	compat_int_t is_output_rotated;
+	compat_int_t lcm_degree;
+	/* resizer input resolution list
+	 * format:
+	 *   sequence from big resolution to small
+	 *   portrait width first then height
+	 */
+	compat_uint_t rsz_in_res_list[RSZ_RES_LIST_NUM][2];
+	compat_uint_t rsz_list_length;
+	/* portrait { width, height } */
+	compat_uint_t rsz_in_max[2];
+};
 
-
-typedef struct compat_disp_buffer_info_t {
+struct compat_disp_buffer_info {
 
 	compat_uint_t session_id;
 
@@ -144,29 +174,29 @@ typedef struct compat_disp_buffer_info_t {
 	compat_int_t fence_fd;
 	compat_uint_t interface_index;
 	compat_int_t interface_fence_fd;
-} compat_disp_buffer_info;
+};
 
-typedef struct compat_disp_session_output_config_t {
+struct compat_disp_session_output_config {
 	compat_uint_t session_id;
-	compat_disp_output_config config;
-} compat_disp_session_output_config;
+	struct compat_disp_output_config config;
+};
 
-struct compat_disp_frame_cfg_t {
+struct compat_disp_frame_cfg {
 	compat_uint_t setter;
 	compat_uint_t session_id;
 
 	/* input config */
 	compat_uint_t input_layer_num;
-	compat_disp_input_config input_cfg[8];
+	struct compat_disp_input_config input_cfg[8];
 	compat_uint_t overlap_layer_num;
 
 	/* constant layer */
 	compat_uint_t const_layer_num;
-	compat_disp_input_config const_layer[1];
+	struct compat_disp_input_config const_layer[1];
 
 	/* output config */
 	compat_int_t output_en;
-	compat_disp_output_config output_cfg;
+	struct compat_disp_output_config output_cfg;
 
 	/* trigger config */
 	compat_uint_t mode;
@@ -175,7 +205,7 @@ struct compat_disp_frame_cfg_t {
 	compat_uint_t user;
 };
 
-typedef struct compat_disp_session_info_t {
+struct compat_disp_session_info {
 	compat_uint_t session_id;
 	compat_uint_t maxLayerNum;
 	compat_uint_t isHwVsyncAvailable;
@@ -187,12 +217,17 @@ typedef struct compat_disp_session_info_t {
 	compat_uint_t vsyncFPS;
 	compat_uint_t physicalWidth;
 	compat_uint_t physicalHeight;
+	/* length: um, for more precise precision */
+	compat_uint_t physicalWidthUm;
+	/* length: um, for more precise precision */
+	compat_uint_t physicalHeightUm;
+	compat_uint_t density;
 	compat_uint_t isConnected;
 	compat_uint_t isHDCPSupported;
 	compat_uint_t isOVLDisabled;
 	compat_uint_t is3DSupport;
 	compat_uint_t const_layer_num;
-} compat_disp_session_info;
+};
 
 int _compat_ioctl_prepare_present_fence(struct file *file, unsigned long arg);
 int _compat_ioctl_trigger_session(struct file *file, unsigned long arg);
@@ -200,7 +235,8 @@ int _compat_ioctl_destroy_session(struct file *file, unsigned long arg);
 int _compat_ioctl_create_session(struct file *file, unsigned long arg);
 int _compat_ioctl_get_info(struct file *file, unsigned long arg);
 int _compat_ioctl_get_is_driver_suspend(struct file *file, unsigned long arg);
-int _compat_ioctl_prepare_buffer(struct file *file, unsigned long arg, ePREPARE_FENCE_TYPE type);
+int _compat_ioctl_prepare_buffer(struct file *file, unsigned long arg,
+				 enum ePREPARE_FENCE_TYPE type);
 int _compat_ioctl_wait_vsync(struct file *file, unsigned long arg);
 int _compat_ioctl_set_input_buffer(struct file *file, unsigned long arg);
 int _compat_ioctl_get_display_caps(struct file *file, unsigned long arg);
@@ -208,25 +244,42 @@ int _compat_ioctl_set_vsync(struct file *file, unsigned long arg);
 int _compat_ioctl_set_output_buffer(struct file *file, unsigned long arg);
 int _compat_ioctl_set_session_mode(struct file *file, unsigned long arg);
 
-#define	COMPAT_DISP_IOCTL_CREATE_SESSION				DISP_IOW(201, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_DESTROY_SESSION				DISP_IOW(202, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_TRIGGER_SESSION				DISP_IOW(203, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_PREPARE_INPUT_BUFFER			DISP_IOW(204, compat_disp_buffer_info)
-#define	COMPAT_DISP_IOCTL_PREPARE_OUTPUT_BUFFER			DISP_IOW(205, compat_disp_buffer_info)
-#define	COMPAT_DISP_IOCTL_SET_INPUT_BUFFER				DISP_IOW(206, compat_disp_session_input_config)
-#define	COMPAT_DISP_IOCTL_SET_OUTPUT_BUFFER				DISP_IOW(207, compat_disp_session_output_config)
-#define	COMPAT_DISP_IOCTL_GET_SESSION_INFO				DISP_IOW(208, compat_disp_session_info)
-#define	COMPAT_DISP_IOCTL_SET_SESSION_MODE				DISP_IOW(209, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_GET_SESSION_MODE				DISP_IOW(210, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_SET_SESSION_TYPE				DISP_IOW(211, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_GET_SESSION_TYPE				DISP_IOW(212, compat_disp_session_config)
-#define	COMPAT_DISP_IOCTL_WAIT_FOR_VSYNC		DISP_IOW(213, compat_disp_session_vsync_config)
-#define	COMPAT_DISP_IOCTL_SET_MAX_LAYER_NUM		DISP_IOW(214, compat_disp_session_layer_num_config)
-#define	COMPAT_DISP_IOCTL_SET_VSYNC_FPS					DISP_IOW(215, compat_uint_t)
-#define	COMPAT_DISP_IOCTL_GET_PRESENT_FENCE				DISP_IOW(216, compat_disp_present_fence)
-#define COMPAT_DISP_IOCTL_GET_IS_DRIVER_SUSPEND			DISP_IOW(217, compat_uint_t)
-#define COMPAT_DISP_IOCTL_GET_DISPLAY_CAPS			DISP_IOW(218, compat_disp_caps_info)
-#define	COMPAT_DISP_IOCTL_FRAME_CONFIG				DISP_IOW(220, compat_disp_session_output_config)
+#define COMPAT_DISP_IOCTL_CREATE_SESSION                                       \
+	DISP_IOW(201, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_DESTROY_SESSION                                      \
+	DISP_IOW(202, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_TRIGGER_SESSION                                      \
+	DISP_IOW(203, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_PREPARE_INPUT_BUFFER                                 \
+	DISP_IOW(204, struct compat_disp_buffer_info)
+#define COMPAT_DISP_IOCTL_PREPARE_OUTPUT_BUFFER                                \
+	DISP_IOW(205, struct compat_disp_buffer_info)
+#define COMPAT_DISP_IOCTL_SET_INPUT_BUFFER                                     \
+	DISP_IOW(206, struct compat_disp_session_input_config)
+#define COMPAT_DISP_IOCTL_SET_OUTPUT_BUFFER                                    \
+	DISP_IOW(207, struct compat_disp_session_output_config)
+#define COMPAT_DISP_IOCTL_GET_SESSION_INFO                                     \
+	DISP_IOW(208, struct compat_disp_session_info)
+#define COMPAT_DISP_IOCTL_SET_SESSION_MODE                                     \
+	DISP_IOW(209, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_GET_SESSION_MODE                                     \
+	DISP_IOW(210, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_SET_SESSION_TYPE                                     \
+	DISP_IOW(211, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_GET_SESSION_TYPE                                     \
+	DISP_IOW(212, struct compat_disp_session_config)
+#define COMPAT_DISP_IOCTL_WAIT_FOR_VSYNC                                       \
+	DISP_IOW(213, struct compat_disp_session_vsync_config)
+#define COMPAT_DISP_IOCTL_SET_MAX_LAYER_NUM                                    \
+	DISP_IOW(214, struct compat_disp_session_layer_num_config)
+#define COMPAT_DISP_IOCTL_SET_VSYNC_FPS DISP_IOW(216, compat_uint_t)
+#define COMPAT_DISP_IOCTL_GET_PRESENT_FENCE                                    \
+	DISP_IOW(217, struct compat_disp_present_fence)
+#define COMPAT_DISP_IOCTL_GET_IS_DRIVER_SUSPEND DISP_IOW(218, compat_uint_t)
+#define COMPAT_DISP_IOCTL_GET_DISPLAY_CAPS                                     \
+	DISP_IOW(219, struct compat_disp_caps_info)
+#define COMPAT_DISP_IOCTL_FRAME_CONFIG                                         \
+	DISP_IOW(221, struct compat_disp_session_output_config)
 
 #endif
 #endif /*_COMPAT_MTK_DISP_MGR_H_*/

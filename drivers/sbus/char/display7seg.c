@@ -221,7 +221,6 @@ static int d7s_probe(struct platform_device *op)
 	dev_set_drvdata(&op->dev, p);
 	d7s_device = p;
 	err = 0;
-	of_node_put(opts);
 
 out:
 	return err;
@@ -264,7 +263,6 @@ MODULE_DEVICE_TABLE(of, d7s_match);
 static struct platform_driver d7s_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
-		.owner = THIS_MODULE,
 		.of_match_table = d7s_match,
 	},
 	.probe		= d7s_probe,

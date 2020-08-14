@@ -1,29 +1,14 @@
 /*
- * MUSB OTG driver - support for Mentor's DMA controller
+ * Copyright (C) 2017 MediaTek Inc.
  *
- * Copyright 2005 Mentor Graphics Corporation
- * Copyright (C) 2005-2007 by Texas Instruments
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #define MUSBFSH_HSDMA_BASE		0x200
@@ -37,25 +22,25 @@
 #define MUSBFSH_HSDMA_COUNT		0xc
 
 #define MUSBFSH_HSDMA_CHANNEL_OFFSET(_bchannel, _offset)		\
-		(MUSBFSH_HSDMA_BASE + (_bchannel << 4) + _offset)/*_bchannel starts from 0*/
+	(MUSBFSH_HSDMA_BASE + (_bchannel << 4) + _offset)
 
 #define musbfsh_read_hsdma_addr(mbase, bchannel)	\
 	musbfsh_readl(mbase,	\
-		   MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_ADDRESS))
+	   MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_ADDRESS))
 
 #define musbfsh_write_hsdma_addr(mbase, bchannel, addr) \
 	musbfsh_writel(mbase, \
-		    MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_ADDRESS), \
-		    addr)
+	    MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_ADDRESS), \
+	    addr)
 
 #define musbfsh_read_hsdma_count(mbase, bchannel)	\
 	musbfsh_readl(mbase,	\
-		   MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_COUNT))
+	   MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_COUNT))
 
 #define musbfsh_write_hsdma_count(mbase, bchannel, len) \
 	musbfsh_writel(mbase, \
-		    MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_COUNT), \
-		    len)
+	    MUSBFSH_HSDMA_CHANNEL_OFFSET(bchannel, MUSBFSH_HSDMA_COUNT), \
+	    len)
 
 /* control register (16-bit): */
 #define MUSBFSH_HSDMA_ENABLE_SHIFT		0
@@ -75,7 +60,8 @@
 #define MUSBFSH_HSDMA_CHANNELS		8
 #endif
 
-extern void musbfsh_dma_completion(struct musbfsh *musbfsh, u8 epnum, u8 transmit);
+extern void musbfsh_dma_completion(struct musbfsh *musbfsh,
+				u8 epnum, u8 transmit);
 #ifndef CONFIG_MUSBFSH_PIO_ONLY
 extern irqreturn_t musbfsh_dma_controller_irq(int irq, void *private_data);
 #endif

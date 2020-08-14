@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 MediaTek Inc.
+ * Copyright (C) 2017 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,18 +17,19 @@
 #include <linux/types.h>
 #include <linux/kobject.h>
 #include <linux/proc_fs.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/err.h>
 #include <linux/syscalls.h>
 #include <linux/timer.h>
-#include <mt_ccci_common.h>
+#include <mtk_ccci_common.h>
 #include "mt-plat/mtk_thermal_monitor.h"
 #include <linux/uidgid.h>
 
 int __attribute__ ((weak))
-exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned int len)
+exec_ccci_kern_func_by_md_id(
+int md_id, unsigned int id, char *buf, unsigned int len)
 {
-	pr_err("E_WF: %s doesn't exist\n", __func__);
+	pr_notice("E_WF: %s doesn't exist\n", __func__);
 	return -316;
 }
 
@@ -36,14 +37,14 @@ exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned int
 #define cl_type_lower               "cl-amutt-l"
 
 #define mtk_cooler_amutt_dprintk_always(fmt, args...) \
-pr_debug("thermal/cooler/amutt" fmt, ##args)
+	pr_debug("[Thermal/TC/amutt]" fmt, ##args)
 
 #define mtk_cooler_amutt_dprintk(fmt, args...) \
-do { \
-	if (1 == cl_amutt_klog_on) { \
-		pr_debug("[thermal/cooler/amutt]" fmt, ##args); \
-	} \
-} while (0)
+	do { \
+		if (cl_amutt_klog_on == 1) { \
+			pr_debug("[Thermal/TC/amutt]" fmt, ##args); \
+		} \
+	} while (0)
 
 static kuid_t uid = KUIDT_INIT(0);
 static kgid_t gid = KGIDT_INIT(1000);
@@ -87,13 +88,13 @@ static activate_cooler_opp_func opp_func[COOLER_STEPS] = { 0 };
 
 static unsigned int amutt_param[COOLER_STEPS] = { 0 };
 
-typedef struct adaptive_cooler {
+struct adaptive_coolers {
 	int cur_level;
 	int max_level;
 	activate_cooler_opp_func *opp_func_array;
-} adaptive_coolers;
+};
 
-static adaptive_coolers amutt;
+static struct adaptive_coolers amutt;
 
 static int amutt_backoff(int level)
 {
@@ -102,19 +103,21 @@ static int amutt_backoff(int level)
 	if (level == 0) {
 		/* no throttle */
 		ret =
-		    exec_ccci_kern_func_by_md_id(MD_SYS1, ID_THROTTLING_CFG,
-						 (char *)&amutt_param[level], 4);
+			exec_ccci_kern_func_by_md_id(MD_SYS1, ID_THROTTLING_CFG,
+					(char *)&amutt_param[level], 4);
 		mtk_cooler_amutt_dprintk_always("[%s] unlimit\n", __func__);
 
 	} else if (level >= 1 && level <= COOLER_STEPS - 1) {
 		ret =
-		    exec_ccci_kern_func_by_md_id(MD_SYS1, ID_THROTTLING_CFG,
-						 (char *)&amutt_param[level], 4);
-		mtk_cooler_amutt_dprintk_always("[%s] limit %x\n", __func__, amutt_param[level]);
+			exec_ccci_kern_func_by_md_id(MD_SYS1, ID_THROTTLING_CFG,
+					(char *)&amutt_param[level], 4);
+		mtk_cooler_amutt_dprintk_always("[%s] limit %x\n", __func__,
+							amutt_param[level]);
 	} else {
 		/* error... */
 		ret = -1;
-		mtk_cooler_amutt_dprintk_always("[%s] ouf of range\n", __func__);
+		mtk_cooler_amutt_dprintk_always("[%s] ouf of range\n",
+								__func__);
 	}
 
 	return ret;
@@ -123,9 +126,9 @@ static int amutt_backoff(int level)
 
 
 
-static int down_throttle(adaptive_coolers *p, int step)
+static int down_throttle(struct adaptive_coolers *p, int step)
 {
-	if (NULL == p)
+	if (p == NULL)
 		return -1;
 	if (step <= 0)
 		return p->cur_level;
@@ -140,9 +143,9 @@ static int down_throttle(adaptive_coolers *p, int step)
 	return p->cur_level;
 }
 
-static int up_throttle(adaptive_coolers *p, int step)
+static int up_throttle(struct adaptive_coolers *p, int step)
 {
-	if (NULL == p)
+	if (p == NULL)
 		return -1;
 	if (step <= 0)
 		return p->cur_level;
@@ -157,9 +160,9 @@ static int up_throttle(adaptive_coolers *p, int step)
 	return p->cur_level;
 }
 
-static int rst_throttle(adaptive_coolers *p)
+static int rst_throttle(struct adaptive_coolers *p)
 {
-	if (NULL == p)
+	if (p == NULL)
 		return -1;
 
 	p->cur_level = 0;
@@ -189,8 +192,10 @@ static int judge_throttling(int index, int is_on, int interval)
 
 	int cur_wifi_stat = 0;
 
-	mtk_cooler_amutt_dprintk("[%s]+ [0]=%d, [1]=%d || [%d] is %s\n", __func__, mail_box[0],
-				 mail_box[1], index, (is_on == 1 ? "ON" : "OFF"));
+	mtk_cooler_amutt_dprintk("[%s]+ [0]=%d, [1]=%d || [%d] is %s\n",
+						__func__, mail_box[0],
+						mail_box[1], index,
+						(is_on == 1 ? "ON" : "OFF"));
 	mail_box[index] = is_on;
 
 	if (mail_box[0] >= 0 && mail_box[1] >= 0) {
@@ -200,126 +205,161 @@ static int judge_throttling(int index, int is_on, int interval)
 		case HIGH_STAT:
 			if (throttling_pre_stat < HIGH_STAT) {
 				/* 1st down throttle */
-				int new_step = down_throttle(&amutt, up_step);
+				int new_step = down_throttle(
+						&amutt, up_step);
 
-				mtk_cooler_amutt_dprintk_always("LOW/MID-->HIGH: step %d\n",
-								new_step);
+				mtk_cooler_amutt_dprintk_always(
+						"LOW/MID-->HIGH: step %d\n",
+						new_step);
 
 				throttling_pre_stat = HIGH_STAT;
 				over_up_time = 0;
 			} else if (throttling_pre_stat == HIGH_STAT) {
 				/* keep down throttle */
 				over_up_time++;
-				if ((over_up_time * interval) >= up_duration) {
-					int new_step = down_throttle(&amutt, up_step);
+				if ((over_up_time * interval)
+				>= up_duration) {
+					int new_step =
+						down_throttle(&amutt,
+							up_step);
 
-					mtk_cooler_amutt_dprintk_always("HIGH-->HIGH: step %d\n",
-									new_step);
+					mtk_cooler_amutt_dprintk_always(
+							"HIGH-->HIGH: step %d\n",
+							new_step);
 
 					over_up_time = 0;
 				}
 			} else {
-				mtk_cooler_amutt_dprintk("[%s] Error state1=%d!!\n", __func__,
-							 throttling_pre_stat);
+				mtk_cooler_amutt_dprintk(
+						"[%s] Error state1=%d!!\n",
+						__func__,
+						throttling_pre_stat);
 			}
-			mtk_cooler_amutt_dprintk_always("case2 time=%d\n", over_up_time);
+			mtk_cooler_amutt_dprintk_always(
+						"case2 time=%d\n",
+						over_up_time);
 			break;
 
 		case MID_STAT:
 			if (throttling_pre_stat == LOW_STAT) {
 				below_low_time = 0;
 				throttling_pre_stat = MID_STAT;
-				mtk_cooler_amutt_dprintk_always("[%s] Go up!!\n", __func__);
+				mtk_cooler_amutt_dprintk_always(
+						"[%s] Go up!!\n",
+						__func__);
+
 			} else if (throttling_pre_stat == HIGH_STAT) {
 				over_up_time = 0;
 				throttling_pre_stat = MID_STAT;
-				mtk_cooler_amutt_dprintk_always("[%s] Go down!!\n", __func__);
+				mtk_cooler_amutt_dprintk_always(
+						"[%s] Go down!!\n",
+						__func__);
+
 			} else {
 				throttling_pre_stat = MID_STAT;
-				mtk_cooler_amutt_dprintk("[%s] pre_stat=%d!!\n", __func__,
-							 throttling_pre_stat);
+				mtk_cooler_amutt_dprintk(
+						"[%s] pre_stat=%d!!\n",
+						__func__,
+						throttling_pre_stat);
 			}
 			break;
 
 		case LOW_STAT:
 			if (throttling_pre_stat > LOW_STAT) {
 				/* 1st up throttle */
-				int new_step = up_throttle(&amutt, low_step);
+				int new_step = up_throttle(&amutt,
+							low_step);
 
-				mtk_cooler_amutt_dprintk_always("MID/HIGH-->LOW: step %d\n",
-								new_step);
+				mtk_cooler_amutt_dprintk_always(
+							"MID/HIGH-->LOW: step %d\n",
+							new_step);
 				throttling_pre_stat = LOW_STAT;
 				below_low_time = 0;
 				low_rst_time = 0;
 				is_reset = false;
 			} else if (throttling_pre_stat == LOW_STAT) {
 				below_low_time++;
-				if ((below_low_time * interval) >= low_duration) {
-					if (low_rst_time >= low_rst_max && !is_reset) {
+				if ((below_low_time * interval)
+				>= low_duration) {
+					if (low_rst_time >=
+					low_rst_max && !is_reset) {
 						/* rst */
 						rst_throttle(&amutt);
 
-						mtk_cooler_amutt_dprintk_always
-						    ("over rst time=%d\n", low_rst_time);
+						mtk_cooler_amutt_dprintk_always(
+							"over rst time=%d\n",
+							low_rst_time);
 
-						low_rst_time = low_rst_max;
-						is_reset = true;
+						low_rst_time =
+							low_rst_max;
+							is_reset = true;
 					} else if (!is_reset) {
 						/* keep up throttle */
-						int new_step = up_throttle(&amutt, low_step);
+						int new_step =
+							up_throttle(
+							&amutt,
+							low_step);
 
 						low_rst_time++;
 
-						mtk_cooler_amutt_dprintk_always
-						    ("LOW-->LOW: step %d\n", new_step);
+						mtk_cooler_amutt_dprintk_always(
+							"LOW-->LOW: step %d\n",
+							new_step);
 
 						below_low_time = 0;
 					} else {
-						mtk_cooler_amutt_dprintk
-						    ("Have reset, no control!!");
+						mtk_cooler_amutt_dprintk(
+							"Have reset, no control!!"
+							);
 					}
 				}
 			} else {
-				mtk_cooler_amutt_dprintk_always("[%s] Error state3 %d!!\n",
-								__func__, throttling_pre_stat);
+				mtk_cooler_amutt_dprintk_always(
+						"[%s] Error state3 %d!!\n",
+						__func__,
+						throttling_pre_stat);
 			}
-			mtk_cooler_amutt_dprintk("case0 time=%d, rst=%d %d\n", below_low_time,
-						 low_rst_time, is_reset);
+			mtk_cooler_amutt_dprintk(
+						"case0 time=%d, rst=%d %d\n",
+						below_low_time,
+						low_rst_time, is_reset);
 			break;
 
 		default:
-			mtk_cooler_amutt_dprintk_always("[%s] Error cur_wifi_stat=%d!!\n", __func__,
-							cur_wifi_stat);
+			mtk_cooler_amutt_dprintk_always(
+				"[%s] Error cur_wifi_stat=%d!!\n",
+				__func__, cur_wifi_stat);
 			break;
-		}
+	}
 
 		mail_box[0] = UNK_STAT;
 		mail_box[1] = UNK_STAT;
 	} else {
-		mtk_cooler_amutt_dprintk("[%s] dont get all info!!\n", __func__);
+		mtk_cooler_amutt_dprintk(
+				"[%s] dont get all info!!\n", __func__);
 	}
 	return 0;
 }
 
 /* +amutt_cooler_upper_ops+ */
-static int amutt_cooler_upper_get_max_state(struct thermal_cooling_device *cool_dev,
-					    unsigned long *pv)
+static int amutt_cooler_upper_get_max_state(
+struct thermal_cooling_device *cool_dev, unsigned long *pv)
 {
 	*pv = 1;
 	mtk_cooler_amutt_dprintk("[%s] %lu\n", __func__, *pv);
 	return 0;
 }
 
-static int amutt_cooler_upper_get_cur_state(struct thermal_cooling_device *cool_dev,
-					    unsigned long *pv)
+static int amutt_cooler_upper_get_cur_state(
+struct thermal_cooling_device *cool_dev, unsigned long *pv)
 {
 	*pv = cl_upper_dev_state;
 	mtk_cooler_amutt_dprintk("[%s] %lu\n", __func__, *pv);
 	return 0;
 }
 
-static int amutt_cooler_upper_set_cur_state(struct thermal_cooling_device *cool_dev,
-					    unsigned long v)
+static int amutt_cooler_upper_set_cur_state(
+struct thermal_cooling_device *cool_dev, unsigned long v)
 {
 	int ret = 0;
 
@@ -346,24 +386,24 @@ static struct thermal_cooling_device_ops amutt_cooler_upper_ops = {
 /* -amutt_cooler_upper_ops- */
 
 /* +amutt_cooler_lower_ops+ */
-static int amutt_cooler_lower_get_max_state(struct thermal_cooling_device *cool_dev,
-					    unsigned long *pv)
+static int amutt_cooler_lower_get_max_state(
+struct thermal_cooling_device *cool_dev, unsigned long *pv)
 {
 	*pv = 1;
 	mtk_cooler_amutt_dprintk("[%s] %lu\n", __func__, *pv);
 	return 0;
 }
 
-static int amutt_cooler_lower_get_cur_state(struct thermal_cooling_device *cool_dev,
-					    unsigned long *pv)
+static int amutt_cooler_lower_get_cur_state(
+struct thermal_cooling_device *cool_dev, unsigned long *pv)
 {
 	*pv = cl_lower_dev_state;
 	mtk_cooler_amutt_dprintk("[%s] %lu\n", __func__, *pv);
 	return 0;
 }
 
-static int amutt_cooler_lower_set_cur_state(struct thermal_cooling_device *cool_dev,
-					    unsigned long v)
+static int amutt_cooler_lower_set_cur_state(
+struct thermal_cooling_device *cool_dev, unsigned long v)
 {
 	int ret = 0;
 
@@ -393,11 +433,11 @@ static int mtk_cooler_amutt_register_ltf(void)
 {
 	mtk_cooler_amutt_dprintk("[%s]\n", __func__);
 
-	cl_upper_dev = mtk_thermal_cooling_device_register("cl-amutt-upper", NULL,
-							   &amutt_cooler_upper_ops);
+	cl_upper_dev = mtk_thermal_cooling_device_register("cl-amutt-upper",
+						NULL, &amutt_cooler_upper_ops);
 
-	cl_lower_dev = mtk_thermal_cooling_device_register("cl-amutt-lower", NULL,
-							   &amutt_cooler_lower_ops);
+	cl_lower_dev = mtk_thermal_cooling_device_register("cl-amutt-lower",
+						NULL, &amutt_cooler_lower_ops);
 
 	return 0;
 }
@@ -420,19 +460,20 @@ static void mtk_cooler_amutt_unregister_ltf(void)
 int amutt_param_read(struct seq_file *m, void *v)
 {
 	seq_printf(m,
-		   "[up]\t%3d(sec)\t%2d\n[low]\t%3d(sec)\t%2d\nrst=%2d\ninterval=%d\nmax_step=%d\n",
-		   up_duration, up_step, low_duration, low_step, low_rst_max, polling_interval,
-		   amutt.max_level);
+		"[up]\t%3d(sec)\t%2d\n[low]\t%3d(sec)\t%2d\nrst=%2d\ninterval=%d\nmax_step=%d\n",
+				up_duration, up_step, low_duration, low_step,
+				low_rst_max, polling_interval, amutt.max_level);
 
-	mtk_cooler_amutt_dprintk_always
-	    ("[%s] [up]%d %d, [low]%d %d, rst=%d, interval=%d, max_step=%d\n", __func__,
-	     up_duration, up_step, low_duration, low_step, low_rst_max, polling_interval,
-	     amutt.max_level);
+	mtk_cooler_amutt_dprintk_always(
+		"[%s] [up]%d %d, [low]%d %d, rst=%d, interval=%d, max_step=%d\n",
+		__func__, up_duration, up_step, low_duration, low_step,
+		low_rst_max, polling_interval, amutt.max_level);
 
 	return 0;
 }
 
-ssize_t amutt_param_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+ssize_t amutt_param_write(
+struct file *filp, const char __user *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = { 0 };
 
@@ -456,9 +497,9 @@ ssize_t amutt_param_write(struct file *filp, const char __user *buf, size_t len,
 	if (copy_from_user(desc, buf, len))
 		return -EFAULT;
 
-	if (sscanf(desc, "%d %d %d %d %d %d %d", &tmp_up_dur, &tmp_up_step, &tmp_low_dur,
-		   &tmp_low_step, &tmp_low_rst_max, &tmp_polling_interval,
-		   &tmp_deepest_step) >= 6) {
+	if (sscanf(desc, "%d %d %d %d %d %d %d", &tmp_up_dur, &tmp_up_step,
+		&tmp_low_dur, &tmp_low_step, &tmp_low_rst_max,
+		&tmp_polling_interval, &tmp_deepest_step) >= 6) {
 
 		up_duration = tmp_up_dur;
 		up_step = tmp_up_step;
@@ -476,10 +517,11 @@ ssize_t amutt_param_write(struct file *filp, const char __user *buf, size_t len,
 		below_low_time = 0;
 		low_rst_time = 0;
 
-		mtk_cooler_amutt_dprintk_always
-		    ("[%s] %s [up]%d %d, [low]%d %d, rst=%d, interval=%d, max_step=%d\n", __func__,
-		     desc, up_duration, up_step, low_duration, low_step, low_rst_max,
-		     polling_interval, amutt.max_level);
+		mtk_cooler_amutt_dprintk_always(
+			"[%s] %s [up]%d %d, [low]%d %d, rst=%d, interval=%d, max_step=%d\n",
+			__func__, desc, up_duration, up_step, low_duration,
+			low_step, low_rst_max, polling_interval, amutt.max_level
+			);
 
 		return len;
 	} else if (sscanf(desc, "log=%d", &tmp_log) == 1) {
@@ -490,7 +532,8 @@ ssize_t amutt_param_write(struct file *filp, const char __user *buf, size_t len,
 
 		return len;
 	}
-	mtk_cooler_amutt_dprintk_always("[%s] bad argument = %s\n", __func__, desc);
+	mtk_cooler_amutt_dprintk_always("[%s] bad argument = %s\n",
+							__func__, desc);
 	return -EINVAL;
 }
 
@@ -519,7 +562,8 @@ int amutt_asparam_read(struct seq_file *m, void *v)
 		active = (amutt_param[i] & 0x0000FF00) >> 8;
 		suspend = (amutt_param[i] & 0x00FF0000) >> 16;
 
-		seq_printf(m, "%02d %u %u %x\n", i, active, suspend, amutt_param[i]);
+		seq_printf(m, "%02d %u %u %x\n", i, active, suspend,
+							amutt_param[i]);
 	}
 
 	mtk_cooler_amutt_dprintk_always("[%s]\n", __func__);
@@ -527,7 +571,8 @@ int amutt_asparam_read(struct seq_file *m, void *v)
 	return 0;
 }
 
-ssize_t amutt_asparam_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+ssize_t amutt_asparam_write(
+struct file *filp, const char __user *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = { 0 };
 
@@ -546,20 +591,23 @@ ssize_t amutt_asparam_write(struct file *filp, const char __user *buf, size_t le
 		if (tmp_step > 0 && tmp_step < COOLER_STEPS) {
 			if (active_ms == 0 || suspend_ms == 0)
 				amutt_param[tmp_step] = 0;
-			else if (active_ms >= 100 && active_ms <= 25500 && suspend_ms >= 100
-				 && suspend_ms <= 25500)
+			else if (active_ms >= 100 && active_ms <= 25500
+			&& suspend_ms >= 100 && suspend_ms <= 25500)
 				amutt_param[tmp_step] =
-				    ((suspend_ms / 100) << 16) | ((active_ms / 100) << 8) | 1;
+					((suspend_ms / 100) << 16)
+					| ((active_ms / 100) << 8) | 1;
 
-			mtk_cooler_amutt_dprintk_always("[%s] %s %u %u %u %x\n", __func__, desc,
-							tmp_step, active_ms, suspend_ms,
-							amutt_param[tmp_step]);
+			mtk_cooler_amutt_dprintk_always("[%s] %s %u %u %u %x\n",
+					__func__, desc,
+					tmp_step, active_ms, suspend_ms,
+					amutt_param[tmp_step]);
 		}
 
 		return len;
 
 	} else {
-		mtk_cooler_amutt_dprintk_always("[%s] bad arg = %s\n", __func__, desc);
+		mtk_cooler_amutt_dprintk_always("[%s] bad arg = %s\n",
+							__func__, desc);
 	}
 	return -EINVAL;
 }
@@ -582,13 +630,14 @@ int amutt_dbg_read(struct seq_file *m, void *v)
 {
 	seq_printf(m, "cur=%d max=%d\n", amutt.cur_level, amutt.max_level);
 
-	mtk_cooler_amutt_dprintk_always("[%s] cur=%d max=%d\n", __func__, amutt.cur_level,
-					amutt.max_level);
+	mtk_cooler_amutt_dprintk_always("[%s] cur=%d max=%d\n", __func__,
+					amutt.cur_level, amutt.max_level);
 
 	return 0;
 }
 
-ssize_t amutt_dbg_write(struct file *filp, const char __user *buf, size_t len, loff_t *data)
+ssize_t amutt_dbg_write(
+struct file *filp, const char __user *buf, size_t len, loff_t *data)
 {
 	char desc[MAX_LEN] = { 0 };
 
@@ -604,15 +653,18 @@ ssize_t amutt_dbg_write(struct file *filp, const char __user *buf, size_t len, l
 
 		if (new_level >= 0 && new_level < COOLER_STEPS) {
 			/* valid input */
-			mtk_cooler_amutt_dprintk_always("[%s] new level %d\n", __func__, new_level);
+			mtk_cooler_amutt_dprintk_always("[%s] new level %d\n",
+							__func__, new_level);
 			amutt.cur_level = new_level;
 			amutt.opp_func_array[new_level] (new_level);
 		} else
-			mtk_cooler_amutt_dprintk_always("[%s] invalid %d\n", __func__, new_level);
+			mtk_cooler_amutt_dprintk_always("[%s] invalid %d\n",
+							__func__, new_level);
 
 		return len;
 	}
-	mtk_cooler_amutt_dprintk_always("[%s] bad argument = %s\n", __func__, desc);
+	mtk_cooler_amutt_dprintk_always("[%s] bad argument = %s\n",
+							__func__, desc);
 	return -EINVAL;
 }
 
@@ -639,22 +691,26 @@ static int amutt_proc_register(void)
 
 	amutt_proc_dir = mtk_thermal_get_proc_drv_therm_dir_entry();
 	if (!amutt_proc_dir) {
-		mtk_cooler_amutt_dprintk("[%s]: mkdir /proc/driver/thermal failed\n", __func__);
+		mtk_cooler_amutt_dprintk(
+				"[%s]: mkdir /proc/driver/thermal failed\n",
+				__func__);
 	} else {
 		entry =
-		    proc_create("clamutt_param", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP,
-				amutt_proc_dir, &amutt_param_fops);
+			proc_create("clamutt_param", 0660,
+					amutt_proc_dir, &amutt_param_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
 		entry =
-		    proc_create("clamutt_asparam", S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP,
-				amutt_proc_dir, &amutt_asparam_fops);
+			proc_create("clamutt_asparam", 0660,
+					amutt_proc_dir, &amutt_asparam_fops);
 		if (entry)
 			proc_set_user(entry, uid, gid);
 
 		entry =
-		    proc_create("clamutt_dbg", S_IRUSR | S_IWUSR, amutt_proc_dir, &amutt_dbg_fops);
+			proc_create("clamutt_dbg", 0600,
+					amutt_proc_dir, &amutt_dbg_fops);
+
 		if (entry)
 			proc_set_user(entry, uid, gid);
 	}

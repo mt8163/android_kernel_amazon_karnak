@@ -1,14 +1,16 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/*
+ * Copyright (C) 2015 MediaTek Inc.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
  */
+
 
 
 /*****************************************************************************
@@ -43,7 +45,7 @@ static bool SetModemSpeechDAIBTAttribute(int sample_rate);
 
 static bool voice_md2_bt_Status;
 #if 0				/* not used */
-static AudioDigtalI2S mAudioDigitalI2S;
+static struct AudioDigtalI2S mAudioDigitalI2S;
 #endif
 
 bool get_voice_md2_bt_status(void)
@@ -52,7 +54,7 @@ bool get_voice_md2_bt_status(void)
 }
 EXPORT_SYMBOL(get_voice_md2_bt_status);
 
-static AudioDigitalPCM voice_md2_btPcm = {
+static struct AudioDigitalPCM voice_md2_btPcm = {
 
 	.mBclkOutInv = false,
 	.mTxLchRepeatSel = Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT,
@@ -95,7 +97,8 @@ static struct snd_pcm_hardware mtk_pcm_hardware = {
 	.fifo_size = 0,
 };
 
-static int mtk_voice_md2_bt_pcm_open(struct snd_pcm_substream *substream)
+static int mtk_voice_md2_bt_pcm_open(
+	struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	int err = 0;
@@ -115,22 +118,24 @@ static int mtk_voice_md2_bt_pcm_open(struct snd_pcm_substream *substream)
 	memcpy((void *)(&(runtime->hw)), (void *)&mtk_pcm_hardware,
 	       sizeof(struct snd_pcm_hardware));
 
-	ret = snd_pcm_hw_constraint_list(runtime, 0, SNDRV_PCM_HW_PARAM_RATE,
+	ret = snd_pcm_hw_constraint_list(runtime, 0,
+		 SNDRV_PCM_HW_PARAM_RATE,
 					 &constraints_sample_rates);
-	ret = snd_pcm_hw_constraint_integer(runtime, SNDRV_PCM_HW_PARAM_PERIODS);
+	ret = snd_pcm_hw_constraint_integer(runtime,
+		 SNDRV_PCM_HW_PARAM_PERIODS);
 
 	if (ret < 0)
 		pr_err("snd_pcm_hw_constraint_integer failed\n");
 
 	/* print for hw pcm information */
-	pr_debug("mtk_voice_md2_bt_pcm_open runtime rate = %d channels = %d\n",
+	pr_debug("mtk_voice_md2_bt_pcm_open rate %d ch %d\n",
 		runtime->rate, runtime->channels);
 
 	runtime->hw.info |= SNDRV_PCM_INFO_INTERLEAVED;
 	runtime->hw.info |= SNDRV_PCM_INFO_NONINTERLEAVED;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		pr_debug("SNDRV_PCM_STREAM_PLAYBACK mtkalsa_voice_md2_bt_constraints\n");
+		pr_debug("SNDRV_PCM_STREAM_PLAYBACK\n");
 		runtime->rate = 16000;
 	}
 
@@ -169,13 +174,17 @@ static int mtk_voice_md2_bt_close(struct snd_pcm_substream *substream)
 	}
 
 	/* interconnection setting */
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I02,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I02,
 		      Soc_Aud_InterConnectionOutput_O17);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I02,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I02,
 		      Soc_Aud_InterConnectionOutput_O18);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I14,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I14,
 		      Soc_Aud_InterConnectionOutput_O02);
-	SetConnection(Soc_Aud_InterCon_DisConnect, Soc_Aud_InterConnectionInput_I21,
+	SetConnection(Soc_Aud_InterCon_DisConnect,
+		 Soc_Aud_InterConnectionInput_I21,
 		      Soc_Aud_InterConnectionOutput_O02);
 
 	/* here start digital part */
@@ -191,7 +200,8 @@ static int mtk_voice_md2_bt_close(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static int mtk_voice_md2_bt_trigger(struct snd_pcm_substream *substream, int cmd)
+static int mtk_voice_md2_bt_trigger(
+	struct snd_pcm_substream *substream, int cmd)
 {
 	pr_debug("mtk_voice_md2_bt_trigger cmd = %d\n", cmd);
 	switch (cmd) {
@@ -212,21 +222,22 @@ static int mtk_voice_md2_bt_pcm_copy(struct snd_pcm_substream *substream,
 }
 
 static int mtk_voice_md2_bt_pcm_silence(struct snd_pcm_substream *substream,
-					int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
+	int channel, snd_pcm_uframes_t pos, snd_pcm_uframes_t count)
 {
 	pr_debug("mtk_voice_md2_bt_pcm_silence\n");
-	return 0;		/* do nothing */
+	return 0;
 }
 
 static void *dummy_page[2];
-static struct page *mtk_pcm_page(struct snd_pcm_substream *substream, unsigned long offset)
+static struct page *mtk_pcm_page(
+	struct snd_pcm_substream *substream, unsigned long offset)
 {
-	return virt_to_page(dummy_page[substream->stream]);	/* the same page */
+	return virt_to_page(dummy_page[substream->stream]);
 }
 
 static bool SetModemSpeechDAIBTAttribute(int sample_rate)
 {
-	AudioDigitalDAIBT daibt_attribute;
+	struct AudioDigitalDAIBT daibt_attribute;
 
 	memset((void *)&daibt_attribute, 0, sizeof(daibt_attribute));
 
@@ -236,8 +247,9 @@ static bool SetModemSpeechDAIBTAttribute(int sample_rate)
 	daibt_attribute.mUSE_MRGIF_INPUT = Soc_Aud_BT_DAI_INPUT_FROM_MGRIF;
 #endif
 	daibt_attribute.mDAI_BT_MODE =
-	    (sample_rate == 8000) ? Soc_Aud_DATBT_MODE_Mode8K : Soc_Aud_DATBT_MODE_Mode16K;
-	daibt_attribute.mDAI_DEL = Soc_Aud_DAI_DEL_HighWord;	/* suggest always HighWord */
+		(sample_rate == 8000) ? Soc_Aud_DATBT_MODE_Mode8K :
+		 Soc_Aud_DATBT_MODE_Mode16K;
+	daibt_attribute.mDAI_DEL = Soc_Aud_DAI_DEL_HighWord;
 	daibt_attribute.mBT_LEN = 0;
 	daibt_attribute.mDATA_RDY = true;
 	daibt_attribute.mBT_SYNC = Soc_Aud_BTSYNC_Short_Sync;
@@ -263,13 +275,17 @@ static int mtk_voice_md2_bt_prepare(struct snd_pcm_substream *substream)
 	AudDrv_Clk_On();
 
 	/* here start digital part */
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I02,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I02,
 		      Soc_Aud_InterConnectionOutput_O17);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I02,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I02,
 		      Soc_Aud_InterConnectionOutput_O18);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I14,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I14,
 		      Soc_Aud_InterConnectionOutput_O02);
-	SetConnection(Soc_Aud_InterCon_Connection, Soc_Aud_InterConnectionInput_I21,
+	SetConnection(Soc_Aud_InterCon_Connection,
+		 Soc_Aud_InterConnectionInput_I21,
 		      Soc_Aud_InterConnectionOutput_O08);
 
 	if (GetMemoryPathEnable(Soc_Aud_Digital_Block_DAI_BT) == false) {
@@ -283,8 +299,9 @@ static int mtk_voice_md2_bt_prepare(struct snd_pcm_substream *substream)
 	SetDaiBtEnable(true);
 	voice_md2_btPcm.mPcmModeWidebandSel =
 	    (runtimeStream->rate ==
-	     8000) ? Soc_Aud_PCM_MODE_PCM_MODE_8K : Soc_Aud_PCM_MODE_PCM_MODE_16K;
-	/* voice_md2_btPcm.mAsyncFifoSel = Soc_Aud_BYPASS_SRC_SLAVE_USE_ASYNC_FIFO; */
+	     8000) ? Soc_Aud_PCM_MODE_PCM_MODE_8K :
+		 Soc_Aud_PCM_MODE_PCM_MODE_16K;
+
 	SetModemPcmConfig(MODEM_2, voice_md2_btPcm);
 	SetModemPcmEnable(MODEM_2, true);
 	EnableAfe(true);
@@ -294,7 +311,7 @@ static int mtk_voice_md2_bt_prepare(struct snd_pcm_substream *substream)
 }
 
 static int mtk_pcm_hw_params(struct snd_pcm_substream *substream,
-			     struct snd_pcm_hw_params *hw_params)
+	     struct snd_pcm_hw_params *hw_params)
 {
 	int ret = 0;
 
@@ -342,7 +359,8 @@ static int mtk_voice_md2_bt_probe(struct platform_device *pdev)
 		dev_set_name(&pdev->dev, "%s", MT_SOC_VOICE_MD2_BT);
 
 	pr_debug("%s: dev name %s\n", __func__, dev_name(&pdev->dev));
-	return snd_soc_register_platform(&pdev->dev, &mtk_soc_voice_md2_bt_platform);
+	return snd_soc_register_platform(&pdev->dev,
+		 &mtk_soc_voice_md2_bt_platform);
 }
 
 static int mtk_soc_voice_md2_bt_new(struct snd_soc_pcm_runtime *rtd)
@@ -458,7 +476,8 @@ static int __init mtk_soc_voice_md2_bt_platform_init(void)
 
 	pr_debug("%s\n", __func__);
 #ifndef CONFIG_OF
-	soc_mtk_voice_md2_bt_dev = platform_device_alloc(MT_SOC_VOICE_MD2_BT, -1);
+	soc_mtk_voice_md2_bt_dev =
+		 platform_device_alloc(MT_SOC_VOICE_MD2_BT, -1);
 
 	if (!soc_mtk_voice_md2_bt_dev)
 		return -ENOMEM;

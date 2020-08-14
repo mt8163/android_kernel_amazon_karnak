@@ -10,7 +10,8 @@ Construction Parameters
     <version> <dev> <hash_dev>
     <data_block_size> <hash_block_size>
     <num_data_blocks> <hash_start_block>
-    <algorithm> <digest> <salt> <mode>
+    <algorithm> <digest> <salt>
+    [<#opt_params> <opt_params>]
 
 <version>
     This is the type of the on-disk hash format.
@@ -62,15 +63,21 @@ Construction Parameters
 <salt>
     The hexadecimal encoding of the salt value.
 
-<mode>
-    Optional. The mode of operation.
+<#opt_params>
+    Number of optional parameters. If there are no optional parameters,
+    the optional paramaters section can be skipped or #opt_params can be zero.
+    Otherwise #opt_params is the number of following arguments.
 
-    0 is the normal mode of operation where a corrupted block will result in an
-      I/O error.
+    Example of optional parameters section:
+        1 ignore_corruption
 
-    1 is logging mode where corrupted blocks are logged and a uevent is sent to
-      notify user space.
+ignore_corruption
+    Log corrupted blocks, but allow read operations to proceed normally.
 
+restart_on_corruption
+    Restart the system when a corrupted block is discovered. This option is
+    not compatible with ignore_corruption and requires user space support to
+    avoid restart loops.
 
 ignore_zero_blocks
     Do not verify blocks that are expected to contain zeroes and always return
@@ -102,6 +109,17 @@ fec_start <offset>
     This is the offset, in <data_block_size> blocks, from the start of the
     FEC device to the beginning of the encoding data.
 
+check_at_most_once
+    Verify data blocks only the first time they are read from the data device,
+    rather than every time.  This reduces the overhead of dm-verity so that it
+    can be used on systems that are memory and/or CPU constrained.  However, it
+    provides a reduced level of security because only offline tampering of the
+    data device's content will be detected, not online tampering.
+
+    Hash blocks are still verified each time they are read from the hash device,
+    since verification of hash blocks is less performance critical than data
+    blocks, and a hash block will not be verified any more after all the data
+    blocks it covers have been verified anyway.
 
 Theory of operation
 ===================
@@ -171,7 +189,7 @@ block boundary) are the hash blocks which are stored a depth at a time
 
 The full specification of kernel parameters and on-disk metadata format
 is available at the cryptsetup project's wiki page
-  http://code.google.com/p/cryptsetup/wiki/DMVerity
+  https://gitlab.com/cryptsetup/cryptsetup/wikis/DMVerity
 
 Status
 ======
@@ -188,7 +206,7 @@ Set up a device:
 
 A command line tool veritysetup is available to compute or verify
 the hash tree or activate the kernel device. This is available from
-the cryptsetup upstream repository http://code.google.com/p/cryptsetup/
+the cryptsetup upstream repository https://gitlab.com/cryptsetup/cryptsetup/
 (as a libcryptsetup extension).
 
 Create hash on the device:

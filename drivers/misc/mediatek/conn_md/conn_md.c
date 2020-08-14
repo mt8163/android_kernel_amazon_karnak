@@ -1,27 +1,117 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 
 #include "conn_md.h"
 #include "conn_md_dbg.h"
 
 /*global data structure defination*/
-
-CONN_MD_STRUCT g_conn_md;
+struct conn_md_struct g_conn_md;
+static struct conn_md_log_msg_info g_log_msg_info;
 
 static int _conn_md_del_msg_by_uid(uint32 u_id);
-static int conn_md_dmp_msg(P_CONN_MD_QUEUE p_msg_list, uint32 src_id, uint32 dst_id);
+static int conn_md_dmp_msg(struct conn_md_queue *p_msg_list, uint32 src_id, uint32 dst_id);
 
-int conn_md_add_user(uint32 u_id, CONN_MD_BRIDGE_OPS *p_ops)
+static unsigned long conn_md_log_msg_interval_ms(
+	struct conn_md_time_struct *p_begin,
+	struct conn_md_time_struct *p_end)
 {
-	P_CONN_MD_USER p_user = NULL;
+	long long diff_sec;
+	long diff_msec;
+
+	diff_sec = p_end->sec - p_begin->sec;
+	diff_msec = (p_end->msec - p_begin->msec);
+	if (diff_msec < 0) {
+		diff_msec += 1000;
+		diff_sec -= 1;
+	}
+
+	return (diff_sec * 1000 + diff_msec);
+}
+
+static void conn_md_get_local_time(struct conn_md_time_struct *time)
+{
+	time->sec = local_clock();
+	time->msec = do_div(time->sec, 1000000000) / 1000000;
+}
+
+static void conn_md_log_add_msg(struct conn_md_time_struct *cur_time)
+{
+	char buf[CONN_MD_MSG_TIME_LENGTH];
+	int msg_buf_size, remain_size;
+
+	if (g_log_msg_info.msg_total == 0)
+		g_log_msg_info.msg_begin_time = *cur_time;
+
+	snprintf(buf, CONN_MD_MSG_TIME_LENGTH, " %llu.%03lu",
+		 cur_time->sec, cur_time->msec);
+
+	msg_buf_size = strlen(buf);
+	remain_size = CONN_MD_BUF_SIZE - strlen(g_log_msg_info.msg_buf) - 1;
+	if (remain_size >= msg_buf_size) {
+		strncat(g_log_msg_info.msg_buf, buf, msg_buf_size);
+		g_log_msg_info.msg_total++;
+	} else {
+		CONN_MD_ERR_FUNC("buff full, %s (remain %d), cant add %s (%d)",
+				 g_log_msg_info.msg_buf, remain_size, buf,
+				 msg_buf_size);
+	}
+}
+
+#define CONN_MD_LOG_MSG_HEAD_NAME "send message to Modem,"
+#define CONN_MD_LOG_MSG_MAX_INTERVAL_MS 1000
+static void conn_md_log_print_msg(struct conn_md_time_struct *cur_time)
+{
+	unsigned long interval;
+
+	if (g_log_msg_info.msg_total > 0) {
+		interval = conn_md_log_msg_interval_ms(
+			&g_log_msg_info.msg_begin_time, cur_time);
+		if ((g_log_msg_info.msg_total == CONN_MD_MSG_MAX_NUM ||
+		    interval > CONN_MD_LOG_MSG_MAX_INTERVAL_MS)) {
+			CONN_MD_INFO_FUNC("%s%s\n", CONN_MD_LOG_MSG_HEAD_NAME,
+					  g_log_msg_info.msg_buf);
+			g_log_msg_info.msg_buf[0] = '\0';
+			g_log_msg_info.msg_total = 0;
+		}
+	}
+}
+
+static void conn_md_log_msg_time(uint32 dest_id)
+{
+	struct conn_md_time_struct cur_time;
+
+	conn_md_get_local_time(&cur_time);
+
+	if (dest_id == MD_MOD_EL1)
+		conn_md_log_add_msg(&cur_time);
+
+	conn_md_log_print_msg(&cur_time);
+}
+
+int conn_md_add_user(uint32 u_id, struct conn_md_bridge_ops *p_ops)
+{
+	struct conn_md_user *p_user = NULL;
 	struct list_head *pos = NULL;
-	P_CONN_MD_STRUCT p_conn_md = &g_conn_md;
-	P_CONN_MD_USER_LIST p_user_list = &p_conn_md->user_list;
+	struct conn_md_struct *p_conn_md = &g_conn_md;
+	struct conn_md_user_list *p_user_list = &p_conn_md->user_list;
 
 	/*lock user_list_lock */
 	mutex_lock(&p_user_list->lock);
 
 	/*check if earlier uid reged or not */
 	list_for_each(pos, &p_user_list->list) {
-		p_user = container_of(pos, CONN_MD_USER, entry);
+		p_user = container_of(pos, struct conn_md_user, entry);
 		if (p_user->u_id == u_id) {
 			/*if yes */
 			/*print warning information */
@@ -31,9 +121,14 @@ int conn_md_add_user(uint32 u_id, CONN_MD_BRIDGE_OPS *p_ops)
 		p_user = NULL;
 	}
 
-	if (NULL == p_user) {
+	if (p_user == NULL) {
 		/*memory allocation for user information */
-		p_user = kmalloc(sizeof(CONN_MD_USER), GFP_ATOMIC);
+		p_user = kmalloc(sizeof(struct conn_md_user), GFP_ATOMIC);
+		if (p_user == NULL) {
+			CONN_MD_ERR_FUNC("kmalloc failed\n");
+			mutex_unlock(&p_user_list->lock);
+			return CONN_MD_ERR_OTHERS;
+		}
 		INIT_LIST_HEAD(&p_user->entry);
 		list_add_tail(&p_user->entry, &p_user_list->list);
 		p_user->u_id = u_id;
@@ -41,7 +136,7 @@ int conn_md_add_user(uint32 u_id, CONN_MD_BRIDGE_OPS *p_ops)
 	}
 
 	/*anyway, write user info to target uid */
-	memcpy(&p_user->ops, p_ops, sizeof(CONN_MD_BRIDGE_OPS));
+	memcpy(&p_user->ops, p_ops, sizeof(struct conn_md_bridge_ops));
 
 	p_user->state = USER_ENABLED;
 	/*unlock user_list lock */
@@ -55,17 +150,17 @@ int conn_md_add_user(uint32 u_id, CONN_MD_BRIDGE_OPS *p_ops)
 int conn_md_del_user(uint32 u_id)
 {
 	int i_ret = -1;
-	P_CONN_MD_USER p_user = NULL;
+	struct conn_md_user *p_user = NULL;
 	struct list_head *pos = NULL;
-	P_CONN_MD_STRUCT p_conn_md = &g_conn_md;
-	P_CONN_MD_USER_LIST p_user_list = &p_conn_md->user_list;
+	struct conn_md_struct *p_conn_md = &g_conn_md;
+	struct conn_md_user_list *p_user_list = &p_conn_md->user_list;
 
 	/*lock user_list_lock */
 	mutex_lock(&p_user_list->lock);
 
 	/*check if earlier uid reged or not */
 	list_for_each(pos, &p_user_list->list) {
-		p_user = container_of(pos, CONN_MD_USER, entry);
+		p_user = container_of(pos, struct conn_md_user, entry);
 		if (p_user->u_id == u_id) {
 			/*if yes */
 			/*print information */
@@ -75,7 +170,7 @@ int conn_md_del_user(uint32 u_id)
 		p_user = NULL;
 	}
 
-	if (NULL == p_user) {
+	if (p_user == NULL) {
 		i_ret = CONN_MD_ERR_INVALID_PARAM;
 		/*print warning information */
 		CONN_MD_WARN_FUNC("uid (0x%08x) not found in user list..\n", u_id);
@@ -97,16 +192,16 @@ int conn_md_del_user(uint32 u_id)
 	return i_ret;
 }
 
-int conn_md_dmp_msg(P_CONN_MD_QUEUE p_msg_list, uint32 src_id, uint32 dst_id)
+int conn_md_dmp_msg(struct conn_md_queue *p_msg_list, uint32 src_id, uint32 dst_id)
 {
 #define MAX_LENGTH_PER_PACKAGE 8
 
 	struct list_head *pos = NULL;
-	P_CONN_MD_MSG p_msg = NULL;
+	struct conn_md_msg *p_msg = NULL;
 	int i = 0;
 	int counter = 0;
 
-	if (NULL == p_msg_list) {
+	if (p_msg_list == NULL) {
 		CONN_MD_ERR_FUNC("invalid parameter, p_msg_list:0x%08x\n", p_msg_list);
 		return CONN_MD_ERR_INVALID_PARAM;
 	}
@@ -114,9 +209,9 @@ int conn_md_dmp_msg(P_CONN_MD_QUEUE p_msg_list, uint32 src_id, uint32 dst_id)
 	mutex_lock(&p_msg_list->lock);
 
 	list_for_each(pos, &p_msg_list->list) {
-		p_msg = container_of(pos, CONN_MD_MSG, entry);
-		if (((0 == src_id) || (src_id == p_msg->ilm.src_mod_id)) &&
-		    ((0 == dst_id) || (dst_id == p_msg->ilm.dest_mod_id))) {
+		p_msg = container_of(pos, struct conn_md_msg, entry);
+		if (((src_id == 0) || (src_id == p_msg->ilm.src_mod_id)) &&
+		    ((dst_id == 0) || (dst_id == p_msg->ilm.dest_mod_id))) {
 			counter++;
 			CONN_MD_INFO_FUNC
 			    ("p_msg:0x%08x, src_id:0x%08x, dest_id:0x%08x, msg_len:%d\n", p_msg,
@@ -138,11 +233,10 @@ int conn_md_dmp_msg(P_CONN_MD_QUEUE p_msg_list, uint32 src_id, uint32 dst_id)
 
 int _conn_md_del_msg_by_uid(uint32 u_id)
 {
-	/*only delete messaged enqueued in queue list, do not care message in active queue list */
-	P_CONN_MD_STRUCT p_conn_md = &g_conn_md;
-	P_CONN_MD_QUEUE p_msg_list = &p_conn_md->msg_queue;
+	struct conn_md_struct *p_conn_md = &g_conn_md;
+	struct conn_md_queue *p_msg_list = &p_conn_md->msg_queue;
 	struct list_head *pos = NULL;
-	P_CONN_MD_MSG p_msg = NULL;
+	struct conn_md_msg *p_msg = NULL;
 	int flag = 1;
 
 	CONN_MD_TRC_FUNC();
@@ -152,7 +246,7 @@ int _conn_md_del_msg_by_uid(uint32 u_id)
 		flag = 0;
 
 		list_for_each(pos, &p_msg_list->list) {
-			p_msg = container_of(pos, CONN_MD_MSG, entry);
+			p_msg = container_of(pos, struct conn_md_msg, entry);
 			if ((p_msg->ilm.dest_mod_id == u_id) || (p_msg->ilm.src_mod_id == u_id)) {
 				flag = 1;
 				CONN_MD_DBG_FUNC
@@ -162,11 +256,12 @@ int _conn_md_del_msg_by_uid(uint32 u_id)
 			}
 		}
 
-		if (1 == flag) {
+		if (flag == 1) {
 			p_msg_list->counter--;
 			list_del(pos);
 			kfree(p_msg);
-			CONN_MD_DBG_FUNC("dequeued in queue list, counter:%d\n", p_msg_list->counter);
+			CONN_MD_DBG_FUNC("dequeued in queue list_counter:%d\n",
+					p_msg_list->counter);
 		}
 
 	}
@@ -175,35 +270,36 @@ int _conn_md_del_msg_by_uid(uint32 u_id)
 	return 0;
 }
 
-int conn_md_send_msg(ipc_ilm_t *ilm)
+int conn_md_send_msg(struct ipc_ilm *ilm)
 {
 
-	P_CONN_MD_STRUCT p_conn_md = &g_conn_md;
-	P_CONN_MD_QUEUE p_msg_list = &p_conn_md->msg_queue;
+	struct conn_md_struct *p_conn_md = &g_conn_md;
+	struct conn_md_queue *p_msg_list = &p_conn_md->msg_queue;
 	uint32 msg_str_len = 0;
-	local_para_struct *p_local_para = NULL;
-	P_CONN_MD_MSG p_new_msg = NULL;
+	struct local_para *p_local_para = NULL;
+	struct conn_md_msg *p_new_msg = NULL;
 	uint32 msg_info_len = ilm->local_para_ptr->msg_len;
 
 	CONN_MD_DBG_FUNC("ilm:0x%08x, msg_len:%d\n", ilm, ilm->local_para_ptr->msg_len);
 
 	/*malloc message structure for this msg */
-	msg_str_len = sizeof(CONN_MD_MSG) + msg_info_len;
+	msg_str_len = sizeof(struct conn_md_msg) + msg_info_len;
 	p_new_msg = kmalloc(msg_str_len, GFP_ATOMIC);
 
-	if (NULL != p_new_msg) {
+	if (p_new_msg != NULL) {
 		CONN_MD_DBG_FUNC("p_new_msg:0x%08x\n", p_new_msg);
 		/*copy message from ilm */
-		memcpy(p_new_msg, ilm, sizeof(ipc_ilm_t));
+		memcpy(p_new_msg, ilm, sizeof(struct ipc_ilm));
 
 		p_local_para = &p_new_msg->local_para;
 		p_new_msg->ilm.local_para_ptr = p_local_para;
 		/*copy local_para_ptr structure */
-		memcpy(p_local_para, ilm->local_para_ptr, sizeof(local_para_struct));
+		memcpy(p_local_para, ilm->local_para_ptr, sizeof(struct local_para));
 		/*copy data from local_para_ptr structure */
 		memcpy(p_local_para->data, ilm->local_para_ptr->data, msg_info_len);
 
-		CONN_MD_DBG_FUNC("p_local_para:0x%08x, msg_len:%d\n", p_local_para, p_local_para->msg_len);
+		CONN_MD_DBG_FUNC("p_local_para:0x%08x, msg_len:%d\n",
+				p_local_para, p_local_para->msg_len);
 
 		INIT_LIST_HEAD(&p_new_msg->entry);
 
@@ -218,7 +314,8 @@ int conn_md_send_msg(ipc_ilm_t *ilm)
 		mutex_unlock(&p_msg_list->lock);
 
 		CONN_MD_DBG_FUNC
-		    ("enqueue new message to msg queue list succeed, enqueued msg counter:%d\n", p_msg_list->counter);
+		    ("enqueue new message ist succeed, msg counter:%d\n",
+			p_msg_list->counter);
 
 		conn_md_dmp_in(ilm, MSG_ENQUEUE, p_conn_md->p_msg_dmp_sys);
 
@@ -239,15 +336,15 @@ int conn_md_send_msg(ipc_ilm_t *ilm)
 
 static int conn_md_thread(void *p_data)
 {
-	P_CONN_MD_STRUCT p_conn_md = (P_CONN_MD_STRUCT) p_data;
-	P_CONN_MD_QUEUE p_act_queue = &p_conn_md->act_queue;
-	P_CONN_MD_QUEUE p_msg_queue = &p_conn_md->msg_queue;
+	struct conn_md_struct *p_conn_md = (struct conn_md_struct *) p_data;
+	struct conn_md_queue *p_act_queue = &p_conn_md->act_queue;
+	struct conn_md_queue *p_msg_queue = &p_conn_md->msg_queue;
 	struct list_head *pos = NULL;
-	P_CONN_MD_MSG p_msg = NULL;
-	P_CONN_MD_USER p_user = NULL;
+	struct conn_md_msg *p_msg = NULL;
+	struct conn_md_user *p_user = NULL;
 	struct list_head *p_user_pos = NULL;
-	P_CONN_MD_USER_LIST p_user_list = &p_conn_md->user_list;
-	ipc_ilm_t *p_cur_ilm = NULL;
+	struct conn_md_user_list *p_user_list = &p_conn_md->user_list;
+	struct ipc_ilm *p_cur_ilm = NULL;
 
 	while (1) {
 		wait_for_completion_interruptible(&p_conn_md->tx_comp);
@@ -260,12 +357,11 @@ static int conn_md_thread(void *p_data)
 		/*check if p_conn_md->msg_queue is empty or not */
 		mutex_lock(&p_msg_queue->lock);
 		if (!list_empty(&p_msg_queue->list)) {
-			/*if not empty, remove all list structure to list of p_conn_md->act_queue */
 			mutex_lock(&p_act_queue->lock);
 			if (!list_empty(&p_act_queue->list)) {
-				/*warning message, this should never happen!!! */
+				/* warning message, this should never happen */
 				CONN_MD_ERR_FUNC
-				    ("p_act_queue list is not empty, this should never happen!!!---*?*---!!!\n");
+				    ("this should never happen!!!--*-!!!\n");
 			}
 
 			/*ignore case of p_act_queue is not empty */
@@ -282,16 +378,17 @@ static int conn_md_thread(void *p_data)
 		mutex_lock(&p_act_queue->lock);
 		/*dequeue from p_act_queue */
 		list_for_each(pos, &p_act_queue->list) {
-			p_msg = container_of(pos, CONN_MD_MSG, entry);
+			p_msg = container_of(pos, struct conn_md_msg, entry);
 			p_cur_ilm = &p_msg->ilm;
-			if (NULL == p_cur_ilm) {
+			if (p_cur_ilm == NULL) {
 #if (ACT_QUEUE_DBG == 1)
 				/*free message structure */
 				list_del(pos);
 				kfree(p_msg);
 
 				p_act_queue->counter++;
-				CONN_MD_DBG_FUNC("dequeued in act queue counter:%d\n", p_act_queue->counter);
+				CONN_MD_DBG_FUNC("dequeue act_q counter:%d\n",
+						p_act_queue->counter);
 #endif
 				continue;
 			}
@@ -302,7 +399,7 @@ static int conn_md_thread(void *p_data)
 
 			/*check if src module is enabled or not */
 			list_for_each(p_user_pos, &p_user_list->list) {
-				p_user = container_of(p_user_pos, CONN_MD_USER, entry);
+				p_user = container_of(p_user_pos, struct conn_md_user, entry);
 				if (p_user->u_id == p_cur_ilm->src_mod_id && p_user->state == USER_ENABLED) {
 					/*src module id is enabled already */
 					CONN_MD_DBG_FUNC("source user id (0x%08x) found\n", p_cur_ilm->src_mod_id);
@@ -311,7 +408,7 @@ static int conn_md_thread(void *p_data)
 				p_user = NULL;
 			}
 
-			if (NULL == p_user) {
+			if (p_user == NULL) {
 				mutex_unlock(&p_user_list->lock);
 				CONN_MD_WARN_FUNC
 				    ("source user id (0x%08x) is not registered or not enabled yet, drop ilm msg\n",
@@ -321,7 +418,8 @@ static int conn_md_thread(void *p_data)
 				list_del(pos);
 				kfree(p_msg);
 				p_act_queue->counter++;
-				CONN_MD_DBG_FUNC("dequeued in act queue counter:%d\n", p_act_queue->counter);
+				CONN_MD_DBG_FUNC("dequeued act_q counter:%d\n",
+						p_act_queue->counter);
 #endif
 
 				continue;
@@ -329,7 +427,7 @@ static int conn_md_thread(void *p_data)
 
 			/*check if destination module is enabled or not */
 			list_for_each(p_user_pos, &p_user_list->list) {
-				p_user = container_of(p_user_pos, CONN_MD_USER, entry);
+				p_user = container_of(p_user_pos, struct conn_md_user, entry);
 				if (p_user->u_id == p_cur_ilm->dest_mod_id && p_user->state == USER_ENABLED) {
 					CONN_MD_DBG_FUNC("target user id (0x%08x) found\n", p_cur_ilm->dest_mod_id);
 					/*src module id is enabled already */
@@ -338,7 +436,7 @@ static int conn_md_thread(void *p_data)
 				p_user = NULL;
 			}
 
-			if (NULL == p_user) {
+			if (p_user == NULL) {
 				mutex_unlock(&p_user_list->lock);
 
 				CONN_MD_WARN_FUNC
@@ -349,16 +447,20 @@ static int conn_md_thread(void *p_data)
 				list_del(pos);
 				kfree(p_msg);
 				p_act_queue->counter++;
-				CONN_MD_DBG_FUNC("dequeued in act queue counter:%d\n", p_act_queue->counter);
+				CONN_MD_DBG_FUNC("dequeue act_que counter:%d\n",
+						p_act_queue->counter);
 #endif
 				continue;
 			}
 			CONN_MD_DBG_FUNC("p_cur_ilm:0x%08x, local_para_ptr:0x%08x, msg_len:%d\n",
-					 p_cur_ilm, &p_cur_ilm->local_para_ptr, p_cur_ilm->local_para_ptr->msg_len);
-			CONN_MD_DBG_FUNC("sending message to user id (0x%08x)\n", p_cur_ilm->dest_mod_id);
-			/*send package to dest module by call corresponding rx callback function */
+					 p_cur_ilm, &p_cur_ilm->local_para_ptr,
+					 p_cur_ilm->local_para_ptr->msg_len);
+			CONN_MD_DBG_FUNC("send message to user id(0x%08x)\n",
+					p_cur_ilm->dest_mod_id);
+			conn_md_log_msg_time(p_cur_ilm->dest_mod_id);
 			(*(p_user->ops.rx_cb)) (p_cur_ilm);
-			CONN_MD_DBG_FUNC("message sent to user id (0x%08x) done\n", p_cur_ilm->dest_mod_id);
+			CONN_MD_DBG_FUNC("message sent user id(0x%08x)done\n",
+					p_cur_ilm->dest_mod_id);
 			mutex_unlock(&p_user_list->lock);
 
 #if (ACT_QUEUE_DBG == 1)
@@ -368,14 +470,16 @@ static int conn_md_thread(void *p_data)
 			CONN_MD_DBG_FUNC("message structure freed\n");
 
 			p_act_queue->counter++;
-			CONN_MD_DBG_FUNC("dequeued in act queue counter:%d\n", p_act_queue->counter);
+			CONN_MD_DBG_FUNC("dequeued in act queue counter:%d\n",
+					p_act_queue->counter);
 #endif
 		}
 		p_msg = NULL;
 
 		while (!list_empty(&p_act_queue->list)) {
 			list_for_each(pos, &p_act_queue->list) {
-				p_msg = container_of(pos, CONN_MD_MSG, entry);
+				p_msg = container_of(pos,
+						struct conn_md_msg, entry);
 				/*free message structure */
 				list_del(pos);
 				kfree(p_msg);
@@ -383,7 +487,8 @@ static int conn_md_thread(void *p_data)
 				CONN_MD_DBG_FUNC("message structure freed\n");
 
 				p_act_queue->counter++;
-				CONN_MD_DBG_FUNC("dequeued in act queue counter:%d\n", p_act_queue->counter);
+				CONN_MD_DBG_FUNC("dequeue act_que counter:%d\n",
+						p_act_queue->counter);
 				break;
 			}
 
@@ -414,8 +519,8 @@ int conn_md_dmp_msg_logged(uint32 src_id, uint32 dst_id)
 static int conn_md_init(void)
 {
 	int i_ret = -1;
-	P_CONN_MD_QUEUE p_queue = NULL;
-	P_CONN_MD_USER_LIST p_user_list = NULL;
+	struct conn_md_queue *p_queue = NULL;
+	struct conn_md_user_list *p_user_list = NULL;
 
 	CONN_MD_TRC_FUNC();
 
@@ -441,7 +546,7 @@ static int conn_md_init(void)
 	CONN_MD_INFO_FUNC("init user information list succeed\n");
 
 	g_conn_md.p_msg_dmp_sys = conn_md_dmp_init();
-	if (NULL == g_conn_md.p_msg_dmp_sys)
+	if (g_conn_md.p_msg_dmp_sys == NULL)
 		CONN_MD_WARN_FUNC("conn_md_dmp_init failed\n");
 	else
 		CONN_MD_INFO_FUNC("conn_md_dmp_init succeed\n");
@@ -451,10 +556,12 @@ static int conn_md_init(void)
 	/*create conn-md thread */
 
 	init_completion(&g_conn_md.tx_comp);
-	g_conn_md.p_task = kthread_create(conn_md_thread, &g_conn_md, "conn-md-thread");
-	if (NULL == g_conn_md.p_task) {
+	g_conn_md.p_task = kthread_create(conn_md_thread, &g_conn_md,
+					 "conn-md-thread");
+	if (g_conn_md.p_task == NULL) {
 		CONN_MD_ERR_FUNC("create conn_md_thread fail\n");
 		i_ret = -ENOMEM;
+		conn_md_dmp_deinit(g_conn_md.p_msg_dmp_sys);
 		goto conn_md_err;
 	}
 	CONN_MD_INFO_FUNC("create conn_md_thread succeed, wakeup it\n");
@@ -470,17 +577,17 @@ conn_md_err:
 static void conn_md_exit(void)
 {
 
-	P_CONN_MD_STRUCT p_conn_md = &g_conn_md;
-	P_CONN_MD_QUEUE p_queue = NULL;
-	P_CONN_MD_USER_LIST p_user_list = &p_conn_md->user_list;
+	struct conn_md_struct *p_conn_md = &g_conn_md;
+	struct conn_md_queue *p_queue = NULL;
+	struct conn_md_user_list *p_user_list = &p_conn_md->user_list;
 	struct list_head *pos = NULL;
-	P_CONN_MD_USER p_user = NULL;
-	P_CONN_MD_MSG p_msg = NULL;
+	struct conn_md_user *p_user = NULL;
+	struct conn_md_msg *p_msg = NULL;
 
 	CONN_MD_TRC_FUNC();
 
 	/*terminate conn-md thread */
-	if (NULL != p_conn_md->p_task) {
+	if (p_conn_md->p_task != NULL) {
 		CONN_MD_INFO_FUNC("signaling conn-md-thread to stop ...\n");
 		kthread_stop(p_conn_md->p_task);
 	}
@@ -488,7 +595,7 @@ static void conn_md_exit(void)
 	/*delete user_list structure if user list is not empty */
 	mutex_lock(&p_user_list->lock);
 	list_for_each(pos, &p_user_list->list) {
-		p_user = container_of(pos, CONN_MD_USER, entry);
+		p_user = container_of(pos, struct conn_md_user, entry);
 		list_del(pos);
 		kfree(p_user);
 	}
@@ -500,7 +607,7 @@ static void conn_md_exit(void)
 	p_queue = &p_conn_md->msg_queue;
 	mutex_lock(&p_queue->lock);
 	list_for_each(pos, &p_queue->list) {
-		p_msg = container_of(pos, CONN_MD_MSG, entry);
+		p_msg = container_of(pos, struct conn_md_msg, entry);
 		list_del(pos);
 		kfree(p_msg);
 	}
@@ -512,7 +619,7 @@ static void conn_md_exit(void)
 	p_queue = &p_conn_md->act_queue;
 	mutex_lock(&p_queue->lock);
 	list_for_each(pos, &p_queue->list) {
-		p_msg = container_of(pos, CONN_MD_MSG, entry);
+		p_msg = container_of(pos, struct conn_md_msg, entry);
 		list_del(pos);
 		kfree(p_msg);
 	}
@@ -520,7 +627,7 @@ static void conn_md_exit(void)
 	mutex_unlock(&p_queue->lock);
 	mutex_destroy(&p_queue->lock);
 
-	if (NULL != p_conn_md->p_msg_dmp_sys)
+	if (p_conn_md->p_msg_dmp_sys != NULL)
 		conn_md_dmp_deinit(p_conn_md->p_msg_dmp_sys);
 
 	CONN_MD_TRC_FUNC();
@@ -528,9 +635,12 @@ static void conn_md_exit(void)
 
 /*---------------------------------------------------------------------------*/
 
-module_init(conn_md_init);
+/*
+ * module_init(conn_md_init);
+ * module_exit(conn_md_exit);
+ */
+subsys_initcall(conn_md_init);
 module_exit(conn_md_exit);
-
 /*---------------------------------------------------------------------------*/
 
 MODULE_AUTHOR("MBJ/WCN/SE/SS1/Chaozhong.Liang");

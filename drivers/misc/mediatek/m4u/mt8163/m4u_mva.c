@@ -1,3 +1,16 @@
+/*
+ * Copyright (C) 2015 MediaTek Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ */
+
 #include <linux/spinlock.h>
 #include "m4u_priv.h"
 
@@ -39,7 +52,6 @@ void m4u_mvaGraph_init(void *priv_reserve)
 	mvaInfoGraph[1] = priv_reserve;
 	mvaGraph[MVA_MAX_BLOCK_NR] = MVA_MAX_BLOCK_NR;
 	mvaInfoGraph[MVA_MAX_BLOCK_NR] = priv_reserve;
-
 	spin_unlock_irqrestore(&gMvaGraph_lock, irq_flags);
 }
 
@@ -96,13 +108,16 @@ void m4u_mvaGraph_dump(void)
 	spin_unlock_irqrestore(&gMvaGraph_lock, irq_flags);
 
 	M4UMSG("\n");
-	M4UMSG("[M4U_K] mva alloc summary: (unit: blocks)========================>\n");
-	M4UMSG("free: %d , alloc: %d, total: %d\n", nr_free, nr_alloc, nr_free + nr_alloc);
-	M4UMSG("[M4U_K] free region fragments in 2^x blocks unit:===============\n");
-	M4UMSG("  0     1     2     3     4     5     6     7     8     9     10    11\n");
+	M4UMSG("[M4U_K] mva alloc summary: (unit: blocks)=================>\n");
+	M4UMSG("free: %d , alloc: %d, total: %d\n",
+		nr_free, nr_alloc, nr_free + nr_alloc);
+	M4UMSG("[M4U_K] free region fragments in 2^x blocks unit:==========\n");
+	M4UMSG(
+		"  0     1     2     3     4     5     6     7     8     9     10    11\n"
+		);
 	M4UMSG("%4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d  %4d\n",
-	       frag[0], frag[1], frag[2], frag[3], frag[4], frag[5], frag[6], frag[7], frag[8],
-	       frag[9], frag[10], frag[11]);
+	       frag[0], frag[1], frag[2], frag[3], frag[4], frag[5], frag[6],
+	       frag[7], frag[8], frag[9], frag[10], frag[11]);
 	M4UMSG("[M4U_K] mva alloc dump done=========================<\n");
 
 }
@@ -198,7 +213,6 @@ unsigned int m4u_do_mva_alloc(unsigned long va, unsigned int size, void *priv)
 	startRequire = va & (~M4U_PAGE_MASK);
 	endRequire = (va + size - 1) | M4U_PAGE_MASK;
 	sizeRequire = endRequire - startRequire + 1;
-	/* (sizeRequire>>MVA_BLOCK_SIZE_ORDER) + ((sizeRequire&MVA_BLOCK_ALIGN_MASK)!=0); */
 	nr = (sizeRequire + MVA_BLOCK_ALIGN_MASK) >> MVA_BLOCK_SIZE_ORDER;
 
 	spin_lock_irqsave(&gMvaGraph_lock, irq_flags);
@@ -210,8 +224,11 @@ unsigned int m4u_do_mva_alloc(unsigned long va, unsigned int size, void *priv)
 		;
 	if (s > MVA_MAX_BLOCK_NR) {
 		spin_unlock_irqrestore(&gMvaGraph_lock, irq_flags);
-		M4UMSG("mva_alloc error: no available MVA region for %d blocks!\n", nr);
-		MMProfileLogEx(M4U_MMP_Events[M4U_MMP_M4U_ERROR], MMProfileFlagPulse, size, s);
+		M4UMSG(
+			"mva_alloc error: no available MVA region for %d blocks!\n"
+			, nr);
+		MMProfileLogEx(M4U_MMP_Events[M4U_MMP_M4U_ERROR],
+			MMProfileFlagPulse, size, s);
 
 		return 0;
 	}
@@ -246,7 +263,8 @@ unsigned int m4u_do_mva_alloc(unsigned long va, unsigned int size, void *priv)
 
 }
 
-unsigned int m4u_do_mva_alloc_fix(unsigned int mva, unsigned int size, void *priv)
+unsigned int m4u_do_mva_alloc_fix(unsigned int mva,
+		unsigned int size, void *priv)
 {
 	short nr = 0;
 	unsigned int startRequire, endRequire, sizeRequire;
@@ -268,7 +286,6 @@ unsigned int m4u_do_mva_alloc_fix(unsigned int mva, unsigned int size, void *pri
 	startRequire = mva & (~MVA_BLOCK_ALIGN_MASK);
 	endRequire = (mva + size - 1) | MVA_BLOCK_ALIGN_MASK;
 	sizeRequire = endRequire - startRequire + 1;
-	/* (sizeRequire>>MVA_BLOCK_SIZE_ORDER) + ((sizeRequire&MVA_BLOCK_ALIGN_MASK)!=0); */
 	nr = (sizeRequire + MVA_BLOCK_ALIGN_MASK) >> MVA_BLOCK_SIZE_ORDER;
 
 	spin_lock_irqsave(&gMvaGraph_lock, irq_flags);
@@ -300,7 +317,8 @@ unsigned int m4u_do_mva_alloc_fix(unsigned int mva, unsigned int size, void *pri
 		}
 	}
 
-	if (MVA_IS_BUSY(region_start) || (MVA_GET_NR(region_start) < nr + startIdx - region_start)) {
+	if (MVA_IS_BUSY(region_start) ||
+	    (MVA_GET_NR(region_start) < nr + startIdx - region_start)) {
 		M4UMSG("mva is inuse index=0x%x, mvaGraph=0x%x\n", region_start,
 		       mvaGraph[region_start]);
 		mva = 0;
@@ -365,14 +383,16 @@ int m4u_do_mva_free(unsigned int mva, unsigned int size)
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&gMvaGraph_lock, irq_flags);
-	/* /-------------------------------- */
-	/* /check the input arguments */
-	/* /right condition: startIdx is not NULL && region is busy && right module && right size */
+
+	/* check the input arguments
+	 * right condition: startIdx is not NULL
+	 * && region is busy && right module && right size
+	 */
 	startRequire = mva & (unsigned int)(~M4U_PAGE_MASK);
 	endRequire = (mva + size - 1) | (unsigned int)M4U_PAGE_MASK;
 	sizeRequire = endRequire - startRequire + 1;
-	/* (sizeRequire>>MVA_BLOCK_SIZE_ORDER) + ((sizeRequire&MVA_BLOCK_ALIGN_MASK)!=0); */
-	nrRequire = (sizeRequire + MVA_BLOCK_ALIGN_MASK) >> MVA_BLOCK_SIZE_ORDER;
+	nrRequire = (sizeRequire + MVA_BLOCK_ALIGN_MASK)
+			>> MVA_BLOCK_SIZE_ORDER;
 	if (!(startIdx != 0	/* startIdx is not NULL */
 	      && MVA_IS_BUSY(startIdx)
 	      && (nr == nrRequire)
@@ -382,9 +402,11 @@ int m4u_do_mva_free(unsigned int mva, unsigned int size)
 		spin_unlock_irqrestore(&gMvaGraph_lock, irq_flags);
 		M4UMSG("error to free mva========================>\n");
 		M4UMSG("BufSize=%d(unit:0x%xBytes) (expect %d) [%s]\n",
-		       nrRequire, MVA_BLOCK_SIZE, nr, RightWrong(nrRequire == nr));
+		       nrRequire, MVA_BLOCK_SIZE,
+		       nr, RightWrong(nrRequire == nr));
 		M4UMSG("mva=0x%x, (IsBusy?)=%d (expect %d) [%s]\n",
-		       mva, MVA_IS_BUSY(startIdx), 1, RightWrong(MVA_IS_BUSY(startIdx)));
+		       mva, MVA_IS_BUSY(startIdx), 1,
+		       RightWrong(MVA_IS_BUSY(startIdx)));
 		m4u_mvaGraph_dump();
 		/* m4u_mvaGraph_dump_raw(); */
 		return -1;
@@ -419,7 +441,6 @@ int m4u_do_mva_free(unsigned int mva, unsigned int size)
 	spin_unlock_irqrestore(&gMvaGraph_lock, irq_flags);
 
 	return 0;
-
 }
 
 int m4u_do_mva_free_fix(unsigned int mva, unsigned int size)
@@ -432,25 +453,27 @@ int m4u_do_mva_free_fix(unsigned int mva, unsigned int size)
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&gMvaGraph_lock, irq_flags);
-	/* /-------------------------------- */
-	/* /check the input arguments */
-	/* /right condition: startIdx is not NULL && region is busy && right module && right size */
+	/* -------------------------------- */
+	/* check the input arguments
+	 * right condition:
+	 * startIdx is not NULL && region is busy
+	 * && right module && right size
+	 */
 	startRequire = mva & (unsigned int)(~MVA_BLOCK_ALIGN_MASK);
 	endRequire = (mva + size - 1) | (unsigned int)MVA_BLOCK_ALIGN_MASK;
 	sizeRequire = endRequire - startRequire + 1;
-	nrRequire = (sizeRequire + MVA_BLOCK_ALIGN_MASK) >> MVA_BLOCK_SIZE_ORDER;	/* (sizeRequire>>MVA_BLOCK_SIZE_ORDER) + ((sizeRequire&MVA_BLOCK_ALIGN_MASK)!=0); */
-	if (!(startIdx != 0	/* startIdx is not NULL */
-	      &&MVA_IS_BUSY(startIdx)
-	      &&(nr == nrRequire)
-	    )
-	    ) {
+	nrRequire =
+		(sizeRequire + MVA_BLOCK_ALIGN_MASK) >> MVA_BLOCK_SIZE_ORDER;
 
+	if (!(startIdx != 0 && MVA_IS_BUSY(startIdx) && (nr == nrRequire))) {
 		spin_unlock_irqrestore(&gMvaGraph_lock, irq_flags);
 		M4UMSG("error to free mva========================>\n");
 		M4UMSG("BufSize=%d(unit:0x%xBytes) (expect %d) [%s]\n",
-		       nrRequire, MVA_BLOCK_SIZE, nr, RightWrong(nrRequire == nr));
+		       nrRequire, MVA_BLOCK_SIZE, nr,
+		       RightWrong(nrRequire == nr));
 		M4UMSG("mva=0x%x, (IsBusy?)=%d (expect %d) [%s]\n",
-		       mva, MVA_IS_BUSY(startIdx), 1, RightWrong(MVA_IS_BUSY(startIdx)));
+		       mva, MVA_IS_BUSY(startIdx), 1,
+		       RightWrong(MVA_IS_BUSY(startIdx)));
 		m4u_mvaGraph_dump();
 		/* m4u_mvaGraph_dump_raw(); */
 		return -1;
@@ -470,6 +493,7 @@ int m4u_do_mva_free_fix(unsigned int mva, unsigned int size)
 	/* /merge with previous region */
 	if ((startIdx - 1 > 0) && (!MVA_IS_BUSY(startIdx - 1))) {
 		int pre_nr = mvaGraph[startIdx - 1];
+
 		mvaGraph[startIdx] = 0;
 		mvaGraph[startIdx - 1] = 0;
 		startIdx -= pre_nr;
@@ -485,3 +509,4 @@ int m4u_do_mva_free_fix(unsigned int mva, unsigned int size)
 	return 0;
 
 }
+

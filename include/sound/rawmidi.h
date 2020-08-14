@@ -28,6 +28,7 @@
 #include <linux/wait.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
+#include <linux/device.h>
 
 #if defined(CONFIG_SND_SEQUENCER) || defined(CONFIG_SND_SEQUENCER_MODULE)
 #include <sound/seq_device.h>
@@ -130,7 +131,7 @@ struct snd_rawmidi {
 	int ossreg;
 #endif
 
-	struct snd_rawmidi_global_ops *ops;
+	const struct snd_rawmidi_global_ops *ops;
 
 	struct snd_rawmidi_str streams[2];
 
@@ -140,7 +141,8 @@ struct snd_rawmidi {
 	struct mutex open_mutex;
 	wait_queue_head_t open_wait;
 
-	struct snd_info_entry *dev;
+	struct device dev;
+
 	struct snd_info_entry *proc_entry;
 
 #if defined(CONFIG_SND_SEQUENCER) || defined(CONFIG_SND_SEQUENCER_MODULE)

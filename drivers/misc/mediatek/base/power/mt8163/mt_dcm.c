@@ -1,4 +1,20 @@
+/*
+ * Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ */
+
+#define pr_fmt(fmt)		"[Power/dcm] "fmt
+
 #include <linux/init.h>
+#include <linux/io.h>
 #include <linux/export.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -95,14 +111,6 @@ static phys_addr_t mcucfg_phys_base;
 #else
 #define MCUSYS_SMC_WRITE(addr, val)  mcusys_smc_write(addr, val)
 #endif
-
-#define TAG	"[Power/dcm] "
-
-#define dcm_err(fmt, args...)	pr_err(TAG fmt, ##args)
-#define dcm_warn(fmt, args...)	pr_warn(TAG fmt, ##args)
-#define dcm_info(fmt, args...)	pr_debug(TAG fmt, ##args)
-#define dcm_dbg(fmt, args...)	pr_debug(TAG fmt, ##args)
-#define dcm_ver(fmt, args...)	pr_debug(TAG fmt, ##args)
 
 /** macro **/
 #define and(v, a)	((v) & (a))
@@ -279,7 +287,7 @@ int dcm_infra_rate(unsigned int fsel, unsigned int sfsel)
 	int val;
 
 	if (fsel > 5 || sfsel > fsel)
-		BUG();
+		WARN_ON(1);
 
 	val = (sfsel == 5) ? 0 : (1 << (14 - sfsel));
 	val |= (fsel == 5) ? 0 : (1 << (9 - fsel));
@@ -400,7 +408,7 @@ int dcm_peri_rate(unsigned int fsel, unsigned int sfsel)
 	int val;
 
 	if (fsel > 5 || sfsel > fsel)
-		BUG();
+		WARN_ON(1);
 
 	val = (sfsel == 5) ? 0 : (1 << (14 - sfsel));
 	val |= (fsel == 5) ? 0 : (1 << (9 - fsel));
@@ -710,7 +718,7 @@ void dcm_set_default(unsigned int type)
 	int i;
 	struct _dcm *dcm;
 
-	dcm_info("[%s]type:0x%08x\n", __func__, type);
+	pr_debug("[%s]type:0x%08x\n", __func__, type);
 
 	mutex_lock(&dcm_lock);
 
@@ -726,7 +734,7 @@ void dcm_set_default(unsigned int type)
 			dcm->disable_refcnt = 0;
 			dcm->func(dcm->current_state);
 
-			dcm_info("[%16s 0x%08x] current state:%d (%d)\n",
+			pr_debug("[%16s 0x%08x] current state:%d (%d)\n",
 				 dcm->name, dcm->typeid, dcm->current_state,
 				 dcm->disable_refcnt);
 
@@ -741,7 +749,7 @@ void dcm_set_state(unsigned int type, int state)
 	int i;
 	struct _dcm *dcm;
 
-	dcm_info("[%s]type:0x%08x, set:%d\n", __func__, type, state);
+	pr_debug("[%s]type:0x%08x, set:%d\n", __func__, type, state);
 
 	mutex_lock(&dcm_lock);
 
@@ -755,7 +763,7 @@ void dcm_set_state(unsigned int type, int state)
 				dcm->func(dcm->current_state);
 			}
 
-			dcm_info("[%16s 0x%08x] current state:%d (%d)\n",
+			pr_debug("[%16s 0x%08x] current state:%d (%d)\n",
 				 dcm->name, dcm->typeid, dcm->current_state,
 				 dcm->disable_refcnt);
 		}
@@ -769,7 +777,7 @@ void dcm_disable(unsigned int type)
 	int i;
 	struct _dcm *dcm;
 
-	dcm_info("[%s]type:0x%08x\n", __func__, type);
+	pr_debug("[%s]type:0x%08x\n", __func__, type);
 
 	mutex_lock(&dcm_lock);
 
@@ -781,7 +789,7 @@ void dcm_disable(unsigned int type)
 			dcm->disable_refcnt++;
 			dcm->func(dcm->current_state);
 
-			dcm_info("[%16s 0x%08x] current state:%d (%d)\n",
+			pr_debug("[%16s 0x%08x] current state:%d (%d)\n",
 				 dcm->name, dcm->typeid, dcm->current_state,
 				 dcm->disable_refcnt);
 		}
@@ -795,7 +803,7 @@ void dcm_restore(unsigned int type)
 	int i;
 	struct _dcm *dcm;
 
-	dcm_info("[%s]type:0x%08x\n", __func__, type);
+	pr_debug("[%s]type:0x%08x\n", __func__, type);
 
 	mutex_lock(&dcm_lock);
 
@@ -810,7 +818,7 @@ void dcm_restore(unsigned int type)
 				dcm->func(dcm->current_state);
 			}
 
-			dcm_info("[%16s 0x%08x] current state:%d (%d)\n",
+			pr_debug("[%16s 0x%08x] current state:%d (%d)\n",
 				 dcm->name, dcm->typeid, dcm->current_state,
 				 dcm->disable_refcnt);
 
@@ -825,10 +833,10 @@ void dcm_dump_state(int type)
 	int i;
 	struct _dcm *dcm;
 
-	dcm_info("\n******** dcm dump state *********\n");
+	pr_debug("\n******** dcm dump state *********\n");
 	for (i = 0, dcm = &dcm_array[0]; i < NR_DCM_TYPE; i++, dcm++) {
 		if (type & dcm->typeid) {
-			dcm_info("[%-16s 0x%08x] current state:%d (%d)\n",
+			pr_debug("[%-16s 0x%08x] current state:%d (%d)\n",
 				 dcm->name, dcm->typeid, dcm->current_state,
 				 dcm->disable_refcnt);
 		}
@@ -836,11 +844,11 @@ void dcm_dump_state(int type)
 }
 
 #define REG_DUMP(addr)	\
-	dcm_info("%-30s(0x%p): 0x%08x\n", #addr, addr, reg_read(addr))
+	pr_notice("%-30s(0x%p): 0x%08x\n", #addr, addr, reg_read(addr))
 
 void dcm_dump_regs(void)
 {
-	dcm_info("\n******** dcm dump register *********\n");
+	pr_notice("\n******** dcm dump register *********\n");
 	REG_DUMP(INFRACFG_TOP_CKMUXSEL);
 	REG_DUMP(INFRACFG_TOP_CKDIV1);
 	REG_DUMP(INFRACFG_TOP_DCMCTL);
@@ -922,14 +930,14 @@ static ssize_t dcm_state_store(struct kobject *kobj,
 				dcm_set_state(mask, mode);
 			}
 		} else {
-			dcm_info("SORRY, do not support your command: %s\n",
-				 cmd);
+			pr_err("SORRY, do not support your command: %s\n",
+			       cmd);
 		}
 
 		return n;
 	}
 
-	dcm_info("SORRY, do not support your command.\n");
+	pr_err("SORRY, do not support your command.\n");
 
 	return -EINVAL;
 }
@@ -974,9 +982,9 @@ static int dcm_cpu_notify(struct notifier_block *self, unsigned long action,
 
 	case CPU_ONLINE:
 		if (and(reg_read(MP0_AXI_CONFIG), ACINACTM)) {
-			dcm_info("axi_config:0x%0x\n",
+			pr_debug("axi_config:0x%0x\n",
 				 reg_read(MP0_AXI_CONFIG));
-			BUG();
+			WARN_ON(1);
 		}
 		break;
 
@@ -1012,55 +1020,55 @@ static int mt_dcm_dts_map(void)
 	/* topckgen */
 	node = of_find_compatible_node(NULL, NULL, TOPCKGEN_NODE);
 	if (!node) {
-		dcm_info("error: cannot find node " TOPCKGEN_NODE);
-		BUG();
+		pr_err("error: cannot find node " TOPCKGEN_NODE);
+		WARN_ON(1);
 	}
 	topckgen_base = of_iomap(node, 0);
 	if (!topckgen_base) {
-		dcm_info("error: cannot iomap " TOPCKGEN_NODE);
-		BUG();
+		pr_err("error: cannot iomap " TOPCKGEN_NODE);
+		WARN_ON(1);
 	}
 
 	/* mcucfg */
 	node = of_find_compatible_node(NULL, NULL, MCUCFG_NODE);
 	if (!node) {
-		dcm_info("error: cannot find node " MCUCFG_NODE);
-		BUG();
+		pr_err("error: cannot find node " MCUCFG_NODE);
+		WARN_ON(1);
 	}
 	if (of_address_to_resource(node, 0, &r)) {
-		dcm_info("error: cannot get phys addr" MCUCFG_NODE);
-		BUG();
+		pr_err("error: cannot get phys addr" MCUCFG_NODE);
+		WARN_ON(1);
 	}
 	mcucfg_phys_base = r.start;
 
 	mcucfg_base = of_iomap(node, 0);
 	if (!mcucfg_base) {
-		dcm_info("error: cannot iomap " MCUCFG_NODE);
-		BUG();
+		pr_err("error: cannot iomap " MCUCFG_NODE);
+		WARN_ON(1);
 	}
 
 	/* dramc */
 	node = of_find_compatible_node(NULL, NULL, DRAMC_NODE);
 	if (!node) {
-		dcm_info("error: cannot find node " DRAMC_NODE);
-		BUG();
+		pr_err("error: cannot find node " DRAMC_NODE);
+		WARN_ON(1);
 	}
 	dramc_base = of_iomap(node, 0);
 	if (!dramc_base) {
-		dcm_info("error: cannot iomap " DRAMC_NODE);
-		BUG();
+		pr_err("error: cannot iomap " DRAMC_NODE);
+		WARN_ON(1);
 	}
 
 	/* infracfg_ao */
 	node = of_find_compatible_node(NULL, NULL, INFRACFG_AO_NODE);
 	if (!node) {
-		dcm_info("error: cannot find node " INFRACFG_AO_NODE);
-		BUG();
+		pr_err("error: cannot find node " INFRACFG_AO_NODE);
+		WARN_ON(1);
 	}
 	infracfg_ao_base = of_iomap(node, 0);
 	if (!infracfg_ao_base) {
-		dcm_info("error: cannot iomap " INFRACFG_AO_NODE);
-		BUG();
+		pr_err("error: cannot iomap " INFRACFG_AO_NODE);
+		WARN_ON(1);
 	}
 
 	of_node_put(node);
@@ -1105,7 +1113,7 @@ int mt_dcm_init(void)
 		err = sysfs_create_file(power_kobj, &dcm_state_attr.attr);
 
 		if (err)
-			dcm_err("[%s]: fail to create sysfs\n", __func__);
+			pr_err("[%s]: fail to create sysfs\n", __func__);
 	} while (0);
 
 #endif /* #if defined(CONFIG_PM) */
