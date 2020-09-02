@@ -28,27 +28,6 @@
 		initrd=0x44000200,0x200000";
 	};
 
-	firmware: firmware {
-		android: android {
-			compatible = "android,firmware";
-			fstab: fstab {
-				compatible = "android,fstab";
-				vendor {
-					compatible = "android,vendor";
-					dev =
-		"/dev/block/platform/soc/11230000.mmc/by-name/vendor";
-					type = "ext4";
-					mnt_flags = "ro";
-					#ifndef CONFIG_MTK_DM_VERITY_OFF
-					fsmgr_flags = "wait,verify";
-					#else
-					fsmgr_flags = "wait";
-					#endif
-				};
-			};
-		};
-	};
-
 	mtcpufreq {
 		compatible = "mediatek,mt8163-cpufreq";
 		reg-ext-vproc-supply = <&vproc>;
